@@ -131,6 +131,20 @@ def labels_of(menu):
     return found
 
 
+def submenu_of(menu, label):
+    """The submenu labelled `label` among a menu's items and sections, or None."""
+    for position in range(menu.get_n_items()):
+        found = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL)
+        submenu = menu.get_item_link(position, Gio.MENU_LINK_SUBMENU)
+        if submenu is not None and found is not None and found.unpack() == label:
+            return submenu
+        section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+        inside = submenu_of(section, label) if section is not None else None
+        if inside is not None:
+            return inside
+    return None
+
+
 class MenuTest(unittest.TestCase):
     def test_library_album(self):
         self.assertEqual(names(build_menu(LIBRARY_ALBUM)), [
@@ -150,7 +164,7 @@ class MenuTest(unittest.TestCase):
                           'win.item-unlove': 'action-disabled'})
 
     def test_labels_have_distinct_mnemonics(self):
-        labels = labels_of(build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip')]))
+        labels = labels_of(build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)]))
         letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label
                    and label != 'Road Trip']
         self.assertEqual(len(letters), len(set(letters)), labels)
@@ -158,8 +172,10 @@ class MenuTest(unittest.TestCase):
         self.assertIn('Add to Pla_ylist', labels)
 
     def test_track_with_playlists(self):
-        menu = build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip'), ('p.pl3', ''),
-                                                    ('p.pl4', 'work_focus')])
+        menu = build_menu(LIBRARY_TRACK, playlists=[
+            ('p.fd1', 'Evenings', [('p.fd2', '', [('p.pl5', 'Late', None)]),
+                                   ('p.pl2', 'Dusk', None)]),
+            ('p.pl1', 'Road Trip', None), ('p.pl3', '', None), ('p.pl4', 'work_focus', None)])
         self.assertEqual(actions_of(menu), [
             ('win.item-play', ('song', 'i.song1')),
             ('win.item-play-next', ('song', 'i.song1')),
@@ -168,6 +184,8 @@ class MenuTest(unittest.TestCase):
             ('win.item-go-to-artist', ('song', 'i.song1')),
             ('win.item-love', ('song', 'i.song1')),
             ('win.item-unlove', ('song', 'i.song1')),
+            ('win.item-add-to-playlist', ('p.pl5', 'song', 'i.song1')),
+            ('win.item-add-to-playlist', ('p.pl2', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl1', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl3', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl4', 'song', 'i.song1')),
@@ -176,6 +194,11 @@ class MenuTest(unittest.TestCase):
             ('win.item-copy-link', ('song', 'i.song1'))])
         # A playlist's name is shown as it is: its underscores are not mnemonics.
         self.assertIn('work__focus', labels_of(menu))
+        # A folder is a submenu of what it holds, named by the folder, nested as it is.
+        listed = submenu_of(submenu_of(menu, 'Add to Pla_ylist'), 'Evenings')
+        self.assertEqual(labels_of(listed), ['Untitled Folder', 'Late', 'Dusk'])
+        self.assertEqual(names(submenu_of(listed, 'Untitled Folder')),
+                         ['win.item-add-to-playlist'])
         self.assertEqual(mnemonic_escaped('a_b__c'), 'a__b____c')
         # No playlists: the submenu has New Playlist… alone. A catalog track can be added to
         # the library.
@@ -735,7 +758,7 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.app.library = FakeLibrary(
             [Item({'id': f'p.o{n}', 'kind': 'playlist', 'title': title, 'groups': []})
              for n, title in enumerate(titles)] + [self.app.favourites])
-        self.assertEqual([title for _id, title in self.actions.playlists()],
+        self.assertEqual([title for _id, title, _children in self.actions.playlists()],
                          ['1. One', '2. Two', 'alpha', 'Zulu'])
 
     async def test_drop_on_a_playlist(self):
@@ -1008,6 +1031,27 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         actions_module.SETTLE_DELAYS = (0, 0, 0)
         self.addCleanup(setattr, actions_module, 'SETTLE_DELAYS', delays)
 
+
+    async def test_add_to_playlist_nests_the_folders(self):
+        # The folder holds the playlist; READ_ONLY and Favourite Songs are left out.
+        self.assertEqual(self.actions.playlists(),
+                         [('p.fd1', 'Evenings', [('p.pl1', 'Road Trip', None)])])
+        menu = self.actions.menu_for(LIBRARY_TRACK)
+        evenings = submenu_of(submenu_of(menu, 'Add to Pla_ylist'), 'Evenings')
+        self.assertEqual(actions_of(evenings),
+                         [('win.item-add-to-playlist', ('p.pl1', 'song', 'i.song1'))])
+
+    async def test_a_folder_with_nothing_to_add_to_is_left_out(self):
+        folders = [{'id': 'root', 'title': '', 'parent': None,
+                    'children': [{'kind': 'folder', 'id': 'p.fd1'},
+                                 {'kind': 'playlist', 'id': 'p.pl1'}]},
+                   {'id': 'p.fd1', 'title': 'Evenings', 'parent': 'root',
+                    'children': [{'kind': 'folder', 'id': 'p.fd2'},
+                                 {'kind': 'playlist', 'id': 'p.pl2'}]},
+                   {'id': 'p.fd2', 'title': 'Empty', 'parent': 'p.fd1', 'children': []}]
+        self.app.library = FakeLibrary([self.app.playlist, READ_ONLY, self.app.favourites],
+                                       folders)
+        self.assertEqual(self.actions.playlists(), [('p.pl1', 'Road Trip', None)])
     async def run_action(self, name, *target):
         signature = {3: '(sss)'}.get(len(target), '(ss)')
         if name == 'item-remove-from-playlist':

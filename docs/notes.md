@@ -57,7 +57,8 @@ its "Performance pass" section.
   refresh-interval row in Preferences is bound by hand instead.
 - Opening a sidebar row's context menu from a script worked by emitting the row's long-press
   gesture's `pressed(x, y)`; `sidebar.activate_action('menu.popup')` did nothing. A
-  `Gtk.PopoverMenu` submenu is named by its label: `visible-submenu` 'Add to Playlist' opens it.
+  `Gtk.PopoverMenu` submenu is named by its label, mnemonic underscore and all:
+  `visible-submenu` 'Add to Pla_ylist' opens it (screenshot.py's `--submenu`).
 - A stand-in texture of another size (`ArtworkSlot` showing `get_any()` while the size wanted
   decodes) changes the picture's size twice, and each time lays the list out again. The worst
   case, Songs scrolled at 2,000 px/s with every row's thumbnail cached only at the tiles'

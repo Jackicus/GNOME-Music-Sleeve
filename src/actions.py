@@ -47,7 +47,7 @@ The menus are built in code, per kind (build_menu): Play, Play Next, Play Later;
 Go to Artist (not where the page shown is that album or artist already); Favourite and
 Remove from Favourites (both, of which the menu shows the one whose action is enabled: the
 actions' state says whether the item is loved), Add to Library, Add to Playlist (the
-library's playlists that take songs, folders flattened, then New Playlist…), Remove from
+library's playlists that take songs, each folder a submenu, then New Playlist…), Remove from
 Playlist (a track shown in a playlist of the user's: `container`); Open in Browser, Copy Link
 (only an address anyone can open: not the web player's library routes; a library artist's is
 the catalog artist's page, which the engine finds through their songs); Rename… and Delete
@@ -355,10 +355,27 @@ def mnemonic_escaped(title):
     return title.replace('_', '__')
 
 
+def playlist_submenu(entries, named):
+    """The Add to Playlist items for `entries` ((id, title, children), as
+    ItemActions.playlists() lists them), each folder a submenu of its own entries: adding
+    the song or video `named` ((kind, id)) to the playlist chosen."""
+    menu = Gio.Menu()
+    for entry_id, title, children in entries:
+        if children is not None:
+            menu.append_submenu(mnemonic_escaped(title or _('Untitled Folder')),
+                                playlist_submenu(children, named))
+        else:
+            menu.append_item(menu_item(
+                'item-add-to-playlist', GLib.Variant('(sss)', (entry_id, *named)),
+                label=mnemonic_escaped(title or _('Untitled Playlist'))))
+    return menu
+
+
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None):
     """The menu for obj (an Item or a Track), or None when nothing applies (the top level
-    of the folders, a category). `playlists` are the (id, title) pairs the Add to Playlist
-    submenu lists; `here` is the Item of the page shown (Go to Album and Go to Artist are
+    of the folders, a category). `playlists` are the entries the Add to Playlist submenu
+    lists (ItemActions.playlists(): (id, title, children), a folder's children its own
+    entries, a submenu); `here` is the Item of the page shown (Go to Album and Go to Artist are
     left out where they would go nowhere: related.shows); `queued`, obj is in the player's
     queue (no Play); `container`, the playlist Item the track obj is shown in (Remove from
     Playlist, when it is one of the user's)."""
@@ -383,13 +400,10 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if library_target(obj) is not None:
         keep.append_item(menu_item('item-add-to-library', target))
     if playlist_song(obj):
-        # The playlists that take songs, then New Playlist…, one holding this song.
+        # The playlists that take songs, folders as submenus, then New Playlist…, one
+        # holding this song.
         submenu = Gio.Menu()
-        listed = Gio.Menu()
-        for playlist_id, title in playlists:
-            listed.append_item(menu_item(
-                'item-add-to-playlist', GLib.Variant('(sss)', (playlist_id, *named)),
-                label=mnemonic_escaped(title or _('Untitled Playlist'))))
+        listed = playlist_submenu(playlists, named)
         if listed.get_n_items():
             submenu.append_section(None, listed)
         created = Gio.Menu()
@@ -560,12 +574,21 @@ class ItemActions:
         return playlist if is_manageable(playlist) else None
 
     def playlists(self):
-        """(id, title) of the library playlists that take songs, in the sidebar's order with
-        the folders flattened (Favourite Songs and the ones Apple says cannot be edited left
-        out)."""
-        tree = self.library.playlist_tree()
-        return [(node.item.id, node.item.title) for node in tree.flat
-                if node.kind == 'playlist' and node.item.editable]
+        """The library playlists that take songs, nested in their folders as the sidebar
+        has them, for Add to Playlist: a list of (id, title, children), `children` None for a
+        playlist and a folder's own entries for a folder. Favourite Songs, the ones Apple
+        says cannot be edited and the folders holding none of the rest are left out."""
+        def entries(node):
+            found = []
+            for child in node.children:
+                if child.kind == 'folder':
+                    inside = entries(child)
+                    if inside:
+                        found.append((child.id, child.item.title, inside))
+                elif child.kind == 'playlist' and child.item.editable:
+                    found.append((child.id, child.item.title, None))
+            return found
+        return entries(self.library.playlist_tree().root)
 
     def _show_loved(self, loved):
         """The favourite actions' state: a menu shows Favourite while the item is not

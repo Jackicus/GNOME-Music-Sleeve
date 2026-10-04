@@ -23,7 +23,8 @@ What to shoot: $ARGUMENTS
    - `--signed-in [NAME]`: the account button signed in (an invented NAME: its avatar's colour
      follows the name); `--banner sign-in|expired`: the sign-in banner;
    - `--sidebar` (the narrow layout: the sidebar rather than the page), `--expand first`,
-     `--search TERM`, `--context-menu`, `--preferences [general|engine]`,
+     `--search TERM`, `--context-menu` (`--submenu NAME` for one of its submenus, by its
+     label, underscore and all: `"Add to Pla_ylist"`, a folder's name), `--preferences [general|engine]`,
      `--dialog about|shortcuts`; `--scroll PX` for the rest of a page taller than the
      window (an artist's: `--open artist:first --scroll 900`);
    - the playlists' menus and dialogs: `--more-options` (the page's More Options menu),
