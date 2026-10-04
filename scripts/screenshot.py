@@ -8,7 +8,8 @@
                           [--page KEY] [--open KIND:ID] [--sidebar] [--expand ID[,ID…]]
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|queue]] [--playing] [--search TERM]
-                          [--context-menu] [--preferences [general|engine]]
+                          [--context-menu [--submenu NAME]]
+                          [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|rename|delete]
                           [--more-options] [--sidebar-menu KEY] [--scroll PX]
 
@@ -51,7 +52,10 @@ bar in its playing state. With --demo only.
 results of the offline filter; the engine is never started here).
 --context-menu pops up the context menu of the page's first tile or row (the
 first shown widget with a context_item), as a right click on it would, and
-draws the popover into the shot where the compositor put it.
+draws the popover into the shot where the compositor put it. --submenu NAME
+shows its submenu labelled NAME (a GtkPopoverMenu names each submenu by its
+label, mnemonic underscore and all: "Add to Pla_ylist", a folder's name inside
+it) rather than its top level.
 --preferences opens the Preferences dialog (app.preferences) on its General page, or
 on Engine, and shoots it: inside the window when libadwaita put it there, else its
 own window (a fixed-size window that is neither maximized nor tiled gets one), at
@@ -106,6 +110,8 @@ parser.add_argument('--search', metavar='TERM',
                     help='the Search page in Your Library mode with TERM typed')
 parser.add_argument('--context-menu', action='store_true',
                     help="pop up the context menu of the page's first tile or row")
+parser.add_argument('--submenu', metavar='NAME',
+                    help='with --context-menu, show the submenu labelled NAME')
 parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
                     choices=['general', 'engine'],
                     help='open Preferences on PAGE and shoot the dialog')
@@ -121,6 +127,8 @@ parser.add_argument('--scroll', metavar='PX', type=int, default=0,
 args = parser.parse_args()
 if args.search:
     args.page = 'search'
+if args.submenu and not args.context_menu:
+    parser.error('--submenu needs --context-menu')
 if (args.now_playing or args.playing) and not args.demo:
     parser.error('--now-playing and --playing need --demo')
 width, height = (int(n) for n in args.size.split('x'))
@@ -236,8 +244,11 @@ def open_context_menu(window):
     if widget is None:
         sys.exit('screenshot: nothing on the page has a context menu')
     x, y = widget.get_width() * 0.6, widget.get_height() * 0.35
-    if context_menu.popup(widget, widget.context_item, x, y) is None:
+    popover = context_menu.popup(widget, widget.context_item, x, y)
+    if popover is None:
         sys.exit('screenshot: the first item has no menu')
+    if args.submenu:
+        popover.set_property('visible-submenu', args.submenu)
 
 
 def find_widget(widget, kind):
