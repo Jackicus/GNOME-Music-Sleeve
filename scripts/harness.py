@@ -12,8 +12,9 @@ install -C build, or scripts/run.sh, first) in-process. make_app() does what the
 - GSettings on the memory backend with the installed schema, so nothing the script sets (window
   size, last-page, signed-in) reaches the desktop's settings; engine-autostart off, so a script
   never starts Chrome, even one run without the demo library;
-- the demo library: build/demo, generated first when it is missing, unless APPLE_MUSIC_CACHE
-  names another (the app's --demo reads it), passed as --demo by run_app();
+- the demo library: build/demo, generated first when it is missing or out of date
+  (demo_stamp), unless APPLE_MUSIC_CACHE names another (the app's --demo reads it), passed as
+  --demo by run_app();
 - gi's versions, the gresource registered, main.Application under an app ID of its own
   (io.github.jackicus.MusicSleeve.<suffix>, NON_UNIQUE: beside a running app), asyncio on the
   GLib loop (main.use_glib_event_loop());
@@ -34,6 +35,8 @@ import shutil
 import subprocess
 import sys
 
+import demo_stamp
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREFIX = os.path.join(ROOT, 'build', 'install')
 PKGDATADIR = os.path.join(PREFIX, 'share', 'music-sleeve')
@@ -51,9 +54,10 @@ PLAYING_POSITION = 65.0  # seconds in: a line of the lyrics fixture is current, 
 
 
 def ensure_demo_library():
-    """Generate build/demo when it is missing and APPLE_MUSIC_CACHE names no other library."""
-    if os.environ.get('APPLE_MUSIC_CACHE') or os.path.exists(
-            os.path.join(DEMO_DIR, 'library.json')):
+    """Generate build/demo when it is missing or out of date (demo_stamp.current(): made by
+    an older demo_library.py, or with other options) and APPLE_MUSIC_CACHE names no other
+    library."""
+    if os.environ.get('APPLE_MUSIC_CACHE') or demo_stamp.current(DEMO_DIR):
         return
     subprocess.run([sys.executable, os.path.join(ROOT, 'scripts', 'demo_library.py'),
                     '--cache', DEMO_DIR], check=True)

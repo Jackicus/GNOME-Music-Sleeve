@@ -32,7 +32,9 @@ of the demo's own albums, songs and videos and a few invented singles,
 playlists, radio episodes and interviews), which the demo engine answers
 from, and each playlist the songs Apple would suggest adding to it
 (suggestions/<playlist id>.json, normalize.playlist_suggestions()'s shape:
-twenty-four of the demo's own songs it does not hold). The other keys the app's sync adds
+twenty-four of the demo's own songs it does not hold). Last it writes .demo-stamp, the
+record of what made it (demo_stamp.py), by which the harness and demo.sh know an out-of-date
+build/demo and write it again. The other keys the app's sync adds
 (sections.songs, artUrl) are optional and left out: the demo has no loose
 songs and nothing to fetch.
 Uses only Python stdlib and PyGObject / Cairo (no pip dependencies).
@@ -67,6 +69,11 @@ if 'applemusic' not in sys.modules:
     _spec.loader.exec_module(_module)
 
 from applemusic.backend import config, normalize  # noqa: E402
+
+# scripts/ is on the path when this runs as a script, not when a test loads it by its file.
+if str(ROOT / 'scripts') not in sys.path:
+    sys.path.insert(0, str(ROOT / 'scripts'))
+import demo_stamp  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Visual styling and palettes
@@ -2387,6 +2394,11 @@ def main():
                            track_count=track_count)
     except ValueError as error:
         sys.exit(f'demo_library: {error}')
+    # Last: the record of what made it, which the harness and demo.sh compare (demo_stamp.py).
+    defaults = {'albums': len(ALBUMS_DATA), 'playlists': len(PLAYLISTS_DATA) + 1, 'tracks': None}
+    given = {'albums': album_count, 'playlists': playlist_count, 'tracks': track_count}
+    demo_stamp.write(out_dir, {key: value for key, value in given.items()
+                               if value != defaults[key]})
 
 
 if __name__ == '__main__':

@@ -3,12 +3,13 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 # Run the development build on the invented demo library in build/demo, generating it first if
-# it is missing. No Chrome, no account: for UI work and screenshots. An APPLE_MUSIC_CACHE already
-# set wins (a bigger generated library, say) and is used as it is.
+# it is missing or out of date (scripts/demo_stamp.py). No Chrome, no account: for UI work and
+# screenshots. An APPLE_MUSIC_CACHE already set wins (a bigger generated library, say) and is
+# used as it is.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [ -z "${APPLE_MUSIC_CACHE:-}" ] && [ ! -f build/demo/library.json ]; then
+if [ -z "${APPLE_MUSIC_CACHE:-}" ] && ! python3 scripts/demo_stamp.py build/demo; then
   scripts/demo_library.py --cache build/demo
 fi
 exec scripts/run.sh --demo "$@"
