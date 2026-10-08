@@ -29,7 +29,7 @@ class CacheTest(unittest.TestCase):
             'made-for-you.json': 10, 'art/l.alb1.jpg': 1000, 'art/.sizes': 20,
             'thumb/l.alb1.jpg': 300, 'remote-art/abc.jpg': 400, 'items/album-1.json': 50,
             'lyrics/1000000001.json': 30, 'categories/c1.json': 40,
-            'suggestions/p.pl1.json': 20,
+            'artists/1000.json': 25, 'suggestions/p.pl1.json': 20,
             # Writes that never finished: an older version's temporary name, and store.py's.
             'library.json.tmp': 60, '.a1b2c3.tmp': 7, 'lyrics/.d4e5.tmp': 3,
             # Not the app's.
@@ -45,6 +45,16 @@ class CacheTest(unittest.TestCase):
         self.outside.mkdir()
         (self.outside / 'big.bin').write_bytes(b'x' * 5000)
         (self.cache / 'art' / 'elsewhere').symlink_to(self.outside)
+
+    def test_every_kept_answer_is_in_an_entry(self):
+        # A new kind of kept answer has to be cleared (and measured) with the rest.
+        root = str(self.cache)
+        for path in (normalize.landing_cache_path(root), normalize.category_cache_path(root, 'c'),
+                     normalize.browse_cache_path(root), normalize.made_for_you_cache_path(root),
+                     normalize.artist_cache_path(root, '1'),
+                     normalize.suggestions_cache_path(root, 'p.1')):
+            entry = os.path.relpath(path, root).split(os.sep)[0]
+            self.assertIn(entry, cache.CACHE_ENTRIES, path)
 
     def test_size_adds_up_the_files_leftovers_included(self):
         self.assertEqual(cache.cache_size(self.cache), self.total)

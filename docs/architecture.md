@@ -48,8 +48,12 @@ touches widgets.
   short playlists pass.
 - **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
   library pages bind the library's stores (Artists is a list beside the library's page of
-  the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow); New, Made for You and Search ask the engine (the
-  first two, and Search's categories, keep its answers in the cache for a day).
+  the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow); New,
+  Made for You and Search ask the engine (the first two, and Search's categories, keep its
+  answers in the cache for a day). A playlist of the user's ends with the songs Apple
+  suggests adding to it (`widgets/suggested_songs.py`, what is shown and asked for next in
+  `suggestions.py`), kept for a day while the playlist holds the same songs; a song plays in
+  full or as Apple's preview, which the bridge plays outside MusicKit's queue.
 - **Library** (`library.py`): the model. GObjects in `Gio.ListStore`s, filled from the cache's
   library.json. It has no GTK, so it is tested without a display. A reload after a sync keeps
   every object still in the library and says what changed through property notifications and
