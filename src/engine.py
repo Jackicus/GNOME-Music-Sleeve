@@ -51,8 +51,9 @@ UI awaits.
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.artist_page(id) # {id, artist, latest, topSongs, shelves}: a catalog artist's
                                  # page, every view of it at once
-    await engine.playlist_suggestions(playlist_id)   # {items}: the songs Apple suggests
-                                                     # adding to a library playlist
+    await engine.playlist_suggestions(playlist_id, limit=16, offered=(), selected=())
+                                 # {items}: the songs Apple suggests adding to a library
+                                 # playlist, none of `offered`; more=True: a few more, unkept
     # The last six are kept under the cache for a day (landing.json, categories/, browse.json,
     # made-for-you.json, artists/, suggestions/) and answered from there without the engine;
     # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
@@ -134,6 +135,7 @@ SEARCH_TIMEOUT = 30.0     # a catalog search, its suggestions, the landing or a 
 BROWSE_TIMEOUT = 60.0     # the editorial groupings: a big answer
 SEARCH_LIMIT = 20         # hits per kind
 SUGGEST_LIMIT = 10        # completions and top hits while typing
+SUGGESTIONS_LIMIT = 16    # a playlist's first suggested songs: the most shown (12), 4 spare
 ACCOUNT_NAME_POLL = 0.5   # the account name is looked for this often while waiting for it
 UNAUTHORIZE_TIMEOUT = 5.0  # MusicKit revoking the session, at sign-out
 
@@ -1687,23 +1689,35 @@ class Engine(GObject.Object):
         return await asyncio.to_thread(normalize.artist_view_items, view, resources,
                                        str(self.cache_dir))
 
-    async def playlist_suggestions(self, playlist_id, refresh=False):
+    async def playlist_suggestions(self, playlist_id, refresh=False, limit=SUGGESTIONS_LIMIT,
+                                   offered=(), selected=(), more=False):
         """The songs Apple suggests adding to a library playlist, as music.apple.com shows
-        them under it: {items} (normalize.playlist_suggestions), song Items in Apple's
-        order, which may include songs the playlist holds already. One read (the bridge's
-        playlistSuggestions()), from <cache>/suggestions/<id>.json for a day, else fetched
-        and kept; `refresh` asks Apple for new ones."""
+        them under it: {items} (normalize.playlist_suggestions), at most `limit` song Items
+        in Apple's order, which may include songs the playlist holds already. One read (the
+        bridge's playlistSuggestions()), from <cache>/suggestions/<id>.json for a day, else
+        fetched and kept; `refresh` asks Apple for new ones, which are kept instead.
+        `offered` (the catalog ids shown so far) and `selected` (those of them added) tell
+        Apple what not to suggest again, as music.apple.com's Refresh does. `more` asks for a
+        few more beside those (nothing kept, nothing read from the file): the demo has none."""
         playlist_id = str(playlist_id or '')
         if not is_library_id(playlist_id):
             raise EngineError('usage', 'playlist_suggestions needs a library playlist id')
+        offered = [str(song_id) for song_id in offered if song_id]
+        selected = [str(song_id) for song_id in selected if song_id]
 
         async def fetch(client):
-            answer = await client.bridge('playlistSuggestions', playlist_id,
-                                         timeout=READ_TIMEOUT)
+            answer = await client.bridge('playlistSuggestions', playlist_id, int(limit),
+                                         offered, selected, timeout=READ_TIMEOUT)
             error = api.api_error(answer, 'suggested songs')
             if error is not None:
                 raise error
             return answer if isinstance(answer, dict) else {}
+        if more:
+            if self.demo:
+                raise EngineError('engine-down', 'the engine is not running')
+            raw = await fetch(await self._require_signed_in('browse'))
+            return await asyncio.to_thread(normalize.playlist_suggestions, raw,
+                                           str(self.cache_dir))
         return await self._kept_answer(
             normalize.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
             normalize.playlist_suggestions)

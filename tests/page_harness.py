@@ -61,6 +61,7 @@ def classes():
             super().__init__()
             self.calls = []
             self.answers = {}
+            self.suggestion_requests = []
             self.start_error = None  # an EngineError a start raises
 
         async def _answer(self, name, *args):
@@ -113,7 +114,14 @@ def classes():
         async def catalog_artist(self, name, song_ids):
             return await self._answer('catalog_artist', name, song_ids)
 
-        async def playlist_suggestions(self, playlist_id, refresh=False):
+        async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
+                                       selected=(), more=False):
+            # Each request's arguments, beside the answer's name in `calls`.
+            self.suggestion_requests.append({'refresh': refresh, 'limit': limit,
+                                             'offered': list(offered),
+                                             'selected': list(selected), 'more': more})
+            if more:
+                return await self._answer('more_suggestions', playlist_id)
             return await self._answer('playlist_suggestions', playlist_id, refresh)
 
     class App(Adw.Application):

@@ -248,7 +248,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 with open(path, encoding='utf-8') as f:
                     answer = json.load(f)
                 self.assertIs(answer['demo'], True)
-                self.assertEqual(len(answer['items']), 12)
+                self.assertEqual(len(answer['items']), 24)
                 held = {entry['catalogId'] for entry in pl['groups'][0]['entries']}
                 for item in answer['items']:
                     self.assertEqual(set(item), set(real))

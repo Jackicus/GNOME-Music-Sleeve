@@ -1506,7 +1506,7 @@ class SuggestionsTest(EngineFixture):
             self.song('1724049301', 'Tin Roof'), self.song('1724049302', 'Low Tide'),
             self.song('1724049301', 'Tin Roof'), {'id': '9', 'type': 'stations'}]}}
         answer = await self.engine.playlist_suggestions('p.pl1')
-        self.assertEqual(self.page.bridge_calls, [('playlistSuggestions', 'p.pl1')])
+        self.assertEqual(self.page.bridge_calls, [('playlistSuggestions', 'p.pl1', 16, [], [])])
         self.assertEqual([item['id'] for item in answer['items']], ['1724049301', '1724049302'])
         song = answer['items'][0]
         self.assertEqual((song['kind'], song['title'], song['subtitle'], song['album']),
@@ -1517,8 +1517,28 @@ class SuggestionsTest(EngineFixture):
         self.assertTrue((self.cache / 'suggestions' / 'p.pl1.json').is_file())
         await self.engine.playlist_suggestions('p.pl1')  # from the file
         self.assertEqual(len(self.page.bridge_calls), 1)
-        await self.engine.playlist_suggestions('p.pl1', refresh=True)
-        self.assertEqual(len(self.page.bridge_calls), 2)
+        await self.engine.playlist_suggestions('p.pl1', refresh=True, limit=10,
+                                               offered=['1724049301', 1724049302],
+                                               selected=['1724049302'])
+        self.assertEqual(self.page.bridge_calls[-1], (
+            'playlistSuggestions', 'p.pl1', 10, ['1724049301', '1724049302'], ['1724049302']))
+
+    async def test_a_few_more_are_neither_read_from_the_file_nor_kept(self):
+        self.page.authorized = True
+        await self.engine.start()
+        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
+            self.song('1724049301', 'Tin Roof')]}}
+        await self.engine.playlist_suggestions('p.pl1')
+        path = self.cache / 'suggestions' / 'p.pl1.json'
+        kept = path.read_text(encoding='utf-8')
+        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
+            self.song('1724049303', 'Weather Vane')]}}
+        answer = await self.engine.playlist_suggestions('p.pl1', limit=4, more=True,
+                                                        offered=['1724049301'])
+        self.assertEqual([item['id'] for item in answer['items']], ['1724049303'])
+        self.assertEqual(self.page.bridge_calls[-1],
+                         ('playlistSuggestions', 'p.pl1', 4, ['1724049301'], []))
+        self.assertEqual(path.read_text(encoding='utf-8'), kept)
 
     async def test_only_a_library_playlist(self):
         self.page.authorized = True
@@ -1543,6 +1563,9 @@ class SuggestionsTest(EngineFixture):
         self.assertEqual((await demo.playlist_suggestions('l.pl001'))['items'], [])
         with self.assertRaises(EngineError) as raised:
             await demo.playlist_suggestions('l.pl002')
+        self.assertEqual(raised.exception.code, 'engine-down')
+        with self.assertRaises(EngineError) as raised:
+            await demo.playlist_suggestions('l.pl001', more=True)
         self.assertEqual(raised.exception.code, 'engine-down')
 
 

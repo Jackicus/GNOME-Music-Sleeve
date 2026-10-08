@@ -124,6 +124,9 @@ parser.add_argument('--sidebar-menu', metavar='KEY',
                     help="pop up the sidebar's context menu for KEY")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
+parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[],
+                    help='set a setting first (VALUE in GVariant text: true, 3, "text"), in '
+                         'the memory backend only; repeatable')
 args = parser.parse_args()
 if args.search:
     args.page = 'search'
@@ -160,6 +163,10 @@ def on_activate(_app):
     if args.signed_in is not None:
         app.settings.set_boolean('signed-in', True)
         app.settings.set_string('account-name', args.signed_in)  # no engine: autostart is off
+    for setting in args.setting:
+        key, _sep, text = setting.partition('=')
+        kind = app.settings.get_value(key).get_type_string()
+        app.settings.set_value(key, GLib.Variant.parse(GLib.VariantType(kind), text))
     GLib.timeout_add(1200, shoot)
 
 

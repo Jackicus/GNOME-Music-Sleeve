@@ -33,6 +33,11 @@
       <summary>Show what you are listening to on Discord</summary>
       <description>Whether the title, artist and album of the playing track, and the address of its cover on Apple's servers, are sent to a running Discord as rich presence, so they show on your profile as listening to Apple Music. Nothing is sent while this is off, and nothing is sent when Discord is not running. No account information ever leaves the app.</description>
     </key>
+    <key name="more-suggestions" type="b">
+      <default>false</default>
+      <summary>Show twelve suggested songs under a playlist</summary>
+      <description>Whether a playlist's Suggested Songs show twelve songs at a time instead of six. The songs come from Apple Music; one added to the playlist gives its place to the next.</description>
+    </key>
     <key name="browser-command" type="s">
       <default>'google-chrome-stable'</default>
       <summary>Browser program</summary>

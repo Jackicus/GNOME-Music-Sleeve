@@ -27,6 +27,16 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
       }
     }
 
+    // What a playlist's Suggested Songs show (pages/detail.py).
+    Adw.PreferencesGroup {
+      title: _("Suggested Songs");
+
+      Adw.SwitchRow more_suggestions_row {
+        title: _("Show More Suggestions");
+        subtitle: _("Twelve songs under a playlist instead of six");
+      }
+    }
+
     Adw.PreferencesGroup {
       title: _("Library");
 
