@@ -78,6 +78,26 @@ def song_caption(item):
     return ' · '.join(part for part in parts if part)
 
 
+def suggestion_label(item):
+    """A suggested song's row name: its title, its artist and its album when known, and
+    "explicit" for explicit lyrics, as track_label() words a track."""
+    label = item.title
+    album = item.raw.get('album') if isinstance(item.raw, dict) else None
+    for part in (item.subtitle, album):
+        if part:
+            label = _format('part').format(label=label, part=part)
+    if item.explicit:
+        label = _format('explicit').format(label=label)
+    return label
+
+
+def suggestion_caption(item):
+    """A suggested song's second line: its artist and its album ("Artist · Album"), or
+    whichever it has."""
+    parts = [item.subtitle or '', item.raw.get('album') or '']
+    return ' · '.join(part for part in parts if part)
+
+
 def flow_child(widget, label):
     """A Gtk.FlowBoxChild holding widget, named `label` for assistive technology (a flow box's
     children are not list items: their name is set on the child)."""

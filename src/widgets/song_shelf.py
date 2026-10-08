@@ -2,16 +2,16 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """AppleMusicSongShelf: a titled grid of songs, three rows high, scrolling sideways (an
-artist's Top Songs); AppleMusicSongRow: one song in it."""
+artist's Top Songs, a playlist's Suggested Songs); AppleMusicSongRow: one song in it."""
 
 from gettext import gettext as _
 from gettext import pgettext as C_
 
-from gi.repository import Gtk, Pango
+from gi.repository import GObject, Gtk, Pango
 
 from . import context_menu
 from .cover import Cover
-from .labels import song_caption, song_label
+from .labels import song_caption, song_label, suggestion_caption, suggestion_label
 from .shelf import PagedRow
 from .util import connect_weak
 
@@ -22,14 +22,16 @@ COVER_SIZE = 48
 
 class SongRow(Gtk.Box):
     """A song in the grid: its album's cover, its title (with the explicit badge) and its
-    album and year. bind(item) and unbind() as the grid recycles it; it follows the Item for
-    a thumbnail that arrives later (notify::thumb)."""
+    album and year; with `adds`, its artist and album, and an Add button (`add_button`) at
+    the end. bind(item) and unbind() as the grid recycles it; it follows the Item for a
+    thumbnail that arrives later (notify::thumb)."""
 
     __gtype_name__ = 'AppleMusicSongRow'
 
-    def __init__(self):
+    def __init__(self, adds=False):
         super().__init__(spacing=12, width_request=ROW_WIDTH)
         self.add_css_class('song-row')
+        self._adds = adds
         self._item = None
         self._handler = None
         self.cover = Cover(size=COVER_SIZE, valign=Gtk.Align.CENTER,
@@ -57,6 +59,14 @@ class SongRow(Gtk.Box):
         self.caption.add_css_class('dimmed')
         text.append(self.caption)
         self.append(text)
+        self.add_button = None
+        if adds:
+            self.add_button = Gtk.Button(icon_name='list-add-symbolic',
+                                         tooltip_text=_('Add to Playlist'),
+                                         valign=Gtk.Align.CENTER)
+            self.add_button.add_css_class('flat')
+            self.add_button.add_css_class('circular')
+            self.append(self.add_button)
 
     @property
     def context_item(self):
@@ -71,7 +81,7 @@ class SongRow(Gtk.Box):
         self._handler = connect_weak(item, 'notify::thumb', self._on_thumb)
         self.title.set_text(item.title)
         self.badge.set_visible(item.explicit)
-        self.caption.set_text(song_caption(item))
+        self.caption.set_text(suggestion_caption(item) if self._adds else song_caption(item))
         self.cover.set_paths(item.thumb, item.art)
 
     def unbind(self):
@@ -95,11 +105,23 @@ class SongShelf(PagedRow, Gtk.Box):
 
     Activating a song plays them all from it, in their order, as music.apple.com does: a
     queue of their ids ({kind: songs}) started at that song (window.play_request); a right
-    click, a long press or the Menu key opens its context menu."""
+    click, a long press or the Menu key opens its context menu.
+
+    offer_suggestions(subtitle), before a shelf is bound, makes it a playlist's Suggested
+    Songs: the subtitle under the title, a Refresh button (`refresh`), an Add button on
+    every song (`add-song`, with its Item), no See All, and a song activated plays alone."""
 
     __gtype_name__ = 'AppleMusicSongShelf'
 
+    __gsignals__ = {
+        'add-song': (GObject.SignalFlags.RUN_FIRST, None, (GObject.Object,)),
+        'refresh': (GObject.SignalFlags.RUN_FIRST, None, ()),
+    }
+
+    header_box = Gtk.Template.Child()
     title_label = Gtk.Template.Child()
+    subtitle_label = Gtk.Template.Child()
+    refresh_button = Gtk.Template.Child()
     previous_button = Gtk.Template.Child()
     next_button = Gtk.Template.Child()
     see_all_button = Gtk.Template.Child()
@@ -108,6 +130,7 @@ class SongShelf(PagedRow, Gtk.Box):
 
     shelf = None
     _see_all = True
+    _suggestions = False  # offer_suggestions()
     _followed = None  # (items, handler id)
 
     def __init__(self, **kwargs):
@@ -119,9 +142,25 @@ class SongShelf(PagedRow, Gtk.Box):
         self.grid_view.set_factory(factory)
         connect_weak(self.grid_view, 'activate', self._on_activate)
         connect_weak(self.see_all_button, 'clicked', self._on_see_all_clicked)
+        connect_weak(self.refresh_button, 'clicked', self._on_refresh_clicked)
         self._connect_controls()
         self._row = self.grid_view
         context_menu.attach(self.grid_view)
+
+    def offer_suggestions(self, subtitle):
+        """Show suggestions to add (see the class): call it before the first bind_shelf()."""
+        self._suggestions = True
+        self._see_all = False
+        self.subtitle_label.set_label(subtitle)
+        self.subtitle_label.set_visible(bool(subtitle))
+        self.refresh_button.set_visible(True)
+
+    def set_inset(self):
+        """For a shelf in a row that keeps the page's margins already (a track list's): no
+        side margins of its own, the header's or the grid's (style.css's `inset`)."""
+        self.header_box.set_margin_start(0)
+        self.header_box.set_margin_end(0)
+        self.add_css_class('inset')
 
     def bind_shelf(self, shelf):
         if shelf is self.shelf:
@@ -151,12 +190,26 @@ class SongShelf(PagedRow, Gtk.Box):
         self._update_controls()
 
     def _on_setup(self, _factory, list_item):
-        list_item.set_child(SongRow())
+        row = SongRow(adds=self._suggestions)
+        if row.add_button is not None:
+            connect_weak(row.add_button, 'clicked', self._on_add_clicked)
+        list_item.set_child(row)
+
+    def _on_add_clicked(self, button):
+        # The row is found from the button: an argument its handler held would keep the
+        # row alive through its own child.
+        row = button.get_parent()
+        if isinstance(row, SongRow) and row.context_item is not None:
+            self.emit('add-song', row.context_item)
+
+    def _on_refresh_clicked(self, _button):
+        self.emit('refresh')
 
     def _on_bind(self, _factory, list_item):
         item = list_item.get_item()
         list_item.get_child().bind(item)
-        list_item.set_accessible_label(song_label(item))
+        list_item.set_accessible_label(
+            suggestion_label(item) if self._suggestions else song_label(item))
 
     def _on_unbind(self, _factory, list_item):
         list_item.get_child().unbind()
@@ -168,7 +221,11 @@ class SongShelf(PagedRow, Gtk.Box):
 
     def _on_activate(self, _grid_view, position):
         item = self.shelf.items.get_item(position) if self.shelf is not None else None
-        if item is not None:
+        if item is None:
+            return
+        if self._suggestions:
+            self.get_root().play_request(item.play)
+        else:
             self.get_root().play_request(self.queue(), start_with=position, start_id=item.id)
 
     def _on_see_all_clicked(self, _button):

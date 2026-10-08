@@ -136,6 +136,7 @@ def _classes():
             super().__init__()
             self.calls = []
             self.artist_answer = None  # what artist_page() answers: engine-down while None
+            self.suggestions = None  # what playlist_suggestions() answers, the same way
 
         async def start(self, visible=None):
             self.calls.append('start')
@@ -157,6 +158,12 @@ def _classes():
             if self.artist_answer is None:
                 raise EngineError('engine-down')
             return self.artist_answer
+
+        async def playlist_suggestions(self, playlist_id, refresh=False):
+            self.calls.append('playlist_suggestions')
+            if self.suggestions is None:
+                raise EngineError('engine-down')
+            return self.suggestions
 
     class LibrarySync(GObject.Object):
         """The app's sync as the dialogs see it: never running."""
@@ -477,6 +484,23 @@ class PageLifetimeTest(WidgetTestCase):
         item = Item(dict(_album(1, tracks=12), kind='playlist'))
         refs = await self.pushed_and_popped(DetailPage(self.library, item), TrackRow,
                                             TrackLink, TrackTableHeader)
+        await self.assert_freed(*refs)
+
+    async def test_playlist_page_with_suggestions(self):
+        # A playlist's Suggested Songs: the shelf, its rows with their Add buttons.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.widgets.song_shelf import SongRow, SongShelf
+
+        self.app.engine.suggestions = {'items': [
+            {'id': str(3000 + number), 'kind': 'song', 'title': f'Suggested {number}',
+             'subtitle': 'Other Artist', 'art': None, 'thumb': None,
+             'play': {'kind': 'song', 'id': str(3000 + number)}, 'groups': []}
+            for number in range(6)]}
+        self.addCleanup(setattr, self.app.engine, 'suggestions', None)
+        item = Item(dict(_album(1, tracks=3), kind='playlist'))
+        refs = await self.pushed_and_popped(DetailPage(self.library, item), SongShelf,
+                                            SongRow)
         await self.assert_freed(*refs)
 
     async def test_artist_page(self):

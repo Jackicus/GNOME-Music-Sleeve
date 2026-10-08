@@ -467,6 +467,32 @@ class BridgeTest(unittest.TestCase):
              {'term': 'harb', 'kinds': 'terms,topResults',
               'types': 'albums,artists,music-videos,playlists,songs,stations', 'limit': 10}]])
 
+    @scenario("""
+        mk.writeStatus = 200;
+        mk.writeBody = JSON.stringify({results: {suggested: [{id: '1000000101', type: 'songs'}]}});
+        const answer = await bridge.playlistSuggestions('p.pl1');
+        mk.writeBody = '';
+        const empty = await bridge.playlistSuggestions('p.pl1');
+        mk.writeStatus = 404;
+        let refused = null;
+        try { await bridge.playlistSuggestions('p.pl1'); } catch (error) {
+            refused = String(error);
+        }
+        return {answer, empty, refused, calls: mk.calls};
+    """)
+    def test_playlist_suggestions_post_the_playlist(self, value):
+        self.assertEqual(value['answer'],
+                         {'results': {'suggested': [{'id': '1000000101', 'type': 'songs'}]}})
+        self.assertEqual(value['empty'], {})
+        self.assertIn('HTTP 404', value['refused'])
+        self.assertEqual(value['calls'][0], [
+            'request', '/v1/me/recommendations/suggested',
+            {'params': {'platform': 'web', 'omit[resource]': 'autos',
+                        'contexts': 'playlist-suggested-songs', 'types': 'songs',
+                        'include[songs]': 'artists', 'limit': 20},
+             'method': 'POST',
+             'body': {'targetContent': {'id': 'p.pl1', 'type': 'library-playlists'}}}])
+
     # -- writes ----------------------------------------------------------------------------
 
     @scenario("""

@@ -30,7 +30,9 @@ Apple's catalog would answer for it (artists/<catalog id>.json, the shape
 normalize.artist_page() gives: its top songs, latest release and shelves, made
 of the demo's own albums, songs and videos and a few invented singles,
 playlists, radio episodes and interviews), which the demo engine answers
-from. The other keys the app's sync adds
+from, and each playlist the songs Apple would suggest adding to it
+(suggestions/<playlist id>.json, normalize.playlist_suggestions()'s shape:
+twelve of the demo's own songs it does not hold). The other keys the app's sync adds
 (sections.songs, artUrl) are optional and left out: the demo has no loose
 songs and nothing to fetch.
 Uses only Python stdlib and PyGObject / Cairo (no pip dependencies).
@@ -2135,10 +2137,11 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
         'folders': build_folders([playlist['id'] for playlist in playlists]),
     }
 
-    # 7. The catalog's page of each hand-written artist, after the rest, with a random source
-    # of its own, so nothing above changes.
+    # 7. The catalog's page of each hand-written artist and each playlist's suggested songs,
+    # after the rest, each with a random source of its own, so nothing above changes.
     build_artist_pages(out_dir, artists_data[:len(ARTISTS_DATA)], artists, artist_albums_map,
                        albums, videos, draw_cover, thumb_for, cover_size, library['generated'])
+    build_suggestions(out_dir, playlists, albums, library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
 
@@ -2151,6 +2154,40 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
         f'{len(playlists)} playlists, {len(radio_stations)} radio stations, '
         f'{len(videos)} music videos in {out_dir}'
     )
+
+
+def build_suggestions(out_dir, playlists, albums, generated):
+    """Write suggestions/<playlist id>.json for each playlist: the songs Apple would suggest
+    adding to it (normalize.playlist_suggestions()'s shape, kept as the engine keeps it),
+    twelve of the library's songs it does not hold, its genre's first."""
+    rnd = random.Random(37)
+    out = os.path.join(out_dir, 'suggestions')
+    os.makedirs(out, exist_ok=True)
+    for playlist in playlists:
+        held = {entry['catalogId'] for group in playlist['groups'] for entry in group['entries']}
+        same, other = [], []
+        for album in albums:
+            for group in album['groups']:
+                for track in group['entries']:
+                    if track['catalogId'] in held:
+                        continue
+                    (same if album['genre'] == playlist['genre'] else other).append(
+                        (track, album))
+        picks = rnd.sample(same, min(12, len(same)))
+        picks += rnd.sample(other, min(12 - len(picks), len(other)))
+        items = [{'id': track['catalogId'], 'kind': 'song', 'title': track['title'],
+                  'subtitle': track['artist'], 'artistName': track['artist'],
+                  'album': album['title'], 'year': album['year'], 'genre': album['genre'],
+                  'summary': None,
+                  'art': album['art'], 'thumb': album['thumb'], 'artColor': album['artColor'],
+                  'explicit': track['explicit'], 'durationMs': track['durationMs'],
+                  'catalogId': track['catalogId'], 'url': None,
+                  'play': {'kind': 'song', 'id': track['catalogId']}, 'groups': []}
+                 for track, album in picks]
+        answer = {'items': items, 'cached': generated,
+                  'demo': True}  # invented: the demo engine answers only these
+        with open(os.path.join(out, f"{playlist['id']}.json"), 'w', encoding='utf-8') as f:
+            json.dump(answer, f, indent=2)
 
 
 def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums, videos,

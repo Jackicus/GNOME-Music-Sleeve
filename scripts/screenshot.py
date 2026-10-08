@@ -381,8 +381,11 @@ def draw_popovers(window, snapshot):
 
 
 def scroll_page(window):
-    """Scroll the visible page's first vertically scrolling scrolled window by args.scroll."""
+    """Scroll the visible page's first vertically scrolling scrolled window that is shown by
+    args.scroll (not one in a stack's hidden child: an empty state's status page has one)."""
     def find(widget):
+        if not widget.get_mapped():
+            return None
         if isinstance(widget, Gtk.ScrolledWindow) and \
                 widget.props.vscrollbar_policy != Gtk.PolicyType.NEVER:
             return widget

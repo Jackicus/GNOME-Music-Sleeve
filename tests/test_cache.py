@@ -29,6 +29,7 @@ class CacheTest(unittest.TestCase):
             'made-for-you.json': 10, 'art/l.alb1.jpg': 1000, 'art/.sizes': 20,
             'thumb/l.alb1.jpg': 300, 'remote-art/abc.jpg': 400, 'items/album-1.json': 50,
             'lyrics/1000000001.json': 30, 'categories/c1.json': 40,
+            'suggestions/p.pl1.json': 20,
             # Writes that never finished: an older version's temporary name, and store.py's.
             'library.json.tmp': 60, '.a1b2c3.tmp': 7, 'lyrics/.d4e5.tmp': 3,
             # Not the app's.

@@ -4,11 +4,12 @@
 using Gtk 4.0;
 
 // A shelf's title row over a grid of songs three rows high that scrolls sideways, as an
-// artist's Top Songs on music.apple.com: the songs run down each column, then on to the next.
+// artist's Top Songs or a playlist's Suggested Songs on music.apple.com: the songs run down
+// each column, then on to the next.
 template $AppleMusicSongShelf: Box {
   orientation: vertical;
 
-  Box {
+  Box header_box {
     spacing: 6;
     margin-start: 24;
     margin-end: 14;
@@ -17,14 +18,42 @@ template $AppleMusicSongShelf: Box {
       "shelf-header",
     ]
 
-    Label title_label {
-      xalign: 0;
+    Box {
+      orientation: vertical;
       valign: center;
       hexpand: true;
-      ellipsize: end;
+
+      Label title_label {
+        xalign: 0;
+        ellipsize: end;
+
+        styles [
+          "title-2",
+        ]
+      }
+
+      // A line under the title (what a playlist's Suggested Songs are), when set.
+      Label subtitle_label {
+        xalign: 0;
+        wrap: true;
+        visible: false;
+
+        styles [
+          "dimmed",
+        ]
+      }
+    }
+
+    // Asks for other songs (a playlist's Suggested Songs), when offered.
+    Button refresh_button {
+      icon-name: "view-refresh-symbolic";
+      tooltip-text: _("Suggest Other Songs");
+      valign: center;
+      visible: false;
 
       styles [
-        "title-2",
+        "flat",
+        "circular",
       ]
     }
 

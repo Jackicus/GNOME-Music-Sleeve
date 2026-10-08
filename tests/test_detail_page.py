@@ -357,6 +357,125 @@ def _controllers(widget):
     return [model.get_item(position) for position in range(model.get_n_items())]
 
 
+def suggestion(number):
+    """An invented song as Engine.playlist_suggestions answers one."""
+    song_id = str(2000 + number)
+    return {'id': song_id, 'kind': 'song', 'title': f'Suggested Song {number}',
+            'subtitle': 'Other Artist', 'album': 'Other Album', 'art': None, 'thumb': None,
+            'catalogId': song_id, 'play': {'kind': 'song', 'id': song_id}, 'groups': []}
+
+
+class SuggestionsTest(PageTestCase):
+    """A playlist's Suggested Songs: asked once for a playlist the user can change, less the
+    songs it holds, played, added and refreshed from the shelf."""
+
+    def playlist(self):
+        data = album(1, tracks=3, kind='playlist')
+        data['groups'][0]['entries'][1]['catalogId'] = '2001'  # suggestion 1, held already
+        return data
+
+    async def show(self, data, answer=None):
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        if answer is not None:
+            self.app.engine.answers['playlist_suggestions'] = answer
+        self.item = Item(data)
+        page = await self.push(DetailPage(self.library, self.item))
+        await self.settle()
+        return page
+
+    def shown(self, page):
+        return [item.id for item in page._suggestions.items]
+
+    def test_which_playlists_and_songs(self):
+        from applemusic.library import Item
+        from applemusic.pages.detail import held_songs, suggested_items, wants_suggestions
+
+        self.assertTrue(wants_suggestions(Item({'id': 'p.1', 'kind': 'playlist'})))
+        for data in ({'id': 'pl.u-1', 'kind': 'playlist'}, {'id': 'l.1', 'kind': 'album'},
+                     {'id': 'p.2', 'kind': 'playlist', 'attributes': {'isFavourites': True}},
+                     {'id': 'p.3', 'kind': 'playlist', 'attributes': {'canEdit': False}}):
+            self.assertFalse(wants_suggestions(Item(data)), data)
+        self.assertFalse(wants_suggestions(None))
+        playlist = Item(self.playlist())
+        self.assertEqual(held_songs(playlist), {
+            'l.playlist001.t1.0', 'l.playlist001.t1.1', '2001', 'l.playlist001.t1.2'})
+        items = [Item(suggestion(number)) for number in range(4)]
+        self.assertEqual([item.id for item in suggested_items(items, {'2001'}, {'2003'})],
+                         ['2000', '2002'])
+
+    async def test_shown_after_the_tracks_less_what_the_playlist_holds(self):
+        page = await self.show(self.playlist(),
+                               {'items': [suggestion(number) for number in range(4)]})
+        self.assertEqual(self.app.engine.calls, ['playlist_suggestions'])
+        self.assertEqual(self.shown(page), ['2000', '2002', '2003'])
+        self.assertEqual(page._rows.get_n_items(), 1 + 3 + 1)  # hero, tracks, suggestions
+        self.assertTrue(await self.until(lambda: page.suggestions_shelf.get_mapped()))
+        shelf = page.suggestions_shelf
+        self.assertEqual(shelf.title_label.get_label(), 'Suggested Songs')
+        self.assertTrue(shelf.subtitle_label.get_visible())
+        self.assertTrue(shelf.refresh_button.get_visible())
+        self.assertFalse(shelf.see_all_button.get_visible())
+        # A song plays alone.
+        shelf.grid_view.emit('activate', 1)
+        self.assertEqual(self.window.played[-1], ({'kind': 'song', 'id': '2002'}, None, None))
+        # Added: through the item actions, and out of the suggestions.
+        shelf.emit('add-song', shelf.shelf.items.get_item(0))
+        self.assertEqual(self.window.item_actions.added,
+                         [('l.playlist001', '2000', 'Suggested Song 0')])
+        self.assertEqual(self.shown(page), ['2002', '2003'])
+        # Refresh asks Apple again.
+        self.app.engine.answers['playlist_suggestions'] = lambda _id, refresh: (
+            {'items': [suggestion(5)]} if refresh else {'items': []})
+        shelf.refresh_button.emit('clicked')
+        await self.settle()
+        self.assertEqual(self.shown(page), ['2005'])
+
+    async def test_the_add_buttons_and_the_names(self):
+        page = await self.show(self.playlist(), {'items': [suggestion(0)]})
+        self.assertTrue(await self.until(lambda: page.suggestions_shelf.get_mapped()))
+        grid = page.suggestions_shelf.grid_view
+        self.assertTrue(await self.until(lambda: grid.get_first_child() is not None))
+        row = grid.get_first_child().get_first_child()
+        self.assertEqual(row.caption.get_text(), 'Other Artist · Other Album')
+        self.assertEqual(row.add_button.get_tooltip_text(), 'Add to Playlist')
+        row.add_button.emit('clicked')
+        self.assertEqual(self.window.item_actions.added,
+                         [('l.playlist001', '2000', 'Suggested Song 0')])
+        self.assertEqual(self.shown(page), [])
+        self.assertEqual(page._rows.get_n_items(), 4)  # none left: the section goes
+
+    async def test_none_when_the_engine_cannot_answer_or_for_an_album(self):
+        page = await self.show(self.playlist())  # the stand-in engine is down
+        self.assertEqual(self.app.engine.calls, ['playlist_suggestions'])
+        self.assertEqual(page._rows.get_n_items(), 4)
+        self.assertIsNone(page._suggestions_start)
+        self.assertIsNone(page.suggestions_shelf)  # made only when there are suggestions
+        self.app.engine.calls.clear()
+        await self.show(album(2), {'items': [suggestion(0)]})
+        self.assertEqual(self.app.engine.calls, [])
+
+    async def test_tab_from_a_track_reaches_them_and_back(self):
+        from gi.repository import Gdk
+
+        page = await self.show(self.playlist(), {'items': [suggestion(0)]})
+        self.assertTrue(await self.until(lambda: len(page._bound) == 3))
+        track_item = next(item for item in page._bound if item.get_item().index == 2)
+        track_item.get_child().get_parent().grab_focus()
+        handled = page._on_list_key_pressed(None, Gdk.KEY_Tab, 0, 0)
+        self.assertTrue(handled)
+        await self.turn()
+        self.assertIs(self.window.get_focus(), page.suggestions_shelf.refresh_button)
+        handled = page._on_list_key_pressed(None, Gdk.KEY_ISO_Left_Tab, 0,
+                                            Gdk.ModifierType.SHIFT_MASK)
+        self.assertTrue(handled)
+        await self.turn()
+        focus = self.window.get_focus()  # the last track's list item
+        self.assertIsNotNone(focus)
+        self.assertIs(focus.get_first_child().track_row.context_item.index, 2)
+
+
 class ArtistPageTest(PageTestCase):
     """The artist page over the catalog's answer (Engine.artist_page), and without it."""
 
