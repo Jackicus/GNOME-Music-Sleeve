@@ -168,7 +168,10 @@ A playlist's suggested songs (`Engine.playlist_suggestions()`,
 (with their `album`), in Apple's order, each once. Apple may suggest a song the playlist
 holds; the playlist page leaves those out. The first answer (16 songs: the most a page
 shows, twelve, and four spare) is kept for a day; a Refresh's replaces it; `more=True`
-asks for a few more beside them, unkept.
+asks for a few more beside them, unkept. Each kept answer carries `basis`, the page's
+`suggestions.basis()` of the songs the playlist held when it was asked: one kept for other
+songs (one added or removed since, here or elsewhere and synced) is not fresh, and Apple is
+asked again; it is answered `stale` only when Apple cannot be asked.
 
 The app shows none of the data's own words: a missing name is '', the app names shelves by
 key, writes the captions from the counts and titles an album's discs from `discNumber`. A song without an album of its own sits under a stand-in album
@@ -188,7 +191,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `artists/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day; an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `artists/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 `normalize.prune_caches()` runs after the library's first load and after every sync; it also
 removes what older versions kept (`items/`) and temporary files over an hour old.

@@ -455,6 +455,31 @@ class SuggestionsTest(PageTestCase):
         rows[0].add_button.emit('clicked')
         self.assertEqual(self.shown(page)[0], '2020')
 
+    async def test_asked_for_what_the_playlist_holds_and_not_again_after_an_add(self):
+        from applemusic.pages.detail import held_songs
+        from applemusic.suggestions import basis
+
+        page = await self.show(self.playlist(), self.answer(range(12)))
+        held = basis(held_songs(self.item))
+        self.assertEqual(self.app.engine.suggestion_requests[0]['basis'], held)
+        # A song added: the playlist is fetched again and shows it, and the open page keeps
+        # its suggestions (the next page shown asks again, for the new basis).
+        page.suggested_songs.grid.rows[0].add_button.emit('clicked')
+        data = self.playlist()
+        data['groups'][0]['entries'].append(dict(data['groups'][0]['entries'][0],
+                                                 id='l.playlist001.t1.3', catalogId='2000'))
+        self.item.merge(data)
+        await self.settle()
+        self.assertEqual(self.app.engine.calls.count('playlist_suggestions'), 1)
+        self.assertEqual(self.shown(page)[0], '2007')
+        # A Refresh asks for what the playlist holds now.
+        page.suggested_songs.refresh_button.emit('clicked')
+        await self.settle()
+        request = next(request for request in self.app.engine.suggestion_requests
+                       if request['refresh'])
+        self.assertNotEqual(request['basis'], held)
+        self.assertEqual(request['basis'], basis(held_songs(self.item)))
+
     async def test_with_no_spares_a_place_is_given_up(self):
         page = await self.show(self.playlist(), self.answer([0]))
         self.assertEqual(self.app.engine.calls, ['playlist_suggestions', 'more_suggestions'])

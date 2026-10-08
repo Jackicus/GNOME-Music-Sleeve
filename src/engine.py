@@ -57,7 +57,9 @@ UI awaits.
     # The last six are kept under the cache for a day (landing.json, categories/, browse.json,
     # made-for-you.json, artists/, suggestions/) and answered from there without the engine;
     # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
-    # than a day, answered when Apple cannot be asked, carries `stale: True` too.
+    # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
+    # suggestions are kept with `basis`, what the playlist held, and asked again once it
+    # holds something else.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
                                                   # for, found through its songs, or None
@@ -232,10 +234,13 @@ def _raise_api_errors(answer, what):
         raise error
 
 
-def _shape_and_keep(shaper, raw, path, cache_dir, generation):
-    """In a thread: `shaper(raw, cache_dir)`'s answer, kept at `path` (stamped `cached`)
-    unless the cache was cleared since `generation`."""
-    return normalize.write_answer(path, shaper(raw, cache_dir), cache_dir, generation)
+def _shape_and_keep(shaper, raw, path, cache_dir, generation, basis=None):
+    """In a thread: `shaper(raw, cache_dir)`'s answer, kept at `path` (stamped `cached`, and
+    `basis` when there is one) unless the cache was cleared since `generation`."""
+    answer = shaper(raw, cache_dir)
+    if basis is not None:
+        answer = dict(answer, basis=basis)
+    return normalize.write_answer(path, answer, cache_dir, generation)
 
 
 async def _read_pages(read, path, params, page, limit, progress, concurrency):
@@ -1570,13 +1575,16 @@ class Engine(GObject.Object):
         _raise_api_errors(raw, 'suggestions')
         return await asyncio.to_thread(normalize.search_suggestions, raw, str(self.cache_dir))
 
-    async def _kept_answer(self, path, refresh, fetch, shaper):
+    async def _kept_answer(self, path, refresh, fetch, shaper, basis=None):
         """A day-long answer, kept at `path`: from the file while it is younger than
         normalize.ANSWER_MAX_AGE (no engine needed) unless `refresh`, else `await
         fetch(client)`'s raw answer, shaped by `shaper(raw, cache_dir)` in a thread and kept
         there, stamped `cached`. When Apple cannot be asked (the engine down or signed out,
         the page or the network failing), an older answer kept there is answered instead,
-        marked `stale: True`; with none, or on a refresh, the error. Demo mode has none of
+        marked `stale: True`; with none, or on a refresh, the error. With a `basis` (what the
+        answer was asked about, as a string), the answer is kept with it, and one kept with
+        another is not fresh, whatever its age: Apple is asked again (and the old one is
+        still answered, stale, when Apple cannot be asked). Demo mode has none of
         Apple's answers: only an invented one the demo library wrote there (marked `demo`), at
         any age, else 'engine-down'."""
         if self.demo:
@@ -1588,7 +1596,7 @@ class Engine(GObject.Object):
         generation = store.cache_generation()
         if not refresh:
             kept = await asyncio.to_thread(cache.read_kept, path)
-            if kept is not None:
+            if kept is not None and (basis is None or kept.get('basis') == basis):
                 return kept
         try:
             client = await self._require_signed_in('browse')
@@ -1599,10 +1607,12 @@ class Engine(GObject.Object):
                 stale = await asyncio.to_thread(cache.read_kept, path, allow_stale=True)
             if stale is None:
                 raise
-            log.info('answering a kept answer older than a day: %s', error)
+            if basis is not None and stale.get('basis') != basis:
+                stale['stale'] = True  # young, but for what the playlist held before
+            log.info('answering a kept answer no longer fresh: %s', error)
             return stale
         return await asyncio.to_thread(_shape_and_keep, shaper, raw, path,
-                                       str(self.cache_dir), generation)
+                                       str(self.cache_dir), generation, basis)
 
     async def landing(self, refresh=False):
         """The search page's Browse Categories: {categories: [{id, kind: 'category', title,
@@ -1690,12 +1700,14 @@ class Engine(GObject.Object):
                                        str(self.cache_dir))
 
     async def playlist_suggestions(self, playlist_id, refresh=False, limit=SUGGESTIONS_LIMIT,
-                                   offered=(), selected=(), more=False):
+                                   offered=(), selected=(), more=False, basis=None):
         """The songs Apple suggests adding to a library playlist, as music.apple.com shows
         them under it: {items} (normalize.playlist_suggestions), at most `limit` song Items
         in Apple's order, which may include songs the playlist holds already. One read (the
         bridge's playlistSuggestions()), from <cache>/suggestions/<id>.json for a day, else
-        fetched and kept; `refresh` asks Apple for new ones, which are kept instead.
+        fetched and kept; `refresh` asks Apple for new ones, which are kept instead. `basis`
+        names what the playlist holds (suggestions.basis()): an answer kept for another, the
+        playlist changed since, is asked for again.
         `offered` (the catalog ids shown so far) and `selected` (those of them added) tell
         Apple what not to suggest again, as music.apple.com's Refresh does. `more` asks for a
         few more beside those (nothing kept, nothing read from the file): the demo has none."""
@@ -1720,7 +1732,7 @@ class Engine(GObject.Object):
                                            str(self.cache_dir))
         return await self._kept_answer(
             normalize.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
-            normalize.playlist_suggestions)
+            normalize.playlist_suggestions, basis=basis)
 
     async def catalog_artist(self, name, song_ids):
         """The id of the catalog artist a library artist stands for, or None. The library

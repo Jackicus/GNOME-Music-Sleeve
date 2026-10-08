@@ -40,6 +40,7 @@ from ..backend.errors import EngineError
 from ..library import Item, ShelfModel, Track
 from ..related import catalog_target
 from ..suggestions import SPARES, Suggestions
+from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
 from ..remote import fetch_cover, fetch_shelf_art, remote_item
 from ..widgets import context_menu, track_links
@@ -497,14 +498,17 @@ class DetailPage(Adw.NavigationPage):
     async def _load_suggestions(self, item, suggestions, refresh):
         """The first answer (kept for a day), or a Refresh's: new songs, none of those
         offered so far, as many as are shown and SPARES more. A Refresh Apple cannot answer
-        shows the next spares instead, when there are some."""
+        shows the next spares instead, when there are some. The answer kept is for what the
+        playlist holds now (suggestion_basis): once it holds other songs, it is asked again."""
+        basis = suggestion_basis(held_songs(item))
         try:
             if refresh:
                 answer = await app().engine.playlist_suggestions(
                     item.id, refresh=True, limit=suggestions.count + SPARES,
-                    offered=list(suggestions.offered), selected=list(suggestions.selected))
+                    offered=list(suggestions.offered), selected=list(suggestions.selected),
+                    basis=basis)
             else:
-                answer = await app().engine.playlist_suggestions(item.id)
+                answer = await app().engine.playlist_suggestions(item.id, basis=basis)
         except EngineError as error:
             log.info('suggestions for playlist %s: %s', item.id, error)
             if (refresh and self.item is item and self._suggestions is suggestions
