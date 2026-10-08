@@ -64,35 +64,35 @@
   <screenshots>
     <screenshot type="default" environment="gnome">
       <caption>Home: your heavy rotation and what you added recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/home-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/home-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Your albums in a grid, sorted the way you choose</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/albums-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/albums-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/album-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/album-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Now Playing, with the lyrics following the song</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/now-playing-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/now-playing-light.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Home: your heavy rotation and what you added recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/home-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/home-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Your albums in a grid, sorted the way you choose</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/albums-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/albums-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/album-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/album-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Now Playing, with the lyrics following the song</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.11.0/data/screenshots/now-playing-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v0.12.0/data/screenshots/now-playing-dark.png</image>
     </screenshot>
   </screenshots>
 
@@ -102,6 +102,22 @@
   </branding>
 
   <releases>
+    <release version="0.12.0" date="2026-10-08">
+      <description>
+        <p>
+          Your playlists managed from the app, your library's artists as Apple Music's
+          library shows them, and songs suggested for the playlists you make.
+        </p>
+        <ul>
+          <li>New Playlist, Rename, Delete and Remove from Playlist; playlists and folders listed as Apple Music lists them, folders first, each by title; Add to Playlist offers each folder as a submenu of what it holds</li>
+          <li>Artists lists the artists in your library beside what you have of each, and an artist's menu opens their page on Apple Music</li>
+          <li>Suggested Songs under a playlist you can edit: six songs Apple Music suggests, or twelve, each with a button to add it; Refresh asks for new ones, and an added song's place is filled at once</li>
+          <li>A suggested song plays in full, or as a 30-second preview that leaves your queue as it was</li>
+          <li>Refreshing the library skips the playlists that have not changed</li>
+          <li>A column of the Songs table dragged wider or narrower follows the pointer and keeps its width</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.11.0" date="2026-10-02">
       <description>
         <p>
