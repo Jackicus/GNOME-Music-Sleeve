@@ -44,7 +44,7 @@ RELAY = pathlib.Path(__file__).parent / 'fake_chrome_relay.py'
 PLAYBACK_METHODS = ('signout', 'play', 'playNext', 'playLater', 'control', 'seek', 'volume',
                     'shuffle',
                     'repeat', 'nowPlaying', 'queue', 'queueJump', 'lyrics',
-                    'search', 'suggest', 'searchLanding', 'category',
+                    'search', 'suggest', 'searchLanding', 'category', 'playlistSuggestions',
                     'rating', 'addToLibrary', 'addToPlaylist', 'createPlaylist',
                     'updatePlaylist', 'deletePlaylist', 'removeFromPlaylist',
                     'replacePlaylistTracks', 'updateFolder', 'deleteFolder')
@@ -1486,6 +1486,64 @@ class ArtistTest(EngineFixture):
             with self.assertRaises(EngineError) as raised:
                 await coro
             self.assertEqual(raised.exception.code, 'engine-down')
+
+
+class SuggestionsTest(EngineFixture):
+    """playlist_suggestions: the bridge's one read, the shaping and the day-long cache."""
+
+    @staticmethod
+    def song(song_id, name):
+        return {'id': song_id, 'type': 'songs', 'attributes': {
+            'name': name, 'artistName': 'Paper Parachutes', 'albumName': 'Ladders of Rain',
+            'durationInMillis': 201000, 'contentRating': 'explicit',
+            'playParams': {'id': song_id, 'kind': 'song'},
+            'artwork': {'url': 'https://example.invalid/{w}x{h}bb.jpg'}}}
+
+    async def test_one_read_kept_for_a_day(self):
+        self.page.authorized = True
+        await self.engine.start()
+        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
+            self.song('1724049301', 'Tin Roof'), self.song('1724049302', 'Low Tide'),
+            self.song('1724049301', 'Tin Roof'), {'id': '9', 'type': 'stations'}]}}
+        answer = await self.engine.playlist_suggestions('p.pl1')
+        self.assertEqual(self.page.bridge_calls, [('playlistSuggestions', 'p.pl1')])
+        self.assertEqual([item['id'] for item in answer['items']], ['1724049301', '1724049302'])
+        song = answer['items'][0]
+        self.assertEqual((song['kind'], song['title'], song['subtitle'], song['album']),
+                         ('song', 'Tin Roof', 'Paper Parachutes', 'Ladders of Rain'))
+        self.assertTrue(song['explicit'])
+        self.assertEqual(song['play'], {'kind': 'song', 'id': '1724049301'})
+        self.assertIn('cached', answer)
+        self.assertTrue((self.cache / 'suggestions' / 'p.pl1.json').is_file())
+        await self.engine.playlist_suggestions('p.pl1')  # from the file
+        self.assertEqual(len(self.page.bridge_calls), 1)
+        await self.engine.playlist_suggestions('p.pl1', refresh=True)
+        self.assertEqual(len(self.page.bridge_calls), 2)
+
+    async def test_only_a_library_playlist(self):
+        self.page.authorized = True
+        await self.engine.start()
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.playlist_suggestions('pl.u-catalog')
+        self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.bridge_calls, [])
+
+    async def test_needs_a_sign_in(self):
+        await self.engine.start()
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.playlist_suggestions('p.pl1')
+        self.assertEqual(raised.exception.code, 'not-signed-in')
+
+    async def test_the_demo_answers_its_own(self):
+        demo = engine_module.Engine(demo=True)
+        path = pathlib.Path(normalize.suggestions_cache_path(str(self.cache), 'l.pl001'))
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'items': [], 'demo': True,
+                                    'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
+        self.assertEqual((await demo.playlist_suggestions('l.pl001'))['items'], [])
+        with self.assertRaises(EngineError) as raised:
+            await demo.playlist_suggestions('l.pl002')
+        self.assertEqual(raised.exception.code, 'engine-down')
 
 
 class LibraryWriteTest(EngineFixture):

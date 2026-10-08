@@ -235,6 +235,26 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 self.assertEqual(track['index'], idx)
             self.assertEqual(pl['trackCount'], len(group['entries']))
 
+    def test_playlist_suggestions(self):
+        # Each playlist has the songs Apple would suggest for it, as the engine keeps them
+        # (normalize.playlist_suggestions' keys), none of them one it holds.
+        real = normalize.playlist_suggestions({'results': {'suggested': [
+            {'id': '1', 'type': 'songs',
+             'attributes': {'name': 'S', 'artistName': 'A', 'albumName': 'B'}}]}},
+            None)['items'][0]
+        for pl in self.data['sections']['playlists']:
+            with self.subTest(id=pl['id']):
+                path = os.path.join(self.out_dir, 'suggestions', f"{pl['id']}.json")
+                with open(path, encoding='utf-8') as f:
+                    answer = json.load(f)
+                self.assertIs(answer['demo'], True)
+                self.assertEqual(len(answer['items']), 12)
+                held = {entry['catalogId'] for entry in pl['groups'][0]['entries']}
+                for item in answer['items']:
+                    self.assertEqual(set(item), set(real))
+                    self.assertNotIn(item['id'], held)
+                    self.assertEqual(item['play'], {'kind': 'song', 'id': item['id']})
+
     def test_one_favourites_playlist(self):
         # The flag the app looks for (applemusic.library.FAVOURITES) is on one playlist only, and
         # no other item carries attributes.

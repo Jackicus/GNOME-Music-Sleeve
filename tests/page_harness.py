@@ -113,6 +113,9 @@ def classes():
         async def catalog_artist(self, name, song_ids):
             return await self._answer('catalog_artist', name, song_ids)
 
+        async def playlist_suggestions(self, playlist_id, refresh=False):
+            return await self._answer('playlist_suggestions', playlist_id, refresh)
+
     class App(Adw.Application):
         def __init__(self):
             super().__init__(application_id='io.github.jackicus.MusicSleeve.PageTest',
@@ -172,6 +175,11 @@ def classes():
         def __init__(self):
             self.asked = []
             self.went = []  # (obj, kind) per go_to()
+            self.added = []  # (playlist id, song id, title) per add_to_playlist()
+
+        def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
+            self.added.append((playlist_id, song_id, title))
+            return object()  # the task the real one answers
 
         def menu_for(self, obj, queued=False):
             self.asked.append(obj)
@@ -199,6 +207,7 @@ def classes():
 
         def reset(self):
             self.item_actions.went = []
+            self.item_actions.added = []
             self.opened = []
             self.artist_pages = []  # open_artist_page()'s, Apple Music's pages of artists
             self.shelves_opened = []

@@ -51,10 +51,12 @@ UI awaits.
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.artist_page(id) # {id, artist, latest, topSongs, shelves}: a catalog artist's
                                  # page, every view of it at once
-    # The last five are kept under the cache for a day (landing.json, categories/, browse.json,
-    # made-for-you.json, artists/) and answered from there without the engine; refresh=True
-    # asks again. Each answer carries `cached`, when it was fetched; one older than a day,
-    # answered when Apple cannot be asked, carries `stale: True` too.
+    await engine.playlist_suggestions(playlist_id)   # {items}: the songs Apple suggests
+                                                     # adding to a library playlist
+    # The last six are kept under the cache for a day (landing.json, categories/, browse.json,
+    # made-for-you.json, artists/, suggestions/) and answered from there without the engine;
+    # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
+    # than a day, answered when Apple cannot be asked, carries `stale: True` too.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
                                                   # for, found through its songs, or None
@@ -1684,6 +1686,27 @@ class Engine(GObject.Object):
             link = answer.get('next')
         return await asyncio.to_thread(normalize.artist_view_items, view, resources,
                                        str(self.cache_dir))
+
+    async def playlist_suggestions(self, playlist_id, refresh=False):
+        """The songs Apple suggests adding to a library playlist, as music.apple.com shows
+        them under it: {items} (normalize.playlist_suggestions), song Items in Apple's
+        order, which may include songs the playlist holds already. One read (the bridge's
+        playlistSuggestions()), from <cache>/suggestions/<id>.json for a day, else fetched
+        and kept; `refresh` asks Apple for new ones."""
+        playlist_id = str(playlist_id or '')
+        if not is_library_id(playlist_id):
+            raise EngineError('usage', 'playlist_suggestions needs a library playlist id')
+
+        async def fetch(client):
+            answer = await client.bridge('playlistSuggestions', playlist_id,
+                                         timeout=READ_TIMEOUT)
+            error = api.api_error(answer, 'suggested songs')
+            if error is not None:
+                raise error
+            return answer if isinstance(answer, dict) else {}
+        return await self._kept_answer(
+            normalize.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
+            normalize.playlist_suggestions)
 
     async def catalog_artist(self, name, song_ids):
         """The id of the catalog artist a library artist stands for, or None. The library

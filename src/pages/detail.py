@@ -18,6 +18,13 @@ follows detail.blp's table_breakpoint): each row's title, artist and album in co
 (TrackRow's table rows, the artist and the album links), under a header of column titles
 (the tracks' section's list header, TrackTableHeader). An album's stay a numbered list, and
 so does any page in a narrower window.
+
+Under a playlist the user can change (wants_suggestions()), the songs Apple suggests adding
+to it (Engine.playlist_suggestions), as music.apple.com shows them: one more section after
+the tracks, a store of one marker item whose row holds a SongShelf of them
+(offer_suggestions: an Add button on each, and Refresh), less the songs the playlist holds
+(suggested_items()). The section is left out while there are none to show, the engine
+unable to answer among them: a failure is only logged.
 """
 
 import bisect
@@ -27,13 +34,14 @@ from gettext import gettext as _
 from gi.repository import Adw, Gdk, Gio, GObject, Gtk, Pango
 
 from ..backend.errors import EngineError
-from ..library import Track
+from ..library import Item, ShelfModel, Track
 from ..related import catalog_target
-from ..remote import fetch_cover
+from ..remote import fetch_cover, fetch_shelf_art, remote_item
 from ..widgets import context_menu, track_links
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
 from ..widgets.labels import track_label
+from ..widgets.song_shelf import SongShelf
 from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader
 from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, weak_method
 from . import SignInOffer, app, show_notes
@@ -78,36 +86,74 @@ def should_fetch(item, fetched):
             and fetched is not item)
 
 
+def wants_suggestions(item):
+    """Whether a page showing `item` offers the songs Apple suggests adding to it: a library
+    playlist the user can change (Item.editable: not Favourite Songs, not one of Apple's), as
+    music.apple.com offers them."""
+    return item is not None and item.kind == 'playlist' and item.editable
+
+
+def held_songs(item):
+    """The ids of the songs a playlist holds: its tracks' catalog ids and their own."""
+    held = set()
+    for group in item.groups:
+        for track in group.entries:
+            held.update(song_id for song_id in (track.catalog_id, track.id) if song_id)
+    return held
+
+
+def suggested_items(items, held, dropped=()):
+    """The suggested song Items to show: those the playlist does not hold (`held`, by id)
+    and that were not added from the page (`dropped`), in Apple's order."""
+    return [item for item in items if item.id not in held and item.id not in dropped]
+
+
 class _Hero(GObject.Object):
     """The first item of a detail page's list: where the hero goes."""
 
     __gtype_name__ = 'AppleMusicDetailHero'
 
 
+class _Suggestions(GObject.Object):
+    """The last item of a playlist's list, while it has suggestions: where they go."""
+
+    __gtype_name__ = 'AppleMusicDetailSuggestions'
+
+
 class _Row(Gtk.Box):
-    """A row of a detail page's list: a TrackRow, or the page's hero in its place."""
+    """A row of a detail page's list: a TrackRow, or a widget of the page's (the hero, the
+    suggestions) in its place."""
 
     def __init__(self):
         super().__init__()
         self.track_row = TrackRow(hexpand=True)
         self.append(self.track_row)
 
-    def show_hero(self, hero):
-        parent = hero.get_parent()
+    def show_widget(self, widget):
+        self._remove_widgets(keep=widget)
+        parent = widget.get_parent()
         if parent is not self:
             if parent is not None:
-                parent.remove(hero)
-            self.append(hero)
+                parent.remove(widget)
+            self.append(widget)
         self.track_row.set_visible(False)
 
     def show_track(self, track, album_artist, table=False, playing=False):
+        self._remove_widgets()
         self.track_row.set_visible(True)
         self.track_row.bind(track, album_artist, table, playing)
 
-    def clear(self, hero):
-        if hero.get_parent() is self:
-            self.remove(hero)
+    def clear(self):
+        self._remove_widgets()
         self.track_row.unbind()
+
+    def _remove_widgets(self, keep=None):
+        child = self.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            if child is not self.track_row and child is not keep:
+                self.remove(child)
+            child = following
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/detail.ui')
@@ -201,6 +247,16 @@ class DetailPage(Adw.NavigationPage):
         self._artist = None  # the library's artist Item the subtitle names, if any
         self._painted = None  # (frame clock, handler): the notes' More follows each paint
         self._focused = False  # the page has put the focus on Play once, as it was pushed
+        # The songs Apple suggests (wants_suggestions): the Items of its last answer, those
+        # added from here, the Item they were asked for, those shown, and the shelf that
+        # shows them, made when there are some (_suggestions_shelf()).
+        self._suggestion_items = []
+        self._dropped = set()
+        self._suggested_for = None
+        self._suggestions_task = None
+        self._suggestion_art_task = None
+        self._suggestions = None
+        self.suggestions_shelf = None
         # What the status box says when the engine cannot answer, and what its button does.
         self._engine_status = EngineStatus(app(), self._show_status, self._refetch, {
             'engine-down': _('Start the engine to load the songs'),
@@ -255,6 +311,9 @@ class DetailPage(Adw.NavigationPage):
 
         self._hero_section = Gio.ListStore(item_type=GObject.Object)
         self._hero_section.append(_Hero())
+        self._suggestions_section = Gio.ListStore(item_type=GObject.Object)
+        self._suggestions_section.append(_Suggestions())
+        self._suggestions_start = None  # the list position of the suggestions, while shown
         self._sections = Gio.ListStore(item_type=Gio.ListModel)
         self._rows = Gtk.FlattenListModel(model=self._sections)
         self.list_view.set_model(Gtk.NoSelection(model=self._rows))
@@ -268,6 +327,7 @@ class DetailPage(Adw.NavigationPage):
         self._engine_status.watch()
         if should_fetch(self.item, self._fetched):
             self._fetch(self.item)  # a fetch cancelled when the page was hidden
+        self._suggest()
         clock = self.get_frame_clock()
         if clock is not None and self._painted is None:
             self._painted = (clock, connect_weak(clock, 'after-paint', self._on_painted))
@@ -298,6 +358,11 @@ class DetailPage(Adw.NavigationPage):
             self._fetch_task = None
             self._fetched = None
             self._engine_status.clear()
+        for task in (self._suggestions_task, self._suggestion_art_task):
+            if task is not None and not task.done():
+                task.cancel()
+        if not self._suggestion_items:
+            self._suggested_for = None  # asked again when shown: none came this time
         Adw.NavigationPage.do_hidden(self)
 
     def _follow(self, *_args):
@@ -337,6 +402,7 @@ class DetailPage(Adw.NavigationPage):
             self.item = item
         if item is None:
             self._shown_groups = None
+            self._suggestions_start = None
             self._sections.remove_all()
             self._update_state()
             return
@@ -365,9 +431,86 @@ class DetailPage(Adw.NavigationPage):
 
         self._groups = len(groups)
         self._update_headers()
-        self._sections.splice(0, self._sections.get_n_items(),
-                              [self._hero_section] + [group.entries for group in groups])
+        sections = [self._hero_section] + [group.entries for group in groups]
+        self._suggestions_start = None
+        if groups and wants_suggestions(item):
+            self._suggest()
+            shown = suggested_items(self._suggestion_items, held_songs(item), self._dropped)
+            if shown or self._suggestions is not None:
+                self._suggestions_shelf()
+                self._suggestions.update(self._suggestions.title, shown)
+            if shown:
+                self._suggestions_start = position
+                sections.append(self._suggestions_section)
+        self._sections.splice(0, self._sections.get_n_items(), sections)
         self._update_state()
+
+    # The songs Apple suggests adding to a playlist.
+
+    def _suggestions_shelf(self):
+        """The shelf of suggestions (and its model), made the first time there are some."""
+        if self.suggestions_shelf is None:
+            # Translators: the title of the songs Apple Music suggests adding to a playlist,
+            # shown under its songs.
+            self._suggestions = ShelfModel('suggested', _('Suggested Songs'), [])
+            shelf = SongShelf(margin_top=18, margin_bottom=12)
+            # Translators: the line under a playlist's Suggested Songs.
+            shelf.offer_suggestions(_('Based on what’s in this playlist'))
+            shelf.set_inset()  # in a track list's row, which keeps the page's margins
+            shelf.bind_shelf(self._suggestions)
+            connect_weak(shelf, 'add-song', self._on_add_suggestion)
+            connect_weak(shelf, 'refresh', self._on_refresh_suggestions)
+            self.suggestions_shelf = shelf
+        return self.suggestions_shelf
+
+    def _suggest(self):
+        """Ask for the suggestions of the playlist shown, once (wants_suggestions), while
+        the page is mapped."""
+        item = self.item
+        if not wants_suggestions(item) or self._suggested_for is item or not self.get_mapped():
+            return
+        if self._suggested_for is not None:
+            self._suggestion_items = []
+            self._dropped = set()
+        self._suggested_for = item
+        self._fetch_suggestions(item)
+
+    def _fetch_suggestions(self, item, refresh=False):
+        if self._suggestions_task is not None and not self._suggestions_task.done():
+            self._suggestions_task.cancel()
+        self._suggestions_task = app().spawn(self._load_suggestions(item, refresh))
+
+    async def _load_suggestions(self, item, refresh):
+        try:
+            answer = await app().engine.playlist_suggestions(item.id, refresh=refresh)
+        except EngineError as error:
+            log.info('suggestions for playlist %s: %s', item.id, error)
+            return
+        if self.item is not item:
+            return
+        self._suggestion_items = [
+            Item(remote_item(entry)) for entry in answer.get('items') or []
+            if isinstance(entry, dict) and entry.get('id') and entry.get('kind') == 'song']
+        self._dropped = set()
+        self._show(item)
+        if self._suggestion_art_task is not None and not self._suggestion_art_task.done():
+            self._suggestion_art_task.cancel()
+        if self._suggestions is not None:
+            self._suggestion_art_task = app().spawn(fetch_shelf_art([self._suggestions]))
+
+    def _on_refresh_suggestions(self, _shelf):
+        if wants_suggestions(self.item):
+            self._fetch_suggestions(self.item, refresh=True)
+
+    def _on_add_suggestion(self, _shelf, song):
+        """Add a suggested song to the playlist (the item actions' Add to Playlist, which
+        fetches the playlist again), and take it out of the suggestions."""
+        actions = getattr(self.get_root(), 'item_actions', None)
+        if actions is None or self.item is None:
+            return
+        if actions.add_to_playlist(self.item.id, song.id, song.title) is not None:
+            self._dropped.add(song.id)
+            self._show(self.item)
 
     def _on_table_apply(self, _breakpoint):
         self.table = True
@@ -500,13 +643,17 @@ class DetailPage(Adw.NavigationPage):
         row = list_item.get_child()
         is_track = isinstance(entry, Track)
         list_item.set_activatable(is_track)
-        list_item.set_focusable(is_track)  # the hero's buttons take the focus, not its row
+        # The hero's and the suggestions' buttons take the focus, not their rows.
+        list_item.set_focusable(is_track)
         if is_track:
             self._bound.add(list_item)
             self._show_track(list_item, entry)
         else:
             self._bound.discard(list_item)
-            row.show_hero(self.hero)
+            if isinstance(entry, _Suggestions):
+                row.show_widget(self.suggestions_shelf)
+            else:
+                row.show_widget(self.hero)
             list_item.set_accessible_label('')
             list_item.set_accessible_description('')
 
@@ -543,9 +690,12 @@ class DetailPage(Adw.NavigationPage):
 
     def _on_list_key_pressed(self, _controller, keyval, _keycode, state):
         """Tab from the hero's last button into the tracks, and Shift+Tab from the first
-        track back to it. The list's Tab leaves it after the focused item (tab-behavior
-        item), and the hero is its first item, so the tracks would otherwise be reached only
-        with Down, and the hero's buttons backwards only with Up."""
+        track back to it; Tab from a track on to the suggestions, when there are some, and
+        Shift+Tab from their first button back to the last track. The list's Tab leaves it
+        after the focused item (tab-behavior item), and the hero and the suggestions are
+        its first and last items, so the tracks would otherwise be reached only with Down,
+        the hero's buttons backwards only with Up, and the suggestions only with Down from
+        the last track."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
         forward = keyval in (Gdk.KEY_Tab, Gdk.KEY_KP_Tab) and not mods
         backward = (keyval == Gdk.KEY_ISO_Left_Tab
@@ -560,19 +710,28 @@ class DetailPage(Adw.NavigationPage):
         if forward and (focus is last or focus.is_ancestor(last)):
             self.list_view.scroll_to(1, Gtk.ListScrollFlags.FOCUS, None)
             return True
-        if backward:
-            row = focus if isinstance(focus, _Row) else focus.get_ancestor(_Row)
-            if row is None and focus.get_first_child() is not None:
-                row = focus.get_first_child()  # the list item's own widget: its row inside
-            first = self._rows.get_item(1)
-            if isinstance(row, _Row) and row.track_row.context_item is first:
-                last.grab_focus()
+        row = focus if isinstance(focus, _Row) else focus.get_ancestor(_Row)
+        if row is None and focus.get_first_child() is not None:
+            row = focus.get_first_child()  # the list item's own widget: its row inside
+        on_track = isinstance(row, _Row) and row.track_row.context_item is not None
+        start = self._suggestions_start
+        if start is not None:
+            first_button = self.suggestions_shelf.refresh_button
+            if forward and on_track:
+                self.list_view.scroll_to(start, Gtk.ListScrollFlags.FOCUS, None)
+                first_button.grab_focus()
                 return True
+            if backward and (focus is first_button or focus.is_ancestor(first_button)):
+                self.list_view.scroll_to(start - 1, Gtk.ListScrollFlags.FOCUS, None)
+                return True
+        if backward and on_track and row.track_row.context_item is self._rows.get_item(1):
+            last.grab_focus()
+            return True
         return False
 
     def _on_unbind(self, _factory, list_item):
         self._bound.discard(list_item)
-        list_item.get_child().clear(self.hero)
+        list_item.get_child().clear()
 
     def _on_setup_header(self, _factory, header):
         label = Gtk.Label(xalign=0, margin_start=24, margin_end=24, margin_top=18,
@@ -585,12 +744,15 @@ class DetailPage(Adw.NavigationPage):
                                           margin_bottom=6))
 
     def _on_bind_table_header(self, _factory, header):
-        header.get_child().set_visible(header.get_start() > 0)  # the hero's has none
+        # The tracks' section only: the hero's and the suggestions' have none.
+        header.get_child().set_visible(isinstance(header.get_item(), Track))
 
     def _on_bind_header(self, _factory, header):
         label = header.get_child()
         section = bisect.bisect_right(self._starts, header.get_start()) - 1
-        label.set_visible(section >= 0)  # the hero's section has no heading
+        if not isinstance(header.get_item(), Track):
+            section = -1  # the hero's and the suggestions' sections have no heading
+        label.set_visible(section >= 0)
         label.set_label(self._headings[section] if section >= 0 else '')
 
     def _on_activate(self, _list_view, position):

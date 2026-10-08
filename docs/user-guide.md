@@ -35,6 +35,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   <kbd>Esc</kbd> clears the filter. Click a column title to sort by it, or use **Sort By**.
 - In a wide window a playlist's songs are a table, as the Songs page is: click an artist
   or an album there to open its page.
+- Under your own playlists, **Suggested Songs** are songs Apple Music suggests adding, based
+  on what the playlist holds: click one to play it, its **+** button to add it to the
+  playlist, and the refresh button for other suggestions.
 - **Artists** lists the artists in your library beside the one you choose: their albums in
   your library, newest first (**Sort By** for titles), with **Play** and **Shuffle** for all
   their songs. A song you added without its album shows as its album. Clicking an artist you

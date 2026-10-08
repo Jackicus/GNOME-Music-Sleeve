@@ -1800,6 +1800,26 @@ def related(raw, cache_dir):
             'artists': items('artists', ('artists',))}
 
 
+def playlist_suggestions(raw, cache_dir):
+    """The songs Apple suggests for a library playlist (the bridge's playlistSuggestions()
+    answer, `results.suggested`) as {items}: song Items as an artist's top songs are, each
+    with its `album`, in Apple's order, each id once."""
+    results = raw.get('results') if isinstance(raw, dict) else None
+    suggested = results.get('suggested') if isinstance(results, dict) else None
+    items = []
+    seen = set()
+    for item in artist_view_items('top-songs', suggested, cache_dir):
+        if item['kind'] == 'song' and item['id'] and item['id'] not in seen:
+            seen.add(item['id'])
+            items.append(item)
+    return {'items': items}
+
+
+def suggestions_cache_path(cache_dir, playlist_id):
+    """Where a playlist's suggested songs (playlist_suggestions) are kept for a day."""
+    return os.path.join(cache_dir, 'suggestions', f'{_safe_id(playlist_id)}.json')
+
+
 def artist_cache_path(cache_dir, artist_id):
     """Where an artist's page (artist_page) is kept for a day."""
     return os.path.join(cache_dir, 'artists', f'{_safe_id(artist_id)}.json')
@@ -1855,11 +1875,11 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
     """Trim the caches nothing else trims (in a thread, at startup and after a sync):
     remote-art/ to `remote_bytes` (prune_remote_art), lyrics/ to the
     `lyrics_keep` played last (by mtime: a cache hit touches the file), the kept answers
-    (categories/, artists/, landing, New, Made for You) stamped longer than `answer_age` ago
-    (by mtime, when they were written), an items/ folder older versions kept, and the
-    temporary files of writes a crash cut short (store.is_stale_temp) in the cache and its
-    folders. Returns
-    {what: how many went}. art/ and thumb/ are the library's: prune_art keeps them."""
+    (categories/, artists/, suggestions/, landing, New, Made for You) stamped longer than
+    `answer_age` ago (by mtime, when they were written), an items/ folder older versions
+    kept, and the temporary files of writes a crash cut short (store.is_stale_temp) in the
+    cache and its folders. Returns {what: how many went}. art/ and thumb/ are the
+    library's: prune_art keeps them."""
     now = time.time() if now is None else now
     gone = {'remote-art': prune_remote_art(cache_dir, remote_bytes), 'lyrics': 0,
             'answers': 0, 'items': 0, 'temps': 0}
@@ -1876,7 +1896,7 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
 
     for folder in (cache_dir, *(os.path.join(cache_dir, name) for name in
                                 ('art', 'thumb', 'remote-art', 'lyrics', 'categories',
-                                 'artists'))):
+                                 'artists', 'suggestions'))):
         for entry in files(folder):
             if store.is_stale_temp(entry.path, now) and _remove(entry.path):
                 gone['temps'] += 1
@@ -1888,7 +1908,7 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
         if _remove(entry.path):
             gone['lyrics'] += 1
 
-    answers = [entry for folder in ('categories', 'artists')
+    answers = [entry for folder in ('categories', 'artists', 'suggestions')
                for entry in files(os.path.join(cache_dir, folder))
                if not store.is_temp(entry.name)]
     answers += [entry for entry in files(cache_dir) if entry.name in KEPT_ANSWERS]

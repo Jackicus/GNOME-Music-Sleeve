@@ -204,6 +204,12 @@ gridview.song-shelf > child {
   border-radius: 8px;
 }
 
+/* A playlist's Suggested Songs, in a row of its track list, which keeps the page's margins
+   (SongShelf.set_inset()): the grid without its own. */
+.inset gridview.song-shelf {
+  padding: 0;
+}
+
 /* An artist's latest release (pages/artist.blp): the cover and its caption as one button,
    flush with the page's margin. */
 button.release-card {

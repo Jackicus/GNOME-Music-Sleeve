@@ -61,6 +61,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `updatePlaylist(id, attributes)`, `deletePlaylist(id)`, `removeFromPlaylist(id, type, trackId)`, `replacePlaylistTracks(id, tracks)`, `updateFolder(id, attributes)`, `deleteFolder(id)` | `{ok: true}`, or a throw as above (the requests below) |
 | `lyrics(catalogSongId)` | `{synced, lines: [{startMs, endMs, text, stanza?}]}` (the TTML read with the page's XML parser; `stanza: true` on a verse's first line) |
 | `search(term, limit)`, `suggest(term, limit)`, `searchLanding()`, `category(id)` | the API's answer, shaped by `normalize.search_results()`, `search_suggestions()`, `search_landing()`, `category_page()` |
+| `playlistSuggestions(playlistId)` | `{results: {suggested: [songs]}}`, the songs Apple suggests adding to a library playlist, shaped by `normalize.playlist_suggestions()`: music.apple.com's own request (checked against the API on 2026-10-08), `POST /v1/me/recommendations/suggested?contexts=playlist-suggested-songs&types=songs` with `{targetContent: {id, type: 'library-playlists'}}`, through the request builder (`music()` sends no body); up to 20 full catalog songs |
 | `subscribe()`, `unsubscribe()` | MusicKit's listeners on or off, once per instance |
 
 ### The playlist writes
@@ -162,6 +163,11 @@ order, titled as Apple titles it, `more` when `Engine.artist_view()` has more of
 video about the artist (an interview, a film) is a `link` Item: its `url` is its page,
 its subtitle its length, and it has nothing to play.
 
+A playlist's suggested songs (`Engine.playlist_suggestions()`,
+`normalize.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are
+(with their `album`), in Apple's order, each once. Apple may suggest a song the playlist
+holds; the playlist page leaves those out.
+
 The app shows none of the data's own words: a missing name is '', the app names shelves by
 key, writes the captions from the counts and titles an album's discs from `discNumber`. A song without an album of its own sits under a stand-in album
 (`l.alb_…`) that plays `{"kind": "songs", "id": "<id>,<id>…"}`; a video plays as MusicKit's
@@ -180,7 +186,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `artists/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day; an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `artists/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day; an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 `normalize.prune_caches()` runs after the library's first load and after every sync; it also
 removes what older versions kept (`items/`) and temporary files over an hour old.
