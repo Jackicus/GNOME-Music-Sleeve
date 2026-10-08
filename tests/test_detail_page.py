@@ -444,6 +444,35 @@ class SuggestionsTest(PageTestCase):
             heights[width] = minimum
         self.assertLess(heights[996], heights[360])
 
+    async def test_an_add_that_fails_gives_the_song_its_place_back(self):
+        page = await self.show(self.playlist(), self.answer(range(9)))
+        actions = self.window.item_actions
+        actions.add_succeeds = False  # reported by the item actions
+        self.addCleanup(setattr, actions, 'add_succeeds', True)  # the window outlives the test
+        rows = list(page.suggested_songs.grid.rows)
+        rows[1].add_button.emit('clicked')
+        await self.settle()
+        # Back in its place, the spare that took it back at the front of the spares, and not
+        # told to Apple as chosen.
+        self.assertEqual(self.shown(page), ['2000', '2002', '2003', '2004', '2005', '2006'])
+        self.assertEqual(page.suggested_songs.grid.rows, rows)
+        self.assertEqual(page._suggestions.selected, [])
+        self.assertEqual([item.id for item in page._suggestions.spares], ['2007', '2008'])
+
+    async def test_an_add_that_fails_after_the_page_has_gone_leaves_it_alone(self):
+        page = await self.show(self.playlist(), self.answer(range(9)))
+        written = asyncio.get_running_loop().create_future()
+        actions = self.window.item_actions
+        actions.add_to_playlist = lambda *args: written
+        self.addCleanup(delattr, actions, 'add_to_playlist')  # the window outlives the test
+        page.suggested_songs.grid.rows[1].add_button.emit('clicked')
+        suggestions = page._suggestions
+        page._suggestions = None  # the page shows another playlist, or none, by now
+        written.set_result(False)
+        await self.settle()
+        self.assertEqual(suggestions.selected, [])  # still not reported as chosen
+        self.assertIsNone(page._suggestions)
+
     async def test_an_added_song_gives_its_place_to_the_next(self):
         page = await self.show(self.playlist(), self.answer(range(9)))
         rows = list(page.suggested_songs.grid.rows)

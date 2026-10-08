@@ -785,6 +785,12 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.reported, ['api'])
         self.assertEqual(self.app.toasts, [])
 
+    async def test_the_task_says_whether_the_add_succeeded(self):
+        self.assertIs(await self.actions.add_to_playlist('p.pl1', 'i.song1'), True)
+        self.app.engine.fail = EngineError('api', 'HTTP 403 Forbidden')
+        self.assertIs(await self.actions.add_to_playlist('p.pl1', 'i.song1'), False)
+        self.assertEqual(self.app.reported, ['api'])  # reported, as before
+
     async def test_signed_out_is_reported_so_the_sign_in_opens(self):
         self.app.engine.fail = EngineError('not-signed-in', 'sign in first')
         await self.run_action('item-love', 'album', 'l.alb1')
