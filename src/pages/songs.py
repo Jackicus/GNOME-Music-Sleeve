@@ -67,6 +67,21 @@ def _string_sorter(name):
     return Gtk.StringSorter(expression=Gtk.PropertyExpression.new(Track, None, name))
 
 
+def resized_fixed_width(width, start_width, share, others):
+    """The fixed width that, expanding, keeps a column dragged to `width` as wide.
+
+    The drag began at `start_width`, the column then holding `share` of the spare room; while
+    dragged it did not expand, so the `others` expanding columns shared the room left as it
+    grew or shrank. Expanding again from `width` less what each of them now holds gives every
+    column the same share and leaves all their widths as they are. None when that would be
+    less than nothing (the column dragged narrower than its share): it stays as dragged.
+    """
+    if others < 1:
+        return None
+    left = max(share - round((width - start_width) / others), 0)
+    return width - left if left <= width else None
+
+
 def songs_state(total, library_state, songs_ready, song_count, syncing=False):
     """What the Songs page shows: 'items' once it has ordered songs (`total`); 'loading' while
     the library loads, before the songs are built, while songs exist that are not ordered yet
@@ -157,6 +172,24 @@ class SongsPage(Adw.NavigationPage):
         row_factory.connect('unbind', self._unbind_row)
         self.column_view.set_row_factory(row_factory)
 
+        # Dragging a divider: GTK sets the column's fixed width to its allocated width, which
+        # for an expanding column already holds its share of the spare room, then adds the
+        # share again, and the divider would jump away from the pointer. So the column stops
+        # expanding while it is dragged (its width is then the fixed width alone), and on
+        # release expands again from a fixed width less its share (resized_fixed_width()):
+        # nothing moves, and every column still follows the window's width. The gesture, in
+        # the capture phase, sees the press before the view's own.
+        self._dragging = False
+        self._resize = None  # (column, its width as the drag began, its share of the room then)
+        self._fixed = {}  # column -> its fixed width, the one before a drag's
+        drag = Gtk.GestureDrag(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        connect_weak(drag, 'drag-begin', self._on_drag_begin)
+        connect_weak(drag, 'drag-end', self._on_drag_end)
+        self.column_view.add_controller(drag)
+        for column in (self.title_column, self.artist_column, self.album_column):
+            self._fixed[column] = column.get_fixed_width()
+            connect_weak(column, 'notify::fixed-width', self._on_fixed_width)
+
         self._rows = Gio.ListStore(item_type=Track)
         self.column_view.set_model(Gtk.NoSelection(model=self._rows))
         # Every cell of a row finds the row's Track in its title cell (SongTitle.context_item).
@@ -221,6 +254,31 @@ class SongsPage(Adw.NavigationPage):
         if self._prepare_task is not None and not self._prepare_task.done():
             self._prepare_task.cancel()
         self._prepare_task = None
+
+    def _on_drag_begin(self, _gesture, _x, _y):
+        self._dragging = True
+
+    def _on_fixed_width(self, column, _pspec):
+        """A drag's first width is the column's allocation: the fixed width before it plus the
+        column's share of the spare room. The column stops expanding until the drag ends."""
+        width = column.get_fixed_width()
+        if self._dragging and self._resize is None and column.get_expand():
+            self._resize = (column, width, max(width - self._fixed[column], 0))
+            column.set_expand(False)
+        self._fixed[column] = width
+
+    def _on_drag_end(self, _gesture, _x, _y):
+        self._dragging = False
+        if self._resize is None:
+            return
+        column, start_width, share = self._resize
+        self._resize = None
+        others = sum(1 for other in self._fixed
+                     if other is not column and other.get_visible() and other.get_expand())
+        fixed = resized_fixed_width(column.get_fixed_width(), start_width, share, others)
+        if fixed is not None:  # else it keeps the width it was dragged to
+            column.set_fixed_width(fixed)
+            column.set_expand(True)
 
     def _on_sort_changed(self, sorter, _change):
         if self._quiet:
