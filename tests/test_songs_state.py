@@ -3,7 +3,8 @@
 
 """The Songs page (pages/songs.py): what it shows while the songs are on their way, and a
 sync that changes the songs keeps the table's place; the Sort By menu sorts as a header does;
-a row plays its own song, on a click; the row of the song playing is marked.
+a row plays its own song, on a click; the row of the song playing is marked; a column dragged
+wider or narrower follows the pointer and keeps its width on release.
 Over an invented library.json in a temporary cache (tests/page_harness.py's window)."""
 
 import json
@@ -29,6 +30,15 @@ def library_json(cache, tracks):
 
 
 class SongsStateTest(PageTestCase):
+    def test_a_resized_column_expands_again_from_its_width_less_the_others_share(self):
+        from applemusic.pages.songs import resized_fixed_width
+
+        self.assertEqual(resized_fixed_width(300, 260, 90, 2), 230)  # the others hold 70
+        self.assertEqual(resized_fixed_width(200, 260, 90, 2), 80)  # they hold 120
+        self.assertEqual(resized_fixed_width(500, 260, 90, 2), 500)  # no room is left
+        self.assertIsNone(resized_fixed_width(50, 260, 90, 2))  # narrower than its share
+        self.assertIsNone(resized_fixed_width(300, 260, 90, 0))
+
     def test_songs_that_exist_but_are_not_ordered_yet_are_loading(self):
         from applemusic.pages.songs import songs_state
 
@@ -100,6 +110,27 @@ class SongsPageTest(PageTestCase):
         page.column_view.sort_by_column(page.album_column, 0)
         self.assertEqual(page._sort_column.get_state().get_string(), 'album')
         self.assertEqual(page._sort_order.get_state().get_string(), 'ascending')
+
+    async def test_a_dragged_column_follows_the_pointer_and_expands_again_on_release(self):
+        # GTK's drag sets the fixed width to the allocated width, the expanding share
+        # included: the share must not be added again, or the divider leaves the pointer.
+        from gi.repository import Gtk
+
+        page = await self.songs_page(5)
+        gesture = next(controller for controller in page.column_view.observe_controllers()
+                       if isinstance(controller, Gtk.GestureDrag)
+                       and controller.get_propagation_phase() == Gtk.PropagationPhase.CAPTURE)
+        page.artist_column.set_fixed_width(120)  # not a drag (the breakpoint's setter)
+        self.assertTrue(page.artist_column.get_expand())
+        gesture.emit('drag-begin', 0.0, 0.0)
+        page.title_column.set_fixed_width(170 + 90)  # GTK's: the allocation, a share of 90
+        self.assertFalse(page.title_column.get_expand())
+        page.title_column.set_fixed_width(170 + 90 + 40)  # dragged 40 px wider
+        gesture.emit('drag-end', 40.0, 0.0)
+        # Two others shared the 40 px: 70 each; the column's own 70 comes back as it expands.
+        self.assertTrue(page.title_column.get_expand())
+        self.assertEqual(page.title_column.get_fixed_width(), 300 - 70)
+        self.assertTrue(page.artist_column.get_expand())
 
     async def test_a_filter_set_from_elsewhere_applies_at_once(self):
         page = await self.songs_page(12)
