@@ -50,6 +50,12 @@ class TestDemoLibrarySchema(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp_dir.cleanup()
 
+    def test_the_run_stamps_what_made_it_last(self):
+        # demo_stamp.py, which the harness and demo.sh ask: this directory is current.
+        stamp = subprocess.run(
+            [sys.executable, os.path.join(REPO_DIR, 'scripts', 'demo_stamp.py'), self.out_dir])
+        self.assertEqual(stamp.returncode, 0)
+
     def test_top_level_schema(self):
         self.assertEqual(self.data.get('version'), 2)  # sync.LIBRARY_VERSION
         self.assertEqual(self.data.get('storefront'), 'us')

@@ -11,8 +11,8 @@ paths:
 - The in-process scripts (screenshot.py, a11y_check.py, scroll_test.py, bench.py) run the
   installed build (run `scripts/demo.sh` or `meson install -C build` first) through
   `harness.make_app()`: the installed modules and translations, GSettings on the memory backend
-  with engine-autostart off, the demo library (build/demo, or `APPLE_MUSIC_CACHE`; screenshot.py
-  only with `--demo`), an app ID of their own, asyncio on the GLib loop, a fixed dark or light
+  with engine-autostart off, the demo library (build/demo, written again when out of date, or
+  `APPLE_MUSIC_CACHE`; screenshot.py only with `--demo`), an app ID of their own, asyncio on the GLib loop, a fixed dark or light
   scheme, and windows made non-resizable so a tiling window manager keeps `--size`. Call
   `make_app()` before importing Gtk. A new in-process script starts through the harness too: the
   scripts' app runs as the release profile, and the harness is what keeps it from starting a real
@@ -62,5 +62,10 @@ paths:
   `APPLE_MUSIC_HOST_SESSION_BUS` and the keyring check the same way: inside headless.sh it
   keeps the profile's sign-in, and without a keyring on Chrome's bus it answers `no-keyring`.
 - `demo_library.py` writes invented data only and, without options, the same library every
-  time: tests and the metainfo screenshots depend on both.
+  time: tests and the metainfo screenshots depend on both. Its last write is `.demo-stamp`, a
+  hash of `demo_stamp.SOURCES` (the script, the backend's normalize.py and config.py) and of
+  the options it was given; the harness and `demo.sh` write build/demo again whenever
+  `demo_stamp.py build/demo` says it is missing or out of date (an older checkout's demo lacks
+  what newer steps open, such as an artist's Top Songs). A new source the demo's output
+  depends on goes in `SOURCES`.
 - Scripts may print; app code logs.
