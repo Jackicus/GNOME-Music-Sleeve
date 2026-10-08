@@ -428,6 +428,22 @@ class SuggestionsTest(PageTestCase):
         section.grid.rows[1].play_button.emit('clicked')
         self.assertEqual(self.window.played[-1], ({'kind': 'song', 'id': '2002'}, None, None))
 
+    async def test_the_row_holding_them_is_as_tall_as_their_lines(self):
+        # The grid is taller the narrower it is. Its row in the list asks for the height of
+        # the lines it has at the width given: in a horizontal box it asked for the one
+        # column's at every width (GTK's "natural size must be >= min size", and room left
+        # empty under a wide grid).
+        from gi.repository import Gtk
+
+        page = await self.show(self.playlist(), self.answer(range(12)))
+        row = page.suggested_songs.get_parent()
+        heights = {}
+        for width in (360, 996):
+            minimum, natural, _, _ = row.measure(Gtk.Orientation.VERTICAL, width)
+            self.assertEqual(minimum, natural, width)
+            heights[width] = minimum
+        self.assertLess(heights[996], heights[360])
+
     async def test_an_added_song_gives_its_place_to_the_next(self):
         page = await self.show(self.playlist(), self.answer(range(9)))
         rows = list(page.suggested_songs.grid.rows)
