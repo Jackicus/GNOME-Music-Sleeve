@@ -145,6 +145,12 @@ class FakeEngine(GObject.Object):
     async def lyrics(self, catalog_id):
         return await self._command('lyrics', catalog_id)
 
+    async def preview(self, song_id, url):
+        return await self._command('preview', song_id, url)
+
+    async def stop_preview(self):
+        return await self._command('stop_preview')
+
 
 class FakeSettings:
     def __init__(self, signed_in=True):
@@ -555,6 +561,50 @@ class EventTest(unittest.TestCase):
                                ('MEDIA_LICENSE', 'The engine could not play protected content'),
                                ('', 'This could not be played')):
             self.assertEqual(playback_error_text(code), sentence, code)
+
+
+class PreviewTest(unittest.TestCase):
+    """A suggested song's preview: `preview` follows previewDidChange, and nothing else of
+    the Player does (the queue is paused, as MusicKit says); the commands."""
+
+    def test_preview_follows_the_events_alone(self):
+        player, engine, _app = make_player()
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 0})
+        engine.event('playbackStateDidChange', {'state': 'paused'})
+        notified = []
+        player.connect('notify::preview', lambda p, _pspec: notified.append(p.preview))
+        engine.event('previewDidChange', {'id': '1000000101'})
+        self.assertEqual(player.preview, '1000000101')
+        self.assertEqual((player.state, player.track.id), ('paused', 'i.demo0001'))
+        engine.event('previewDidChange', {'id': '1000000101'})  # the same: no notify
+        engine.event('previewDidChange', {'id': None, 'ended': '1000000101', 'reason': 'ended'})
+        self.assertEqual(player.preview, '')
+        self.assertEqual(notified, ['1000000101', ''])
+
+    def test_the_engine_going_or_a_new_page_ends_it(self):
+        player, engine, _app = make_player(state='up')
+        engine.event('previewDidChange', {'id': '1000000101'})
+        engine.event('bridgeReset', {})
+        self.assertEqual(player.preview, '')
+        engine.event('previewDidChange', {'id': '1000000102'})
+        engine.state = 'down'
+        self.assertEqual(player.preview, '')
+
+    def test_the_commands(self):
+        async def go():
+            player, engine, app = make_player(state='down')
+            await player.stop_preview()  # nothing to stop: the engine is not started for it
+            self.assertEqual(engine.calls, [])
+            await player.start_preview('1000000101', 'https://example.invalid/a.m4a')
+            self.assertEqual(engine.calls, [
+                ('start', None), ('preview', '1000000101', 'https://example.invalid/a.m4a')])
+            await player.stop_preview()
+            self.assertEqual(engine.calls[-1], ('stop_preview',))
+            demo, demo_engine, _app = make_player(demo=True)
+            with self.assertRaises(EngineError) as raised:
+                await demo.start_preview('1000000101', 'https://example.invalid/a.m4a')
+            self.assertEqual(raised.exception.code, 'engine-down')
+        asyncio.run(go())
 
 
 class StalePositionTest(unittest.TestCase):

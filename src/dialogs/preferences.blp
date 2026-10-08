@@ -35,6 +35,11 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
         title: _("Show More Suggestions");
         subtitle: _("Twelve songs under a playlist instead of six");
       }
+
+      Adw.SwitchRow preview_suggestions_row {
+        title: _("Preview Suggestions");
+        subtitle: _("Play a 30-second preview of a suggested song instead of the whole song");
+      }
     }
 
     Adw.PreferencesGroup {

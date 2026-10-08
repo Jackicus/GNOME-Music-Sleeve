@@ -1803,16 +1803,35 @@ def related(raw, cache_dir):
 def playlist_suggestions(raw, cache_dir):
     """The songs Apple suggests for a library playlist (the bridge's playlistSuggestions()
     answer, `results.suggested`) as {items}: song Items as an artist's top songs are, each
-    with its `album`, in Apple's order, each id once."""
+    with its `album`, and `previewUrl`, the https address of Apple's 30-second preview when
+    the song has one (preview_url()), in Apple's order, each id once."""
     results = raw.get('results') if isinstance(raw, dict) else None
     suggested = results.get('suggested') if isinstance(results, dict) else None
+    previews = {}
+    for resource in suggested if isinstance(suggested, list) else []:
+        if isinstance(resource, dict) and resource.get('id'):
+            url = preview_url(resource)
+            if url:
+                previews.setdefault(str(resource['id']), url)
     items = []
     seen = set()
     for item in artist_view_items('top-songs', suggested, cache_dir):
         if item['kind'] == 'song' and item['id'] and item['id'] not in seen:
             seen.add(item['id'])
+            if item['id'] in previews:
+                item['previewUrl'] = previews[item['id']]
             items.append(item)
     return {'items': items}
+
+
+def preview_url(resource):
+    """The https address of a catalog song's preview (its `attributes.previews[0].url`), or
+    None."""
+    attributes = resource.get('attributes') if isinstance(resource, dict) else None
+    previews = attributes.get('previews') if isinstance(attributes, dict) else None
+    first = previews[0] if isinstance(previews, list) and previews else None
+    url = first.get('url') if isinstance(first, dict) else None
+    return url if isinstance(url, str) and url.startswith('https://') else None
 
 
 def suggestions_cache_path(cache_dir, playlist_id):

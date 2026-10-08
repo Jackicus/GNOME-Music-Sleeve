@@ -5,11 +5,13 @@
 
 bridge.js runs in music.apple.com, where no test can reach it; gjs (GNOME's JavaScript, on every
 GNOME system) runs it unchanged once `window` is the global object. Each test names a scenario,
-an async JavaScript function of {bridge, mk, posted, page}: `bridge` the injected
-window.__appleMusicLibrary, `mk` the fake MusicKit instance (its `calls`, `listeners`, `fire()`),
-`posted` the events the bridge sent through the binding, `page.elements` what document's
-selectors find. All scenarios run in one gjs process, each on a fresh page, and the test gets
-what its scenario returned. Skipped without gjs.
+an async JavaScript function of {bridge, mk, posted, page, audios, failAudio}: `bridge` the
+injected window.__appleMusicLibrary, `mk` the fake MusicKit instance (its `calls`, `listeners`,
+`fire()`), `posted` the events the bridge sent through the binding, `page.elements` what
+document's selectors find, `audios` every Audio element the page made (each `fire()`s 'ended' or
+'error') and `failAudio(error)` what their play() rejects with. All scenarios run in one gjs
+process, each on a fresh page, and the test gets what its scenario returned. Skipped without
+gjs.
 """
 
 import functools
@@ -62,7 +64,8 @@ SONG = """{
 
 def scenario(js):
     """Run the test with what `js` returned: the body of an async function of {bridge, mk,
-    posted, page}, run on a fresh page. A scenario that throws fails the test."""
+    posted, page, audios, failAudio}, run on a fresh page. A scenario that throws fails the
+    test."""
     def decorate(test):
         @functools.wraps(test)
         def run(self):
@@ -85,7 +88,8 @@ def run_scenarios(scenarios):
              f'const TTML = {json.dumps(TTML)};',
              'const SCENARIOS = {']
     for name, body in scenarios.items():
-        parts.append(f'{json.dumps(name)}: async ({{bridge, mk, posted, page}}) => {{\n{body}\n}},')
+        parts.append(f'{json.dumps(name)}: async ({{bridge, mk, posted, page, audios, failAudio}})'
+                     f' => {{\n{body}\n}},')
     parts += ['};', 'run();']
     with tempfile.NamedTemporaryFile('w', suffix='.js', encoding='utf-8') as script:
         script.write('\n'.join(parts))
@@ -479,7 +483,8 @@ class BridgeTest(unittest.TestCase):
             refused = String(error);
         }
         mk.writeStatus = 200;
-        await bridge.playlistSuggestions('p.pl1', 10, ['1000000101', 1000000102], ['1000000102']);
+        await bridge.playlistSuggestions('p.pl1', 10, ['1000000101', 1000000102], ['1000000102'],
+                                         [1000000101]);
         return {answer, empty, refused, calls: mk.calls};
     """)
     def test_playlist_suggestions_post_the_playlist(self, value):
@@ -494,17 +499,93 @@ class BridgeTest(unittest.TestCase):
                         'include[songs]': 'artists', 'limit': 20},
              'method': 'POST',
              'body': {'targetContent': {'id': 'p.pl1', 'type': 'library-playlists'}}}])
-        # A Refresh's: the songs shown so far offered, those added selected, a limit.
+        # A Refresh's: the songs shown so far offered (those previewed said so), those added
+        # selected, a limit.
         request = value['calls'][-1][2]
         self.assertEqual(request['params']['limit'], 10)
         self.assertEqual(request['body'], {
             'targetContent': {'id': 'p.pl1', 'type': 'library-playlists'},
             'offered': {'suggested': [
                 {'id': '1000000101', 'type': 'songs',
-                 'meta': {'impressed': True, 'previewed': False}},
+                 'meta': {'impressed': True, 'previewed': True}},
                 {'id': '1000000102', 'type': 'songs',
                  'meta': {'impressed': True, 'previewed': False}}]},
             'selected': [{'id': '1000000102', 'type': 'songs', 'meta': {'source': 'suggested'}}]})
+
+    # -- previews --------------------------------------------------------------------------
+
+    @scenario("""
+        mk.isPlaying = true;
+        mk.volume = 0.4;
+        const first = await bridge.preview('1000000101', 'https://example.invalid/a.m4a');
+        const second = await bridge.preview(1000000102, 'https://example.invalid/b.m4a');
+        await bridge.volume(0.25);
+        const volume = audios[1].volume;
+        audios[1].fire('ended');
+        const after = await bridge.stopPreview();
+        return {first, second, volume, after, posted, calls: mk.calls,
+                audios: audios.map(a => ({src: a.src, calls: a.calls}))};
+    """)
+    def test_a_preview_pauses_musickit_and_plays_one_clip_at_a_time(self, value):
+        self.assertEqual(value['first'], {'ok': True, 'id': '1000000101'})
+        self.assertEqual(value['second'], {'ok': True, 'id': '1000000102'})
+        self.assertIn(['pause'], value['calls'])
+        self.assertNotIn(['setQueue'], [call[:1] for call in value['calls']])
+        # The first clip stopped for the second, which followed the volume and then ended.
+        self.assertEqual(value['audios'][0]['src'], '')
+        self.assertEqual(value['audios'][0]['calls'][:2], ['play', 'pause'])
+        self.assertEqual(value['volume'], 0.25)
+        self.assertEqual(value['posted'], [
+            {'name': 'previewDidChange', 'data': {'id': '1000000101'}},
+            {'name': 'previewDidChange',
+             'data': {'id': None, 'ended': '1000000101', 'reason': 'replaced'}},
+            {'name': 'previewDidChange', 'data': {'id': '1000000102'}},
+            {'name': 'previewDidChange',
+             'data': {'id': None, 'ended': '1000000102', 'reason': 'ended'}}])
+        self.assertEqual(value['after'], {'stopped': False})
+
+    @scenario("""
+        await bridge.preview('1000000101', 'https://example.invalid/a.m4a');
+        const stopped = await bridge.stopPreview();
+        await bridge.preview('1000000102', 'https://example.invalid/b.m4a');
+        await bridge.play('song', '1000000103');
+        await bridge.preview('1000000104', 'https://example.invalid/d.m4a');
+        await bridge.control('toggle');
+        await bridge.subscribe();
+        await bridge.preview('1000000105', 'https://example.invalid/e.m4a');
+        mk.isPlaying = true;
+        mk.fire('playbackStateDidChange', {state: 2});
+        return {stopped, reasons: posted.filter(p => p.name === 'previewDidChange' && !p.data.id)
+                                         .map(p => [p.data.ended, p.data.reason])};
+    """)
+    def test_a_preview_stops_when_asked_or_when_musickit_plays(self, value):
+        self.assertEqual(value['stopped'], {'stopped': True})
+        self.assertEqual(value['reasons'], [
+            ['1000000101', 'stopped'], ['1000000102', 'playback'],
+            ['1000000104', 'playback'], ['1000000105', 'playback']])
+
+    @scenario("""
+        const none = await bridge.preview('1000000101', '');
+        const plain = await bridge.preview('1000000101', 'http://example.invalid/a.m4a');
+        const error = new Error('denied');
+        error.name = 'NotAllowedError';
+        failAudio(error);
+        const refused = await bridge.preview('1000000101', 'https://example.invalid/a.m4a');
+        const stopped = await bridge.stopPreview();
+        failAudio(null);
+        await bridge.preview('1000000102', 'https://example.invalid/b.m4a');
+        audios[audios.length - 1].fire('error');
+        return {none, plain, refused, stopped, posted};
+    """)
+    def test_a_preview_the_page_cannot_play(self, value):
+        self.assertEqual(value['none']['code'], 'NO_PREVIEW')
+        self.assertEqual(value['plain']['code'], 'NO_PREVIEW')
+        self.assertEqual(value['refused']['code'], 'NotAllowedError')
+        self.assertEqual(value['stopped'], {'stopped': False})
+        self.assertEqual(value['posted'], [
+            {'name': 'previewDidChange', 'data': {'id': '1000000102'}},
+            {'name': 'previewDidChange',
+             'data': {'id': None, 'ended': '1000000102', 'reason': 'error'}}])
 
     # -- writes ----------------------------------------------------------------------------
 

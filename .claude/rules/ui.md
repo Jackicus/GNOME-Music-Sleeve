@@ -121,7 +121,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   buttons, Refresh, a song plays alone), less the songs it holds: six, or twelve with
   `more-suggestions`, in a grid whose columns divide the count (`suggestions.columns_for`),
   an added song's place filled from the spares, Refresh telling Apple what it offered
-  (`suggestions.Suggestions`); a failure only hides it.
+  (`suggestions.Suggestions`); a failure only hides it. With `preview-suggestions` a click
+  plays the song's preview (`Player.start_preview`, again to stop; one without a preview
+  plays in full), the row marked while the Player's `preview` names it, and the page
+  stops a preview it started when it is left (`do_hidden`).
 - The window's keyed actions (`win.back`, `win.search`, `win.focus-*`) are disabled while a
   dialog is open over the window (`Window._update_actions`); add a new keyed window action
   there.

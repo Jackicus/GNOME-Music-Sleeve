@@ -30,6 +30,9 @@ UI awaits.
     await engine.now_playing()   # {state, track, position, duration, shuffle, repeat, volume}
     await engine.queue()         # {index, items: [Track…]}
     await engine.queue_jump(3)   # play the queue's entry at index 3 (mk.changeToMediaAtIndex)
+    await engine.preview(song_id, url)   # Apple's 30-second clip of a song, outside the queue
+                                         # (MusicKit pauses); previewDidChange events follow it
+    await engine.stop_preview()  # the clip playing stopped: True if one was
     await engine.lyrics(catalog_song_id)   # {synced, lines: [{startMs, endMs, text[, stanza]}]},
                                            # from <cache>/lyrics/ when fetched this month
     await engine.love('song', id); await engine.unlove('album', id)   # the rating, set or gone
@@ -51,7 +54,8 @@ UI awaits.
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.artist_page(id) # {id, artist, latest, topSongs, shelves}: a catalog artist's
                                  # page, every view of it at once
-    await engine.playlist_suggestions(playlist_id, limit=16, offered=(), selected=())
+    await engine.playlist_suggestions(playlist_id, limit=16, offered=(), selected=(),
+                                      previewed=())
                                  # {items}: the songs Apple suggests adding to a library
                                  # playlist, none of `offered`; more=True: a few more, unkept
     # The last six are kept under the cache for a day (landing.json, categories/, browse.json,
@@ -1222,6 +1226,30 @@ class Engine(GObject.Object):
         client = await self._require_signed_in('play')
         await client.bridge('playLater', str(kind), str(item_id), timeout=PLAY_TIMEOUT)
 
+    async def preview(self, song_id, url):
+        """Play Apple's 30-second preview of a catalog song, `url` the https address of its
+        clip (a suggested song's `previewUrl`): the bridge's preview(), which pauses MusicKit
+        and plays the clip in the page's own audio element, so MusicKit's queue stays as it
+        was; one at a time, a new one in place of the one before. Its `previewDidChange`
+        events, {id} as it plays and {id: None, ended, reason} as it stops, say what plays;
+        MusicKit playing again (a play, a control) stops it. Previews are Apple's to anyone:
+        no sign-in needed. A clip the page cannot play is EngineError('api') with the
+        page's code as `musickit_code`."""
+        song_id, url = str(song_id or ''), str(url or '')
+        if not song_id or not url.startswith('https://'):
+            raise EngineError('usage', 'preview needs a song id and its preview address')
+        client = await self._ready()
+        answer = await client.bridge('preview', song_id, url, timeout=PLAY_TIMEOUT)
+        if isinstance(answer, dict) and answer.get('error'):
+            raise EngineError('api', f'preview: {answer["error"]}',
+                              musickit_code=str(answer.get('code') or '') or None)
+
+    async def stop_preview(self):
+        """Stop the preview playing (preview()), if one is: whether one was."""
+        client = await self._ready()
+        answer = await client.bridge('stopPreview')
+        return bool(isinstance(answer, dict) and answer.get('stopped'))
+
     async def control(self, action):
         """One of CONTROL_ACTIONS: play, pause, toggle, next, previous, stop."""
         if action not in CONTROL_ACTIONS:
@@ -1700,7 +1728,8 @@ class Engine(GObject.Object):
                                        str(self.cache_dir))
 
     async def playlist_suggestions(self, playlist_id, refresh=False, limit=SUGGESTIONS_LIMIT,
-                                   offered=(), selected=(), more=False, basis=None):
+                                   offered=(), selected=(), more=False, basis=None,
+                                   previewed=()):
         """The songs Apple suggests adding to a library playlist, as music.apple.com shows
         them under it: {items} (normalize.playlist_suggestions), at most `limit` song Items
         in Apple's order, which may include songs the playlist holds already. One read (the
@@ -1708,18 +1737,20 @@ class Engine(GObject.Object):
         fetched and kept; `refresh` asks Apple for new ones, which are kept instead. `basis`
         names what the playlist holds (suggestions.basis()): an answer kept for another, the
         playlist changed since, is asked for again.
-        `offered` (the catalog ids shown so far) and `selected` (those of them added) tell
-        Apple what not to suggest again, as music.apple.com's Refresh does. `more` asks for a
+        `offered` (the catalog ids shown so far), `selected` (those of them added) and
+        `previewed` (those whose preview was played) tell Apple what not to suggest again,
+        and how each was taken, as music.apple.com's Refresh does. `more` asks for a
         few more beside those (nothing kept, nothing read from the file): the demo has none."""
         playlist_id = str(playlist_id or '')
         if not is_library_id(playlist_id):
             raise EngineError('usage', 'playlist_suggestions needs a library playlist id')
         offered = [str(song_id) for song_id in offered if song_id]
         selected = [str(song_id) for song_id in selected if song_id]
+        previewed = [str(song_id) for song_id in previewed if song_id]
 
         async def fetch(client):
             answer = await client.bridge('playlistSuggestions', playlist_id, int(limit),
-                                         offered, selected, timeout=READ_TIMEOUT)
+                                         offered, selected, previewed, timeout=READ_TIMEOUT)
             error = api.api_error(answer, 'suggested songs')
             if error is not None:
                 raise error

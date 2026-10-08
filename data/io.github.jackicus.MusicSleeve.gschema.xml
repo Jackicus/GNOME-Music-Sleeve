@@ -38,6 +38,11 @@
       <summary>Show twelve suggested songs under a playlist</summary>
       <description>Whether a playlist's Suggested Songs show twelve songs at a time instead of six. The songs come from Apple Music; one added to the playlist gives its place to the next.</description>
     </key>
+    <key name="preview-suggestions" type="b">
+      <default>false</default>
+      <summary>Play a suggested song as a preview</summary>
+      <description>Whether clicking one of a playlist's Suggested Songs plays Apple Music's 30-second preview of it instead of the whole song. A preview leaves the queue as it is: the music playing pauses for it. A song without a preview plays in full.</description>
+    </key>
     <key name="browser-command" type="s">
       <default>'google-chrome-stable'</default>
       <summary>Browser program</summary>

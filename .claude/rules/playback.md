@@ -52,6 +52,13 @@ paths:
   `previous()` restarts the item after `PREVIOUS_RESTART` seconds. A `mediaPlaybackError` is
   emitted as `error(sentence)`, the sentence `playback_error_text(code)` gives MusicKit's
   code; the app toasts it as it is.
+- A preview (a suggested song's 30-second clip, `Player.start_preview`) plays in the
+  page's own audio element, not through MusicKit, which pauses for it: the state, track,
+  times and queue stay MusicKit's, so the bar, the sheet and MPRIS show the queue paused,
+  as it is, and Play there resumes it and stops the clip (the bridge stops a preview on
+  `play()`, every `control()` and MusicKit playing). Only `player.preview` (the song's
+  catalog id, from `previewDidChange`) says a clip plays; it is cleared with the rest when
+  the engine goes down or the page is reloaded.
 - `player.stopped` means no item, or `none`, `stopped`, `ended` or `completed` (paused is not).
   MusicKit passes through `ended` and `stopped` between items, so anything acting on "stopped"
   waits a moment (background playback waits 10 s before quitting).

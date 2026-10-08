@@ -93,6 +93,7 @@ BINDINGS = (
     ('background_row', 'active', 'background-playback'),
     ('discord_row', 'active', 'discord-presence'),
     ('more_suggestions_row', 'active', 'more-suggestions'),
+    ('preview_suggestions_row', 'active', 'preview-suggestions'),
     ('headless_row', 'active', 'engine-headless'),
     ('autostart_row', 'active', 'engine-autostart'),
 )
@@ -107,6 +108,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     background_row = Gtk.Template.Child()
     discord_row = Gtk.Template.Child()
     more_suggestions_row = Gtk.Template.Child()
+    preview_suggestions_row = Gtk.Template.Child()
     interval_row = Gtk.Template.Child()
     last_refreshed_row = Gtk.Template.Child()
     refresh_button = Gtk.Template.Child()
