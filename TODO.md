@@ -2,17 +2,13 @@
 
 What is left, as of 2026-10-08. Music Sleeve (`io.github.jackicus.MusicSleeve`) is released:
 [v0.9.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.9.0), the first
-release, v0.10.0, which adds Discord rich presence, and
-[v0.11.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.11.0), the latest: the
-GNOME HIG pass, artist pages in Apple Music's structure and Go to Album and Go to Artist. A
-release is a tag and a GitHub release (`docs/release.md`); why the app is built the way it is,
-is in `docs/decisions.md`.
-
-The [0.12.0 milestone](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/3) collects
-what has landed since, ready for the next release when the maintainer wants it: playlist
-management (new, rename, delete, folders, remove from a playlist), the library's Artists view,
-Add to Playlist by folder, a quicker refresh (#193), and Suggested Songs under a playlist (six
-or twelve, Refresh, in full or as a preview).
+release, v0.10.0, which adds Discord rich presence, v0.11.0, the GNOME HIG pass, artist pages
+in Apple Music's structure and Go to Album and Go to Artist, and
+[v0.12.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.12.0), the latest:
+playlist management (new, rename, delete, folders, remove from a playlist), the library's
+Artists view, Add to Playlist by folder, a quicker refresh (#193), and Suggested Songs under a
+playlist (six or twelve, Refresh, in full or as a preview). A release is a tag and a GitHub
+release (`docs/release.md`); why the app is built the way it is, is in `docs/decisions.md`.
 
 ## Open
 
