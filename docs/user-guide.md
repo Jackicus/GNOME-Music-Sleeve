@@ -39,6 +39,7 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   on what the playlist holds, six at a time (twelve with Preferences › General › Suggested
   Songs › Show More Suggestions): click one to play it, its **+** button to add it to the
   playlist (the next suggestion takes its place), and the refresh button for new ones.
+  They are kept for a day, or until the playlist's songs change.
 - **Artists** lists the artists in your library beside the one you choose: their albums in
   your library, newest first (**Sort By** for titles), with **Play** and **Shuffle** for all
   their songs. A song you added without its album shows as its album. Clicking an artist you

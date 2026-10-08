@@ -115,11 +115,12 @@ def classes():
             return await self._answer('catalog_artist', name, song_ids)
 
         async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
-                                       selected=(), more=False):
+                                       selected=(), more=False, basis=None):
             # Each request's arguments, beside the answer's name in `calls`.
             self.suggestion_requests.append({'refresh': refresh, 'limit': limit,
                                              'offered': list(offered),
-                                             'selected': list(selected), 'more': more})
+                                             'selected': list(selected), 'more': more,
+                                             'basis': basis})
             if more:
                 return await self._answer('more_suggestions', playlist_id)
             return await self._answer('playlist_suggestions', playlist_id, refresh)

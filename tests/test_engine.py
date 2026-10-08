@@ -1523,6 +1523,32 @@ class SuggestionsTest(EngineFixture):
         self.assertEqual(self.page.bridge_calls[-1], (
             'playlistSuggestions', 'p.pl1', 10, ['1724049301', '1724049302'], ['1724049302']))
 
+    async def test_asked_again_once_the_playlist_holds_other_songs(self):
+        self.page.authorized = True
+        await self.engine.start()
+        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
+            self.song('1724049301', 'Tin Roof')]}}
+        answer = await self.engine.playlist_suggestions('p.pl1', basis='held-a')
+        self.assertEqual(answer['basis'], 'held-a')
+        await self.engine.playlist_suggestions('p.pl1', basis='held-a')  # from the file
+        self.assertEqual(len(self.page.bridge_calls), 1)
+        # A song added or removed since: another basis, so Apple is asked again, however
+        # young the kept answer, and the new one is kept with it.
+        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
+            self.song('1724049302', 'Low Tide')]}}
+        answer = await self.engine.playlist_suggestions('p.pl1', basis='held-b')
+        self.assertEqual(len(self.page.bridge_calls), 2)
+        self.assertEqual([item['id'] for item in answer['items']], ['1724049302'])
+        kept = json.loads((self.cache / 'suggestions' / 'p.pl1.json').read_text('utf-8'))
+        self.assertEqual(kept['basis'], 'held-b')
+        await self.engine.playlist_suggestions('p.pl1', basis='held-b')
+        self.assertEqual(len(self.page.bridge_calls), 2)
+        # Apple out of reach: the answer for other songs is still better than none.
+        await self.engine.stop()
+        answer = await self.engine.playlist_suggestions('p.pl1', basis='held-c')
+        self.assertTrue(answer['stale'])
+        self.assertEqual([item['id'] for item in answer['items']], ['1724049302'])
+
     async def test_a_few_more_are_neither_read_from_the_file_nor_kept(self):
         self.page.authorized = True
         await self.engine.start()

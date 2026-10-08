@@ -160,7 +160,7 @@ def _classes():
             return self.artist_answer
 
         async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
-                                       selected=(), more=False):
+                                       selected=(), more=False, basis=None):
             self.calls.append('more_suggestions' if more else 'playlist_suggestions')
             if self.suggestions is None:
                 raise EngineError('engine-down')

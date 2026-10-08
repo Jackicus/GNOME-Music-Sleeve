@@ -11,9 +11,16 @@ and the rest held as spares (take()); an added song's place filled in place by t
 spare (fill()); a few more asked for (wants_more(), extend()) when the spares run out; and
 every song shown remembered as offered, every one added as selected, for the next request.
 
+The answer is kept for a day (Engine.playlist_suggestions) with basis(), a fingerprint of
+the songs the playlist held when it was asked: once the playlist holds others (a song added
+here or elsewhere, one removed), the next page shown asks Apple again. A page already open
+keeps what it shows: an added song's place is filled from the spares, not asked again.
+
 columns_for() is the number of columns the grid of them has at a width: one that divides
 the count, so the rows are full (6 as 3 by 2, 2 by 3 or 6 by 1; 12 as 4, 3, 2 or 1 a row).
 """
+
+import hashlib
 
 COUNT = 6  # shown at a time
 MORE_COUNT = 12  # with the `more-suggestions` setting
@@ -24,6 +31,13 @@ MAX_COLUMNS = 4
 def count(more):
     """How many suggestions a page shows: MORE_COUNT with the setting on, else COUNT."""
     return MORE_COUNT if more else COUNT
+
+
+def basis(held):
+    """A fingerprint of what a playlist holds (`held`, its songs' ids, in any order): the
+    same for the same songs, another once one is added or removed."""
+    joined = '\n'.join(sorted({str(song_id) for song_id in held if song_id}))
+    return hashlib.sha256(joined.encode()).hexdigest()[:16]
 
 
 def columns_for(width, total, column_width, spacing=0):

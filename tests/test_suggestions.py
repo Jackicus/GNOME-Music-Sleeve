@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from tests import ROOT  # noqa: F401  registers src/ as the applemusic package
 
-from applemusic.suggestions import COUNT, MORE_COUNT, Suggestions, columns_for, count
+from applemusic.suggestions import COUNT, MORE_COUNT, Suggestions, basis, columns_for, count
 
 
 def songs(*numbers):
@@ -34,6 +34,16 @@ class CountTest(unittest.TestCase):
         self.assertEqual(columns_for(1236, 5, 300, 12), 1)  # five: only one divides it
         self.assertEqual(columns_for(1236, 4, 300, 12), 4)
         self.assertEqual(columns_for(100, 0, 300), 1)
+
+
+class BasisTest(unittest.TestCase):
+    def test_the_same_songs_in_any_order_and_another_once_they_change(self):
+        held = {'i.1', '2001', 'i.2'}
+        self.assertEqual(basis(held), basis(['i.2', 'i.1', '2001', '2001', '', None]))
+        self.assertNotEqual(basis(held), basis(held | {'2002'}))  # a song added
+        self.assertNotEqual(basis(held), basis(held - {'i.2'}))  # one removed
+        self.assertNotEqual(basis(['1', '0']), basis(['10']))  # ids kept apart
+        self.assertEqual(len(basis(())), 16)
 
 
 class SuggestionsTest(unittest.TestCase):
