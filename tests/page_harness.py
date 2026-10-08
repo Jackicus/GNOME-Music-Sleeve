@@ -210,10 +210,14 @@ def classes():
             self.asked = []
             self.went = []  # (obj, kind) per go_to()
             self.added = []  # (playlist id, song id, title) per add_to_playlist()
+            self.add_succeeds = True  # what the write's task answers
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
             self.added.append((playlist_id, song_id, title))
-            return object()  # the task the real one answers
+            # The task the real one answers: whether the write succeeded.
+            task = asyncio.get_running_loop().create_future()
+            task.set_result(self.add_succeeds)
+            return task
 
         def menu_for(self, obj, queued=False):
             self.asked.append(obj)

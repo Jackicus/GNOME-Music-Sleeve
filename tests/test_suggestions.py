@@ -68,6 +68,36 @@ class SuggestionsTest(unittest.TestCase):
         self.assertEqual(ids(suggestions.shown), ['5', '3'])
         self.assertFalse(suggestions.fill(SimpleNamespace(id='9')))  # not shown
 
+    def test_an_add_that_failed_gives_the_song_its_place_back(self):
+        suggestions = Suggestions(3)
+        suggestions.take(songs(1, 2, 3, 4, 5))
+        suggestions.fill(SimpleNamespace(id='2'))
+        self.assertTrue(suggestions.restore(SimpleNamespace(id='2')))
+        self.assertEqual(ids(suggestions.shown), ['1', '2', '3'])
+        self.assertEqual(ids(suggestions.spares), ['4', '5'])  # the spare, first again
+        self.assertEqual(suggestions.selected, [])
+        self.assertFalse(suggestions.restore(SimpleNamespace(id='2')))  # once
+
+    def test_a_given_up_place_is_given_back_while_there_is_room(self):
+        suggestions = Suggestions(3)
+        suggestions.take(songs(1, 2, 3))
+        suggestions.fill(SimpleNamespace(id='2'))  # no spare: the place is given up
+        self.assertEqual(ids(suggestions.shown), ['1', '3'])
+        self.assertTrue(suggestions.restore(SimpleNamespace(id='2')))
+        self.assertEqual(ids(suggestions.shown), ['1', '2', '3'])
+
+    def test_a_failed_add_is_not_shown_again_where_its_place_has_gone(self):
+        suggestions = Suggestions(2)
+        suggestions.take(songs(1, 2, 3, 4, 5, 6))
+        suggestions.fill(SimpleNamespace(id='1'))
+        suggestions.take(songs(7, 8))  # a Refresh: what was shown is replaced
+        self.assertFalse(suggestions.restore(SimpleNamespace(id='1')))
+        self.assertEqual(ids(suggestions.shown), ['7', '8'])
+        self.assertEqual(suggestions.selected, [])
+        # Held by now (it was added after all, as a sync shows): not shown again either.
+        suggestions.fill(SimpleNamespace(id='7'))
+        self.assertFalse(suggestions.restore(SimpleNamespace(id='7'), held={'7'}))
+
     def test_a_few_more_fill_empty_places_then_wait_as_spares(self):
         suggestions = Suggestions(3)
         suggestions.take(songs(1, 2))

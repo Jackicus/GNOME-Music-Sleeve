@@ -120,7 +120,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   (`Engine.playlist_suggestions`) in a `widgets.suggested_songs.SuggestedSongs` (Add
   buttons, Refresh, a song plays alone), less the songs it holds: six, or twelve with
   `more-suggestions`, in a grid whose columns divide the count (`suggestions.columns_for`),
-  an added song's place filled from the spares, Refresh telling Apple what it offered
+  an added song's place filled from the spares at once (given back if the add fails), Refresh telling Apple what it offered
   (`suggestions.Suggestions`); a failure only hides it. With `preview-suggestions` a click
   plays the song's preview (`Player.start_preview`, again to stop; one without a preview
   plays in full), the row marked while the Player's `preview` names it, and the page

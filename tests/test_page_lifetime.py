@@ -238,10 +238,12 @@ def _classes():
 
     class ItemActions:
         """The window's item actions as a playlist's Suggested Songs use them: an add that
-        takes (it holds nothing of what it was given)."""
+        takes (it holds nothing of what it was given): its task, done, says it succeeded."""
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
-            return True
+            task = asyncio.get_running_loop().create_future()
+            task.set_result(True)
+            return task
 
     class Window(Adw.Window):
         """The app's window as the pages see it (get_root()): a navigation view whose root

@@ -650,14 +650,33 @@ class DetailPage(Adw.NavigationPage):
 
     def _on_add_suggestion(self, _section, song):
         """Add a suggested song to the playlist (the item actions' Add to Playlist, which
-        fetches the playlist again), and give its place to the next suggestion."""
+        fetches the playlist again), and give its place to the next suggestion at once; an
+        add that fails gives it back (_on_suggestion_written)."""
         actions = getattr(self.get_root(), 'item_actions', None)
         if actions is None or self.item is None or self._suggestions is None:
             return
-        if actions.add_to_playlist(self.item.id, song.id, song.title) is not None:
-            self._suggestions.fill(song, held_songs(self.item))
+        task = actions.add_to_playlist(self.item.id, song.id, song.title)
+        if task is None:
+            return
+        suggestions = self._suggestions
+        suggestions.fill(song, held_songs(self.item))
+        self._update_suggestions()
+        self._want_more()
+        # The task outlives a page that may be popped meanwhile: it holds the page weakly.
+        written = weak_method(self._on_suggestion_written)
+        task.add_done_callback(lambda done: written(done, song, suggestions))
+
+    def _on_suggestion_written(self, task, song, suggestions):
+        """An add from the suggestions ended: when it failed (reported already, by the item
+        actions), the song is not selected and goes back to its place, while this page still
+        shows the suggestions it was added from."""
+        if task.cancelled() or task.exception() is not None or task.result() is not False:
+            return
+        if suggestions is not self._suggestions or self.item is None:
+            suggestions.restore(song)  # not reported to Apple as chosen, wherever it is
+            return
+        if suggestions.restore(song, held_songs(self.item)):
             self._update_suggestions()
-            self._want_more()
 
     def _on_table_apply(self, _breakpoint):
         self.table = True

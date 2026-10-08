@@ -77,6 +77,7 @@ class Suggestions:
         self.selected = []
         self.previewed = []
         self.exhausted = False  # the last request for more brought none: ask no more
+        self._filled = {}  # an added song's id -> (its place, the spare that took it, or None)
 
     def take(self, items, held=()):
         """A new answer (the first, or a Refresh's): its first `count` songs shown, the
@@ -84,6 +85,7 @@ class Suggestions:
         self.shown = []
         self.spares = self._new(items, held)
         self.exhausted = False
+        self._filled = {}
         self._top_up(held)
 
     def extend(self, items, held=()):
@@ -103,11 +105,34 @@ class Suggestions:
         if index is None:
             return False
         spare = self._next_spare(held)
+        self._filled[song.id] = (index, spare)
         if spare is None:
             del self.shown[index]
         else:
             self.shown[index] = spare
             self._offer(spare)
+        return True
+
+    def restore(self, song, held=()):
+        """Adding `song` failed: no longer selected, and back in the place it gave up while
+        that place is still there (the spare that took it, still shown, goes back to the front
+        of the spares; an empty place, still empty). Not after an answer that replaced what
+        was shown, nor once the playlist holds it. Whether it is shown again."""
+        if song.id in self.selected:
+            self.selected.remove(song.id)
+        index, spare = self._filled.pop(song.id, (None, None))
+        if index is None or song.id in held or any(item.id == song.id for item in self.shown):
+            return False
+        if spare is not None:
+            place = next((i for i, item in enumerate(self.shown) if item is spare), None)
+            if place is None:
+                return False
+            self.shown[place] = song
+            self.spares.insert(0, spare)
+            return True
+        if len(self.shown) >= self.count:
+            return False
+        self.shown.insert(min(index, len(self.shown)), song)
         return True
 
     def preview(self, song):
@@ -149,6 +174,7 @@ class Suggestions:
             return False
         self.shown = []
         self.spares = spares
+        self._filled = {}
         self._top_up(held)
         return True
 

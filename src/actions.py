@@ -642,7 +642,8 @@ class ItemActions:
         """await method(*args), with the engine up first when `ensure` (started when it is
         down and the account signed in; the Player's own commands do that themselves), then
         toast message and await after(); an EngineError is reported instead (app.report).
-        The task, or None with the demo library (which says so)."""
+        The task, whose result says whether the method succeeded (False once reported), or
+        None with the demo library (which says so)."""
         if self.app.refuse_in_demo():
             return None
 
@@ -653,11 +654,12 @@ class ItemActions:
                 await method(*args)
             except EngineError as error:
                 self.app.report(error)
-                return
+                return False
             if message:
                 self.app.toast(message)
             if after is not None:
                 await after()
+            return True
 
         return self.app.spawn(run())
 
@@ -818,7 +820,8 @@ class ItemActions:
 
     def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
         """Add the song (or music video, `kind` 'video') to the library playlist, confirming
-        with a toast that names both, and fetch the playlist again so its page shows it."""
+        with a toast that names both, and fetch the playlist again so its page shows it. The
+        task, whose result says whether the add succeeded (_run()), or None."""
         if not song_id:
             self.app.toast(_('Only songs can be added to a playlist'))
             return None
