@@ -138,7 +138,11 @@ class _Row(Gtk.Box):
     suggestions) in its place."""
 
     def __init__(self):
-        super().__init__()
+        # Vertical, though it shows one child at a time: a horizontal box measures its
+        # children's height without the width (for its minimum), and the suggestions' grid
+        # is taller the narrower it is, which made the row's minimum height above its natural
+        # one (GTK's "natural size must be >= min size").
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.track_row = TrackRow(hexpand=True)
         self.append(self.track_row)
 
