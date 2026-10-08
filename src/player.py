@@ -25,6 +25,7 @@ the playback commands as thin coroutines over the engine.
                                                # not there yet), and whether one is being read
     player.pending                             # a play request is with the engine (the play
                                                # buttons show a spinner; `resting` holds)
+    player.preview     # the catalog id of the song whose preview plays, or '' (none)
     await player.play({'kind': 'album', 'id': …}, start_with=2, shuffle=False)  # or True,
                                                # or None: the mode as it is
     await player.queue_jump(3)  # play the queue's entry at index 3
@@ -34,6 +35,8 @@ the playback commands as thin coroutines over the engine.
     await player.seek(seconds); await player.set_volume(level)
     await player.set_shuffle(True); set_repeat('all')   # next_repeat(): the cycle's next
     await player.play_next(kind, id) / play_later(kind, id)
+    await player.start_preview(song_id, url)    # Apple's 30-second clip of a song (a suggested
+    await player.stop_preview()                 # one's), outside the queue; MusicKit pauses
     await player.ensure_engine()  # start a down engine when signed in (the item actions)
 
 The properties change only from the engine's events (playbackStateDidChange,
@@ -52,6 +55,11 @@ than the read's answer, which then sets only the modes and the volume. When the 
 goes down everything resets to nothing playing, at once; so it does when the page loads a
 new document (the engine's `bridgeReset` event), and now_playing() is read again for what
 the new one holds.
+A preview (Apple's clip of a suggested song, engine.preview()) is not the queue: MusicKit
+pauses for it, and the state, the track and the times stay MusicKit's, so the bar, the sheet
+and MPRIS show the queue paused, which it is. Only `preview` says a clip plays, from the
+engine's previewDidChange events; it is '' again as the clip ends or stops (MusicKit playing
+again stops it), and when the engine goes down or the page is reloaded.
 The commands raise EngineError as the engine does; play() starts a down engine first when the
 account is signed in (a toast says so) and raises EngineError('not-signed-in') when it is not,
 which the window turns into the sign-in flow. `error(message)` is emitted for MusicKit's
@@ -110,7 +118,7 @@ REPEAT_MODES = ('none', 'one', 'all')
 EVENTS = ('playbackStateDidChange', 'nowPlayingItemDidChange', 'playbackTimeDidChange',
           'playbackDurationDidChange', 'shuffleModeDidChange', 'repeatModeDidChange',
           'playbackVolumeDidChange', 'mediaPlaybackError', 'queueItemsDidChange',
-          'queuePositionDidChange', 'bridgeReset')
+          'queuePositionDidChange', 'previewDidChange', 'bridgeReset')
 
 
 def _text(value):
@@ -214,6 +222,7 @@ class Player(GObject.Object):
     lyrics = GObject.Property(type=Lyrics, default=None)
     lyrics_loading = GObject.Property(type=bool, default=False)
     pending = GObject.Property(type=bool, default=False)
+    preview = GObject.Property(type=str, default='')
 
     def __init__(self, app):
         """`app` gives the engine (`app.engine`), the settings (`signed-in`), `toast()`,
@@ -289,6 +298,7 @@ class Player(GObject.Object):
         if not isinstance(now_playing, dict):
             self._release_hold()  # nothing plays: nothing to hold through
             self._cancel_clear()
+            self._set_preview('')
             self._set_track(None)
             self._set_state('none')
             self._set_position(0.0, 0.0)
@@ -391,11 +401,17 @@ class Player(GObject.Object):
         elif name == 'queuePositionDidChange':
             index = data.get('index')
             self._set_queue_index(index if isinstance(index, int) else -1)
+        elif name == 'previewDidChange':
+            self._set_preview(_text(data.get('id')))
         elif name == 'mediaPlaybackError':
             code = _text(data.get('code'))
             log.warning('playback error %s: %s', code or '(no code)',
                         _text(data.get('message')) or '(no message)')
             self.emit('error', playback_error_text(code))
+
+    def _set_preview(self, song_id):
+        if song_id != self.preview:
+            self.preview = song_id
 
     def _take_position(self, data):
         """An event's position and duration, unless the position is the previous item's,
@@ -706,6 +722,19 @@ class Player(GObject.Object):
     async def play_later(self, kind, item_id):
         await self.ensure_engine()
         await self._engine.play_later(kind, item_id)
+
+    async def start_preview(self, song_id, url):
+        """Play Apple's preview of a song (`url`, its clip's https address) in place of any
+        before it, MusicKit paused meanwhile (engine.preview()): the engine is started first
+        as for a play (ensure_engine()). `preview` follows from the engine's events."""
+        await self.ensure_engine()
+        log.info('preview %s', song_id)
+        await self._engine.preview(song_id, url)
+
+    async def stop_preview(self):
+        """Stop the preview playing, if one is."""
+        if self._engine.state != 'down':
+            await self._engine.stop_preview()
 
     async def toggle(self):
         """Pause when playback is under way (ACTIVE_STATES: what the bar's button shows),

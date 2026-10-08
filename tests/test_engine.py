@@ -47,7 +47,8 @@ PLAYBACK_METHODS = ('signout', 'play', 'playNext', 'playLater', 'control', 'seek
                     'search', 'suggest', 'searchLanding', 'category', 'playlistSuggestions',
                     'rating', 'addToLibrary', 'addToPlaylist', 'createPlaylist',
                     'updatePlaylist', 'deletePlaylist', 'removeFromPlaylist',
-                    'replacePlaylistTracks', 'updateFolder', 'deleteFolder')
+                    'replacePlaylistTracks', 'updateFolder', 'deleteFolder', 'preview',
+                    'stopPreview')
 
 
 class UnixFakeChrome(FakeBrowser):
@@ -1506,7 +1507,7 @@ class SuggestionsTest(EngineFixture):
             self.song('1724049301', 'Tin Roof'), self.song('1724049302', 'Low Tide'),
             self.song('1724049301', 'Tin Roof'), {'id': '9', 'type': 'stations'}]}}
         answer = await self.engine.playlist_suggestions('p.pl1')
-        self.assertEqual(self.page.bridge_calls, [('playlistSuggestions', 'p.pl1', 16, [], [])])
+        self.assertEqual(self.page.bridge_calls, [('playlistSuggestions', 'p.pl1', 16, [], [], [])])
         self.assertEqual([item['id'] for item in answer['items']], ['1724049301', '1724049302'])
         song = answer['items'][0]
         self.assertEqual((song['kind'], song['title'], song['subtitle'], song['album']),
@@ -1519,9 +1520,11 @@ class SuggestionsTest(EngineFixture):
         self.assertEqual(len(self.page.bridge_calls), 1)
         await self.engine.playlist_suggestions('p.pl1', refresh=True, limit=10,
                                                offered=['1724049301', 1724049302],
-                                               selected=['1724049302'])
+                                               selected=['1724049302'],
+                                               previewed=[1724049301])
         self.assertEqual(self.page.bridge_calls[-1], (
-            'playlistSuggestions', 'p.pl1', 10, ['1724049301', '1724049302'], ['1724049302']))
+            'playlistSuggestions', 'p.pl1', 10, ['1724049301', '1724049302'], ['1724049302'],
+            ['1724049301']))
 
     async def test_asked_again_once_the_playlist_holds_other_songs(self):
         self.page.authorized = True
@@ -1563,7 +1566,7 @@ class SuggestionsTest(EngineFixture):
                                                         offered=['1724049301'])
         self.assertEqual([item['id'] for item in answer['items']], ['1724049303'])
         self.assertEqual(self.page.bridge_calls[-1],
-                         ('playlistSuggestions', 'p.pl1', 4, ['1724049301'], []))
+                         ('playlistSuggestions', 'p.pl1', 4, ['1724049301'], [], []))
         self.assertEqual(path.read_text(encoding='utf-8'), kept)
 
     async def test_only_a_library_playlist(self):
@@ -1580,6 +1583,19 @@ class SuggestionsTest(EngineFixture):
             await self.engine.playlist_suggestions('p.pl1')
         self.assertEqual(raised.exception.code, 'not-signed-in')
 
+    async def test_a_song_keeps_its_preview(self):
+        self.page.authorized = True
+        await self.engine.start()
+        song = self.song('1724049301', 'Tin Roof')
+        song['attributes']['previews'] = [{'url': 'https://example.invalid/tin-roof.m4a'}]
+        plain = self.song('1724049302', 'Low Tide')
+        plain['attributes']['previews'] = [{'url': 'http://example.invalid/low-tide.m4a'}]
+        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
+            song, plain]}}
+        items = (await self.engine.playlist_suggestions('p.pl1'))['items']
+        self.assertEqual(items[0]['previewUrl'], 'https://example.invalid/tin-roof.m4a')
+        self.assertNotIn('previewUrl', items[1])  # only an https clip
+
     async def test_the_demo_answers_its_own(self):
         demo = engine_module.Engine(demo=True)
         path = pathlib.Path(normalize.suggestions_cache_path(str(self.cache), 'l.pl001'))
@@ -1592,6 +1608,42 @@ class SuggestionsTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'engine-down')
         with self.assertRaises(EngineError) as raised:
             await demo.playlist_suggestions('l.pl001', more=True)
+        self.assertEqual(raised.exception.code, 'engine-down')
+
+
+class PreviewTest(EngineFixture):
+    """preview and stop_preview: the bridge's calls, a clip the page refuses, no sign-in."""
+
+    async def test_preview_and_stop(self):
+        await self.engine.start()  # not signed in: a preview is anyone's
+        await self.engine.preview(1724049301, 'https://example.invalid/tin-roof.m4a')
+        self.page.bridge_answers['stopPreview'] = {'stopped': True}
+        self.assertTrue(await self.engine.stop_preview())
+        self.page.bridge_answers['stopPreview'] = {'stopped': False}
+        self.assertFalse(await self.engine.stop_preview())
+        self.assertEqual(self.page.bridge_calls, [
+            ('preview', '1724049301', 'https://example.invalid/tin-roof.m4a'),
+            ('stopPreview',), ('stopPreview',)])
+
+    async def test_a_clip_the_page_cannot_play(self):
+        await self.engine.start()
+        self.page.bridge_answers['preview'] = {'error': 'denied', 'code': 'NotAllowedError'}
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.preview('1724049301', 'https://example.invalid/tin-roof.m4a')
+        self.assertEqual((raised.exception.code, raised.exception.musickit_code),
+                         ('api', 'NotAllowedError'))
+        for url in ('', 'http://example.invalid/tin-roof.m4a'):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.preview('1724049301', url)
+            self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(len(self.page.bridge_calls), 1)
+
+    async def test_down_or_demo(self):
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.preview('1724049301', 'https://example.invalid/tin-roof.m4a')
+        self.assertEqual(raised.exception.code, 'engine-down')
+        with self.assertRaises(EngineError) as raised:
+            await engine_module.Engine(demo=True).stop_preview()
         self.assertEqual(raised.exception.code, 'engine-down')
 
 

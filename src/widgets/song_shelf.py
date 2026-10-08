@@ -23,9 +23,10 @@ COVER_SIZE = 48
 class SongRow(Gtk.Box):
     """A song in the grid: its album's cover, its title (with the explicit badge) and its
     album and year; with `suggestion`, its artist and album (a playlist's Suggested Songs,
-    widgets/suggested_songs.py, where it fills the width it is given). bind(item) and
-    unbind() as the grid recycles it; it follows the Item for a thumbnail that arrives later
-    (notify::thumb)."""
+    widgets/suggested_songs.py, where it fills the width it is given), and a stop icon over
+    the cover while its preview plays (set_previewing(): nothing that changes its size).
+    bind(item) and unbind() as the grid recycles it; it follows the Item for a thumbnail
+    that arrives later (notify::thumb)."""
 
     __gtype_name__ = 'AppleMusicSongRow'
 
@@ -38,7 +39,20 @@ class SongRow(Gtk.Box):
         self.cover = Cover(size=COVER_SIZE, valign=Gtk.Align.CENTER,
                            accessible_role=Gtk.AccessibleRole.PRESENTATION)
         self.cover.add_css_class('small')
-        self.append(self.cover)
+        self.preview_scrim = None
+        if suggestion:
+            # Decoration: the row's description says "Previewing" (SuggestionRow).
+            cover = Gtk.Overlay(child=self.cover, valign=Gtk.Align.CENTER)
+            self.preview_scrim = Gtk.Box(opacity=0, can_target=False,
+                                         accessible_role=Gtk.AccessibleRole.PRESENTATION)
+            self.preview_scrim.add_css_class('osd')
+            self.preview_scrim.add_css_class('playing-scrim')
+            self.preview_scrim.append(Gtk.Image(icon_name='media-playback-stop-symbolic',
+                                                hexpand=True, halign=Gtk.Align.CENTER))
+            cover.add_overlay(self.preview_scrim)
+            self.append(cover)
+        else:
+            self.append(self.cover)
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER,
                        hexpand=True, spacing=2)
         line = Gtk.Box(spacing=6)
@@ -84,6 +98,13 @@ class SongRow(Gtk.Box):
             self._handler = None
         self._item = None
         self.cover.set_paths()
+        self.set_previewing(False)
+
+    def set_previewing(self, previewing):
+        """Show the stop icon over the cover while the song's preview plays (a suggestion's
+        row only)."""
+        if self.preview_scrim is not None:
+            self.preview_scrim.set_opacity(1 if previewing else 0)
 
     def _on_thumb(self, item, _pspec):
         if not self.cover.set_paths(item.thumb, item.art):

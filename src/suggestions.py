@@ -9,7 +9,8 @@ were added, so that none of them comes back. The page does the same with Suggest
 or twelve with the `more-suggestions` setting (count()), each answer's first `count` shown
 and the rest held as spares (take()); an added song's place filled in place by the next
 spare (fill()); a few more asked for (wants_more(), extend()) when the spares run out; and
-every song shown remembered as offered, every one added as selected, for the next request.
+every song shown remembered as offered, every one added as selected and every one whose
+preview was played as previewed (preview()), for the next request.
 
 The answer is kept for a day (Engine.playlist_suggestions) with basis(), a fingerprint of
 the songs the playlist held when it was asked: once the playlist holds others (a song added
@@ -40,6 +41,14 @@ def basis(held):
     return hashlib.sha256(joined.encode()).hexdigest()[:16]
 
 
+def preview_url(item):
+    """The https address of Apple's preview of a suggested song Item (its `previewUrl`,
+    normalize.playlist_suggestions()), or None: a song without one plays in full."""
+    raw = item.raw if item is not None and isinstance(item.raw, dict) else {}
+    url = raw.get('previewUrl')
+    return url if isinstance(url, str) and url.startswith('https://') else None
+
+
 def columns_for(width, total, column_width, spacing=0):
     """The columns of a grid of `total` songs `width` wide, each at least `column_width`
     with `spacing` between them: as many as fit (at most MAX_COLUMNS), less until they
@@ -54,7 +63,8 @@ def columns_for(width, total, column_width, spacing=0):
 class Suggestions:
     """The suggestions of one playlist, as one page shows them: `shown` (at most `count`
     song Items, in their places), the spares, and the catalog ids `offered` (every song
-    shown) and `selected` (every song added), in the order they came.
+    shown), `selected` (every song added) and `previewed` (every song whose preview was
+    played), in the order they came.
 
     Every method that takes `held` (the ids of the songs the playlist holds) leaves those
     out of what it shows."""
@@ -65,6 +75,7 @@ class Suggestions:
         self.spares = []
         self.offered = []
         self.selected = []
+        self.previewed = []
         self.exhausted = False  # the last request for more brought none: ask no more
 
     def take(self, items, held=()):
@@ -98,6 +109,11 @@ class Suggestions:
             self.shown[index] = spare
             self._offer(spare)
         return True
+
+    def preview(self, song):
+        """`song`'s preview was played: told to Apple with the next request."""
+        if song.id and song.id not in self.previewed:
+            self.previewed.append(song.id)
 
     def drop_held(self, held):
         """Songs that are now in the playlist (added elsewhere, or by a sync) give their

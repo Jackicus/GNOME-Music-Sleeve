@@ -27,6 +27,13 @@ with the `more-suggestions` setting, less the songs the playlist holds. What is 
 spares that fill an added song's place and what Apple has offered are a
 suggestions.Suggestions, one a playlist. The section is left out while there are none to
 show, the engine unable to answer among them: a failure is only logged.
+
+A suggested song clicked plays in full, as a track row's song does, or, with the
+`preview-suggestions` setting, Apple's 30-second preview of it (Player.start_preview(): the
+queue pauses for it), clicked again to stop; a song without a preview plays in full. The
+row of the song previewing is marked while the Player's `preview` names it, every song
+previewed is told to Apple with the next request (Suggestions.preview()), and a preview
+started here stops when the page is left.
 """
 
 import asyncio
@@ -39,7 +46,7 @@ from gi.repository import Adw, Gdk, Gio, GObject, Gtk, Pango
 from ..backend.errors import EngineError
 from ..library import Item, ShelfModel, Track
 from ..related import catalog_target
-from ..suggestions import SPARES, Suggestions
+from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
 from ..remote import fetch_cover, fetch_shelf_art, remote_item
@@ -313,6 +320,9 @@ class DetailPage(Adw.NavigationPage):
         self._playing = PlayingMark(getattr(app(), 'player', None))
         if self._playing.player is not None:
             self._handlers.add(self._playing.player, 'notify::track', self._on_track_changed)
+            self._handlers.add(self._playing.player, 'notify::preview',
+                               self._on_preview_changed)
+        self._previewing = ''  # the song whose preview this page started, while it may play
         self._settings = getattr(app(), 'settings', None)
         if self._settings is not None:
             self._handlers.add(self._settings, 'changed::more-suggestions',
@@ -339,6 +349,7 @@ class DetailPage(Adw.NavigationPage):
         self._suggest()
         if self._suggestions is not None and self._suggestions.count != self._count():
             self._on_count_changed()  # the setting changed while the page was hidden
+        self._on_preview_changed()  # a preview that ended while the page was hidden
         clock = self.get_frame_clock()
         if clock is not None and self._painted is None:
             self._painted = (clock, connect_weak(clock, 'after-paint', self._on_painted))
@@ -374,6 +385,7 @@ class DetailPage(Adw.NavigationPage):
                 task.cancel()
         if self._suggestions is None or not self._suggestions.shown:
             self._suggested_for = None  # asked again when shown: none came this time
+        self._stop_preview()
         Adw.NavigationPage.do_hidden(self)
 
     def _follow(self, *_args):
@@ -470,6 +482,8 @@ class DetailPage(Adw.NavigationPage):
             connect_weak(section, 'play-song', self._on_play_suggestion)
             connect_weak(section, 'add-song', self._on_add_suggestion)
             connect_weak(section, 'refresh', self._on_refresh_suggestions)
+            player = self._playing.player
+            section.set_previewing(player.preview if player is not None else '')
             self.suggested_songs = section
         return self.suggested_songs
 
@@ -506,7 +520,7 @@ class DetailPage(Adw.NavigationPage):
                 answer = await app().engine.playlist_suggestions(
                     item.id, refresh=True, limit=suggestions.count + SPARES,
                     offered=list(suggestions.offered), selected=list(suggestions.selected),
-                    basis=basis)
+                    previewed=list(suggestions.previewed), basis=basis)
             else:
                 answer = await app().engine.playlist_suggestions(item.id, basis=basis)
         except EngineError as error:
@@ -539,7 +553,8 @@ class DetailPage(Adw.NavigationPage):
         try:
             answer = await app().engine.playlist_suggestions(
                 item.id, limit=limit, offered=list(suggestions.offered),
-                selected=list(suggestions.selected), more=True)
+                selected=list(suggestions.selected), previewed=list(suggestions.previewed),
+                more=True)
         except EngineError as error:
             log.info('more suggestions for playlist %s: %s', item.id, error)
             suggestions.exhausted = True
@@ -588,7 +603,46 @@ class DetailPage(Adw.NavigationPage):
             self._fetch_suggestions(self.item, refresh=True)
 
     def _on_play_suggestion(self, _section, song):
-        self.get_root().play_request(song.play)
+        """A suggested song clicked: in full, or its preview with the `preview-suggestions`
+        setting (stopped instead when it is the one previewing). A song without a preview
+        plays in full."""
+        url = preview_url(song)
+        wanted = self._settings is not None and self._settings.get_boolean('preview-suggestions')
+        player = self._playing.player
+        if not (url and wanted and player is not None):
+            self.get_root().play_request(song.play)
+            return
+        application = app()
+        if application.refuse_in_demo():
+            return
+        if player.preview == song.id:
+            self._previewing = ''
+            application.player_command(player.stop_preview())
+            return
+        self._previewing = song.id
+        application.player_command(player.start_preview(song.id, url))
+
+    def _on_preview_changed(self, *_args):
+        """The Player's preview: its row marked, and the song told to Apple next time as one
+        previewed."""
+        player = self._playing.player
+        song_id = player.preview if player is not None else ''
+        if self.suggested_songs is not None:
+            self.suggested_songs.set_previewing(song_id)
+        if song_id and self._suggestions is not None:
+            song = next((item for item in self._suggestions.shown if item.id == song_id), None)
+            if song is not None:
+                self._suggestions.preview(song)
+        if not song_id:
+            self._previewing = ''
+
+    def _stop_preview(self):
+        """Stop the preview this page started, if it still plays: the page is left, and its
+        row with it."""
+        player = self._playing.player
+        song_id, self._previewing = self._previewing, ''
+        if song_id and player is not None and player.preview == song_id:
+            app().player_command(player.stop_preview())
 
     def _on_add_suggestion(self, _section, song):
         """Add a suggested song to the playlist (the item actions' Add to Playlist, which

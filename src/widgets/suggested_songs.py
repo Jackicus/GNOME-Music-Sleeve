@@ -11,7 +11,9 @@ nothing scrolls sideways. set_items() keeps a row where its song stays and binds
 in place of a song that went, so a song added gives its place to the next one there.
 
 Each row is a flat button with the song's cover, title and artist and album, which plays it
-(`play-song`), and an Add button beside it (`add-song`); Refresh emits `refresh`. A right
+(`play-song`: in full, or its preview, as the page decides), and an Add button beside it
+(`add-song`); Refresh emits `refresh`. set_previewing(id) marks the row of the song whose
+preview plays: a stop icon over its cover, "Previewing" as its description. A right
 click, a long press or the Menu key opens a song's context menu (context_menu.attach()).
 """
 
@@ -59,9 +61,24 @@ class SuggestionRow(Gtk.Box):
         self.song_row.bind(item)
         self.play_button.update_property([Gtk.AccessibleProperty.LABEL],
                                          [suggestion_label(item)])
+        self.set_previewing(False)
 
     def unbind(self):
         self.song_row.unbind()
+        self._previewing = None
+
+    _previewing = None  # whether the row shows its song's preview playing (None: unbound)
+
+    def set_previewing(self, previewing):
+        """Mark the row as the song whose preview plays, or not."""
+        previewing = bool(previewing)
+        if previewing == self._previewing:
+            return
+        self._previewing = previewing
+        self.song_row.set_previewing(previewing)
+        # Translators: a suggested song's description while its 30-second preview plays.
+        self.play_button.update_property([Gtk.AccessibleProperty.DESCRIPTION],
+                                         [_('Previewing') if previewing else ''])
 
 
 class SuggestionGrid(Gtk.Widget):
@@ -193,6 +210,17 @@ class SuggestedSongs(Gtk.Box):
 
     def set_items(self, items):
         self.grid.set_items(items)
+        self.set_previewing(self._previewing)
+
+    _previewing = ''  # the catalog id of the song whose preview plays, or ''
+
+    def set_previewing(self, song_id):
+        """Mark the row of the song `song_id` (a catalog id; '' for none) as previewing."""
+        self._previewing = song_id or ''
+        for row in self.grid.rows:
+            item = row.context_item
+            row.set_previewing(bool(self._previewing) and item is not None
+                               and item.id == self._previewing)
 
     def _make_row(self):
         # The row's buttons are connected weakly, and the row found from the button: a

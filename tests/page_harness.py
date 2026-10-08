@@ -35,9 +35,24 @@ _stand_ins = {}
 
 class Player(GObject.Object):
     """What the pages follow of app.player: the item playing (a NowPlaying, or None), which a
-    test sets (`playing(track)` makes one from a track's dict)."""
+    test sets (`playing(track)` makes one from a track's dict), and the song whose preview
+    plays (`preview`); the preview commands are recorded in `previews` and set `preview` as
+    the engine's events would."""
 
     track = GObject.Property(type=NowPlaying, default=None)
+    preview = GObject.Property(type=str, default='')
+
+    def __init__(self):
+        super().__init__()
+        self.previews = []  # ('start', song id, url) or ('stop',), per command
+
+    async def start_preview(self, song_id, url):
+        self.previews.append(('start', song_id, url))
+        self.preview = song_id
+
+    async def stop_preview(self):
+        self.previews.append(('stop',))
+        self.preview = ''
 
 
 def playing(data):
@@ -115,12 +130,12 @@ def classes():
             return await self._answer('catalog_artist', name, song_ids)
 
         async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
-                                       selected=(), more=False, basis=None):
+                                       selected=(), more=False, basis=None, previewed=()):
             # Each request's arguments, beside the answer's name in `calls`.
             self.suggestion_requests.append({'refresh': refresh, 'limit': limit,
                                              'offered': list(offered),
                                              'selected': list(selected), 'more': more,
-                                             'basis': basis})
+                                             'basis': basis, 'previewed': list(previewed)})
             if more:
                 return await self._answer('more_suggestions', playlist_id)
             return await self._answer('playlist_suggestions', playlist_id, refresh)
@@ -141,6 +156,8 @@ def classes():
         def reset(self):
             self.engine = Engine()
             self.player.track = None
+            self.player.preview = ''
+            self.player.previews = []
             self.demo = False
             self.tasks = []
             self.actions = []
@@ -158,6 +175,14 @@ def classes():
 
         def report(self, error):
             self.reported.append(error.code)
+
+        def player_command(self, coro, on_error=None):
+            async def command():
+                try:
+                    await coro
+                except EngineError as error:
+                    self.report(error)
+            return self.spawn(command())
 
         def toast(self, title, *_args):
             self.toasts.append(title)

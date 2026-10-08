@@ -531,6 +531,79 @@ class SuggestionsTest(PageTestCase):
         await self.show(album(2), self.answer([0]))
         self.assertEqual(self.app.engine.calls, [])
 
+    def previewing(self, page):
+        """The ids of the rows marked as previewing, and their descriptions said."""
+        return [row.context_item.id for row in page.suggested_songs.grid.rows
+                if row.song_row.preview_scrim.get_opacity() == 1]
+
+    async def test_a_click_plays_a_preview_with_the_setting(self):
+        self.addCleanup(self.app.settings.reset, 'preview-suggestions')
+        answer = self.answer(range(12))
+        for entry in answer['items']:
+            if entry['id'] != '2003':  # one without a preview: it plays in full
+                entry['previewUrl'] = f"https://example.invalid/{entry['id']}.m4a"
+        page = await self.show(self.playlist(), answer)
+        rows = page.suggested_songs.grid.rows
+        # Off (the default): the song in full.
+        rows[0].play_button.emit('clicked')
+        self.assertEqual(self.window.played[-1][0], {'kind': 'song', 'id': '2000'})
+        self.assertEqual(self.app.player.previews, [])
+        # On: its preview, its row marked; clicked again, stopped.
+        self.app.settings.set_boolean('preview-suggestions', True)
+        played = len(self.window.played)
+        rows[0].play_button.emit('clicked')
+        await self.settle()
+        self.assertEqual(self.app.player.previews,
+                         [('start', '2000', 'https://example.invalid/2000.m4a')])
+        self.assertEqual(len(self.window.played), played)
+        self.assertEqual(self.previewing(page), ['2000'])
+        rows[0].play_button.emit('clicked')
+        await self.settle()
+        self.assertEqual(self.app.player.previews[-1], ('stop',))
+        self.assertEqual(self.previewing(page), [])
+        # Without a preview: in full.
+        rows[2].play_button.emit('clicked')
+        self.assertEqual(self.window.played[-1][0], {'kind': 'song', 'id': '2003'})
+        # A preview that ends on its own unmarks its row; the songs previewed are told to
+        # Apple with the next request.
+        rows[1].play_button.emit('clicked')
+        await self.settle()
+        self.assertEqual(self.previewing(page), ['2002'])
+        self.app.player.preview = ''
+        self.assertEqual(self.previewing(page), [])
+        page.suggested_songs.refresh_button.emit('clicked')
+        await self.settle()
+        self.assertEqual(self.app.engine.suggestion_requests[-1]['previewed'], ['2000', '2002'])
+
+    async def test_a_preview_stops_when_the_page_is_left(self):
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        self.addCleanup(self.app.settings.reset, 'preview-suggestions')
+        self.app.settings.set_boolean('preview-suggestions', True)
+        answer = self.answer(range(8))
+        for entry in answer['items']:
+            entry['previewUrl'] = f"https://example.invalid/{entry['id']}.m4a"
+        page = await self.show(self.playlist(), answer)
+        page.suggested_songs.grid.rows[0].play_button.emit('clicked')
+        await self.settle()
+        self.assertEqual(self.app.player.preview, '2000')
+        await self.push(DetailPage(self.library, Item(album(2))))
+        await self.settle()
+        self.assertEqual(self.app.player.previews[-1], ('stop',))
+        self.assertEqual(self.app.player.preview, '')
+
+    async def test_no_preview_with_the_demo_library(self):
+        self.addCleanup(self.app.settings.reset, 'preview-suggestions')
+        self.app.settings.set_boolean('preview-suggestions', True)
+        answer = self.answer(range(8))
+        answer['items'][0]['previewUrl'] = 'https://example.invalid/2000.m4a'
+        page = await self.show(self.playlist(), answer)
+        self.app.demo = True
+        page.suggested_songs.grid.rows[0].play_button.emit('clicked')
+        await self.settle()
+        self.assertEqual(self.app.player.previews, [])
+
     async def test_tab_from_a_track_reaches_them_and_back(self):
         from gi.repository import Gdk
 

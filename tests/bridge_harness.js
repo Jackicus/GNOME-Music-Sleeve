@@ -119,6 +119,56 @@ class FakeInstance {
     unauthorize(...args) { return this._call('unauthorize', args); }
 }
 
+// The page's Audio: an element that records what it is asked (`audios`, every one made), whose
+// play() resolves, or rejects with `audioFailure` when a scenario sets one; fire(name) sends it
+// an event ('ended', 'error') as the browser would.
+const audios = [];
+let audioFailure = null;
+
+class FakeAudio {
+    constructor(src) {
+        this.src = src;
+        this.volume = 1;
+        this.paused = true;
+        this.listeners = {};
+        this.calls = [];
+        audios.push(this);
+    }
+
+    addEventListener(name, handler) {
+        (this.listeners[name] = this.listeners[name] || []).push(handler);
+    }
+
+    fire(name) {
+        for (const handler of (this.listeners[name] || []).slice())
+            handler({});
+    }
+
+    async play() {
+        this.calls.push('play');
+        if (audioFailure)
+            throw audioFailure;
+        this.paused = false;
+    }
+
+    pause() {
+        this.calls.push('pause');
+        this.paused = true;
+    }
+
+    removeAttribute(name) {
+        this.calls.push('removeAttribute ' + name);
+        if (name === 'src')
+            this.src = '';
+    }
+
+    load() {
+        this.calls.push('load');
+    }
+}
+
+globalThis.Audio = FakeAudio;
+
 // The page's MusicKit global over `instance`.
 function fakeMusicKit(instance) {
     return {
@@ -287,6 +337,8 @@ function newPage(version) {
     delete window.__appleMusicLibrary;
     delete window.__appleMusicListeners;
     posted.length = 0;
+    audios.length = 0;
+    audioFailure = null;
     page.elements = {};
     const mk = new FakeInstance();
     window.MusicKit = fakeMusicKit(mk);
@@ -305,7 +357,10 @@ async function run() {
     for (const [name, scenario] of Object.entries(SCENARIOS)) {
         try {
             const mk = newPage();
-            const value = await scenario({ bridge: window.__appleMusicLibrary, mk, posted, page });
+            const value = await scenario({
+                bridge: window.__appleMusicLibrary, mk, posted, page, audios,
+                failAudio(error) { audioFailure = error; },
+            });
             // As JSON now: the next page empties `posted`, which a scenario may return.
             outcomes[name] = JSON.parse(JSON.stringify({ value: value === undefined ? null : value }));
         } catch (error) {

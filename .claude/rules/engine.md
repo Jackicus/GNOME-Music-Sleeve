@@ -165,6 +165,11 @@ paths:
   tests/bridge_harness.js, a fake page (MusicKit and an instance that records its calls, a
   `document` and a small `DOMParser`). A change to the bridge gets a scenario there; what only
   Apple's MusicKit can show (what it accepts, what it answers) is a live check.
+- A preview (`preview(id, url)`, `stopPreview()`) is the bridge's own `Audio` element,
+  never MusicKit: one at a time, MusicKit paused for it, ended by `play()`, any `control()`
+  or MusicKit playing; its `previewDidChange` events are posted by the bridge itself, not
+  from `EVENT_DATA`. It needs no sign-in (previews are anyone's). Only the URL Apple gives
+  (`previewUrl`, https) is ever played.
 - bridge.js writes (love, add to library, add to a playlist, the playlist writes) through
   `mk.api.client.createRequest(...).send()`: `music()` cannot read Apple's empty 202/204 answers
   and would pass a 4xx off as success.

@@ -364,17 +364,48 @@
     function postEvent(name, event) {
         if (typeof window.__amEvent !== 'function') return;
         let data = null;
+        let mk = null;
         try {
-            const mk = getMusicKit();
+            mk = getMusicKit();
             data = mk ? EVENT_DATA[name](mk, event) : null;
         } catch (err) {
             data = { error: describeError(err) };
         }
+        postData(name, data);
+        // MusicKit playing again (a play, a control, or anything else that started it) ends
+        // a preview: the two never sound together.
+        if (name === 'playbackStateDidChange' && mk && mk.isPlaying) endPreview('playback');
+    }
+
+    function postData(name, data) {
+        if (typeof window.__amEvent !== 'function') return;
         try {
             window.__amEvent(JSON.stringify({ name: name, data: data }));
         } catch {
             // The binding is gone with the connection; nothing to tell.
         }
+    }
+
+    // A suggested song's preview: Apple's 30-second clip, played by an audio element of
+    // the page's own, outside MusicKit, so its queue stays as it was. One at a time
+    // ({audio, id}, or null); each start and end is posted as previewDidChange, {id} while
+    // one plays and {id: null, ended, reason} once it stops ('ended', 'error', 'stopped',
+    // 'replaced', 'playback': MusicKit started). Answers whether one was playing.
+    let preview = null;
+
+    function endPreview(reason) {
+        const current = preview;
+        if (!current) return false;
+        preview = null;
+        try {
+            current.audio.pause();
+            current.audio.removeAttribute('src');
+            current.audio.load();
+        } catch {
+            // An element that would not stop is let go of all the same.
+        }
+        postData('previewDidChange', { id: null, ended: current.id, reason: reason });
+        return true;
     }
 
     function detachListeners(listeners) {
@@ -472,6 +503,7 @@
                 }
             }
 
+            endPreview('playback');
             const queueObj = kind === 'artist' ? await artistQueue(mk, id) : queueOptions(kind, id);
             queueObj.startWith = startWith;
             queueObj.startPlaying = true;
@@ -521,6 +553,8 @@
         control: async function (action) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
+            // Any of them is the player taken in hand again: a preview stops.
+            endPreview('playback');
             switch (action) {
                 case 'play':
                     await mk.play();
@@ -560,6 +594,7 @@
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
             mk.volume = Math.max(0, Math.min(1, Number(val) || 0));
+            if (preview) preview.audio.volume = mk.volume;
             return { volume: typeof mk.volume === 'number' ? mk.volume : 1 };
         },
 
@@ -836,14 +871,19 @@
         // them on a Refresh, and Apple then answers with none of the offered songs. A read,
         // though a POST: `music()` sends no body, so it goes through the request builder,
         // whose answer is judged by its status as a write's is.
-        playlistSuggestions: async function (playlistId, limit, offered, selected) {
+        playlistSuggestions: async function (playlistId, limit, offered, selected, previewed) {
             const body = { targetContent: { id: playlistId, type: 'library-playlists' } };
             offered = offered || [];
             selected = selected || [];
+            const heard = (previewed || []).map(String);
             if (offered.length || selected.length) {
                 body.offered = {
                     suggested: offered.map(function (id) {
-                        return { id: String(id), type: 'songs', meta: { impressed: true, previewed: false } };
+                        return {
+                            id: String(id),
+                            type: 'songs',
+                            meta: { impressed: true, previewed: heard.includes(String(id)) }
+                        };
                     })
                 };
                 body.selected = selected.map(function (id) {
@@ -862,6 +902,50 @@
                 body: body
             });
             return answer.data || {};
+        },
+
+        // Play Apple's preview of a catalog song (`url`, the https address of its
+        // 30-second clip, from the song's `previews`): MusicKit pauses, and the clip plays
+        // in the page's own audio element at MusicKit's volume, instead of any preview
+        // before it (see endPreview). Answers {ok, id} once it plays, or {error, code}
+        // when the page cannot play it.
+        preview: async function (id, url) {
+            const mk = getMusicKit();
+            if (!mk) throw new Error('MusicKit not initialized');
+            endPreview('replaced');
+            url = String(url || '');
+            if (!url.startsWith('https://')) return { error: 'no preview to play', code: 'NO_PREVIEW' };
+            if (mk.isPlaying) {
+                try {
+                    await mk.pause();
+                } catch {
+                    // A pause refused leaves the music on; the preview plays over it.
+                }
+            }
+            const audio = new Audio(url);
+            audio.volume = typeof mk.volume === 'number' ? Math.max(0, Math.min(1, mk.volume)) : 1;
+            const current = { audio: audio, id: String(id) };
+            preview = current;
+            audio.addEventListener('ended', function () {
+                if (preview === current) endPreview('ended');
+            });
+            audio.addEventListener('error', function () {
+                if (preview === current) endPreview('error');
+            });
+            try {
+                await audio.play();
+            } catch (err) {
+                if (preview === current) preview = null;
+                return { error: describeError(err), code: errorCode(err) };
+            }
+            if (preview !== current) return { ok: true, id: current.id, ended: true };
+            postData('previewDidChange', { id: current.id });
+            return { ok: true, id: current.id };
+        },
+
+        // Stop the preview playing, if one is. Answers {stopped}: whether one was.
+        stopPreview: function () {
+            return { stopped: endPreview('stopped') };
         },
 
         // Forward MusicKit's events (the keys of EVENT_DATA) to the app through
