@@ -62,11 +62,11 @@ sign-in's keys each build's own (`account_key()`).
 ## Where things go
 
 ```
-src/main.py, src/window.py      the Application and the Window
+src/main.py, src/window.py      the Application and the Window (its parts: player_bar, sidebar_view)
 src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
-                                sync, account, cache, background, actions, related, errors, i18n,
-                                lyrics, remote, timing, shortcuts, keyboard, sidebar, sections; new
-                                ones go here), and the window's parts (player_bar, sidebar_view)
+                                sync, account, cache, background, actions, related, discography,
+                                suggestions, errors, i18n, lyrics, remote, timing, shortcuts,
+                                keyboard, sidebar, sections; new ones go here)
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
