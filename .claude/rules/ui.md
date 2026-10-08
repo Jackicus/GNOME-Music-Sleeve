@@ -117,8 +117,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   breakpoint): TrackRow's table rows under a `TrackTableHeader` (the tracks' section header);
   an album's tracks stay a numbered list. Under a playlist the user can change
   (`detail.wants_suggestions()`) its last section holds the songs Apple suggests adding
-  (`Engine.playlist_suggestions`) in a `SongShelf` made with `offer_suggestions()` (Add
-  buttons, Refresh, a song plays alone), less the songs it holds; a failure only hides it.
+  (`Engine.playlist_suggestions`) in a `widgets.suggested_songs.SuggestedSongs` (Add
+  buttons, Refresh, a song plays alone), less the songs it holds: six, or twelve with
+  `more-suggestions`, in a grid whose columns divide the count (`suggestions.columns_for`),
+  an added song's place filled from the spares, Refresh telling Apple what it offered
+  (`suggestions.Suggestions`); a failure only hides it.
 - The window's keyed actions (`win.back`, `win.search`, `win.focus-*`) are disabled while a
   dialog is open over the window (`Window._update_actions`); add a new keyed window action
   there.

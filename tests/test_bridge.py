@@ -478,6 +478,8 @@ class BridgeTest(unittest.TestCase):
         try { await bridge.playlistSuggestions('p.pl1'); } catch (error) {
             refused = String(error);
         }
+        mk.writeStatus = 200;
+        await bridge.playlistSuggestions('p.pl1', 10, ['1000000101', 1000000102], ['1000000102']);
         return {answer, empty, refused, calls: mk.calls};
     """)
     def test_playlist_suggestions_post_the_playlist(self, value):
@@ -492,6 +494,17 @@ class BridgeTest(unittest.TestCase):
                         'include[songs]': 'artists', 'limit': 20},
              'method': 'POST',
              'body': {'targetContent': {'id': 'p.pl1', 'type': 'library-playlists'}}}])
+        # A Refresh's: the songs shown so far offered, those added selected, a limit.
+        request = value['calls'][-1][2]
+        self.assertEqual(request['params']['limit'], 10)
+        self.assertEqual(request['body'], {
+            'targetContent': {'id': 'p.pl1', 'type': 'library-playlists'},
+            'offered': {'suggested': [
+                {'id': '1000000101', 'type': 'songs',
+                 'meta': {'impressed': True, 'previewed': False}},
+                {'id': '1000000102', 'type': 'songs',
+                 'meta': {'impressed': True, 'previewed': False}}]},
+            'selected': [{'id': '1000000102', 'type': 'songs', 'meta': {'source': 'suggested'}}]})
 
     # -- writes ----------------------------------------------------------------------------
 

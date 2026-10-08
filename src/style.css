@@ -204,10 +204,13 @@ gridview.song-shelf > child {
   border-radius: 8px;
 }
 
-/* A playlist's Suggested Songs, in a row of its track list, which keeps the page's margins
-   (SongShelf.set_inset()): the grid without its own. */
-.inset gridview.song-shelf {
-  padding: 0;
+/* A playlist's Suggested Songs (widgets/suggested_songs.py): each song a flat button with a
+   rounded highlight, its cover on the track list's margin, its text in the page's weight. */
+.suggested-songs button.suggestion {
+  padding: 6px;
+  margin-left: -6px;
+  border-radius: 8px;
+  font-weight: normal;
 }
 
 /* An artist's latest release (pages/artist.blp): the cover and its caption as one button,

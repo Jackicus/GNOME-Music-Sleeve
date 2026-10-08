@@ -61,7 +61,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `updatePlaylist(id, attributes)`, `deletePlaylist(id)`, `removeFromPlaylist(id, type, trackId)`, `replacePlaylistTracks(id, tracks)`, `updateFolder(id, attributes)`, `deleteFolder(id)` | `{ok: true}`, or a throw as above (the requests below) |
 | `lyrics(catalogSongId)` | `{synced, lines: [{startMs, endMs, text, stanza?}]}` (the TTML read with the page's XML parser; `stanza: true` on a verse's first line) |
 | `search(term, limit)`, `suggest(term, limit)`, `searchLanding()`, `category(id)` | the API's answer, shaped by `normalize.search_results()`, `search_suggestions()`, `search_landing()`, `category_page()` |
-| `playlistSuggestions(playlistId)` | `{results: {suggested: [songs]}}`, the songs Apple suggests adding to a library playlist, shaped by `normalize.playlist_suggestions()`: music.apple.com's own request (checked against the API on 2026-10-08), `POST /v1/me/recommendations/suggested?contexts=playlist-suggested-songs&types=songs` with `{targetContent: {id, type: 'library-playlists'}}`, through the request builder (`music()` sends no body); up to 20 full catalog songs |
+| `playlistSuggestions(playlistId, limit, offered, selected)` | `{results: {suggested: [songs]}}`, the songs Apple suggests adding to a library playlist, shaped by `normalize.playlist_suggestions()`: music.apple.com's own request (checked against the API on 2026-10-08), `POST /v1/me/recommendations/suggested?contexts=playlist-suggested-songs&types=songs&limit=<limit>` with `{targetContent: {id, type: 'library-playlists'}}`, through the request builder (`music()` sends no body); up to `limit` (20 by default) full catalog songs. With `offered` (catalog ids shown) or `selected` (those added) the body also carries `offered: {suggested: [{id, type: 'songs', meta: {impressed: true, previewed: false}}]}` and `selected: [{id, type: 'songs', meta: {source: 'suggested'}}]`, as the web player's Refresh sends them; Apple then answers none of the offered songs (checked 2026-10-08) |
 | `subscribe()`, `unsubscribe()` | MusicKit's listeners on or off, once per instance |
 
 ### The playlist writes
@@ -166,7 +166,9 @@ its subtitle its length, and it has nothing to play.
 A playlist's suggested songs (`Engine.playlist_suggestions()`,
 `normalize.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are
 (with their `album`), in Apple's order, each once. Apple may suggest a song the playlist
-holds; the playlist page leaves those out.
+holds; the playlist page leaves those out. The first answer (16 songs: the most a page
+shows, twelve, and four spare) is kept for a day; a Refresh's replaces it; `more=True`
+asks for a few more beside them, unkept.
 
 The app shows none of the data's own words: a missing name is '', the app names shelves by
 key, writes the captions from the counts and titles an album's discs from `discNumber`. A song without an album of its own sits under a stand-in album

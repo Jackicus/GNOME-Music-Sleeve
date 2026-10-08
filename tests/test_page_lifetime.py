@@ -159,8 +159,9 @@ def _classes():
                 raise EngineError('engine-down')
             return self.artist_answer
 
-        async def playlist_suggestions(self, playlist_id, refresh=False):
-            self.calls.append('playlist_suggestions')
+        async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
+                                       selected=(), more=False):
+            self.calls.append('more_suggestions' if more else 'playlist_suggestions')
             if self.suggestions is None:
                 raise EngineError('engine-down')
             return self.suggestions
@@ -235,6 +236,13 @@ def _classes():
         def start_sync(self):
             pass
 
+    class ItemActions:
+        """The window's item actions as a playlist's Suggested Songs use them: an add that
+        takes (it holds nothing of what it was given)."""
+
+        def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
+            return True
+
     class Window(Adw.Window):
         """The app's window as the pages see it (get_root()): a navigation view whose root
         page holds a box (for a Shelf on its own), and the seams they call, recorded."""
@@ -250,6 +258,7 @@ def _classes():
             self.opened = []
             self.shelves_opened = []
             self.played = []
+            self.item_actions = ItemActions()
 
         def open_item(self, item):
             self.opened.append(item)
@@ -487,20 +496,34 @@ class PageLifetimeTest(WidgetTestCase):
         await self.assert_freed(*refs)
 
     async def test_playlist_page_with_suggestions(self):
-        # A playlist's Suggested Songs: the shelf, its rows with their Add buttons.
+        # A playlist's Suggested Songs: the section, its grid, its rows with their buttons,
+        # one of them added (its place filled by a spare, its row bound again).
         from applemusic.library import Item
         from applemusic.pages.detail import DetailPage
-        from applemusic.widgets.song_shelf import SongRow, SongShelf
+        from applemusic.widgets.song_shelf import SongRow
+        from applemusic.widgets.suggested_songs import SuggestedSongs, SuggestionRow
 
         self.app.engine.suggestions = {'items': [
             {'id': str(3000 + number), 'kind': 'song', 'title': f'Suggested {number}',
              'subtitle': 'Other Artist', 'art': None, 'thumb': None,
              'play': {'kind': 'song', 'id': str(3000 + number)}, 'groups': []}
-            for number in range(6)]}
+            for number in range(8)]}
         self.addCleanup(setattr, self.app.engine, 'suggestions', None)
         item = Item(dict(_album(1, tracks=3), kind='playlist'))
-        refs = await self.pushed_and_popped(DetailPage(self.library, item), SongShelf,
-                                            SongRow)
+        page = DetailPage(self.library, item)
+        refs = [page.weak_ref()]
+        self.window.navigation_view.push(page)
+        self.assertTrue(await self.until(lambda: _find(page, SuggestionRow) is not None))
+        section = _find(page, SuggestedSongs)
+        refs += [section.weak_ref(), section.grid.weak_ref(), _find(page, SongRow).weak_ref()]
+        row = section.grid.rows[0]
+        refs.append(row.weak_ref())
+        row.add_button.emit('clicked')  # Add to Playlist, then its place filled
+        await self.settle()
+        self.assertEqual(section.items[0].id, '3006')
+        self.window.navigation_view.pop()
+        self.assertTrue(await self.until(lambda: page.get_parent() is None))
+        page = section = row = None
         await self.assert_freed(*refs)
 
     async def test_artist_page(self):
@@ -809,6 +832,12 @@ class HandlerTest(WidgetTestCase):
             try:
                 dialog.interval_row.set_selected(0)
                 self.assertEqual(self.app.settings.get_int('sync-interval'), INTERVALS[0])
+                # Show More Suggestions is the more-suggestions setting.
+                self.addCleanup(self.app.settings.reset, 'more-suggestions')
+                dialog.more_suggestions_row.set_active(True)
+                self.assertTrue(self.app.settings.get_boolean('more-suggestions'))
+                self.app.settings.set_boolean('more-suggestions', False)
+                self.assertFalse(dialog.more_suggestions_row.get_active())
                 # Last Refreshed follows the last-sync setting and the sync's running.
                 self.assertEqual(dialog.last_refreshed_row.get_subtitle(), 'Never')
                 self.app.settings.set_string('last-sync', datetime.now(UTC).isoformat())

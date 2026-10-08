@@ -32,7 +32,7 @@ of the demo's own albums, songs and videos and a few invented singles,
 playlists, radio episodes and interviews), which the demo engine answers
 from, and each playlist the songs Apple would suggest adding to it
 (suggestions/<playlist id>.json, normalize.playlist_suggestions()'s shape:
-twelve of the demo's own songs it does not hold). The other keys the app's sync adds
+twenty-four of the demo's own songs it does not hold). The other keys the app's sync adds
 (sections.songs, artUrl) are optional and left out: the demo has no loose
 songs and nothing to fetch.
 Uses only Python stdlib and PyGObject / Cairo (no pip dependencies).
@@ -125,6 +125,7 @@ DEMO_SHOWS = ['Lighthouse One', 'Slow Tide Radio', 'The Long Play', 'Night Shift
 DEMO_EPISODES = ['{artist} in Conversation', 'The Making of {album}', '{genre} Spotlight',
                  'A Night with {artist}']
 DEMO_INTERVIEWS = ['{artist} on {album}', '{artist}: Behind the Songs', 'Live from the Studio']
+SUGGESTIONS = 24  # a playlist's suggested songs: twelve shown at most, and spares
 
 MOTIFS = [
     'sun_horizon',
@@ -2159,7 +2160,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
 def build_suggestions(out_dir, playlists, albums, generated):
     """Write suggestions/<playlist id>.json for each playlist: the songs Apple would suggest
     adding to it (normalize.playlist_suggestions()'s shape, kept as the engine keeps it),
-    twelve of the library's songs it does not hold, its genre's first."""
+    SUGGESTIONS of the library's songs it does not hold, its genre's first: enough for
+    twelve shown and spares to fill places and step through on Refresh."""
     rnd = random.Random(37)
     out = os.path.join(out_dir, 'suggestions')
     os.makedirs(out, exist_ok=True)
@@ -2173,8 +2175,8 @@ def build_suggestions(out_dir, playlists, albums, generated):
                         continue
                     (same if album['genre'] == playlist['genre'] else other).append(
                         (track, album))
-        picks = rnd.sample(same, min(12, len(same)))
-        picks += rnd.sample(other, min(12 - len(picks), len(other)))
+        picks = rnd.sample(same, min(SUGGESTIONS, len(same)))
+        picks += rnd.sample(other, min(SUGGESTIONS - len(picks), len(other)))
         items = [{'id': track['catalogId'], 'kind': 'song', 'title': track['title'],
                   'subtitle': track['artist'], 'artistName': track['artist'],
                   'album': album['title'], 'year': album['year'], 'genre': album['genre'],

@@ -830,20 +830,36 @@
 
         // The songs Apple suggests adding to a library playlist (its Suggested Songs), as
         // music.apple.com asks for them (checked against the API on 2026-10-08): a POST
-        // naming the playlist, answered {results: {suggested: [songs]}}. A read, though
-        // a POST: `music()` sends no body, so it goes through the request builder, whose
-        // answer is judged by its status as a write's is.
-        playlistSuggestions: async function (playlistId) {
+        // naming the playlist, answered {results: {suggested: [songs]}}, at most `limit`
+        // (20 when not given). `offered` (catalog song ids the page has shown) and
+        // `selected` (those of them added) go in the body as music.apple.com's player sends
+        // them on a Refresh, and Apple then answers with none of the offered songs. A read,
+        // though a POST: `music()` sends no body, so it goes through the request builder,
+        // whose answer is judged by its status as a write's is.
+        playlistSuggestions: async function (playlistId, limit, offered, selected) {
+            const body = { targetContent: { id: playlistId, type: 'library-playlists' } };
+            offered = offered || [];
+            selected = selected || [];
+            if (offered.length || selected.length) {
+                body.offered = {
+                    suggested: offered.map(function (id) {
+                        return { id: String(id), type: 'songs', meta: { impressed: true, previewed: false } };
+                    })
+                };
+                body.selected = selected.map(function (id) {
+                    return { id: String(id), type: 'songs', meta: { source: 'suggested' } };
+                });
+            }
             const answer = await apiWrite('/v1/me/recommendations/suggested', {
                 platform: 'web',
                 'omit[resource]': 'autos',
                 contexts: 'playlist-suggested-songs',
                 types: 'songs',
                 'include[songs]': 'artists',
-                limit: 20
+                limit: limit || 20
             }, {
                 method: 'POST',
-                body: { targetContent: { id: playlistId, type: 'library-playlists' } }
+                body: body
             });
             return answer.data || {};
         },

@@ -26,7 +26,9 @@ What to shoot: $ARGUMENTS
      `--search TERM`, `--context-menu` (`--submenu NAME` for one of its submenus, by its
      label, underscore and all: `"Add to Pla_ylist"`, a folder's name), `--preferences [general|engine]`,
      `--dialog about|shortcuts`; `--scroll PX` for the rest of a page taller than the
-     window (an artist's: `--open artist:first --scroll 900`);
+     window (an artist's: `--open artist:first --scroll 900`; a playlist's Suggested Songs:
+     `--page playlist:l.pl002 --scroll 1600`); `--setting KEY=VALUE` sets a setting first
+     (`--setting more-suggestions=true` shows twelve suggestions);
    - the playlists' menus and dialogs: `--more-options` (the page's More Options menu),
      `--sidebar-menu playlist:first|folder:first|all-playlists`, and
      `--dialog new-playlist|rename|delete` for the playlist or folder the page shows.
