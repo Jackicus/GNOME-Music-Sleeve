@@ -65,6 +65,16 @@ its "Performance pass" section.
   160 px (headless, 40,000 songs, 2026-09-29): 3.1-3.5 ms of work a frame against 2.9 ms
   without stand-ins, the longest frame the same (5.2-5.6 ms). Kept: the rows show the cover at
   once instead of the placeholder.
+- The Songs table's artist and album link columns (`TrackLink`, issue 262), which made a
+  20,000 px/s fling 4.8 ms of work a frame against 4.0 ms before them (headless, 40,000 songs,
+  for 0.11.0). Per cell, bound, measured, allocated and snapshotted in a realized window
+  (process time, 2026-10-08): a `TrackLink` 17-20 µs, a plain one-line `Gtk.Label` 15-17.5 µs,
+  a `Gtk.Inscription` 15-17 µs. An Inscription saves nothing over a label that keeps its single
+  line, and it could not keep the link to the text's width. The link's own work (`show()`:
+  the text and `related.has_artist`/`has_album`) is about 2 µs a cell, about 0.13 ms a frame at
+  that speed (33 rows bound a frame); the rest of the difference is two more columns of text
+  laid out and drawn, which showing them costs. No frame went over 16.7 ms, so nothing was
+  changed.
 - Hidden root pages keep their list and grid widgets (the window keeps each fixed
   destination's root page once visited, and the last eight playlist and folder pages).
   Letting the six hidden views' item widgets go while they are hidden, and rebuilding them on a
