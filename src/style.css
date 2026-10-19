@@ -345,7 +345,9 @@ listview.lyrics-list {
 
 /* A lyrics row draws nothing itself: its line's box (.lyric-line) has the padding and the
    rounded hover, press and focus, as libadwaita's activatable rows, so that a verse's gap,
-   the box's margin, stays outside them (GTK's list rows take no vertical margin). */
+   the box's margin, stays outside them (GTK's list rows take no vertical margin). A duet's
+   box is narrowed to its singer's side by a horizontal margin widgets/lyrics.py sets from
+   the list's width (set_side()), so the highlight sits on that side too. */
 listview.lyrics-list > row {
   margin: 0 6px;
   padding: 0;

@@ -5,8 +5,9 @@
 while `lyrics-pronunciations` and `lyrics-translations` are on, its background vocals on a
 line of their own under those, with their own extras, in the synced list and the unsynced
 text; a verse's gap outside the highlight of its line; and the Now Playing sheet's
-Translation and Pronunciation menu, offered for lyrics that have either. (The model is
-test_lyrics.py's.)"""
+Translation and Pronunciation menu, offered for lyrics that have either; a duet's rows on
+their singers' sides, mirrored right to left, and a recycled row losing its old side. (The
+model is test_lyrics.py's.)"""
 
 import json
 import unittest
@@ -37,6 +38,44 @@ def visible_parts(box):
         child = child.get_next_sibling()
     assert children == labels, children
     return tuple(label.get_label() if label.get_visible() else None for label in labels)
+
+
+def make_list_item():
+    """A stand-in Gtk.ListItem (the factory's handlers ask only this of it), at position 3."""
+    from gi.repository import GObject
+
+    class Item(GObject.Object):
+        def __init__(self):
+            super().__init__()
+            self.child = self.line = self.spoken = None
+
+        def set_child(self, child):
+            self.child = child
+
+        def get_child(self):
+            return self.child
+
+        def get_item(self):
+            return self.line
+
+        def get_position(self):
+            return 3
+
+        def set_accessible_label(self, label):
+            self.spoken = label
+
+    return Item()
+
+
+def alignment(box):
+    """A row's side as it is set: its labels' (xalign, justification), the same for all of
+    them, then the box's start and end margins."""
+    from applemusic.widgets.lyrics import PARTS
+
+    aligned = {(getattr(box, part.attribute).get_xalign(),
+                getattr(box, part.attribute).get_justify().value_nick) for part in PARTS}
+    assert len(aligned) == 1, aligned
+    return (*aligned.pop(), box.get_margin_start(), box.get_margin_end())
 
 
 @requires_gtk
@@ -164,32 +203,8 @@ class LyricsViewTest(unittest.TestCase):
         """A recycled row bound to a line with background vocals, then to lines without
         them or with nothing else: only the new line's parts show, and a screen reader
         hears the main vocals, then the background."""
-        from gi.repository import GObject
-
         from applemusic.lyrics import LyricLine, Lyrics
         from applemusic.widgets.lyrics import Shown
-
-        class Item(GObject.Object):
-            """A stand-in Gtk.ListItem: the factory's handlers ask only this of it."""
-
-            def __init__(self):
-                super().__init__()
-                self.child = self.line = self.spoken = None
-
-            def set_child(self, child):
-                self.child = child
-
-            def get_child(self):
-                return self.child
-
-            def get_item(self):
-                return self.line
-
-            def get_position(self):
-                return 3
-
-            def set_accessible_label(self, label):
-                self.spoken = label
 
         lines = Lyrics({'synced': True, 'lines': [
             {'startMs': 1000, 'text': 'Harbour lights', 'background': '(lights)',
@@ -198,7 +213,7 @@ class LyricsViewTest(unittest.TestCase):
             {'startMs': 2000, 'text': 'Low tide'},
             {'startMs': 3000, 'text': '', 'background': '(Oh oh)'}]}).lines
         self.view._shown = Shown(True, True)
-        item = Item()
+        item = make_list_item()
         self.view._on_setup(None, item)
         bound = []
         for line in (*lines, LyricLine(), lines[0]):
@@ -214,6 +229,108 @@ class LyricsViewTest(unittest.TestCase):
             ((None,) * 6, ''),
             (('Harbour lights', 'Ha-bor', 'Luces del puerto', '(lights)', '(laits)',
               '(luces)'), 'Harbour lights (lights)')])
+
+    def test_a_row_rebound_takes_its_new_lines_side(self):
+        """A recycled row takes the side of each line bound to it, every label aligned to it
+        and the margin on the other side, and loses it for a line on another side, or of a
+        song that is not a duet; a screen reader hears the row as before, singers unnamed."""
+        from applemusic.lyrics import Lyrics
+
+        duet = Lyrics({'synced': True, 'lines': [
+            {'startMs': 1000, 'text': 'Harbour lights', 'background': '(lights)',
+             'translation': 'Luces', 'agent': 'v2'},
+            {'startMs': 2000, 'text': 'Low tide', 'agent': 'v1'},
+            {'startMs': 3000, 'text': 'All aboard', 'agent': 'v1000'}]}).lines
+        solo = Lyrics({'synced': True, 'lines': [{'startMs': 1000, 'text': 'Sea wall'}]}).lines
+        self.view._inset = 120
+        item = make_list_item()
+        self.view._on_setup(None, item)
+        bound = []
+        for line in (duet[0], duet[1], duet[0], duet[2], solo[0], duet[2], duet[0]):
+            item.line = line
+            self.view._on_bind(None, item)
+            bound.append((alignment(item.child), item.spoken))
+            self.view._on_unbind(None, item)
+        end = (1.0, 'right', 120, 0)
+        start = (0.0, 'left', 0, 120)
+        middle = (0.5, 'center', 60, 60)
+        across = (0.0, 'left', 0, 0)
+        self.assertEqual(bound, [
+            (end, 'Harbour lights (lights)'), (start, 'Low tide'),
+            (end, 'Harbour lights (lights)'), (middle, 'All aboard'), (across, 'Sea wall'),
+            (middle, 'All aboard'), (end, 'Harbour lights (lights)')])
+
+    def test_the_measure_of_a_duets_lines(self):
+        from applemusic.widgets.lyrics import duet_measure
+
+        self.assertEqual(duet_measure(1000), 600)   # Apple's share, in a wide list
+        self.assertEqual(duet_measure(336), 280)    # the least, in a narrow one
+        self.assertEqual(duet_measure(200), 200)    # never wider than the list
+        self.assertEqual(duet_measure(0), 0)
+
+    def test_a_duets_sides_mirrored_right_to_left(self):
+        """In the list, the lead's boxes start at the row's start, the second singer's end
+        at its end and a group's sit in the middle, their text aligned the same way; right
+        to left, GTK mirrors the margins and the labels' alignment. A new width gives the
+        rows bound a new margin; a song that is not a duet has its rows across the list."""
+        from gi.repository import Gtk, Pango
+
+        from applemusic.widgets.lyrics import duet_measure
+
+        sung = (0, 4, 8)   # the fixture's first lines of v1, v2 and v3
+
+        def places():
+            """(the box's x in its row, its width, the row's width, the main label's Pango
+            alignment) for the lead's, the second singer's and the group's rows."""
+            result = []
+            for position in sung:
+                box = self.view._rows[position]
+                ok, bounds = box.compute_bounds(box.get_parent())
+                self.assertTrue(ok)
+                result.append((round(bounds.get_x()), box.get_width(),
+                               box.get_parent().get_width(),
+                               box.label.get_layout().get_alignment()))
+            return result
+
+        def laid_out():
+            rows = self.view._rows
+            return (self.view._inset > 0 and all(position in rows for position in sung)
+                    and all(rows[position].get_width() > 0 for position in sung))
+
+        self.play(fixture('lyrics_syllable.json'))
+        self.assertTrue(wait_for(laid_out))
+        width = self.view._width
+        inset = width - duet_measure(width)
+        self.assertEqual(self.view._inset, inset)
+        self.assertTrue(wait_for(lambda: places()[0][1] == places()[0][2] - inset), places())
+        row = places()[0][2]
+        self.assertEqual(places(), [(0, row - inset, row, Pango.Alignment.LEFT),
+                                    (inset, row - inset, row, Pango.Alignment.RIGHT),
+                                    (inset // 2, row - inset, row, Pango.Alignment.CENTER)])
+
+        # A widget's own direction is not its children's: the default is (screenshot.py's
+        # --rtl sets it too).
+        default = Gtk.Widget.get_default_direction()
+        Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)
+        self.addCleanup(Gtk.Widget.set_default_direction, default)
+        self.assertTrue(wait_for(lambda: places()[0][0] == inset), places())
+        self.assertEqual([(x, align) for x, _width, _row, align in places()],
+                         [(inset, Pango.Alignment.RIGHT), (0, Pango.Alignment.LEFT),
+                          (inset - inset // 2, Pango.Alignment.CENTER)])
+        Gtk.Widget.set_default_direction(default)
+
+        # A wider list: the rows bound take the new margin.
+        self.view._width = width + 400
+        self.view._update_inset()
+        self.assertEqual(alignment(self.view._rows[4])[2:],
+                         (width + 400 - duet_measure(width + 400), 0))
+
+        # Not a duet: across the list.
+        self.play(fixture('lyrics_localized.json'))
+        self.assertTrue(wait_for(lambda: 0 in self.view._rows
+                                 and self.view._rows[0].label.get_label() == FIRST[0]))
+        self.assertEqual({alignment(box) for box in self.view._rows.values()},
+                         {(0.0, 'left', 0, 0)})
 
     def test_a_verse_gap_is_outside_the_highlight(self):
         from gi.repository import Gdk, Gtk
