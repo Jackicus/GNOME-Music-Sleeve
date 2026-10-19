@@ -4,16 +4,23 @@
 """AppleMusicLyricsView: the Now Playing sheet's Lyrics tab, following the Player.
 
 A Gtk.Stack of four pages: synced lyrics as a Gtk.ListView over the Lyrics object's store
-of LyricLine (a row is a box of the line's wrapping label over its pronunciation's and its
-translation's, smaller, each showing its background vocals folded into it, as the unsynced
-text does; the line current at the Player's position carries the `current` CSS
-class, the others `dimmed`; a click seeks to the line's start; the line opening a verse or
-a chorus `stanza`, a gap above its box, outside the highlight the box draws for the row),
-unsynced lyrics as one wrapping label in a scrolled window, a spinner while the engine
-reads them, and a compact status page otherwise: "Lyrics" with nothing playing, "No
-Lyrics" for a song without them. The pronunciations (Apple's transliterations) and the
-translations show while the `lyrics-pronunciations` and `lyrics-translations` settings are
-on, which the sheet's Translation and Pronunciation menu switches.
+of LyricLine, unsynced lyrics as one wrapping label in a scrolled window, a spinner while
+the engine reads them, and a compact status page otherwise: "Lyrics" with nothing playing,
+"No Lyrics" for a song without them.
+
+A synced row is a box (`lyric-line`) of wrapping labels, one for each of PARTS, top to
+bottom: the main vocals (`box.label`, title-3), their pronunciation and translation
+(`box.pronunciation`, `box.translation`), then the background vocals (`box.background`,
+smaller and fainter: `lyric-background`) and theirs (`box.pronunciation_background`,
+`box.translation_background`, smaller still), as Apple's own view stacks them. A label
+with nothing to show is hidden: a line of background vocals only has no main label. The
+line current at the Player's position carries the `current` CSS class, the others
+`dimmed`; a click seeks to the line's start; the line opening a verse or a chorus
+`stanza`, a gap above its box, outside the highlight the box draws for the row. The
+unsynced text stacks the same parts the same way (text_markup()). The pronunciations
+(Apple's transliterations) and the translations show while the `lyrics-pronunciations` and
+`lyrics-translations` settings are on, which the sheet's Translation and Pronunciation
+menu switches.
 
 The list follows playback only while the sheet is open (set_active), and only when the
 current line changes: scroll_to brings the row on screen, and once the list's geometry has
@@ -172,7 +179,7 @@ class LyricsView(Gtk.Stack):
         now, is brought into view again."""
         self._shown = shown(self._app.settings)
         for box in self._rows.values():
-            _show_extras(box, self._shown)
+            _show_parts(box, self._shown)
         if self._lyrics is not None:
             self.text_label.set_markup(text_markup(self._lyrics, self._shown))
         self._follow(force=True)
@@ -383,15 +390,11 @@ class LyricsView(Gtk.Stack):
     def _on_setup(self, _factory, list_item):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.add_css_class('lyric-line')
-        box.label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
-                              justify=Gtk.Justification.LEFT)
-        box.label.add_css_class('title-3')
-        box.append(box.label)
-        for name in ('pronunciation', 'translation'):
+        for part in PARTS:
             label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
-                              justify=Gtk.Justification.LEFT, visible=False)
-            label.add_css_class(f'lyric-{name}')
-            setattr(box, name, label)
+                              justify=Gtk.Justification.LEFT, visible=False,
+                              css_classes=part.css_classes)
+            setattr(box, part.attribute, label)
             box.append(label)
         list_item.set_child(box)
 
@@ -399,14 +402,10 @@ class LyricsView(Gtk.Stack):
         position = list_item.get_position()
         box = list_item.get_child()
         line = list_item.get_item()
-        # Each label shows its part with the background vocals folded in (LyricLine's
-        # shown_* properties), one string each.
-        text = line.shown_text
-        box.label.set_label(text)
-        box.pronunciation.set_label(line.shown_pronunciation)
-        box.translation.set_label(line.shown_translation)
-        _show_extras(box, self._shown)
-        list_item.set_accessible_label(text)
+        for part in PARTS:
+            getattr(box, part.attribute).set_label(getattr(line, part.field))
+        _show_parts(box, self._shown)
+        list_item.set_accessible_label(spoken(line))
         # A gap before a verse or a chorus, as in the text: the box's margin, outside the
         # highlight the box draws for its row (style.css).
         if line.stanza and position:
@@ -431,41 +430,69 @@ class LyricsView(Gtk.Stack):
         self._app.player_command(self._player.seek(self._lyrics.start_of(position)))
 
 
-# What the lines show besides their text, and the settings that say so.
+# What the lines show besides their vocals, and the settings that say so.
 Shown = namedtuple('Shown', 'pronunciations translations')
 SETTINGS = ('lyrics-pronunciations', 'lyrics-translations')
+
+# The parts of a line a row shows, top to bottom (Apple's order): the box's attribute for
+# the part's label, the LyricLine field it shows, the label's CSS classes, the Shown field
+# that has to be on for it (None: shown whenever it has text), and its line in the
+# unsynced text's markup.
+Part = namedtuple('Part', 'attribute field css_classes setting markup')
+_EXTRA = '<span size="smaller" alpha="70%">{}</span>'
+_BACKGROUND = '<span size="90%" alpha="70%">{}</span>'
+_BACKGROUND_EXTRA = '<span size="80%" alpha="60%">{}</span>'
+PARTS = (
+    Part('label', 'text', ['title-3'], None, '{}'),
+    Part('pronunciation', 'pronunciation', ['lyric-pronunciation'], 'pronunciations', _EXTRA),
+    Part('translation', 'translation', ['lyric-translation'], 'translations', _EXTRA),
+    Part('background', 'background', ['lyric-background'], None, _BACKGROUND),
+    Part('pronunciation_background', 'pronunciation_background',
+         ['lyric-background', 'lyric-pronunciation'], 'pronunciations', _BACKGROUND_EXTRA),
+    Part('translation_background', 'translation_background',
+         ['lyric-background', 'lyric-translation'], 'translations', _BACKGROUND_EXTRA),
+)
 
 
 def shown(settings):
     return Shown(*(settings.get_boolean(key) for key in SETTINGS))
 
 
+def _wanted(part, extras):
+    return part.setting is None or getattr(extras, part.setting)
+
+
+def spoken(line):
+    """What a screen reader says for a row: the main vocals, then the background vocals."""
+    if line.text and line.background:
+        return f'{line.text} {line.background}'
+    return line.text or line.background
+
+
 def text_markup(lyrics, extras):
     """The unsynced view's text as Pango markup: the lines one to a line, a blank line
-    before each stanza, and after each line its pronunciation and its translation, smaller
-    and fainter, as `extras` (a Shown) asks; '' for no lyrics."""
+    before each stanza, and under each line its parts as the synced rows stack them (the
+    background vocals smaller and fainter; the pronunciations and translations, as
+    `extras`, a Shown, asks, smaller still); '' for no lyrics. With no extras it reads as
+    Lyrics.text."""
     if lyrics is None:
         return ''
-    pronunciations = extras.pronunciations and lyrics.has_pronunciations
-    translations = extras.translations and lyrics.has_translations
-    if not (pronunciations or translations):
-        return GLib.markup_escape_text(lyrics.text)
     texts = []
     for index, line in enumerate(lyrics.lines):
         if line.stanza and index:
             texts.append('')
-        texts.append(GLib.markup_escape_text(line.shown_text))
-        for wanted, extra in ((pronunciations, line.shown_pronunciation),
-                              (translations, line.shown_translation)):
-            if wanted and extra:
-                extra = GLib.markup_escape_text(extra)
-                texts.append(f'<span size="smaller" alpha="70%">{extra}</span>')
+        for part in PARTS:
+            text = getattr(line, part.field)
+            if text and _wanted(part, extras):
+                texts.append(part.markup.format(GLib.markup_escape_text(text)))
     return '\n'.join(texts)
 
 
-def _show_extras(box, extras):
-    box.pronunciation.set_visible(extras.pronunciations and bool(box.pronunciation.get_label()))
-    box.translation.set_visible(extras.translations and bool(box.translation.get_label()))
+def _show_parts(box, extras):
+    """Show the row's labels that have text and that `extras` asks for."""
+    for part in PARTS:
+        label = getattr(box, part.attribute)
+        label.set_visible(bool(label.get_label()) and _wanted(part, extras))
 
 
 def _set_current(box, current):

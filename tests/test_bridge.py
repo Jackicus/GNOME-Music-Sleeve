@@ -26,7 +26,7 @@ import unittest
 from tests import ROOT
 
 from applemusic.engine import lyrics_answer
-from applemusic.lyrics import FORMAT, folded
+from applemusic.lyrics import FORMAT
 
 HARNESS = pathlib.Path(__file__).with_name('bridge_harness.js')
 BRIDGE = ROOT / 'src' / 'backend' / 'bridge.js'
@@ -618,8 +618,8 @@ class BridgeTest(unittest.TestCase):
         # Every piece joins to its text, and the engine keeps them all.
         kept = lyrics_answer(value, {'lyrics': 'en-GB', 'script': 'en-Latn'}, FORMAT)
         self.assertEqual(kept['lines'], value['lines'])
-        # As the views show them, the lines read as the TTML's whole text does.
-        self.assertEqual([folded(line['text'], line.get('background', ''))
+        # The main and the background vocals together read as the TTML's whole text does.
+        self.assertEqual([' '.join(filter(None, (line['text'], line.get('background'))))
                           for line in value['lines']],
                          ['Grey morning, harbour light',
                           '\u6ce2\u306e\u6570\u3048 (\u6570\u3048)',

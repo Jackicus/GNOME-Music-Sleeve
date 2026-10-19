@@ -9,8 +9,7 @@ import unittest
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.lyrics import (LyricLine, Lyrics, Word, folded, is_secondary,
-                               line_index_at, parse_lines)
+from applemusic.lyrics import LyricLine, Lyrics, Word, is_secondary, line_index_at, parse_lines
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
@@ -274,10 +273,7 @@ class VocalsTest(unittest.TestCase):
         self.assertFalse(Lyrics({'synced': True, 'lines': lines[:1]}).duet)
         self.assertFalse(Lyrics({'synced': True, 'lines': [{'text': 'One'}]}).duet)
 
-    def test_the_views_show_the_background_folded_into_its_line(self):
-        self.assertEqual(folded('Harbour lights', '(lights)'), 'Harbour lights (lights)')
-        self.assertEqual(folded('', '(Oh oh)'), '(Oh oh)')
-        self.assertEqual(folded('Tide', ''), 'Tide')
+    def test_the_text_puts_the_background_on_a_line_of_its_own(self):
         lyrics = Lyrics({'synced': True, 'lines': [
             {'startMs': 1000, 'text': '\u6f6e', 'background': '(\u6f6e)', 'stanza': True,
              'pronunciation': 'Shio', 'pronunciationBackground': '(shio)',
@@ -285,10 +281,11 @@ class VocalsTest(unittest.TestCase):
             {'startMs': 2000, 'text': '', 'background': '(Oh oh)', 'stanza': True},
             {'startMs': 3000, 'text': 'Harbour lights'}]})
         first = lyrics.lines.get_item(0)
-        self.assertEqual((first.shown_text, first.shown_pronunciation, first.shown_translation),
-                         ('\u6f6e (\u6f6e)', 'Shio (shio)', 'Tide (tide)'))
-        self.assertEqual(lyrics.lines.get_item(2).shown_pronunciation, '')
-        self.assertEqual(lyrics.text, '\u6f6e (\u6f6e)\n\n(Oh oh)\nHarbour lights')
+        self.assertEqual((first.text, first.background, first.pronunciation_background,
+                          first.translation_background),
+                         ('\u6f6e', '(\u6f6e)', '(shio)', '(tide)'))
+        # Each part on its own line; a line of background vocals only is the background.
+        self.assertEqual(lyrics.text, '\u6f6e\n(\u6f6e)\n\n(Oh oh)\nHarbour lights')
         self.assertTrue(lyrics.has_pronunciations and lyrics.has_translations)
         background_only = Lyrics({'lines': [{'text': 'Sea', 'pronunciationBackground': '(umi)',
                                              'translationBackground': '(sea!)'}]})
@@ -299,7 +296,6 @@ class VocalsTest(unittest.TestCase):
         line = Lyrics(fixture('lyrics_localized.json')).lines.get_item(0)
         self.assertEqual((line.background, line.agent, line.words, line.pronunciation_words),
                          ('', '', (), ()))
-        self.assertEqual(line.shown_text, line.text)
         self.assertEqual(LyricLine().words, ())
 
 

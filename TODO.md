@@ -25,8 +25,7 @@ Pronunciations** (#301, #303), from a translate button beside the volume in Now 
       [#304](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/304) word-by-word
       highlighting (the biggest; the word timings are already fetched),
       [#305](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/305) dots in instrumental
-      breaks, [#306](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/306) background
-      vocals, [#307](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/307) duets,
+      breaks, [#307](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/307) duets,
       [#308](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/308) full-screen lyrics
       (needs a decision), [#309](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/309)
       whether translations and pronunciations show together.

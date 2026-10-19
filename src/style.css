@@ -316,9 +316,9 @@ button.release-card {
 
 /* The Now Playing sheet (widgets/now_playing.blp): larger transport buttons than the bar's,
    the play button largest; the lyrics as title-3 lines (widgets/lyrics.py), each with its
-   pronunciation and translation under it when shown, the current one at full opacity (the others carry
-   .dimmed), a line fading between the two; the queue's rows as the detail pages' track
-   rows. */
+   pronunciation and translation under it when shown, then its background vocals, smaller,
+   with theirs; the current line at full opacity (the others carry .dimmed), a line fading
+   between the two; the queue's rows as the detail pages' track rows. */
 .now-playing .play-button {
   min-width: 56px;
   min-height: 56px;
@@ -390,6 +390,22 @@ listview.lyrics-list > row:focus-visible > .lyric-line {
   font-size: 1.05em;
   font-weight: 500;
   opacity: 0.7;
+}
+
+/* A line's background vocals (echoes, ad-libs), under the main vocals and their extras:
+   smaller and fainter than the line; the background's own pronunciation and translation
+   under it, smaller still. */
+.lyric-background {
+  font-size: 1.15em;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.lyric-background.lyric-pronunciation,
+.lyric-background.lyric-translation {
+  font-size: 0.95em;
+  font-weight: 500;
+  opacity: 0.6;
 }
 
 .lyrics-text {
