@@ -140,7 +140,9 @@ class HostTest(unittest.TestCase):
         self.assertIs(self.stack.get_visible_child(), self.bottom_sheet)
         self.assertEqual(self.place(), 'sheet')
         self.assertTrue(wait_for(lambda: not self.window.is_fullscreen()))
-        self.assertEqual(self.window.get_default_size(), size)
+        # The width the window had (with no window manager, as on CI's Xvfb, GTK grows the
+        # height to what the content asks; a compositor keeps it: scripts/a11y_check.py).
+        self.assertEqual(self.window.get_default_size()[0], size[0])
         self.assertFalse(self.window.is_maximized())
         # The view is kept for the next time.
         view = self.host.view
