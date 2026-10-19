@@ -9,7 +9,8 @@ import unittest
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.lyrics import LyricLine, Lyrics, Word, is_secondary, line_index_at, parse_lines
+from applemusic.lyrics import (END, MIDDLE, START, LyricLine, Lyrics, Word, is_secondary,
+                               line_index_at, parse_lines, side)
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
@@ -273,6 +274,31 @@ class VocalsTest(unittest.TestCase):
         self.assertFalse(Lyrics({'synced': True, 'lines': lines[:1]}).duet)
         self.assertFalse(Lyrics({'synced': True, 'lines': [{'text': 'One'}]}).duet)
 
+    def test_sides(self):
+        # A song that is not a duet has no sides, whoever is named.
+        for agent in ('', 'v1', 'v2', 'v3'):
+            self.assertEqual(side(agent, False), '', agent)
+        # In a duet: the lead (and a line naming no one) at the start, the second singer at
+        # the end, a group, everyone or a third singer in the middle.
+        self.assertEqual(side('v1', True), START)
+        self.assertEqual(side('', True), START)
+        self.assertEqual(side('v2', True), END)
+        for agent in ('v3', 'v4', 'v1000', 'v2000'):
+            self.assertEqual(side(agent, True), MIDDLE, agent)
+
+    def test_the_lines_carry_their_side(self):
+        lines = [{'startMs': 1000, 'text': 'One', 'agent': 'v1'},
+                 {'startMs': 2000, 'text': 'Two', 'agent': 'v2'},
+                 {'startMs': 3000, 'text': 'All', 'agent': 'v1000'},
+                 {'startMs': 4000, 'text': 'Nobody'}]
+        self.assertEqual([line.side for line in Lyrics({'synced': True, 'lines': lines}).lines],
+                         ['start', 'end', 'middle', 'start'])
+        # Only v1 sings: not a duet, no sides.
+        solo = Lyrics({'synced': True, 'lines': [lines[0], lines[3]]})
+        self.assertFalse(solo.duet)
+        self.assertEqual([line.side for line in solo.lines], ['', ''])
+        self.assertEqual(LyricLine().side, '')
+
     def test_the_text_puts_the_background_on_a_line_of_its_own(self):
         lyrics = Lyrics({'synced': True, 'lines': [
             {'startMs': 1000, 'text': '\u6f6e', 'background': '(\u6f6e)', 'stanza': True,
@@ -340,6 +366,8 @@ class SyllableFixtureTest(unittest.TestCase):
         self.assertEqual(set(agents), {'v1', 'v2', 'v3'})
         # Somewhere the singers take a line each in turn.
         self.assertIn(['v2', 'v1', 'v2', 'v1'], [agents[i:i + 4] for i in range(len(agents))])
+        self.assertEqual({(line.agent, line.side) for line in self.lines},
+                         {('v1', 'start'), ('v2', 'end'), ('v3', 'middle')})
 
     def test_instrumental_breaks(self):
         """Apple shows a break before the first verse when it starts after 9 s, and between

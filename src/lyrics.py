@@ -16,6 +16,9 @@ the line current at a playback position, which the Now Playing sheet highlights.
                                 # Japanese written in Latin letters, say)
     lyrics.has_translations     # some line has a translation (into the user's language)
     lyrics.duet            # some line is sung by a secondary singer (is_secondary)
+    line.side              # where the synced view puts a line (side()): '' across the view,
+                           # as every line of a song that is not a duet, else START, END
+                           # or MIDDLE
     lyrics.index_at(42.5)  # the index of the line current 42.5 s in, -1 before the first
                            # (and always for unsynced lyrics)
 
@@ -79,12 +82,32 @@ def is_secondary(agent):
     return bool(agent) and agent != 'v1'
 
 
+# The sides of a duet's lines (LyricLine.side): the lead singer's at the start of the view
+# (the left, mirrored in a right-to-left language), the second singer's at the end, and the
+# lines of a group, everyone or anyone else in the middle. A song that is not a duet has no
+# sides: its lines are ''.
+START, END, MIDDLE = 'start', 'end', 'middle'
+
+
+def side(agent, duet):
+    """The side of a line sung by `agent` in a song that is (`duet`) or is not a duet: ''
+    for every line of a song that is not; in a duet START for v1 (and a line that names no
+    singer: not the secondary's, by Apple's rule), END for v2, MIDDLE for the rest (v3, v4,
+    v1000…: Apple's ids for a group, everyone, or a third singer)."""
+    if not duet:
+        return ''
+    if not is_secondary(agent):
+        return START
+    return END if agent == 'v2' else MIDDLE
+
+
 class LyricLine(GObject.Object):
     """One line of lyrics: its text (the main vocals) and its background vocals, when synced
     when it starts and ends (milliseconds), whether it opens a stanza (a verse, a chorus: the
     synced view leaves a gap before it, as the text does), how it is pronounced and what it
-    means, each split the same way ('' when Apple gave none), and who sings it (`agent`,
-    '' unless the song is a duet). The timed pieces (`words`, `background_words`,
+    means, each split the same way ('' when Apple gave none), who sings it (`agent`, ''
+    unless the song is a duet) and so the side of the view it goes on (`side`, which its
+    Lyrics sets: side()). The timed pieces (`words`, `background_words`,
     `pronunciation_words`, `pronunciation_background_words`) are tuples of Word, empty for
     lyrics timed by the line. See the module for the fields."""
 
@@ -103,6 +126,7 @@ class LyricLine(GObject.Object):
 
     def __init__(self, line=None):
         super().__init__()
+        self.side = ''
         self.words = self.background_words = ()
         self.pronunciation_words = self.pronunciation_background_words = ()
         if line is not None:
@@ -214,14 +238,17 @@ class Lyrics(GObject.Object):
         self.catalog_id = catalog_id
         parsed = parse_lines(answer)
         self.synced = bool(isinstance(answer, dict) and answer.get('synced')) and bool(parsed)
-        self.lines = Gio.ListStore(item_type=LyricLine)
-        self.lines.splice(0, 0, [LyricLine(line) for line in parsed])
-        self._starts = [line.start_ms for line in parsed] if self.synced else []
         self.has_pronunciations = any(line.pronunciation or line.pronunciation_background
                                       for line in parsed)
         self.has_translations = any(line.translation or line.translation_background
                                     for line in parsed)
         self.duet = any(is_secondary(line.agent) for line in parsed)
+        items = [LyricLine(line) for line in parsed]
+        for item in items:
+            item.side = side(item.agent, self.duet)
+        self.lines = Gio.ListStore(item_type=LyricLine)
+        self.lines.splice(0, 0, items)
+        self._starts = [line.start_ms for line in parsed] if self.synced else []
         texts = []
         for index, line in enumerate(parsed):
             if line.stanza and index:

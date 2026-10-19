@@ -76,7 +76,10 @@ paths:
   libadwaita's "exceeds … height" warning. Up Next is a `Gtk.SliceListModel` of the queue
   from the entry playing on, its size set again with each offset (`queue.slice_size()`,
   gtk-notes.md; tests/test_queue.py); the lyrics list is the user's while they scroll it
-  (wheel, touch, scrollbar) or have the focus on a line.
+  (wheel, touch, scrollbar) or have the focus on a line. A lyrics row's side in a duet
+  (its labels' alignment, its box's horizontal margins) is set only through
+  `widgets.lyrics.set_side()`, at bind and when the list's width changes, from the line's
+  `side` (`lyrics.side()`).
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with
   `Gio.DBusConnection.register_object_with_closures2` (the older call is deprecated since GLib

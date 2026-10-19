@@ -16,7 +16,13 @@ smaller and fainter: `lyric-background`) and theirs (`box.pronunciation_backgrou
 with nothing to show is hidden: a line of background vocals only has no main label. The
 line current at the Player's position carries the `current` CSS class, the others
 `dimmed`; a click seeks to the line's start; the line opening a verse or a chorus
-`stanza`, a gap above its box, outside the highlight the box draws for the row. The
+`stanza`, a gap above its box, outside the highlight the box draws for the row. In a duet
+each row goes on its line's side (`lyrics.side()`, set by set_side()): the lead singer's
+lines at the start, their labels aligned to it, the second singer's at the end, aligned to
+that, a group's in the middle, centred, each box narrowed to duet_measure() of the list's
+width by a margin on its other side (or both), so the two singers read as two columns, as
+Apple's own view has them; GTK mirrors the labels' alignment and the margins in a
+right-to-left layout. A song that is not a duet has its rows across the list. The
 unsynced text stacks the same parts the same way (text_markup()). The pronunciations
 (Apple's transliterations) and the translations show while the `lyrics-pronunciations` and
 `lyrics-translations` settings are on, which the sheet's Translation and Pronunciation
@@ -32,6 +38,8 @@ seeks there and hands the list back). The line current is found at the Player's
 estimated_position() (MusicKit reports whole seconds; the lines start at milliseconds), on
 each position event and, while shown and playing, from one GLib timeout armed for the next
 line's start, so the highlight moves as the line begins rather than up to a second after.
+A duet's margins follow the list's width (its horizontal adjustment's page), set again on
+the rows bound when it changes, from an idle (not inside the list's allocation).
 """
 
 import logging
@@ -41,6 +49,8 @@ from gettext import gettext as _
 
 from gi.repository import Adw, GLib, Gtk, Pango
 
+from .. import lyrics as lyrics_model
+
 log = logging.getLogger(__name__)
 
 USER_SCROLL_PAUSE = 4.0    # seconds after the user scrolls before the list follows again
@@ -48,6 +58,8 @@ CENTRE_DURATION = 300      # ms, the glide bringing the current line to the midd
 SETTLE_FRAMES = 40         # frames to wait for the row's geometry to hold still, at most
 NEXT_LINE_FLOOR = 0.05     # seconds: the least a timeout for the next line waits (no spin
                            # when the estimate stands still before a line's start)
+DUET_SHARE = 0.6           # a duet's line takes this share of the list's width (Apple's)...
+DUET_MIN_WIDTH = 280       # px: ...or this much, in a narrow list, the whole width at most
 
 
 class LyricsView(Gtk.Stack):
@@ -75,6 +87,9 @@ class LyricsView(Gtk.Stack):
         self._keyboard_in_list = False  # the focus is on a line: the list is the user's
         self._animation = None
         self._next_line_source = 0      # the timeout for the next line's start, while armed
+        self._width = 0                 # the list's width, as its adjustment last said
+        self._inset = 0                 # a duet's row's margin: the width it leaves
+        self._inset_source = 0          # the idle setting a new one on the rows, while armed
 
         self.empty_page = Adw.StatusPage(icon_name='music-note-symbolic', title=_('Lyrics'))
         self.empty_page.add_css_class('compact')
@@ -120,6 +135,7 @@ class LyricsView(Gtk.Stack):
         # the window may be resized): a line brought into view in the old page is brought
         # into view again when the page changes.
         self.scrolled.get_vadjustment().connect('changed', self._on_adjustment_changed)
+        self.scrolled.get_hadjustment().connect('changed', self._on_width_changed)
         self.add_named(self.scrolled, 'synced')
 
         self.text_label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
@@ -308,6 +324,27 @@ class LyricsView(Gtk.Stack):
             # scroll_to asked for there is lost.
             GLib.idle_add(self._bring_current_into_view)
 
+    def _on_width_changed(self, adjustment):
+        """The list's width changed: a duet's rows take a new margin, set from an idle (the
+        signal comes from inside the list's allocation)."""
+        width = round(adjustment.get_page_size())
+        if width != self._width:
+            self._width = width
+            if not self._inset_source:
+                self._inset_source = GLib.idle_add(self._update_inset)
+
+    def _update_inset(self):
+        self._inset_source = 0
+        inset = self._width - duet_measure(self._width)
+        if inset != self._inset:
+            self._inset = inset
+            if self._lyrics is not None and self._lyrics.duet:
+                for box in self._rows.values():
+                    set_side(box, box.side, inset)
+                # The rows wrap anew: the current line, taller or shorter, is centred again.
+                self._bring_current_into_view()
+        return GLib.SOURCE_REMOVE
+
     def _bring_current_into_view(self):
         if self._active and self._current >= 0:
             self._bring_into_view(self._current)
@@ -390,6 +427,7 @@ class LyricsView(Gtk.Stack):
     def _on_setup(self, _factory, list_item):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.add_css_class('lyric-line')
+        box.side, box.inset = '', 0     # as set_side() left them: across the list
         for part in PARTS:
             label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
                               justify=Gtk.Justification.LEFT, visible=False,
@@ -405,6 +443,7 @@ class LyricsView(Gtk.Stack):
         for part in PARTS:
             getattr(box, part.attribute).set_label(getattr(line, part.field))
         _show_parts(box, self._shown)
+        set_side(box, line.side, self._inset)
         list_item.set_accessible_label(spoken(line))
         # A gap before a verse or a chorus, as in the text: the box's margin, outside the
         # highlight the box draws for its row (style.css).
@@ -452,6 +491,46 @@ PARTS = (
     Part('translation_background', 'translation_background',
          ['lyric-background', 'lyric-translation'], 'translations', _BACKGROUND_EXTRA),
 )
+
+
+# Where a row's box goes for each side of a duet (lyrics.side(); '' for the lines of a song
+# that is not one): its labels' xalign and justification, and the share of the row's inset
+# its start margin takes (its end margin has the rest). GTK mirrors all of them in a
+# right-to-left layout.
+Side = namedtuple('Side', 'xalign justify start')
+SIDES = {
+    '': Side(0.0, Gtk.Justification.LEFT, 0.0),
+    lyrics_model.START: Side(0.0, Gtk.Justification.LEFT, 0.0),
+    lyrics_model.END: Side(1.0, Gtk.Justification.RIGHT, 1.0),
+    lyrics_model.MIDDLE: Side(0.5, Gtk.Justification.CENTER, 0.5),
+}
+
+
+def duet_measure(width):
+    """How wide a duet's row is in a list `width` px wide: DUET_SHARE of it, or
+    DUET_MIN_WIDTH where that share would be narrower (a narrow window), never more than the
+    list."""
+    return min(width, max(round(width * DUET_SHARE), DUET_MIN_WIDTH))
+
+
+def set_side(box, side, inset):
+    """Put a row's box on `side` (a duet's line's, lyrics.side(); '' across the list) with
+    `inset` px of the list's width left beside it: every label aligned to the side, the
+    margin on the other side (both halves for the middle). A row bound again loses its
+    previous line's side. Cheap when nothing changes: a row keeps what it was given."""
+    if not side:
+        inset = 0
+    if box.side == side and box.inset == inset:
+        return
+    box.side, box.inset = side, inset
+    xalign, justify, start = SIDES[side]
+    for part in PARTS:
+        label = getattr(box, part.attribute)
+        label.set_xalign(xalign)
+        label.set_justify(justify)
+    start = int(inset * start)
+    box.set_margin_start(start)
+    box.set_margin_end(inset - start)
 
 
 def shown(settings):

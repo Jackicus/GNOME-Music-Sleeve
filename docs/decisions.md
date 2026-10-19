@@ -127,6 +127,21 @@ changes, change it here, with the date. The plan they came from is in
   reading of the row), and the background's pronunciation and translation carry their own,
   which would read oddly under a background without. Folding the background into its line
   as one string, as before, lost the difference between the singer and the echo (#306).
+- **A duet's singers on their own sides, a group's lines in the middle** (2026-10-19). As
+  Apple's lyrics component does, a song is a duet when some line's singer is not `v1`; the
+  lead's lines (v1) keep to the start of the view and the second singer's (v2) to the end,
+  every part of a line (pronunciation, translation, background vocals) aligned with it, and
+  each line narrowed so the two read as two columns: Apple's 60% of the width, but never
+  under 280 px (at 360 px the share alone left lines of a word or two), by a margin on the
+  box's other side, so the hover and focus highlight sits on the line's side too. Apple
+  puts every singer but v1 on the second side, groups and everyone included; here the lines
+  of anyone but v1 and v2 (v3, v4, v1000: Apple's ids for both singers together, a choir,
+  everyone, seen as v3 and v4 in real duets) are centred in the middle, because on the
+  second side a chorus everyone sings read as the second singer's, which it is not. The
+  answer keeps the singers' ids but not their kind (person or group), so a trio's third
+  singer is centred too, which still says "neither of the two". Right to left, the sides are
+  mirrored (GTK flips the labels' alignment and the margins). The unsynced text stays as it
+  is, and the singers are not named to a screen reader, as Apple names none (#307).
 
 ## Engine
 
