@@ -52,7 +52,11 @@ What to shoot: $ARGUMENTS
    - `home`: `--page home --playing`;
    - `albums`: `--page albums --playing`;
    - `album`: `--page albums --open album:first --playing` (the album playing);
-   - `now-playing`: `--page albums --now-playing`.
+   - `now-playing`: `--page albums --now-playing syllable --position 58.4` (the invented
+     duet: a line lit part-way, each singer on their side, background vocals).
+   Run each as `GSETTINGS_BACKEND=memory scripts/headless.sh …`: the private session's
+   Settings portal then answers GNOME's defaults (the blue accent, a close button alone)
+   rather than the desktop's accent colour and window buttons.
    Keep the names: installed metainfo files link them by URL. Shrink them losslessly with
    `oxipng --opt 4 --strip safe data/screenshots/*.png`,
    look at each one (demo data only), and check that none carries a text chunk:
