@@ -3,14 +3,14 @@
 What is left, as of 2026-10-19. Music Sleeve (`io.github.jackicus.MusicSleeve`) is released:
 [v0.9.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.9.0), the first
 release, v0.10.0, which adds Discord rich presence, v0.11.0, the GNOME HIG pass, artist pages
-in Apple Music's structure and Go to Album and Go to Artist, and
-[v0.12.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.12.0), the latest:
-playlist management (new, rename, delete, folders, remove from a playlist), the library's
-Artists view, Add to Playlist by folder, a quicker refresh (#193), and Suggested Songs under a
-playlist (six or twelve, Refresh, in full or as a preview). A release is a tag and a GitHub
-release (`docs/release.md`); why the app is built the way it is, is in `docs/decisions.md`.
-Since v0.12.0, unreleased on main: the lyrics' **Show Translations** and **Show
-Pronunciations** (#301, #303), from a translate button beside the volume in Now Playing.
+in Apple Music's structure and Go to Album and Go to Artist, v0.12.0, playlist management,
+the library's Artists view and Suggested Songs, and
+[v0.13.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.13.0), the latest:
+lyrics as Apple Music's in GNOME's look (Show Translations and Show Pronunciations, words lit
+as they are sung, background vocals on a line of their own, duets on two sides, dots in
+instrumental breaks), a full-screen player (F11), and the sidebar's section dividers and
+indented folders. A release is a tag and a GitHub release (`docs/release.md`); why the app is
+built the way it is, is in `docs/decisions.md`.
 
 ## Open
 
@@ -21,18 +21,12 @@ Pronunciations** (#301, #303), from a translate button beside the volume in Now 
       README's install section changes then).
 - [ ] [#153](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/153) (Later): a lazy Songs
       model, about 21 MB on a large library. Only if memory turns out to matter on a real one.
-- [ ] Lyrics as Apple Music's, in GNOME's look:
-      [#304](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/304) word-by-word
-      highlighting (the biggest; the word timings are already fetched),
-      [#305](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/305) dots in instrumental
-      breaks, [#307](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/307) duets,
-      [#308](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/308) full-screen lyrics
-      (needs a decision), [#309](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/309)
-      whether translations and pronunciations show together.
-- [ ] The sidebar: [#310](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/310) a
-      folder's playlists indented, as Builder's tree (prototyped: it works),
-      [#311](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/311) divider lines between
-      the sections, as Files has.
+- [ ] [#320](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/320): the playback
+      position in fractions of a second from the page, so the lyrics' words light on time
+      (the estimate from MusicKit's whole seconds runs about 130 ms behind).
+- [ ] The lyrics cache: since the word timings (#315) a kept song is about five times bigger
+      (14 to 41 KB), so the 2,000 songs `LYRICS_KEEP` allows may take about 60 MB. Lower the
+      limit or keep the files compressed if that turns out to matter.
 - [ ] Build and run the Flatpak in GNOME Builder (the manifest in `build-aux/flatpak/` has
       never been built: no GNOME 50 runtime on the development machine). It can reach a
       native or Flatpak Discord's socket; that is untested too.
