@@ -8,7 +8,8 @@ paths:
 - `run.sh`, `check.sh` and `demo.sh` share one build directory, `build/`, set up with the
   development profile and the prefix `build/install`; run.sh and check.sh reconfigure it back
   if something set it up otherwise. Keep a release build in its own directory (`_build/`).
-- The in-process scripts (screenshot.py, a11y_check.py, scroll_test.py, bench.py) run the
+- The in-process scripts (screenshot.py, a11y_check.py, scroll_test.py, bench.py,
+  lyrics_test.py) run the
   installed build (run `scripts/demo.sh` or `meson install -C build` first) through
   `harness.make_app()`: the installed modules and translations, GSettings on the memory backend
   with engine-autostart off, the demo library (build/demo, written again when out of date, or
@@ -20,7 +21,7 @@ paths:
 - `headless.sh COMMAND…` runs a command on a private, invisible display: a headless mutter with a
   virtual monitor (`HEADLESS_SIZE`, default 1920x1080) in its own D-Bus session, with `DISPLAY`
   unset. Run every GUI script through it (screenshot.py, a11y_check.py, scroll_test.py,
-  bench.py, the widget tests) so no window opens on, or takes focus from, the user's desktop, and
+  bench.py, lyrics_test.py, the widget tests) so no window opens on, or takes focus from, the user's desktop, and
   the app's MPRIS player never reaches the real session. Compare timings only with other
   headless runs. mutter owns `org.gnome.Mutter.RemoteDesktop` on that private session, which is
   where `remote_keys.py` gets real key presses from; CI has no mutter, so nothing in check.sh
@@ -41,6 +42,13 @@ paths:
   `--banner sign-in|expired` and `--sidebar` (the narrow layout's sidebar) show those states;
   `--help` lists the rest. It shoots once no artwork decode has been in flight for a few polls
   (5 s at most), so a new step that shows artwork needs no delay of its own for it.
+- screenshot.py runs without animations, so a word-timed line's pieces show lit whole, and
+  the Player's estimate has run on by a second when it shoots (`--position 16.5` shows
+  17.5 s). `lyrics_test.py` plays a lyrics fixture (`--fixture`, the word-timed `syllable`
+  by default) through the open sheet with animations on, feeding the Player whole-second
+  positions about four times a second as MusicKit does, and reports the frames, the work in
+  each, the CPU, the lyrics list's allocations, the Python time in the stepping and the
+  estimate's error; `--shot PNG` saves the window at the end (a sweep mid-piece).
 - `a11y_check.py` sends real key presses: `remote_keys.py` starts a session on the headless
   mutter's `org.gnome.Mutter.RemoteDesktop` and injects each key by its evdev keycode, which it
   works out from the accelerator through the display's own keymap; it presses Shift alone first,

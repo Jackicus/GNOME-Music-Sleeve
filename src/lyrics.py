@@ -26,8 +26,14 @@ the line current at a playback position, which the Now Playing sheet highlights.
     lyrics.moment_at(42.5) # what the synced view shows 42.5 s in, a Moment: the row current
                            # (`index`), whether it is in the break before its line
                            # (`instrumental`), and how far into its steps (`step`: the dots
-                           # lit, 1 to DOTS, in a break; 0 on a line)
+                           # lit, 1 to DOTS, in a break; on a line the timed pieces begun,
+                           # of all its parts, 0 for a line timed as a whole)
     lyrics.next_change(42.5)   # when moment_at() next changes (seconds), or None
+    line.timed             # the parts with timed pieces: {field: Timing(words, spans)},
+                           # the field the text's ('text', 'background', 'pronunciation',
+                           # 'pronunciation_background'), the spans its pieces' bytes in
+                           # that text (byte_spans())
+    sung(words, 42500, sweep)  # how much of a part is sung 42.5 s in: a Sung
 
 A line of the answer (FORMAT 2), every field but the times and `text` left out when empty:
 
@@ -56,7 +62,11 @@ has them. A gap within a verse has none. A break belongs to the line after it
 with the lines (and the keyboard's stops with them), and moment_at() makes that row current
 through the break, its DOTS dots lit one after another, the first as the break begins, the
 next at each further DOTS-th of it. next_change() is the one clock of the view's stepping:
-every moment a row begins, a break begins or a dot lights.
+every moment a row begins, a break begins, a dot lights or a timed piece begins. A part
+timed by the piece (Apple's word-timed lyrics: words, and syllables of them) is sung piece
+by piece: sung() says how many pieces are sung and, while the view sweeps, how far into
+the one being sung; byte_spans() places each piece in its text as Pango counts (UTF-8
+bytes: the pieces joined are the text, so a piece's bytes follow from the ones before).
 parse_lines() is the one reading of an answer, and its one validation: the Engine keeps what
 it gives (engine.lyrics_answer), so a lyrics file cached before a fix reads as the fix would
 have it. GObject and Gio only, no GTK: tests feed it invented answers.
@@ -103,9 +113,56 @@ DOTS = 3
 Break = namedtuple('Break', 'start_ms end_ms')
 
 # What the synced view shows at a moment (Lyrics.moment_at): the row current (-1: none),
-# whether it is in the break before its line, and the step it is at (the dots lit).
+# whether it is in the break before its line, and the step it is at (the dots lit, or on a
+# line the pieces begun).
 Moment = namedtuple('Moment', 'index instrumental step')
 NO_MOMENT = Moment(-1, False, 0)
+
+
+# The parts of a line that may be timed by the piece: the LyricLine field of each text and
+# that of its words.
+TIMED = (('text', 'words'), ('background', 'background_words'),
+         ('pronunciation', 'pronunciation_words'),
+         ('pronunciation_background', 'pronunciation_background_words'))
+
+# Where a piece is in its text, in UTF-8 bytes (Pango's indices): its first byte, its last
+# character's first byte, and the byte after it.
+Span = namedtuple('Span', 'first last end')
+
+# A timed part of a line (LyricLine.timed): its pieces (Word) and their spans.
+Timing = namedtuple('Timing', 'words spans')
+
+# How much of a timed part is sung (sung()): the pieces sung whole, and how far into the next
+# one, from 0 to 1, while it is being sung and the view sweeps (None: no piece in progress,
+# or whole pieces only).
+Sung = namedtuple('Sung', 'whole fraction')
+
+
+def byte_spans(words):
+    """The Span of each of `words` (Word) in the text they make joined: UTF-8 byte offsets,
+    which are what Pango indexes a label's text by (a Japanese character is three bytes,
+    an accented letter two)."""
+    spans = []
+    offset = 0
+    for word in words:
+        size = len(word.text.encode('utf-8'))
+        last = offset + size - len(word.text[-1].encode('utf-8')) if word.text else offset
+        spans.append(Span(offset, last, offset + size))
+        offset += size
+    return tuple(spans)
+
+
+def sung(words, ms, sweep):
+    """How much of a part timed by `words` (Word, in order) is sung `ms` into the song, a
+    Sung. In whole pieces (`sweep` False) a piece is sung from its start; sweeping, the
+    piece begun last is sung from its start to its end, `fraction` saying how far (a piece
+    without length is sung at its start), and the pieces before it are sung whole."""
+    begun = bisect.bisect_right(words, ms, key=lambda word: word.start_ms)
+    if sweep and begun:
+        word = words[begun - 1]
+        if ms < word.end_ms:
+            return Sung(begun - 1, (ms - word.start_ms) / (word.end_ms - word.start_ms))
+    return Sung(begun, None)
 
 
 def is_secondary(agent):
@@ -141,8 +198,9 @@ class LyricLine(GObject.Object):
     unless the song is a duet) and so the side of the view it goes on (`side`, which its
     Lyrics sets: side()). The timed pieces (`words`, `background_words`,
     `pronunciation_words`, `pronunciation_background_words`) are tuples of Word, empty for
-    lyrics timed by the line; `instrumental` is the Break before the line, or None. See the
-    module for the fields."""
+    lyrics timed by the line, and `timed` holds those that are not, by their text's field,
+    each a Timing with the pieces' byte spans; `instrumental` is the Break before the line,
+    or None. See the module for the fields."""
 
     __gtype_name__ = 'AppleMusicLyricLine'
 
@@ -166,6 +224,8 @@ class LyricLine(GObject.Object):
         if line is not None:
             for name, value in line._asdict().items():
                 setattr(self, name, value)
+        self.timed = {field: Timing(getattr(self, words), byte_spans(getattr(self, words)))
+                      for field, words in TIMED if getattr(self, words)}
 
 
 def _ms(value):
@@ -325,10 +385,15 @@ class Lyrics(GObject.Object):
         self.lines = Gio.ListStore(item_type=LyricLine)
         self.lines.splice(0, 0, items)
         self._starts = [line.start_ms for line in parsed] if self.synced else []
+        # Each line's pieces' starts, of all its timed parts: the steps of a line's moment.
+        self._pieces = [sorted(word.start_ms for timing in item.timed.values()
+                               for word in timing.words) for item in items]
         changes = set(self._starts)
         for instrumental in self._breaks:
             if instrumental is not None:
                 changes.update(dot_times(instrumental))
+        for starts in self._pieces:
+            changes.update(starts)
         self._changes = sorted(changes)
         texts = []
         for index, line in enumerate(parsed):
@@ -348,8 +413,9 @@ class Lyrics(GObject.Object):
     def moment_at(self, seconds):
         """What the synced view shows `seconds` into the song (a Moment): in a break, the
         row of the line after it, its dots lit so far; else the line current (index_at),
-        at step 0. NO_MOMENT before the first line (with no break before it) and always
-        for unsynced lyrics."""
+        its step the timed pieces of its parts begun (0 for a line timed as a whole).
+        NO_MOMENT before the first line (with no break before it) and always for unsynced
+        lyrics."""
         ms = _position_ms(seconds)
         index = bisect.bisect_right(self._starts, ms) - 1
         following = index + 1
@@ -357,11 +423,13 @@ class Lyrics(GObject.Object):
             instrumental = self._breaks[following]
             if instrumental is not None and instrumental.start_ms <= ms:
                 return Moment(following, True, dots_lit(instrumental, ms))
-        return Moment(index, False, 0) if index >= 0 else NO_MOMENT
+        if index < 0:
+            return NO_MOMENT
+        return Moment(index, False, bisect.bisect_right(self._pieces[index], ms))
 
     def next_change(self, seconds):
         """When moment_at() next changes after `seconds` (seconds: a line's start, a
-        break's, a dot lighting), or None after the last."""
+        break's, a dot lighting, a timed piece's start), or None after the last."""
         index = bisect.bisect_right(self._changes, _position_ms(seconds))
         return self._changes[index] / 1000 if index < len(self._changes) else None
 

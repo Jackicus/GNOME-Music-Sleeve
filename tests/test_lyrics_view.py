@@ -8,7 +8,11 @@ text; a verse's gap outside the highlight of its line; and the Now Playing sheet
 Translation and Pronunciation menu, offered for lyrics that have either; a duet's rows on
 their singers' sides, mirrored right to left, and a recycled row losing its old side; an
 instrumental break's dots, opening over the line after it, lit step by step, and shut as
-the line begins. (The model is test_lyrics.py's.)"""
+the line begins; a word-timed line's pieces lit as they are sung, on the current row only,
+swept with animations on and whole with them off, the sweep's tick running only while a
+piece is sung and shown, the lyrics held from going back but for a seek, and where each
+piece is drawn (multi-byte text, wrapped lines, right to left) and its mask. (The model is
+test_lyrics.py's.)"""
 
 import json
 import unittest
@@ -356,14 +360,167 @@ class LyricsViewTest(unittest.TestCase):
             delays.append(delay)
             return 0
 
-        for position in (4.0, 13.0):
+        for position in (4.0, 13.0, 16.0):
             self.player.apply({'state': 'playing', 'position': position})
             with mock.patch.object(view_module.GLib, 'timeout_add', timeout_add):
                 self.view._arm_next_change()
-        # 4.134 s: the second dot of the intro; 16.3 s: the second line.
-        self.assertEqual(len(delays), 2)
+        # 4.134 s: the second dot of the intro; 13.429 s: the next piece of the first line;
+        # 16.3 s, after its last piece: the second line.
+        self.assertEqual(len(delays), 3)
         self.assertAlmostEqual(delays[0], 134, delta=30)
-        self.assertAlmostEqual(delays[1], 3300, delta=30)
+        self.assertAlmostEqual(delays[1], 429, delta=30)
+        self.assertAlmostEqual(delays[2], 300, delta=30)
+
+    def animations(self, on):
+        """Set gtk-enable-animations (put back after the test)."""
+        from gi.repository import Gtk
+
+        settings = Gtk.Settings.get_default()
+        before = settings.get_property('gtk-enable-animations')
+        self.addCleanup(settings.set_property, 'gtk-enable-animations', before)
+        settings.set_property('gtk-enable-animations', on)
+
+    def sung(self):
+        """The timed labels' sung state, row by row: {position: (main, background)}."""
+        return {position: (box.label.sung, box.background.sung)
+                for position, box in sorted(self.view._rows.items())}
+
+    def test_only_the_current_row_lights_its_pieces(self):
+        """The current row's timed labels light the pieces sung (its background on its own
+        timing); every other row's are drawn plainly; a seek moves the lighting with the
+        line. Word-timed rows are `timed` (no fade into current)."""
+        from applemusic.lyrics import Sung
+
+        self.animations(False)
+        self.play(fixture('lyrics_syllable.json'))
+        self.assertTrue(wait_for(lambda: 8 in self.view._rows))
+        self.player.apply({'position': 17.5})
+        self.assertTrue(wait_for(lambda: self.view._current == 1))
+        sung = self.sung()
+        # I, keep, the, lan: four pieces begun; the background's starts at 18.68 s.
+        self.assertEqual(sung.pop(1), (Sung(4, None), Sung(0, None)))
+        self.assertEqual(set(sung.values()), {(None, None)})
+        self.assertTrue(self.view._rows[1].has_css_class('timed'))
+        self.player.apply({'position': 19.0})
+        self.assertEqual(self.sung()[1], (Sung(7, None), Sung(1, None)))
+        self.player.apply({'position': 21.0})
+        self.assertTrue(wait_for(lambda: self.view._current == 2))
+        sung = self.sung()
+        self.assertEqual(sung.pop(2), (Sung(3, None), None))   # no background vocals
+        self.assertEqual(set(sung.values()), {(None, None)})
+        # In a break nothing is lit: the row is current for its dots.
+        self.player.apply({'position': 47.0})
+        self.assertTrue(wait_for(lambda: self.view._current == 8))
+        self.assertEqual(set(self.sung().values()), {(None, None)})
+
+    def test_a_sweep_with_animations_and_whole_pieces_without(self):
+        from applemusic.lyrics import Sung
+
+        self.animations(True)
+        self.play(fixture('lyrics_syllable.json'))
+        self.player.apply({'position': 17.5})
+        self.assertTrue(wait_for(lambda: self.view._current == 1))
+        # "lan" from 17.38 s to 17.74 s: a third of it sung.
+        self.assertEqual(self.sung()[1][0], Sung(3, (17500 - 17380) / 360))
+        self.animations(False)
+        self.assertEqual(self.sung()[1][0], Sung(4, None))
+
+    def test_the_sweep_ticks_only_while_a_piece_is_sung(self):
+        """The sweep's tick runs while the tab is shown, the music plays and a piece of the
+        current line is being sung; not paused, hidden, in a gap between lines, after a song
+        change, or with animations off."""
+        self.animations(True)
+        self.view.set_active(True)
+        self.addCleanup(self.view.set_active, False)
+        self.play(fixture('lyrics_syllable.json'))
+        self.assertTrue(wait_for(lambda: 1 in self.view._rows))
+
+        def ticking():
+            return self.view._sweep_tick is not None
+
+        self.player.apply({'state': 'playing', 'position': 17.5})
+        self.assertTrue(ticking())
+        self.player.apply({'state': 'paused'})
+        self.assertFalse(ticking())
+        self.player.apply({'state': 'playing'})
+        self.assertTrue(ticking())
+        self.view.set_active(False)
+        self.assertFalse(ticking())
+        self.view.set_active(True)
+        self.assertTrue(ticking())
+        # Between the background's end (19.8 s) and the next line (20.1 s).
+        self.player.apply({'position': 19.85})
+        self.assertFalse(ticking())
+        self.player.apply({'position': 17.5})
+        self.assertTrue(ticking())
+        self.animations(False)
+        self.assertFalse(ticking())
+        self.animations(True)
+        self.assertTrue(ticking())
+        self.play(fixture('lyrics.json'))
+        self.player.apply({'state': 'playing', 'position': 20})
+        self.assertFalse(ticking())     # line-timed: nothing to sweep
+
+    def test_the_tick_follows_the_estimate(self):
+        """Each frame the tick lights what the estimate has reached, and stops itself at
+        the end of the line's pieces."""
+        self.animations(True)
+        self.view.set_active(True)
+        self.addCleanup(self.view.set_active, False)
+        self.play(fixture('lyrics_syllable.json'))
+        self.assertTrue(wait_for(lambda: 1 in self.view._rows))
+        self.player.apply({'state': 'playing', 'position': 19.7})
+        self.assertTrue(self.view._sweep_tick is not None)
+        before = self.sung()[1][1]
+        self.assertTrue(wait_for(lambda: self.sung()[1][1] != before), self.sung()[1])
+        # The background ends at 19.8 s: the tick goes by itself.
+        self.assertTrue(wait_for(lambda: self.view._sweep_tick is None, timeout=2))
+
+    def test_the_lyrics_hold_until_a_seek(self):
+        """The estimate falling back by less than HOLD_BACK (a pause reports the last whole
+        second) leaves the lyrics where they were; further back is a seek, followed."""
+        self.animations(False)
+        self.play(fixture('lyrics_syllable.json'))
+        self.player.apply({'position': 16.4})
+        self.assertTrue(wait_for(lambda: self.view._current == 1))
+        moment = self.view._moment
+        self.player.apply({'position': 16.0})   # back before the line's start
+        self.assertEqual((self.view._current, self.view._moment), (1, moment))
+        self.player.apply({'position': 14.0})
+        self.assertEqual(self.view._current, 0)
+
+    def test_a_recycled_row_never_keeps_its_lights(self):
+        """A row bound while its line is current lights its pieces; bound again where it is
+        not, or to a line timed as a whole, it is drawn plainly at once."""
+        from applemusic.lyrics import Lyrics, Moment, Sung
+
+        lyrics = Lyrics({'synced': True, 'lines': [
+            {'startMs': 0, 'text': 'One'}, {'startMs': 500, 'text': 'Two'},
+            {'startMs': 800, 'text': 'Three'},
+            {'startMs': 1000, 'endMs': 2000, 'text': 'Low tide',
+             'words': [{'startMs': 1000, 'endMs': 1500, 'text': 'Low '},
+                       {'startMs': 1500, 'endMs': 2000, 'text': 'tide'}]}]})
+        self.view._lyrics = lyrics
+        self.view._sweep = False
+        self.view._position = 1.6
+        self.addCleanup(setattr, self.view, '_lyrics', None)
+        item = make_list_item()
+        self.view._on_setup(None, item)
+        states = []
+        for moment, line in ((Moment(3, False, 2), lyrics.lines.get_item(3)),
+                             (Moment(2, False, 0), lyrics.lines.get_item(3)),
+                             (Moment(3, False, 2), lyrics.lines.get_item(3))):
+            self.view._moment = moment
+            item.line = line
+            self.view._on_bind(None, item)
+            states.append(item.child.line.label.sung)
+            self.view._on_unbind(None, item)
+        self.assertEqual(states, [Sung(2, None), None, Sung(2, None)])
+        self.view._lyrics = Lyrics(fixture('lyrics.json'))  # line-timed, at the same row
+        self.view._moment = Moment(3, False, 0)
+        item.line = self.view._lyrics.lines.get_item(3)
+        self.view._on_bind(None, item)
+        self.assertIsNone(item.child.line.label.sung)
 
     def test_the_measure_of_a_duets_lines(self):
         from applemusic.widgets.lyrics import duet_measure
@@ -482,6 +639,161 @@ class LyricsViewTest(unittest.TestCase):
         self.app.settings.set_boolean('lyrics-translations', True)
         self.assertEqual(self.view.text_label.get_text(),
                          '潮\nTide\n(潮)\n(tide)\n(Oh oh)\n風')
+
+
+@requires_gtk
+class PieceGeometryTest(unittest.TestCase):
+    """Where a LyricLabel's pieces are drawn (piece_segments): by Pango's byte indices, so
+    multi-byte text maps right; one segment for each line a piece is on; right to left from
+    the right; measured again whenever the layout changes; and the mask they make."""
+
+    def label(self, words, width=-1):
+        from gi.repository import Pango
+
+        from applemusic.lyrics import byte_spans
+        from applemusic.widgets.lyrics import LyricLabel
+
+        label = LyricLabel(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
+                           label=''.join(word.text for word in words))
+        layout = label.get_layout()
+        layout.set_width(width if width < 0 else width * Pango.SCALE)
+        return label, layout, byte_spans(words)
+
+    def words(self, *texts):
+        from applemusic.lyrics import Word
+
+        return tuple(Word(index, index + 1, text) for index, text in enumerate(texts))
+
+    def test_multi_byte_pieces_sit_where_pango_draws_them(self):
+        from gi.repository import Pango
+
+        from applemusic.widgets.lyrics import piece_segments
+
+        _label, layout, spans = self.label(self.words('夜', '明', 'け ', 'café ', 'ok'))
+        segments = piece_segments(layout, spans)
+        self.assertEqual([len(piece) for piece in segments], [1] * 5)
+        for span, (piece,) in zip(spans, segments, strict=True):
+            start, end, y, height = piece
+            self.assertAlmostEqual(start, layout.index_to_pos(span.first).x / Pango.SCALE)
+            self.assertGreater(end, start)
+            self.assertEqual(y, 0)
+            self.assertGreater(height, 0)
+        # Each piece ends where the next begins: no gap, no overlap.
+        for (before,), (after,) in zip(segments, segments[1:], strict=False):
+            self.assertAlmostEqual(before[1], after[0])
+
+    def test_a_wrapped_line(self):
+        from applemusic.widgets.lyrics import piece_segments
+
+        words = self.words('Grey ', 'morn', 'ing ', 'on ', 'the ', 'jet', 'ty')
+        _label, layout, spans = self.label(words, width=90)
+        self.assertGreater(layout.get_line_count(), 1)
+        segments = piece_segments(layout, spans)
+        ys = [piece[0][2] for piece in segments]
+        self.assertEqual(ys, sorted(ys))
+        self.assertEqual(ys[0], 0)
+        self.assertGreater(ys[-1], 0)
+        # The first piece on the second line starts at its left again.
+        second = ys.index(next(y for y in ys if y > 0))
+        self.assertLess(segments[second][0][0], segments[second - 1][0][0])
+        # A piece too long for a line is split across the lines it is on.
+        _label, layout, spans = self.label(self.words('Ooooooooooooooooooooooh'), width=60)
+        (piece,) = piece_segments(layout, spans)
+        self.assertEqual(len(piece), layout.get_line_count())
+        self.assertEqual(sorted(segment[2] for segment in piece), [s[2] for s in piece])
+
+    def test_right_to_left_pieces_run_from_the_right(self):
+        from applemusic.widgets.lyrics import piece_segments
+
+        _label, layout, spans = self.label(self.words('שלום ', 'ים'))
+        segments = piece_segments(layout, spans)
+        (first,), (second,) = segments
+        self.assertGreater(first[0], first[1])      # from its right edge to its left
+        self.assertGreater(first[1] + 0.5, second[0])  # the second piece is to its left
+
+    def test_spans_that_do_not_fit_have_no_segments(self):
+        from applemusic.lyrics import Span
+        from applemusic.widgets.lyrics import piece_segments
+
+        _label, layout, _spans = self.label(self.words('Low'))
+        self.assertEqual(piece_segments(layout, (Span(0, 5, 6),)), ())
+
+    def test_the_segments_are_measured_again_when_the_layout_changes(self):
+        from gi.repository import Gtk, Pango
+
+        from applemusic.lyrics import Sung, byte_spans
+
+        words = self.words('Grey ', 'morn', 'ing ', 'on ', 'the ', 'jet', 'ty')
+        label, _layout, spans = self.label(words)
+        label.sing(spans, Sung(2, 0.5))
+        first = label.segments()
+        self.assertIs(label.segments(), first)          # kept while nothing changes
+        label.get_layout().set_width(90 * Pango.SCALE)  # wraps now: another serial
+        wrapped = label.segments()
+        self.assertIsNot(wrapped, first)
+        self.assertNotEqual(wrapped, first)
+        # Another font, once the label's style is worked out (in a window).
+        window = Gtk.Window(child=label)
+        window.present()
+        self.addCleanup(window.destroy)
+        self.assertTrue(wait_for(lambda: label.get_mapped()))
+        before = label.segments()
+        label.add_css_class('title-1')
+        self.assertTrue(wait_for(lambda: label.segments() != before), before)
+        other = self.words('夜', '明', 'け')
+        label.set_label(''.join(word.text for word in other))
+        label.sing(byte_spans(other), Sung(1, None))
+        self.assertEqual(len(label.segments()), 3)
+        left_to_right = label.segments()
+        label.set_direction(Gtk.TextDirection.RTL)
+        self.assertTrue(wait_for(lambda: label.segments() is not left_to_right))
+        label.sing((), None)
+        self.assertIsNone(label.sung)
+
+    def test_the_mask(self):
+        """Whole pieces at full opacity, merged along a line; the piece being sung up to a
+        soft edge SWEEP_EDGE either side of where it has got, in its own direction and across
+        its lines."""
+        from applemusic.lyrics import Sung
+        from applemusic.widgets.lyrics import mask_parts
+
+        line = (((0, 10, 0, 20),), ((10, 30, 0, 20),), ((30, 50, 0, 20),))
+        self.assertEqual(mask_parts(line, Sung(2, None)), ([(0, 0, 30, 20)], None))
+        self.assertEqual(mask_parts(line, Sung(1, 0.5)), ([(0, 0, 12, 20)], (12, 28, 0, 20)))
+        self.assertEqual(mask_parts(line, Sung(0, 0.1)), ([], (0, 9, 0, 20)))
+        self.assertEqual(mask_parts(line, Sung(0, None)), ([], None))
+        right_to_left = (((50, 30, 0, 20),),)
+        self.assertEqual(mask_parts(right_to_left, Sung(0, 0.5)),
+                         ([(48, 0, 2, 20)], (48, 32, 0, 20)))
+        wrapped = (((40, 60, 0, 20), (0, 20, 20, 20)),)
+        self.assertEqual(mask_parts(wrapped, Sung(0, 0.75)),
+                         ([(40, 0, 20, 20), (0, 20, 2, 20)], (2, 18, 20, 20)))
+
+    def test_drawn_with_and_without_lights(self):
+        """A label sung in part draws through its mask; one plain, all sung or none sung
+        without it."""
+        from gi.repository import Gtk
+
+        from applemusic.lyrics import Sung
+
+        words = self.words('Low ', 'tide')
+        label, _layout, spans = self.label(words)
+        window = Gtk.Window(child=label)
+        window.present()
+        self.addCleanup(window.destroy)
+        self.assertTrue(wait_for(lambda: label.get_width() > 0))
+
+        def node_types(sung):
+            label.sing(spans, sung)
+            snapshot = Gtk.Snapshot()
+            type(label).do_snapshot(label, snapshot)
+            node = snapshot.to_node()
+            return type(node).__name__ if node is not None else None
+
+        self.assertEqual(node_types(None), node_types(Sung(2, None)))
+        self.assertEqual(node_types(Sung(0, None)), 'OpacityNode')
+        self.assertEqual(node_types(Sung(1, 0.5)), 'MaskNode')
+        self.assertEqual(node_types(Sung(1, None)), 'MaskNode')
 
 
 @requires_gtk

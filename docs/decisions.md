@@ -160,6 +160,23 @@ changes, change it here, with the date. The plan they came from is in
   again at every frame); with animations off GTK runs neither, and the revealer opens at
   once, so the dots only step. In a duet they sit on the side of the line that follows, where the eye goes next.
   The intro's dots are the first row, so at the start of a song the list is at its top (#305).
+- **Words light as they are sung: drawn through a mask, swept with animations on**
+  (2026-10-19). A word-timed line's pieces (Apple's spans: words and syllables) light on the
+  current row only: the unsung text at the dimmed lines' opacity, so the line fills in from
+  how the other lines look, the sung text at full, the main vocals, the background vocals
+  and the pronunciation each by their own times, the translation whole (it is not timed).
+  Drawn by the label itself (`LyricLabel.do_snapshot`: an alpha mask over its own drawing),
+  not by a `Pango.AttrList` of foreground alphas: setting attributes clears the label's
+  layout and queues a resize, so every word laid the row out again and reallocated the
+  list (about 0.85 extra list allocations a word, measured), and it cannot fill a word in
+  part. With animations on, the piece being sung fills in across its width over its
+  duration with a soft edge, as Apple's gradient sweeps each syllable; that costs a redraw
+  of one or two labels a frame while a piece is sung, capped at about 60 a second on any
+  monitor (about 5 % of a core more at 60 Hz, docs/notes.md), and nothing while the tab is
+  hidden, the music paused or between lines. With animations off (`gtk-enable-animations`,
+  as reduced motion) each piece lights whole as it begins, on the existing timeout. The
+  position is the Player's estimate, whole seconds refined, about 130 ms behind on average:
+  not offset here, the same lag the line highlighting has (#304).
 
 ## Engine
 

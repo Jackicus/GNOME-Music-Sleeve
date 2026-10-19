@@ -75,6 +75,37 @@ its "Performance pass" section.
   that speed (33 rows bound a frame); the rest of the difference is two more columns of text
   laid out and drawn, which showing them costs. No frame went over 16.7 ms, so nothing was
   changed.
+- Word-by-word lyrics (issue 304), headless, 2026-10-19: `scripts/lyrics_test.py`, the
+  syllable fixture from 12 s for 36 s (nine lines, 73 pieces), 60 Hz virtual monitor,
+  Vulkan renderer, 1100x760, whole-second positions fed about four times a second.
+
+  | | frames | work a frame (mean, longest) | CPU (one core) | list allocations |
+  |---|---|---|---|---|
+  | before: the line lit whole | 645 | 0.78-0.80 ms, 3.9 ms | 1.9-2.0 % | 81 |
+  | before, animations off | 51 | 0.86 ms, 2.3 ms | 0.4 % | 12 |
+  | after: the pieces swept | 1865-1890 | 1.08-1.13 ms, 4.5 ms | 6.9-7.3 % | 81 |
+  | after, animations off (whole pieces) | 110 | 1.06 ms, 3.2 ms | 0.8 % | 12 |
+  | after, swept, pronunciations on | 1891 | 1.02 ms, 3.9 ms | 6.4 % | 93 |
+
+  The list's allocations are the centring's only: no word lays anything out. The sweep's
+  Python is about 0.08 ms a frame (the tick and its `_follow`), a masked label's snapshot
+  about 0.1 ms; the rest is GTK's frame and the render. A line-timed song plays as before
+  (no tick). Prototypes measured the same way before choosing: lighting by a
+  `Pango.AttrList` of foreground alphas (`set_attributes()` at each word) cost about the same
+  per step (about 1 ms frames) but reallocated the list about 0.85 times a word (164
+  allocations against 103 for the mask, same glides), and could not fill a piece in part;
+  capping the sweep at 30 redraws a second saved only 1.5 % of a core (5.5 %), so it redraws
+  at the frame rate up to about 60 a second. The Player's estimate was 0 to 265 ms behind the
+  true position (mean about 130 ms): MusicKit's whole seconds are stamped when first seen.
+  It never runs back in steady play (it holds at most a report's lateness at a second's
+  change), but falls back to the last whole second on a pause, hence the view's hold.
+  `Pango.LayoutLine.get_x_ranges()` is unusable from PyGObject 3.56: its array's length
+  annotation counts pairs, so it returns half the values (one number for one range);
+  `Layout.index_to_line_x()` and the line's extents give the same edges. bench.py (5 runs,
+  medians) and scroll_test.py before and after: content 924 / 927 ms, longest switch 65 / 67
+  ms, anonymous memory after browsing 196 / 195 MB, pages +1.4 / +1.1 MB; Albums 4.0 / 4.1 ms
+  a frame (longest 7.4 / 7.2), Songs 2.9 / 3.0-3.2 ms (longest 5.3 / 7.0-8.7), no frame over
+  16.7 ms: the same, within the runs' spread (the lyrics view is not on those paths).
 - Hidden root pages keep their list and grid widgets (the window keeps each fixed
   destination's root page once visited, and the last eight playlist and folder pages).
   Letting the six hidden views' item widgets go while they are hidden, and rebuilding them on a

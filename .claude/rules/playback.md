@@ -83,9 +83,16 @@ paths:
   Apple's 9 s rule) belongs to the line after it (`LyricLine.instrumental`), its dots in
   that line's row, never an item of its own (a list item that cannot take the focus stops
   GTK's arrow keys). What the synced view shows is `Lyrics.moment_at()` (the row current,
-  in its break or not, and its step: the dots lit), and it steps on one GLib timeout armed
-  for `Lyrics.next_change()`, never a per-frame tick: a new kind of step (a word sung)
-  goes into those two.
+  in its break or not, and its step: the dots lit, or a word-timed line's pieces begun),
+  and it steps on one GLib timeout armed for `Lyrics.next_change()`, never a per-frame
+  tick: a new kind of step goes into those two. The one per-frame tick is a sweep's
+  drawing: while a piece of a shown part of the current word-timed line is being sung (the
+  tab shown, the music playing, animations on), the list's tick callback redraws that row's
+  `LyricLabel`s (at most about 60 times a second) and nothing else, and stops itself in
+  the gaps. The labels light the pieces sung (`lyrics.sung()`) through an alpha mask in
+  their own snapshot (`piece_segments()`, by Pango's UTF-8 byte indices: `lyrics.byte_spans()`),
+  never through Pango attributes, which would lay the row and the list out at every word.
+  The lyrics hold rather than go back by less than `HOLD_BACK` (a pause's whole second).
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with
   `Gio.DBusConnection.register_object_with_closures2` (the older call is deprecated since GLib

@@ -318,7 +318,7 @@ button.release-card {
    the play button largest; the lyrics as title-3 lines (widgets/lyrics.py), each with its
    pronunciation and translation under it when shown, then its background vocals, smaller,
    with theirs; the current line at full opacity (the others carry .dimmed), a line fading
-   between the two; an instrumental break's dots over the line after it; the queue's rows
+   between the two, a word-timed one's words lit as they are sung; an instrumental break's dots over the line after it; the queue's rows
    as the detail pages' track rows. */
 .now-playing .play-button {
   min-width: 56px;
@@ -380,6 +380,13 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
 
 .lyric-line.current {
   opacity: 1;
+}
+
+/* A word-timed line becomes current at once, not fading in: its labels draw the words not
+   yet sung at the dimmed lines' opacity themselves (widgets/lyrics.py's LyricLabel), which
+   a fade of the box would dim further for a moment. It still fades out when it is done. */
+.lyric-line.timed.current {
+  transition: none;
 }
 
 /* The first line of a verse or a chorus: a gap before it, as the unsynced text has. */
