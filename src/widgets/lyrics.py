@@ -22,7 +22,7 @@ gap above it, outside the highlight the line's box draws. The break's DOTS dots
 begins: a Gtk.Revealer slides them open, the row then current with its line still dimmed,
 lights them one after another across the break (show_dots(): a dot `lit` as its DOTS-th of
 the break begins, its opacity eased by CSS) while the group breathes (a CSS animation of
-its scale, `breathing`), and slides them shut as the line begins, as Apple's own view does.
+its opacity, `breathing`), and slides them shut as the line begins, as Apple's own view does.
 With animations off (gtk-enable-animations) GTK runs no CSS animation or transition and the
 revealer opens and shuts at once: the dots only step. The dots are part of the row, not an
 item of their own, so the keyboard's stops stay the lines (GTK's list stops its arrow keys

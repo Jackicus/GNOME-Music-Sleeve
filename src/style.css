@@ -389,11 +389,11 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
 
 /* An instrumental break's dots, over the line after it while the break plays (a revealer
    opens them): round, in the text's colour, faint until lit one after another across the
-   break, the group breathing while open. With animations off GTK runs neither the
-   breathing nor the fade: the dots light in steps. */
+   break, the group breathing while open: a pulse of its opacity, which only redraws it (a
+   scale would lay the list out again at every frame). With animations off GTK runs neither
+   the breathing nor the fade: the dots light in steps. */
 .lyric-dots {
   margin: 10px 12px 12px;
-  transform-origin: center;
 }
 
 .lyric-dots.breathing {
@@ -401,9 +401,9 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
 }
 
 @keyframes lyric-breathe {
-  from { transform: scale(1); }
-  50% { transform: scale(1.15); }
-  to { transform: scale(1); }
+  from { opacity: 1; }
+  50% { opacity: 0.6; }
+  to { opacity: 1; }
 }
 
 .lyric-dot {

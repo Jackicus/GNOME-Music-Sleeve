@@ -155,9 +155,10 @@ changes, change it here, with the date. The plan they came from is in
   lines (the text, the menu, a click's seek) would have to skip it. During a break that row
   is current, its line still dimmed; the dots light one at a time, the first as the break
   begins and the next at each third, on the same single timeout that moves the highlight to
-  the next line (`Lyrics.next_change()`), with a CSS fade and a gentle breathing of the group;
-  with animations off GTK runs neither, and the revealer opens at once, so the dots only
-  step. In a duet they sit on the side of the line that follows, where the eye goes next.
+  the next line (`Lyrics.next_change()`), with a CSS fade and a gentle breathing of the group
+  (a pulse of its opacity, which only redraws it, where a scale would lay the list out
+  again at every frame); with animations off GTK runs neither, and the revealer opens at
+  once, so the dots only step. In a duet they sit on the side of the line that follows, where the eye goes next.
   The intro's dots are the first row, so at the start of a song the list is at its top (#305).
 
 ## Engine
