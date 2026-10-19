@@ -9,7 +9,7 @@ Not affiliated with Apple. Apple Music is a trademark of Apple Inc.
 
 <p align="center">
   <img src="data/screenshots/album-dark.png" width="49%" alt="An album's page, in the dark style">
-  <img src="data/screenshots/now-playing-light.png" width="49%" alt="Now Playing, with the lyrics following the song">
+  <img src="data/screenshots/now-playing-light.png" width="49%" alt="Now Playing, a duet's lyrics lit word by word as they are sung">
 </p>
 
 The screenshots show an invented demo library.
@@ -65,7 +65,7 @@ sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3
     meson gettext                                                                             # Fedora 44+
 sudo apt install libgtk-4-dev libadwaita-1-dev python3-gi python-gi-dev meson gettext        # Ubuntu 26.04
 
-tar xf music-sleeve-0.12.0.tar.xz && cd music-sleeve-0.12.0
+tar xf music-sleeve-0.13.0.tar.xz && cd music-sleeve-0.13.0
 meson setup _build --prefix=/usr
 meson compile -C _build
 sudo meson install -C _build --skip-subprojects
