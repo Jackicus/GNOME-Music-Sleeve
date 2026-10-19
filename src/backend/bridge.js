@@ -177,18 +177,21 @@
     }
 
     // Apple's TTML lyrics as {synced, lines: [{startMs, endMs, text, stanza?,
-    // pronunciation?}]}. Each <p> is a line, timed when it has `begin` (the lyrics are then
-    // synced), its text the characters of its spans (a <br> a space); the first line of each
-    // <div> (a verse, a chorus) has `stanza: true`. A line's pronunciation is the text of
-    // the head's <transliterations><transliteration><text for="…"> named by the line's
-    // `itunes:key`, when it says something else than the line. The page's XML parser
-    // decodes the entities (&amp;, &#8217;) and CDATA; TTML it cannot read is no lyrics.
+    // pronunciation?, translation?}]}. Each <p> is a line, timed when it has `begin` (the
+    // lyrics are then synced), its text the characters of its spans (a <br> a space); the
+    // first line of each <div> (a verse, a chorus) has `stanza: true`. A line's
+    // pronunciation is the text of the head's <transliterations><transliteration><text
+    // for="…"> named by the line's `itunes:key`, its translation the same under
+    // <translations><translation>, each when it says something else than the line. The
+    // page's XML parser decodes the entities (&amp;, &#8217;) and CDATA; TTML it cannot
+    // read is no lyrics.
     function parseTtmlLyrics(ttml) {
         const doc = new DOMParser().parseFromString(String(ttml), 'application/xml');
         if (doc.getElementsByTagName('parsererror').length) {
             return { synced: false, lines: [] };
         }
-        const pronunciations = transliterations(doc);
+        const pronunciations = localization(doc, 'transliteration');
+        const translations = localization(doc, 'translation');
         const lines = [];
         let synced = false;
         let stanza = null;
@@ -210,19 +213,21 @@
             const key = p.getAttribute('itunes:key');
             const pronunciation = key ? pronunciations.get(key) : '';
             if (pronunciation && pronunciation !== text) line.pronunciation = pronunciation;
+            const translation = key ? translations.get(key) : '';
+            if (translation && translation !== text) line.translation = translation;
             lines.push(line);
         }
         return { synced: synced, lines: lines };
     }
 
-    // The first transliteration in a TTML's head (the one script asked for) as a Map of a
-    // line's key to its text, empty when there is none.
-    function transliterations(doc) {
+    // The first <transliteration> or <translation> (`name`) in a TTML's head (the one
+    // asked for) as a Map of a line's key to its text, empty when there is none.
+    function localization(doc, name) {
         const found = new Map();
         const head = doc.getElementsByTagNameNS('*', 'head')[0];
-        const transliteration = head && head.getElementsByTagNameNS('*', 'transliteration')[0];
-        if (!transliteration) return found;
-        for (const text of Array.from(transliteration.getElementsByTagNameNS('*', 'text'))) {
+        const localized = head && head.getElementsByTagNameNS('*', name)[0];
+        if (!localized) return found;
+        for (const text of Array.from(localized.getElementsByTagNameNS('*', 'text'))) {
             const key = text.getAttribute('for');
             const value = elementText(text).replace(/\s+/g, ' ').trim();
             if (key && value && !found.has(key)) found.set(key, value);
@@ -801,8 +806,9 @@
 
         // A catalog song's lyrics, as music.apple.com asks for them: syllable-lyrics, with
         // `languages` ({lyrics: 'en-GB', script: 'en-Latn'}, api.lyrics_languages) asking
-        // for the lines' pronunciations in that script (`ttmlLocalizations`, the TTML with
-        // its transliterations), else the plain /lyrics when that request fails. No lyrics
+        // for the lines' translations into that language and pronunciations in that script
+        // (`ttmlLocalizations`, the TTML with its translations and transliterations), else
+        // the plain /lyrics when that request fails. No lyrics
         // when Apple has none or refuses.
         lyrics: async function (catalogSongId, languages) {
             const mk = getMusicKit();

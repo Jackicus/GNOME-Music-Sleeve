@@ -151,12 +151,12 @@ def run_app(app, *options):
     return app.run(app.harness_argv + list(options))
 
 
-def invented_playing_state(app, lyrics=False, pronunciations=False):
+def invented_playing_state(app, lyrics=False, localized=False):
     """A Player.apply() dict: the demo library's first album as the queue, its first track
     playing 65 s in, the album's cover as the artwork, and with `lyrics` the synced lyrics of
-    tests/fixtures/lyrics.json (with `pronunciations`, lyrics_pronunciations.json's Japanese
-    lines, each with its romanisation). The demo cannot play: this is what the Player would
-    show."""
+    tests/fixtures/lyrics.json (with `localized`, lyrics_localized.json's Japanese lines,
+    each with its romanisation and its English translation). The demo cannot play: this is
+    what the Player would show."""
     from applemusic.backend import config
     from applemusic.remote import remote_art_path
 
@@ -182,7 +182,7 @@ def invented_playing_state(app, lyrics=False, pronunciations=False):
         'repeat': 'none', 'volume': 0.7, 'queue': {'index': 0, 'items': entries},
     }
     if lyrics:
-        fixture = 'lyrics_pronunciations.json' if pronunciations else 'lyrics.json'
+        fixture = 'lyrics_localized.json' if localized else 'lyrics.json'
         with open(os.path.join(ROOT, 'tests', 'fixtures', fixture), encoding='utf-8') as file:
             state['lyrics'] = json.load(file)
     return state

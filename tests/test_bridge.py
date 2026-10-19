@@ -53,12 +53,16 @@ TTML = (
 # The same song's syllable-lyrics answer with its transliterations, as music.apple.com asks
 # for it (extend=ttmlLocalizations; invented words): the head's <text for="…"> name the
 # lines by their itunes:key, word-timed spans and a background vocal (ttm:role="x-bg")
-# among them; one line has none, one's is the line itself, a <text> names no line.
+# among them; one line has none, one's is the line itself, a <text> names no line. The
+# translations are the same shape.
 TTML_LOCALIZED = (
     '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"'
     ' xmlns:ttm="http://www.w3.org/ns/ttml#metadata" itunes:timing="Word" xml:lang="ja">'
     '<head><metadata><iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal">'
-    '<translations/><transliterations><transliteration xml:lang="ja-Latn">'
+    '<translations><translation type="subtitle" xml:lang="en-US">'
+    '<text for="L1">Fog on the sea (<span ttm:role="x-bg">the sea</span>)</text>'
+    '<text for="L2">Oh oh</text><text for="L3">Tide</text></translation></translations>'
+    '<transliterations><transliteration xml:lang="ja-Latn">'
     '<text for="L1"><span xmlns="http://www.w3.org/ns/ttml" begin="1">Kiri</span> '
     '<span xmlns="http://www.w3.org/ns/ttml" begin="2">no</span> '
     '<span xmlns="http://www.w3.org/ns/ttml" begin="3">umi</span> '
@@ -491,15 +495,17 @@ class BridgeTest(unittest.TestCase):
         const plain = await bridge.lyrics('1000000001');
         return {pronounced, asked, plain: plain.lines.length, fellBack: mk.calls};
     """)
-    def test_lyrics_with_pronunciations(self, value):
+    def test_lyrics_with_pronunciations_and_translations(self, value):
         self.assertEqual(value['asked'], [
             ['api.music', '/v1/catalog/gb/songs/1000000001/syllable-lyrics',
              {'extend': 'ttmlLocalizations', 'l[lyrics]': 'en-GB', 'l[script]': 'en-Latn'}]])
         self.assertEqual(value['pronounced'], {'synced': True, 'lines': [
             {'startMs': 1000, 'endMs': 4000, 'text': '\u9727\u306e\u6d77 (\u6d77)',
-             'stanza': True, 'pronunciation': 'Kiri no umi (umi)'},
+             'stanza': True, 'pronunciation': 'Kiri no umi (umi)',
+             'translation': 'Fog on the sea (the sea)'},
             {'startMs': 5000, 'endMs': 7000, 'text': 'Oh oh'},    # the same as the line
-            {'startMs': 7000, 'endMs': 9000, 'text': '\u6f6e'}]})  # none for this line
+            {'startMs': 7000, 'endMs': 9000, 'text': '\u6f6e',
+             'translation': 'Tide'}]})                           # no pronunciation
         self.assertEqual(value['plain'], 4)
         self.assertEqual([call[1] for call in value['fellBack']], [
             '/v1/catalog/gb/songs/1000000001/syllable-lyrics',

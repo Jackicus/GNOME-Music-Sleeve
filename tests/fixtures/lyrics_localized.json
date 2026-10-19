@@ -1,0 +1,30 @@
+{
+  "synced": true,
+  "languages": {"lyrics": "en-GB", "script": "en-Latn"},
+  "lines": [
+    {"startMs": 1200, "endMs": 4800, "text": "霧の海に鐘が鳴る", "stanza": true, "pronunciation": "Kiri no umi ni kane ga naru", "translation": "Fog on the water, a bell on the buoy"},
+    {"startMs": 5100, "endMs": 8900, "text": "港の灯りを数えてる", "pronunciation": "Minato no akari o kazoeteru", "translation": "Counting the lights on the harbour wall"},
+    {"startMs": 9300, "endMs": 13000, "text": "出ていく船は帰る船", "pronunciation": "Dete iku fune wa kaeru fune", "translation": "Every boat out is a boat coming home"},
+    {"startMs": 13400, "endMs": 17200, "text": "誰も呼び声に答えない", "pronunciation": "Daremo yobigoe ni kotaenai", "translation": "And nobody answers the call"},
+    {"startMs": 19000, "endMs": 22800, "text": "ラジオが告げる引き潮", "stanza": true, "pronunciation": "Rajio ga tsugeru hikishio", "translation": "Low tide warning on the radio"},
+    {"startMs": 23100, "endMs": 27000, "text": "雑音と潮風の中", "pronunciation": "Zatsuon to shiokaze no naka", "translation": "Static and salt in the air"},
+    {"startMs": 27400, "endMs": 31000, "text": "岸辺にランプを並べよう", "pronunciation": "Kishibe ni ranpu o narabeyou", "translation": "We set the lamps out along the shore"},
+    {"startMs": 31500, "endMs": 35200, "text": "誰かがそこにいるのなら", "pronunciation": "Dareka ga soko ni iru no nara", "translation": "In case there is anyone there"},
+    {"startMs": 38000, "endMs": 41800, "text": "浅瀬から 深みから", "stanza": true, "pronunciation": "Asase kara fukami kara", "translation": "Signal from the shallows, signal from the deep"},
+    {"startMs": 42200, "endMs": 46000, "text": "三つの短い光と長い光", "pronunciation": "Mittsu no mijikai hikari to nagai hikari", "translation": "Three short flashes and a long one"},
+    {"startMs": 46500, "endMs": 50200, "text": "浅瀬から 僕らは眠らない", "pronunciation": "Asase kara bokura wa nemuranai", "translation": "Signal from the shallows, we are wide awake"},
+    {"startMs": 50600, "endMs": 54400, "text": "朝が来るのを待っている", "pronunciation": "Asa ga kuru no o matte iru", "translation": "Waiting on the morning to come"},
+    {"startMs": 57000, "endMs": 60800, "text": "机の海図 冷めたカップ", "stanza": true, "pronunciation": "Tsukue no kaizu sameta kappu", "translation": "Chart on the table, a cup gone cold"},
+    {"startMs": 61200, "endMs": 65000, "text": "潮の流れに鉛筆の線", "pronunciation": "Shio no nagare ni enpitsu no sen", "translation": "Pencil lines where the current runs"},
+    {"startMs": 65400, "endMs": 69100, "text": "夜明けには晴れると誰かが言った", "pronunciation": "Yoake ni wa hareru to dareka ga itta", "translation": "Somebody said it would clear by dawn"},
+    {"startMs": 69500, "endMs": 73200, "text": "誰かがいつもそう言う", "pronunciation": "Dareka ga itsumo sou iu", "translation": "Somebody always does"},
+    {"startMs": 76000, "endMs": 79800, "text": "浅瀬から 深みから", "stanza": true, "pronunciation": "Asase kara fukami kara", "translation": "Signal from the shallows, signal from the deep"},
+    {"startMs": 80200, "endMs": 84000, "text": "三つの短い光と長い光", "pronunciation": "Mittsu no mijikai hikari to nagai hikari", "translation": "Three short flashes and a long one"},
+    {"startMs": 84500, "endMs": 88200, "text": "浅瀬から 僕らは眠らない", "pronunciation": "Asase kara bokura wa nemuranai", "translation": "Signal from the shallows, we are wide awake"},
+    {"startMs": 88600, "endMs": 92400, "text": "朝が来るのを待っている", "pronunciation": "Asa ga kuru no o matte iru", "translation": "Waiting on the morning to come"},
+    {"startMs": 96000, "endMs": 99800, "text": "水が砂を返すとき", "stanza": true, "pronunciation": "Mizu ga suna o kaesu toki", "translation": "And when the water lets the sand back through"},
+    {"startMs": 100200, "endMs": 104000, "text": "僕らは海峡へ歩いていく", "pronunciation": "Bokura wa kaikyou e aruite iku", "translation": "We will walk out to the sound"},
+    {"startMs": 104400, "endMs": 108100, "text": "ランプをひとつずつ拾って", "pronunciation": "Ranpu o hitotsu zutsu hirotte", "translation": "Pick up the lamps one by one"},
+    {"startMs": 108500, "endMs": 112200, "text": "町へと持ち帰ろう", "pronunciation": "Machi e to mochikaerou", "translation": "And carry them back into town"}
+  ]
+}

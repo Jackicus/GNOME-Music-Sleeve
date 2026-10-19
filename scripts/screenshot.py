@@ -45,9 +45,10 @@ never started here.
 --now-playing puts an invented item on the Player (the first track of the demo
 library's first album, playing, its queue the album, the synced lyrics of
 tests/fixtures/lyrics.json, the album's cover as its artwork) and opens the Now
-Playing sheet on its Lyrics tab, or on Up Next with "queue"; "pronunciations" shows
-the Lyrics tab with tests/fixtures/lyrics_pronunciations.json's lines and Show
-Pronunciations on. With --demo only.
+Playing sheet on its Lyrics tab, or on Up Next with "queue"; "localized" shows the
+Lyrics tab with tests/fixtures/lyrics_localized.json's lines, which have
+pronunciations and translations (--setting lyrics-pronunciations=true and
+lyrics-translations=true show them). With --demo only.
 --playing puts the same item on the Player and leaves the sheet closed: the player
 bar in its playing state. With --demo only.
 --search TERM shows the Search page in Your Library mode with TERM typed (the
@@ -104,7 +105,7 @@ parser.add_argument('--banner', choices=['sign-in', 'expired'],
 parser.add_argument('--signed-in', metavar='NAME', nargs='?', const='',
                     help='show the account as signed in, as NAME when given')
 parser.add_argument('--now-playing', metavar='TAB', nargs='?', const='lyrics',
-                    choices=['lyrics', 'pronunciations', 'queue'],
+                    choices=['lyrics', 'localized', 'queue'],
                     help='an invented item playing, the Now Playing sheet open on TAB')
 parser.add_argument('--playing', action='store_true',
                     help='an invented item playing, the sheet closed (the player bar)')
@@ -198,14 +199,11 @@ def open_now_playing(window):
     """--now-playing: the invented item on the Player (the demo's first album playing, with
     the lyrics fixture) and the sheet open on the tab; --playing: the item only, for the
     player bar."""
-    pronunciations = args.now_playing == 'pronunciations'
-    if pronunciations:
-        app.settings.set_boolean('lyrics-pronunciations', True)
-    app.player.apply(harness.invented_playing_state(app, lyrics=True,
-                                                    pronunciations=pronunciations))
+    localized = args.now_playing == 'localized'
+    app.player.apply(harness.invented_playing_state(app, lyrics=True, localized=localized))
     if args.now_playing:
         window.now_playing.tab_stack.set_visible_child_name(
-            'lyrics' if pronunciations else args.now_playing)
+            'lyrics' if localized else args.now_playing)
         window.bottom_sheet.set_open(True)
 
 

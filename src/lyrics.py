@@ -2,17 +2,19 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """Lyrics as a model: the engine's answer ({synced, lines: [{startMs, endMs, text,
-pronunciation?}]}) as a Lyrics object holding LyricLine GObjects in a Gio.ListStore, and the
-lookup of the line current at a playback position, which the Now Playing sheet highlights.
+pronunciation?, translation?}]}) as a Lyrics object holding LyricLine GObjects in a
+Gio.ListStore, and the lookup of the line current at a playback position, which the Now
+Playing sheet highlights.
 
     lyrics = Lyrics(answer, catalog_id)
     lyrics.synced          # True when the lines carry times (Apple's TTML had begin="…")
     lyrics.lines           # Gio.ListStore of LyricLine (start_ms, end_ms, text, stanza,
-                           # pronunciation), in time order
+                           # pronunciation, translation), in time order
     lyrics.text            # every line on its own line, a blank line before each stanza (a
                            # verse, a chorus: a line the answer marks `stanza`): the unsynced view
     lyrics.has_pronunciations   # some line has a pronunciation (Apple's transliteration:
                                 # Japanese written in Latin letters, say)
+    lyrics.has_translations     # some line has a translation (into the user's language)
     lyrics.index_at(42.5)  # the index of the line current 42.5 s in, -1 before the first
                            # (and always for unsynced lyrics)
 
@@ -25,6 +27,7 @@ GObject and Gio only, no GTK: tests feed it invented answers.
 
 import bisect
 import html
+from collections import namedtuple
 
 from gi.repository import Gio, GObject
 
@@ -32,7 +35,8 @@ from gi.repository import Gio, GObject
 class LyricLine(GObject.Object):
     """One line of lyrics: its text, when synced when it starts and ends (milliseconds),
     whether it opens a stanza (a verse, a chorus: the synced view leaves a gap before it, as
-    the text does), and how it is pronounced ('' when Apple gave no pronunciation)."""
+    the text does), how it is pronounced and what it means ('' when Apple gave no
+    pronunciation, no translation)."""
 
     __gtype_name__ = 'AppleMusicLyricLine'
 
@@ -41,6 +45,11 @@ class LyricLine(GObject.Object):
     text = GObject.Property(type=str, default='')
     stanza = GObject.Property(type=bool, default=False)
     pronunciation = GObject.Property(type=str, default='')
+    translation = GObject.Property(type=str, default='')
+
+
+# One line as parse_lines() reads it.
+Line = namedtuple('Line', 'start_ms end_ms text stanza pronunciation translation')
 
 
 def _ms(value):
@@ -54,12 +63,12 @@ def _text(value):
 
 
 def parse_lines(answer):
-    """The answer's lines as (start_ms, end_ms, text, stanza, pronunciation) tuples: dicts
-    with a text that is not blank, its character references decoded ("Rock &amp; Roll" was
-    cached so once) and its ends stripped, `stanza` True on the first line of a verse or a
-    chorus, `pronunciation` the line's, read as the text is ('' for none, or one the same as
-    the text); in time order when they carry times (a stable sort: two lines starting
-    together keep their order)."""
+    """The answer's lines as Line tuples (start_ms, end_ms, text, stanza, pronunciation,
+    translation): dicts with a text that is not blank, its character references decoded
+    ("Rock &amp; Roll" was cached so once) and its ends stripped, `stanza` True on the first
+    line of a verse or a chorus, `pronunciation` and `translation` the line's, read as the
+    text is ('' for none, or one the same as the text); in time order when they carry times
+    (a stable sort: two lines starting together keep their order)."""
     lines = []
     raw = answer.get('lines') if isinstance(answer, dict) else None
     for line in raw if isinstance(raw, list) else []:
@@ -68,11 +77,14 @@ def parse_lines(answer):
         text = _text(line.get('text'))
         if not text:
             continue
-        pronunciation = _text(line.get('pronunciation'))
-        lines.append((_ms(line.get('startMs')), _ms(line.get('endMs')), text,
-                      line.get('stanza') is True, '' if pronunciation == text else pronunciation))
+        pronunciation, translation = (_text(line.get(key))
+                                      for key in ('pronunciation', 'translation'))
+        lines.append(Line(_ms(line.get('startMs')), _ms(line.get('endMs')), text,
+                          line.get('stanza') is True,
+                          '' if pronunciation == text else pronunciation,
+                          '' if translation == text else translation))
     if isinstance(answer, dict) and answer.get('synced'):
-        lines.sort(key=lambda line: line[0])
+        lines.sort(key=lambda line: line.start_ms)
     return lines
 
 
@@ -96,16 +108,15 @@ class Lyrics(GObject.Object):
         parsed = parse_lines(answer)
         self.synced = bool(isinstance(answer, dict) and answer.get('synced')) and bool(parsed)
         self.lines = Gio.ListStore(item_type=LyricLine)
-        self.lines.splice(0, 0, [LyricLine(start_ms=start, end_ms=end, text=text, stanza=stanza,
-                                           pronunciation=pronunciation)
-                                 for start, end, text, stanza, pronunciation in parsed])
-        self._starts = [line[0] for line in parsed] if self.synced else []
-        self.has_pronunciations = any(line[4] for line in parsed)
+        self.lines.splice(0, 0, [LyricLine(**line._asdict()) for line in parsed])
+        self._starts = [line.start_ms for line in parsed] if self.synced else []
+        self.has_pronunciations = any(line.pronunciation for line in parsed)
+        self.has_translations = any(line.translation for line in parsed)
         texts = []
-        for index, (_start, _end, text, stanza, _pronunciation) in enumerate(parsed):
-            if stanza and index:
+        for index, line in enumerate(parsed):
+            if line.stanza and index:
                 texts.append('')
-            texts.append(text)
+            texts.append(line.text)
         self.text = '\n'.join(texts)
 
     def __len__(self):

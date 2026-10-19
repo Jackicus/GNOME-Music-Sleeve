@@ -111,7 +111,7 @@ paths:
   `stale: True` (`cache.read_kept(allow_stale=True)`); every answer carries its `cached`
   stamp. An answer asked about something that changes (`basis`: the suggestions' fingerprint
   of the songs the playlist holds, `suggestions.basis()`) is kept with it and is not fresh
-  for another, whatever its age. Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in another script than `Engine.lyrics_languages` asks for (the pronunciations'). `item()`'s artwork
+  for another, whatever its age. Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations'). `item()`'s artwork
   goes to remote-art/ (`place_in_remote_art`): art/ and thumb/ are the library's, pruned
   against library.json after every sync.
 - Cache writes: every file in the cache goes through `backend/store.py` (`atomic_write`, or

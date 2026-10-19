@@ -268,7 +268,7 @@ button.release-card {
 
 /* The Now Playing sheet (widgets/now_playing.blp): larger transport buttons than the bar's,
    the play button largest; the lyrics as title-3 lines (widgets/lyrics.py), each with its
-   pronunciation under it when shown, the current one at full opacity (the others carry
+   pronunciation and translation under it when shown, the current one at full opacity (the others carry
    .dimmed), a line fading between the two; the queue's rows as the detail pages' track
    rows. */
 .now-playing .play-button {
@@ -295,14 +295,35 @@ listview.lyrics-list {
   background: none;
 }
 
+/* A lyrics row draws nothing itself: its line's box (.lyric-line) has the padding and the
+   rounded hover, press and focus, as libadwaita's activatable rows, so that a verse's gap,
+   the box's margin, stays outside them (GTK's list rows take no vertical margin). */
 listview.lyrics-list > row {
   margin: 0 6px;
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  outline: none;
 }
 
 .lyric-line {
+  padding: 6px 12px;
+  border-radius: 8px;
+  outline: 0 solid transparent;
+  outline-offset: -2px;
   transition: opacity 200ms ease-out;
+}
+
+listview.lyrics-list > row:hover > .lyric-line {
+  background-color: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+listview.lyrics-list > row:active > .lyric-line {
+  background-color: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+listview.lyrics-list > row:focus-visible > .lyric-line {
+  outline: 2px solid color-mix(in srgb, var(--accent-color) 50%, transparent);
 }
 
 .lyric-line.current {
@@ -314,8 +335,10 @@ listview.lyrics-list > row {
   margin-top: 18px;
 }
 
-/* A line's pronunciation, under it: smaller and fainter than the line (Show Pronunciations). */
-.lyric-pronunciation {
+/* A line's pronunciation and translation, under it: smaller and fainter than the line
+   (Show Pronunciations, Show Translations). */
+.lyric-pronunciation,
+.lyric-translation {
   font-size: 1.05em;
   font-weight: 500;
   opacity: 0.7;

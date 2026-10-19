@@ -19,8 +19,9 @@ What to shoot: $ARGUMENTS
      `station` or `video`): a pushed page over `--page`;
    - `--playing`: an invented item playing (the first album's first track), the player bar in
      its playing state; `--now-playing [lyrics|queue]`: the same with the Now Playing sheet
-     open on that tab (`pronunciations`: Lyrics, with invented Japanese lines and Show
-     Pronunciations on);
+     open on that tab (`localized`: Lyrics, invented Japanese lines with pronunciations and
+     translations, shown with `--setting lyrics-pronunciations=true` and
+     `--setting lyrics-translations=true`);
    - `--signed-in [NAME]`: the account button signed in (an invented NAME: its avatar's colour
      follows the name); `--banner sign-in|expired`: the sign-in banner;
    - `--sidebar` (the narrow layout: the sidebar rather than the page), `--expand first`,

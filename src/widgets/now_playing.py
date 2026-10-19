@@ -9,8 +9,10 @@ heart and volume follow the Player as the player bar's do (the pieces are shared
 widgets/transport.py); the Lyrics and Up Next tabs are a LyricsView and a QueueView (built
 here: GtkBuilder does not run a Python widget's __init__) in an Adw.ViewStack an inline
 view switcher switches. More Options is the item playing's menu (the window's item actions:
-Go to Album, Go to Artist, Add to Playlist…, without Play), made as it opens, with Show
-Pronunciations under it when the lyrics have them. The close
+Go to Album, Go to Artist, Add to Playlist…, without Play), made as it opens. Beside the
+volume, while the lyrics have translations or pronunciations, a menu of Show Translations
+and Show Pronunciations (those the lyrics have: the `lyrics-translations` and
+`lyrics-pronunciations` settings' actions). The close
 button sets the bottom sheet's `open` false; Escape and a swipe down are the bottom sheet's
 own; Go to Album and Go to Artist close the sheet too (window.open_item).
 
@@ -54,6 +56,7 @@ class NowPlayingSheet(Adw.Bin):
     heart_button = Gtk.Template.Child()
     volume_button = Gtk.Template.Child()
     volume_adjustment = Gtk.Template.Child()
+    lyrics_button = Gtk.Template.Child()
     layout = Gtk.Template.Child()
     player_column = Gtk.Template.Child()
     item_box = Gtk.Template.Child()
@@ -191,8 +194,10 @@ class NowPlayingSheet(Adw.Bin):
         self.queue_view.set_player(player, app)
         bottom_sheet.connect('notify::open', lambda *_: self._on_open_changed())
         player.connect('notify::track', lambda *_: self._update_more())
+        player.connect('notify::lyrics', lambda *_: self._update_lyrics_button())
         self._on_open_changed()
         self._update_more()
+        self._update_lyrics_button()
 
     def _playing_track(self):
         """The item playing as the Track its menu is for, or None (actions)."""
@@ -204,19 +209,17 @@ class NowPlayingSheet(Adw.Bin):
 
     def _on_more_popup(self, button):
         """The item playing's menu, made as it opens (whether it is a favourite is asked
-        then), and Show Pronunciations (the `lyrics-pronunciations` setting) when its lyrics
-        have them."""
+        then)."""
         actions = getattr(self.get_root(), 'item_actions', None)
         track = self._playing_track()
-        menu = (actions.menu_for(track, queued=True)
-                if actions is not None and track is not None else None)
-        lyrics = self._player.lyrics if self._player is not None else None
-        if lyrics is not None and lyrics.has_pronunciations:
-            menu = menu if menu is not None else Gio.Menu()
-            section = Gio.Menu()
-            section.append(_('_Show Pronunciations'), 'app.lyrics-pronunciations')
-            menu.append_section(None, section)
-        button.set_menu_model(menu)
+        button.set_menu_model(actions.menu_for(track, queued=True)
+                              if actions is not None and track is not None else None)
+
+    def _update_lyrics_button(self):
+        """The Translation and Pronunciation menu, while the lyrics have either."""
+        menu = lyrics_menu(self._player.lyrics if self._player is not None else None)
+        self.lyrics_button.set_menu_model(menu)
+        self.lyrics_button.set_visible(menu is not None)
 
     def _on_open_changed(self):
         is_open = self._bottom_sheet is not None and self._bottom_sheet.get_open()
@@ -250,3 +253,16 @@ class NowPlayingSheet(Adw.Bin):
     def on_close_clicked(self, _button):
         if self._bottom_sheet is not None:
             self._bottom_sheet.set_open(False)
+
+
+def lyrics_menu(lyrics):
+    """The Translation and Pronunciation menu for `lyrics`: Show Translations when they have
+    translations, Show Pronunciations when they have pronunciations; None for neither."""
+    if lyrics is None or not (lyrics.has_translations or lyrics.has_pronunciations):
+        return None
+    menu = Gio.Menu()
+    if lyrics.has_translations:
+        menu.append(_('Show _Translations'), 'app.lyrics-translations')
+    if lyrics.has_pronunciations:
+        menu.append(_('Show _Pronunciations'), 'app.lyrics-pronunciations')
+    return menu

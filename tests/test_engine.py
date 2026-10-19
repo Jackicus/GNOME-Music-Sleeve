@@ -1263,7 +1263,7 @@ class PlaybackTest(EngineFixture):
              'pronunciation': 'Out on the water'}]}  # the same as the line: none
         self.page.bridge_answers['lyrics'] = answer
         lyrics = await self.engine.lyrics('1000000001')
-        self.assertEqual(lyrics, {'synced': True, 'script': 'en-Latn', 'lines': [
+        self.assertEqual(lyrics, {'synced': True, 'languages': self.LANGUAGES, 'lines': [
             {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights',
              'pronunciation': 'Minato no akari'},
             {'startMs': 4000, 'endMs': 6000, 'text': 'Out on the water'}]})
@@ -1271,41 +1271,45 @@ class PlaybackTest(EngineFixture):
         self.assertTrue(path.is_file())
         kept = json.loads(path.read_text(encoding='utf-8'))
         self.assertIn('cached', kept)  # stamped: lyrics expire
-        self.assertEqual({key: kept[key] for key in ('synced', 'lines', 'script')}, lyrics)
+        self.assertEqual({key: kept[key] for key in ('synced', 'lines', 'languages')}, lyrics)
         # Again: from the file, no bridge call, and no engine needed.
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
         self.assertEqual(await self.engine.lyrics('1000000001'), lyrics)
         await self.engine.stop()
         self.assertEqual(await self.engine.lyrics('1000000001'), lyrics)
-        # The bridge is told the language and the script the pronunciations are asked in.
+        # The bridge is told the language and the script the extras are asked in.
         self.assertEqual(self.page.bridge_calls, [('lyrics', '1000000001', self.LANGUAGES)])
 
-    async def test_lyrics_kept_in_another_script_are_asked_again(self):
+    async def test_lyrics_kept_in_other_languages_are_asked_again(self):
         await self.up_for_lyrics()
         path = self.cache / 'lyrics' / '1000000006.json'
         older = {'synced': False, 'lines': [{'startMs': 0, 'endMs': 0, 'text': 'Kept'}]}
         normalize.write_answer(str(path), older, str(self.cache))  # before pronunciations
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': [
-            {'startMs': 0, 'endMs': 0, 'text': '\u6f6e', 'pronunciation': 'Shio'}]}
+            {'startMs': 0, 'endMs': 0, 'text': '\u6f6e', 'pronunciation': 'Shio',
+             'translation': 'Tide'}]}
         lyrics = await self.engine.lyrics('1000000006')
-        self.assertEqual(lyrics['lines'][0]['pronunciation'], 'Shio')
-        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['script'], 'en-Latn')
+        self.assertEqual((lyrics['lines'][0]['pronunciation'], lyrics['lines'][0]['translation']),
+                         ('Shio', 'Tide'))
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['languages'],
+                         self.LANGUAGES)
         # A Japanese user's pronunciations are another script's: asked again, in theirs.
-        self.engine.lyrics_languages = {'lyrics': 'ja-JP', 'script': 'ja-Kana'}
+        japanese = {'lyrics': 'ja-JP', 'script': 'ja-Kana'}
+        self.engine.lyrics_languages = dict(japanese)
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': [
             {'startMs': 0, 'endMs': 0, 'text': '\u6f6e', 'pronunciation': '\u3057\u304a'}]}
-        self.assertEqual((await self.engine.lyrics('1000000006'))['script'], 'ja-Kana')
+        self.assertEqual((await self.engine.lyrics('1000000006'))['languages'], japanese)
         self.assertEqual(len(self.page.bridge_calls), 2)
         # With the engine down, the file kept in another script is still the answer.
         self.engine.lyrics_languages = dict(self.LANGUAGES)
         await self.engine.stop()
         kept = await self.engine.lyrics('1000000006')
-        self.assertEqual((kept['script'], kept['lines'][0]['pronunciation']),
-                         ('ja-Kana', '\u3057\u304a'))
+        self.assertEqual((kept['languages'], kept['lines'][0]['pronunciation']),
+                         (japanese, '\u3057\u304a'))
         # And when Apple answers none this time (refused), the kept one.
         await self.up_for_lyrics()
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
-        self.assertEqual((await self.engine.lyrics('1000000006'))['script'], 'ja-Kana')
+        self.assertEqual((await self.engine.lyrics('1000000006'))['languages'], japanese)
         # Never a file at all, and the engine down: the engine's error.
         await self.engine.stop()
         with self.assertRaises(EngineError) as raised:
@@ -1325,7 +1329,7 @@ class PlaybackTest(EngineFixture):
             {'startMs': 2000, 'endMs': 3000, 'text': 'Again'}])
         # A file an older version kept with the entities in it reads decoded.
         path = self.cache / 'lyrics' / '1000000005.json'
-        normalize.write_answer(str(path), {'synced': False, 'script': 'en-Latn', 'lines': [
+        normalize.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES, 'lines': [
             {'startMs': 0, 'endMs': 0, 'text': 'Salt &amp; &quot;air&quot;',
              'pronunciation': 'Shio &amp; kaze'}]}, str(self.cache))
         line = (await self.engine.lyrics('1000000005'))['lines'][0]
@@ -1355,7 +1359,7 @@ class PlaybackTest(EngineFixture):
 
     async def test_no_lyrics_are_not_kept(self):
         await self.up_for_lyrics()
-        none = {'synced': False, 'lines': [], 'script': 'en-Latn'}
+        none = {'synced': False, 'lines': [], 'languages': self.LANGUAGES}
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
         self.assertEqual(await self.engine.lyrics('1000000002'), none)
         self.page.bridge_answers['lyrics'] = None  # not a dict either
