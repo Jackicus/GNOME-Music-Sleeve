@@ -267,9 +267,10 @@ button.release-card {
 }
 
 /* The Now Playing sheet (widgets/now_playing.blp): larger transport buttons than the bar's,
-   the play button largest; the lyrics as title-3 lines (widgets/lyrics.py), the current one
-   at full opacity (the others carry .dimmed), a line fading between the two; the queue's
-   rows as the detail pages' track rows. */
+   the play button largest; the lyrics as title-3 lines (widgets/lyrics.py), each with its
+   pronunciation under it when shown, the current one at full opacity (the others carry
+   .dimmed), a line fading between the two; the queue's rows as the detail pages' track
+   rows. */
 .now-playing .play-button {
   min-width: 56px;
   min-height: 56px;
@@ -311,6 +312,13 @@ listview.lyrics-list > row {
 /* The first line of a verse or a chorus: a gap before it, as the unsynced text has. */
 .lyric-line.stanza {
   margin-top: 18px;
+}
+
+/* A line's pronunciation, under it: smaller and fainter than the line (Show Pronunciations). */
+.lyric-pronunciation {
+  font-size: 1.05em;
+  font-weight: 500;
+  opacity: 0.7;
 }
 
 .lyrics-text {

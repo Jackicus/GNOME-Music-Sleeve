@@ -14,6 +14,8 @@ The standard library only; engine.py and actions.py use it.
     page_data(answer)                   # the page's resources: its `data` list's dicts
     api_error(answer, 'search')         # EngineError('api', 'search: 404 Not Found: …',
                                         # status=404) for Apple's {errors: [...]}, else None
+    lyrics_languages('ja_JP.UTF-8')     # {'lyrics': 'ja-JP', 'script': 'ja-Kana'}: what a
+                                        # lyrics request asks its pronunciations in
 """
 
 from .errors import EngineError
@@ -80,6 +82,58 @@ RELATED_PARAMS = {
     'video': {'include': 'albums,artists'},
     'album': {'include': 'artists'},
 }
+
+# The script a lyric line's pronunciation (Apple's transliteration) is asked in, by the
+# language of the app: music.apple.com's lyrics choose it so (`l[script]`), and Latin for a
+# language not listed. A song in the script asked has no pronunciations.
+PRONUNCIATION_SCRIPTS = {
+    'Cyrl': ('ru', 'uk', 'bg', 'sr', 'mk', 'kk', 'ky', 'be', 'mn'),
+    'Arab': ('ar', 'fa', 'ps', 'sd'),
+    'Aran': ('ur',),
+    'Hans': ('zh',),
+    'Kana': ('ja',),
+    'Hang': ('ko',),
+    'Deva': ('hi', 'ne', 'mr', 'sa'),
+    'Beng': ('bn',),
+    'Guru': ('pa',),
+    'Gujr': ('gu',),
+    'Orya': ('or',),
+    'Taml': ('ta',),
+    'Telu': ('te',),
+    'Knda': ('kn',),
+    'Mlym': ('ml',),
+    'Sinh': ('si',),
+    'Thai': ('th',),
+    'Laoo': ('lo',),
+    'Khmr': ('km',),
+    'Mymr': ('my',),
+    'Ethi': ('am', 'ti'),
+    'Geor': ('ka',),
+    'Armn': ('hy',),
+    'Hebr': ('he', 'yi'),
+    'Grek': ('el',),
+    'Tibt': ('bo',),
+}
+SCRIPT_OF_LANGUAGE = {language: script for script, languages in PRONUNCIATION_SCRIPTS.items()
+                      for language in languages}
+
+
+def lyrics_languages(locale_name):
+    """What a lyrics request asks for, given the app's language as a POSIX locale name
+    ('en_GB.UTF-8', 'pt_BR', 'sr@latin'; 'C', 'POSIX' or nothing are English):
+    {'lyrics': the BCP 47 tag ('en-GB'), 'script': the language and the script its
+    pronunciations are written in ('en-Latn'; '@latin' asks for Latin whatever the
+    language)}."""
+    name = str(locale_name or '')
+    latin = name.endswith('@latin')
+    name = name.split('@')[0].split('.')[0]
+    parts = [part for part in name.replace('-', '_').split('_') if part]
+    if not parts or not parts[0].isalpha() or parts[0].upper() in ('C', 'POSIX'):
+        parts = ['en']
+    language = parts[0].lower()
+    tag = '-'.join([language] + [part.upper() for part in parts[1:2] if part.isalpha()])
+    script = 'Latn' if latin else SCRIPT_OF_LANGUAGE.get(language, 'Latn')
+    return {'lyrics': tag, 'script': f'{language}-{script}'}
 
 
 def is_library_id(item_id):

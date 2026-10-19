@@ -9,7 +9,8 @@ heart and volume follow the Player as the player bar's do (the pieces are shared
 widgets/transport.py); the Lyrics and Up Next tabs are a LyricsView and a QueueView (built
 here: GtkBuilder does not run a Python widget's __init__) in an Adw.ViewStack an inline
 view switcher switches. More Options is the item playing's menu (the window's item actions:
-Go to Album, Go to Artist, Add to Playlist…, without Play), made as it opens. The close
+Go to Album, Go to Artist, Add to Playlist…, without Play), made as it opens, with Show
+Pronunciations under it when the lyrics have them. The close
 button sets the bottom sheet's `open` false; Escape and a swipe down are the bottom sheet's
 own; Go to Album and Go to Artist close the sheet too (window.open_item).
 
@@ -26,7 +27,7 @@ titles instead, so the transport is never cut off and the tabs keep a few lines.
 
 from gettext import gettext as _
 
-from gi.repository import Adw, GLib, GObject, Gtk
+from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from ..actions import now_playing_track
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
@@ -203,11 +204,19 @@ class NowPlayingSheet(Adw.Bin):
 
     def _on_more_popup(self, button):
         """The item playing's menu, made as it opens (whether it is a favourite is asked
-        then)."""
+        then), and Show Pronunciations (the `lyrics-pronunciations` setting) when its lyrics
+        have them."""
         actions = getattr(self.get_root(), 'item_actions', None)
         track = self._playing_track()
-        button.set_menu_model(actions.menu_for(track, queued=True)
-                              if actions is not None and track is not None else None)
+        menu = (actions.menu_for(track, queued=True)
+                if actions is not None and track is not None else None)
+        lyrics = self._player.lyrics if self._player is not None else None
+        if lyrics is not None and lyrics.has_pronunciations:
+            menu = menu if menu is not None else Gio.Menu()
+            section = Gio.Menu()
+            section.append(_('_Show Pronunciations'), 'app.lyrics-pronunciations')
+            menu.append_section(None, section)
+        button.set_menu_model(menu)
 
     def _on_open_changed(self):
         is_open = self._bottom_sheet is not None and self._bottom_sheet.get_open()

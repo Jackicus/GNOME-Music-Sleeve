@@ -4,11 +4,13 @@
 """AppleMusicLyricsView: the Now Playing sheet's Lyrics tab, following the Player.
 
 A Gtk.Stack of four pages: synced lyrics as a Gtk.ListView over the Lyrics object's store
-of LyricLine (one wrapping label a row; the line current at the Player's position carries
-the `current` CSS class, the others `dimmed`; a click seeks to the line's start),
-unsynced lyrics as one wrapping label in a scrolled window, a spinner while the engine
-reads them, and a compact status page otherwise: "Lyrics" with nothing playing, "No
-Lyrics" for a song without them.
+of LyricLine (a row is the line's wrapping label over its pronunciation's, smaller; the line
+current at the Player's position carries the `current` CSS class, the others `dimmed`; a
+click seeks to the line's start), unsynced lyrics as one wrapping label in a scrolled
+window, a spinner while the engine reads them, and a compact status page otherwise:
+"Lyrics" with nothing playing, "No Lyrics" for a song without them. The pronunciations
+(Apple's transliterations) show while the `lyrics-pronunciations` setting is on, which
+Show Pronunciations in the sheet's More Options switches.
 
 The list follows playback only while the sheet is open (set_active), and only when the
 current line changes: scroll_to brings the row on screen, and once the list's geometry has
@@ -50,8 +52,9 @@ class LyricsView(Gtk.Stack):
         self._app = None
         self._active = False
         self._lyrics = None
+        self._pronunciations = False    # the setting: show the lines' pronunciations
         self._current = -1              # the index of the line current, or -1
-        self._rows = {}                 # bound position -> its label
+        self._rows = {}                 # bound position -> its row's box
         self._centre_pending = None     # a line to centre once its row holds still
         self._tick = None               # the tick callback watching for that
         self._tick_geometry = None      # what the last frame measured
@@ -126,6 +129,9 @@ class LyricsView(Gtk.Stack):
         player.connect('notify::track', lambda *_: self._update_page())
         player.connect('notify::position', lambda *_: self._follow())
         player.connect('notify::state', lambda *_: self._follow())
+        app.settings.connect('changed::lyrics-pronunciations',
+                             lambda *_: self._on_pronunciations_changed())
+        self._pronunciations = app.settings.get_boolean('lyrics-pronunciations')
         self._on_lyrics()
 
     def set_active(self, active):
@@ -150,10 +156,21 @@ class LyricsView(Gtk.Stack):
             self.list_view.set_model(
                 Gtk.NoSelection(model=lyrics.lines if lyrics is not None and lyrics.synced
                                 else None))
-            self.text_label.set_label(lyrics.text if lyrics is not None else '')
+            self.text_label.set_markup(text_markup(lyrics, self._pronunciations))
             self.scrolled.get_vadjustment().set_value(0)
             self.text_scrolled.get_vadjustment().set_value(0)
         self._update_page()
+        self._follow(force=True)
+
+    def _on_pronunciations_changed(self):
+        """Show or hide the pronunciations of the rows on screen (the rest follow as they
+        are bound) and in the text; the current line, taller or shorter now, is brought
+        into view again."""
+        self._pronunciations = self._app.settings.get_boolean('lyrics-pronunciations')
+        for box in self._rows.values():
+            _show_pronunciation(box, self._pronunciations)
+        if self._lyrics is not None:
+            self.text_label.set_markup(text_markup(self._lyrics, self._pronunciations))
         self._follow(force=True)
 
     def _update_page(self):
@@ -219,9 +236,9 @@ class LyricsView(Gtk.Stack):
             self._next_line_source = 0
 
     def _style(self, position):
-        label = self._rows.get(position)
-        if label is not None:
-            _set_current(label, position == self._current)
+        box = self._rows.get(position)
+        if box is not None:
+            _set_current(box, position == self._current)
 
     def _users_turn(self):
         """Whether the list is the user's for now: scrolled in the last USER_SCROLL_PAUSE
@@ -252,13 +269,13 @@ class LyricsView(Gtk.Stack):
         index = self._centre_pending
         if index is None or index != self._current:
             return self._stop_centring()
-        label = self._rows.get(index)
-        geometry = self._geometry(label) if label is not None and label.get_mapped() else None
+        box = self._rows.get(index)
+        geometry = self._geometry(box) if box is not None and box.get_mapped() else None
         self._tick_frames += 1
         if geometry is not None and geometry == self._tick_geometry:
             log.debug('lyrics: line %d held still after %d frames: centring', index,
                       self._tick_frames)
-            self._centre(label, geometry)
+            self._centre(box, geometry)
             return self._stop_centring()
         self._tick_geometry = geometry
         if self._tick_frames > SETTLE_FRAMES:
@@ -292,10 +309,10 @@ class LyricsView(Gtk.Stack):
             self._tick = None
         return GLib.SOURCE_REMOVE
 
-    def _geometry(self, label):
-        """(row y, row height, page, upper) for the row holding `label`, in the list's
+    def _geometry(self, box):
+        """(row y, row height, page, upper) for the row holding `box`, in the list's
         coordinates, or None while it has no place yet."""
-        row = label.get_parent() or label
+        row = box.get_parent() or box
         ok, bounds = row.compute_bounds(self.list_view)
         adjustment = self.scrolled.get_vadjustment()
         page = adjustment.get_page_size()
@@ -304,8 +321,8 @@ class LyricsView(Gtk.Stack):
         return (round(bounds.get_y()), round(bounds.get_height()), round(page),
                 round(adjustment.get_upper()))
 
-    def _centre(self, label, geometry):
-        """Glide the scrolled window so the row holding `label` sits in the middle."""
+    def _centre(self, box, geometry):
+        """Glide the scrolled window so the row holding `box` sits in the middle."""
         y, height, page, upper = geometry
         self._page_seen = page
         adjustment = self.scrolled.get_vadjustment()
@@ -360,24 +377,32 @@ class LyricsView(Gtk.Stack):
     # -- the list -----------------------------------------------------------------------
 
     def _on_setup(self, _factory, list_item):
-        label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
-                          justify=Gtk.Justification.LEFT)
-        label.add_css_class('lyric-line')
-        label.add_css_class('title-3')
-        list_item.set_child(label)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        box.add_css_class('lyric-line')
+        box.label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
+                              justify=Gtk.Justification.LEFT)
+        box.label.add_css_class('title-3')
+        box.pronunciation = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
+                                      justify=Gtk.Justification.LEFT, visible=False)
+        box.pronunciation.add_css_class('lyric-pronunciation')
+        box.append(box.label)
+        box.append(box.pronunciation)
+        list_item.set_child(box)
 
     def _on_bind(self, _factory, list_item):
         position = list_item.get_position()
-        label = list_item.get_child()
+        box = list_item.get_child()
         line = list_item.get_item()
-        label.set_label(line.text)
+        box.label.set_label(line.text)
+        box.pronunciation.set_label(line.pronunciation)
+        _show_pronunciation(box, self._pronunciations)
         list_item.set_accessible_label(line.text)
         if line.stanza and position:  # a gap before a verse or a chorus, as in the text
-            label.add_css_class('stanza')
+            box.add_css_class('stanza')
         else:
-            label.remove_css_class('stanza')
-        self._rows[position] = label
-        _set_current(label, position == self._current)
+            box.remove_css_class('stanza')
+        self._rows[position] = box
+        _set_current(box, position == self._current)
 
     def _on_unbind(self, _factory, list_item):
         position = list_item.get_position()
@@ -394,10 +419,33 @@ class LyricsView(Gtk.Stack):
         self._app.player_command(self._player.seek(self._lyrics.start_of(position)))
 
 
-def _set_current(label, current):
+def text_markup(lyrics, pronunciations):
+    """The unsynced view's text as Pango markup: the lines one to a line, a blank line
+    before each stanza, and with `pronunciations` each line's pronunciation after it, smaller
+    and fainter; '' for no lyrics."""
+    if lyrics is None:
+        return ''
+    if not (pronunciations and lyrics.has_pronunciations):
+        return GLib.markup_escape_text(lyrics.text)
+    texts = []
+    for index, line in enumerate(lyrics.lines):
+        if line.stanza and index:
+            texts.append('')
+        texts.append(GLib.markup_escape_text(line.text))
+        if line.pronunciation:
+            pronunciation = GLib.markup_escape_text(line.pronunciation)
+            texts.append(f'<span size="smaller" alpha="70%">{pronunciation}</span>')
+    return '\n'.join(texts)
+
+
+def _show_pronunciation(box, shown):
+    box.pronunciation.set_visible(shown and bool(box.pronunciation.get_label()))
+
+
+def _set_current(box, current):
     if current:
-        label.add_css_class('current')
-        label.remove_css_class('dimmed')
+        box.add_css_class('current')
+        box.remove_css_class('dimmed')
     else:
-        label.remove_css_class('current')
-        label.add_css_class('dimmed')
+        box.remove_css_class('current')
+        box.add_css_class('dimmed')

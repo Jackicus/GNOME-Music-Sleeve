@@ -50,6 +50,31 @@ TTML = (
     '<p begin="30s"> </p></div></body></tt>'
 )
 
+# The same song's syllable-lyrics answer with its transliterations, as music.apple.com asks
+# for it (extend=ttmlLocalizations; invented words): the head's <text for="…"> name the
+# lines by their itunes:key, word-timed spans and a background vocal (ttm:role="x-bg")
+# among them; one line has none, one's is the line itself, a <text> names no line.
+TTML_LOCALIZED = (
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"'
+    ' xmlns:ttm="http://www.w3.org/ns/ttml#metadata" itunes:timing="Word" xml:lang="ja">'
+    '<head><metadata><iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal">'
+    '<translations/><transliterations><transliteration xml:lang="ja-Latn">'
+    '<text for="L1"><span xmlns="http://www.w3.org/ns/ttml" begin="1">Kiri</span> '
+    '<span xmlns="http://www.w3.org/ns/ttml" begin="2">no</span> '
+    '<span xmlns="http://www.w3.org/ns/ttml" begin="3">umi</span> '
+    '<span xmlns="http://www.w3.org/ns/ttml" ttm:role="x-bg">(<span>umi</span>)</span></text>'
+    '<text for="L2">Oh oh</text>'
+    '<text for="L9">Nobody&#8217;s</text>'
+    '</transliteration><transliteration xml:lang="ja-Kana"><text for="L1">\u304d\u308a</text>'
+    '</transliteration></transliterations></iTunesMetadata></metadata></head>'
+    '<body><div begin="1" end="9">'
+    '<p begin="1" end="4" itunes:key="L1"><span begin="1">\u9727\u306e</span>'
+    '<span begin="3">\u6d77</span> <span ttm:role="x-bg">(\u6d77)</span></p>'
+    '<p begin="5" end="7" itunes:key="L2">Oh oh</p>'
+    '<p begin="7" end="9" itunes:key="L3">\u6f6e</p>'
+    '</div></body></tt>'
+)
+
 # A song as MusicKit's queue and nowPlayingItem hold it (a MediaItem: id, type, attributes).
 SONG = """{
     id: 'i.song1', type: 'library-songs',
@@ -86,6 +111,7 @@ def run_scenarios(scenarios):
              f'const BRIDGE = {json.dumps(BRIDGE.read_text(encoding="utf-8"))};',
              f'const SONG = {SONG};',
              f'const TTML = {json.dumps(TTML)};',
+             f'const TTML_LOCALIZED = {json.dumps(TTML_LOCALIZED)};',
              'const SCENARIOS = {']
     for name, body in scenarios.items():
         parts.append(f'{json.dumps(name)}: async ({{bridge, mk, posted, page, audios, failAudio}})'
@@ -425,7 +451,7 @@ class BridgeTest(unittest.TestCase):
     # -- lyrics ----------------------------------------------------------------------------
 
     @scenario("""
-        const path = '/v1/catalog/gb/songs/1000000001/lyrics';
+        const path = '/v1/catalog/gb/songs/1000000001/syllable-lyrics';
         mk.apiAnswers[path] = {data: [{id: '1000000001', attributes: {ttml: TTML}}]};
         const synced = await bridge.lyrics('1000000001');
         mk.apiAnswers[path] = {data: [{attributes: {
@@ -436,7 +462,7 @@ class BridgeTest(unittest.TestCase):
         const unreadable = await bridge.lyrics('1000000001');
         mk.apiAnswers[path] = {data: []};
         const none = await bridge.lyrics('1000000001');
-        delete mk.apiAnswers[path];   // Apple refuses: no lyrics either
+        delete mk.apiAnswers[path];   // Apple refuses both requests: no lyrics either
         return {synced, unsynced, unreadable, none, refused: await bridge.lyrics('1000000001')};
     """)
     def test_lyrics_from_ttml(self, value):
@@ -451,6 +477,33 @@ class BridgeTest(unittest.TestCase):
             {'startMs': 0, 'endMs': 0, 'text': 'Two'}]})
         for key in ('unreadable', 'none', 'refused'):
             self.assertEqual(value[key], {'synced': False, 'lines': []}, key)
+
+    @scenario("""
+        const song = '/v1/catalog/gb/songs/1000000001';
+        mk.apiAnswers[song + '/syllable-lyrics'] = {data: [{attributes: {
+            ttmlLocalizations: TTML_LOCALIZED}}]};
+        const pronounced = await bridge.lyrics('1000000001', {lyrics: 'en-GB', script: 'en-Latn'});
+        const asked = mk.calls.slice();
+        // syllable-lyrics refused: the plain lyrics, without pronunciations.
+        delete mk.apiAnswers[song + '/syllable-lyrics'];
+        mk.apiAnswers[song + '/lyrics'] = {data: [{attributes: {ttml: TTML}}]};
+        mk.calls.length = 0;
+        const plain = await bridge.lyrics('1000000001');
+        return {pronounced, asked, plain: plain.lines.length, fellBack: mk.calls};
+    """)
+    def test_lyrics_with_pronunciations(self, value):
+        self.assertEqual(value['asked'], [
+            ['api.music', '/v1/catalog/gb/songs/1000000001/syllable-lyrics',
+             {'extend': 'ttmlLocalizations', 'l[lyrics]': 'en-GB', 'l[script]': 'en-Latn'}]])
+        self.assertEqual(value['pronounced'], {'synced': True, 'lines': [
+            {'startMs': 1000, 'endMs': 4000, 'text': '\u9727\u306e\u6d77 (\u6d77)',
+             'stanza': True, 'pronunciation': 'Kiri no umi (umi)'},
+            {'startMs': 5000, 'endMs': 7000, 'text': 'Oh oh'},    # the same as the line
+            {'startMs': 7000, 'endMs': 9000, 'text': '\u6f6e'}]})  # none for this line
+        self.assertEqual(value['plain'], 4)
+        self.assertEqual([call[1] for call in value['fellBack']], [
+            '/v1/catalog/gb/songs/1000000001/syllable-lyrics',
+            '/v1/catalog/gb/songs/1000000001/lyrics'])
 
     # -- search ----------------------------------------------------------------------------
 
