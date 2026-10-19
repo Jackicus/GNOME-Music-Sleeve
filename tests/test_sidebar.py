@@ -8,15 +8,18 @@ import unittest
 import gi
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
+from tests.gtk import requires_gtk
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
+from applemusic import sections  # noqa: E402
 from applemusic.library import Item, PlaylistTree  # noqa: E402
 from applemusic.sections import ALL_PLAYLISTS, HOME, Destination  # noqa: E402
 from applemusic.sidebar import (SidebarEntry, SidebarItem, is_shown,  # noqa: E402
                                 parse_key, plan_update, playlist_entries, restore_target,
                                 reveal, stale_roots, tooltip_markup)
+from applemusic.widgets.util import descendants  # noqa: E402
 
 
 def playlist(playlist_id, favourites=False, title=None):
@@ -245,6 +248,51 @@ class TestEntries(unittest.TestCase):
         fixed = SidebarItem(SidebarEntry.fixed(Destination('all-playlists', 'All', 'x')))
         self.assertFalse(fixed.get_tooltip())
         self.assertFalse(fixed.get_subtitle())
+
+
+class SectionHeadersTest(unittest.TestCase):
+    """style.css draws the divider above each titled section on the header libadwaita gives
+    it: `sidebar .navigation-sidebar > .header:not(.first) > .heading`. These are the nodes
+    that selector needs, in the sidebar mode only."""
+
+    @requires_gtk
+    def test_titled_sections_headers_carry_what_the_css_selects(self):
+        from gi.repository import Adw, Gtk
+
+        sidebar = Adw.Sidebar()
+        specs = sections.sidebar_sections()
+        for spec in specs:
+            section = Adw.SidebarSection(title=spec.title)
+            for destination in spec.destinations:
+                section.append(Adw.SidebarItem(title=destination.title))
+            sidebar.append(section)
+        self.assertEqual(sidebar.get_css_name(), 'sidebar')
+        lists = [box for box in descendants(sidebar, Gtk.ListBox)
+                 if box.has_css_class('navigation-sidebar')]
+        self.assertEqual(len(lists), 1)
+        headers = [child for child in children(lists[0]) if child.has_css_class('header')]
+        self.assertEqual(len(headers), len(specs))
+        self.assertEqual([header.has_css_class('first') for header in headers],
+                         [True] + [False] * (len(specs) - 1))
+        self.assertIsNone(specs[0].title)
+        for spec, header in zip(specs[1:], headers[1:], strict=True):
+            shown = [child for child in children(header) if child.get_child_visible()]
+            self.assertEqual(len(shown), 1)
+            self.assertIsInstance(shown[0], Gtk.Label)
+            self.assertTrue(shown[0].has_css_class('heading'))
+            self.assertEqual(shown[0].get_label(), spec.title)
+
+        # The page mode's sections are boxed lists, which the selector does not reach.
+        sidebar.set_mode(Adw.SidebarMode.PAGE)
+        self.assertFalse([box for box in descendants(sidebar, Gtk.ListBox)
+                          if box.has_css_class('navigation-sidebar')])
+
+
+def children(widget):
+    child = widget.get_first_child()
+    while child is not None:
+        yield child
+        child = child.get_next_sibling()
 
 
 if __name__ == '__main__':

@@ -28,6 +28,18 @@
   background: color-mix(in srgb, currentColor 7%, transparent);
 }
 
+/* The window's sidebar (an AdwSidebar): a divider above each titled section, as libadwaita
+   draws above an untitled one (its header's separator: 1px of the border colour, which high
+   contrast strengthens, 6px from the header's top and sides), then the title in its usual
+   place. The header is a stack of
+   that separator and the title's .heading, the first section's marked .first. The page mode's
+   sections are boxed lists, with no .navigation-sidebar, so this never reaches them. */
+sidebar .navigation-sidebar > .header:not(.first) > .heading {
+  margin: 6px 6px 12px;
+  padding: 9px 6px 0;
+  box-shadow: inset 0 1px var(--border-color);
+}
+
 /* Grid pages (pages/grid.blp). The top padding scrolls with the tiles and leaves room for the
    page title laid over it: the title's 24px + 12px margins and a title-1 line, which grows with
    the text size as em does. The sides are the grid view's margins (grid.blp), which its

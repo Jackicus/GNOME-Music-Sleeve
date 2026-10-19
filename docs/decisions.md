@@ -35,6 +35,14 @@ changes, change it here, with the date. The plan they came from is in
   and a disclosure arrow; activating one shows or hides its playlists and opens the folder's
   page (in the narrow layout's page mode it only opens the page). `AdwSidebar` cannot indent,
   so nesting shows through order, the arrow and a nested item's subtitle naming its folder.
+- **Sidebar sections: titles and dividers** (2026-10-19). Library and Playlists keep their
+  titles (Playlists especially, which the library's folders and playlists fill), and a thin
+  divider above each, as Files separates its sidebar's groups. libadwaita draws that divider
+  only above an untitled section, so `src/style.css` draws it on a titled section's header
+  (`.navigation-sidebar > .header:not(.first) > .heading`), in the separator's colour, inset
+  and spacing; no Python touches AdwSidebar's widgets. The first section (Search, Home, New,
+  Radio) stays untitled with no divider; the narrow layout's page mode, whose sections are
+  boxed lists, has none.
 - **Playlists in Apple Music's order** (2026-10-03). Apple's API lists a folder's contents in
   an order of its own; its web player sorts them, and so does the app, everywhere playlists
   are listed (the sidebar, a folder's page, All Playlists, Add to Playlist): Favourite Songs,

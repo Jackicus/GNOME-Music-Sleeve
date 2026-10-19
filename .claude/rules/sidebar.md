@@ -45,5 +45,10 @@ entry: it is spliced out and in, and the window selects it again by key).
 - Drops: `setup_drop_target(Gdk.DragAction.COPY, [TrackRef])` takes Python GObject classes;
   `drop-enter` returns the action (0 refuses). An item's `drag-motion-activate` defaults to TRUE,
   which switches pages under a drag: every item here sets it FALSE.
+- Section headers: in sidebar mode each is a `stack.header` in its list (`.first` on the
+  first) showing a `separator` for an untitled section and a `label.heading` for a titled one,
+  so it draws a divider only above an untitled section; style.css draws one above the titled
+  ones on that `.heading` (tests/test_sidebar.py checks the nodes). Page mode has no
+  `.navigation-sidebar`: its sections are `AdwPreferencesGroup`s.
 - In sidebar mode it names none of its rows for assistive technology and says nothing of a
   folder's state; the controller sets both on the rows itself.
