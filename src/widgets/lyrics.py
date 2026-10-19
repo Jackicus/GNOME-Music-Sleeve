@@ -48,10 +48,30 @@ USER_SCROLL_PAUSE seconds, or with the focus on a line (a click or Enter on a li
 there and hands the list back). What is current is found at the Player's
 estimated_position() (MusicKit reports whole seconds; the lines start at milliseconds), on
 each position event and, while shown and playing, from one GLib timeout armed for the next
-change (lyrics.next_change(): a line's start, a break's, a dot lighting), so the highlight
-moves as the line begins rather than up to a second after: the one clock the rows step by.
+change (lyrics.next_change(): a line's start, a break's, a dot lighting, a piece's), so the
+highlight moves as the line begins rather than up to a second after: the one clock the rows
+step by.
 A duet's margins follow the list's width (its horizontal adjustment's page), set again on
 the rows bound when it changes, from an idle (not inside the list's allocation).
+
+A word-timed line (Apple's syllable lyrics: lyrics.LyricLine.timed) lights its pieces as
+they are sung, on the current row only, as Apple's own view does: its main vocals, its
+background vocals and their pronunciations, each by its own pieces' times (the translations
+are not timed, and stay whole). The labels of those parts are LyricLabels, which draw the
+words not yet sung at the dimmed lines' opacity and the rest at full, through an alpha mask
+in their own snapshot: a step redraws one label and never lays it, the row or the list out
+again. With animations on (gtk-enable-animations) the piece being sung fills in across its
+width over its duration, a soft edge sweeping it as Apple's gradient does; a tick callback
+on the list, running only while a piece of a shown part of the current line is being sung,
+the tab shown and the music playing, redraws those labels at most every SWEEP_INTERVAL (about
+60 a second, whatever the monitor's rate), and stops in a gap, on a pause, when the tab is
+hidden or the song changes: the next change's timeout starts it again. With animations off
+each piece lights whole as it begins, on that timeout alone. Every other row, and a line
+timed as a whole, is drawn plainly; a row bound is drawn for its new line at once, current
+or not. The lyrics never go back by less than HOLD_BACK (the estimate falls back to the
+last whole second on a pause, and the lit pieces would go out): only a seek further back,
+or a click on a line, takes them back. Word-timed rows carry `timed`: they become current
+without the box's fade, which would dim their unsung words further for a moment.
 """
 
 import logging
@@ -59,7 +79,7 @@ import time
 from collections import namedtuple
 from gettext import gettext as _
 
-from gi.repository import Adw, GLib, Gtk, Pango
+from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk, Pango
 
 from .. import lyrics as lyrics_model
 
@@ -73,6 +93,17 @@ NEXT_CHANGE_FLOOR = 0.05   # seconds: the least a timeout for the next change wa
 REVEAL_DURATION = 250      # ms, a break's dots sliding open or shut
 DUET_SHARE = 0.6           # a duet's line takes this share of the list's width (Apple's)...
 DUET_MIN_WIDTH = 280       # px: ...or this much, in a narrow list, the whole width at most
+SWEEP_INTERVAL = 16700 - 2000  # µs: the least time between two redraws of a sweep (about 60
+                           # a second, on any monitor; less a margin for the frames' jitter)
+SEEK_SETTLE = 2.0          # seconds after a click on a line during which nothing is held
+HOLD_BACK = 1.5            # seconds: the estimate falling back less than this is the Player's
+                           # whole seconds (a pause, a late report), not a seek: the lyrics
+                           # hold where they were
+SWEEP_EDGE = 8.0           # px: half the width of the soft edge a sweep fills in with
+# The opacity of the text not yet sung on the current line: libadwaita's --dim-opacity, as
+# the lines that are not current have through .dimmed (and in high contrast).
+UNSUNG_OPACITY = 0.55
+UNSUNG_OPACITY_HIGH_CONTRAST = 0.9
 
 
 class LyricsView(Gtk.Stack):
@@ -104,6 +135,13 @@ class LyricsView(Gtk.Stack):
         self._width = 0                 # the list's width, as its adjustment last said
         self._inset = 0                 # a duet's row's margin: the width it leaves
         self._inset_source = 0          # the idle setting a new one on the rows, while armed
+        self._position = None           # where the lyrics are shown (seconds; held, see
+                                        # _shown_position())
+        self._sweep = True              # sweep the pieces sung (animations on), else whole
+        self._sweep_tick = None         # the tick callback redrawing a sweep, while one runs
+        self._swept_at = 0              # the frame time of the sweep's last redraw
+        self._sweeping = False          # inside that tick: it decides whether it goes on
+        self._hold_after = 0.0          # no hold before this time (a line clicked: a seek)
 
         self.empty_page = Adw.StatusPage(icon_name='music-note-symbolic', title=_('Lyrics'))
         self.empty_page.add_css_class('compact')
@@ -162,6 +200,16 @@ class LyricsView(Gtk.Stack):
                                                 hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.add_named(self.text_scrolled, 'text')
 
+        # Word-timed lines sweep with animations on, light whole pieces with them off; the
+        # unsung text follows the high-contrast setting's dimming.
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            self._sweep = settings.get_property('gtk-enable-animations')
+            settings.connect('notify::gtk-enable-animations',
+                             lambda *_: self._on_animations_changed())
+        Adw.StyleManager.get_default().connect('notify::high-contrast',
+                                               lambda *_: self._redraw_current())
+
     def set_player(self, player, app):
         self._player = player
         self._app = app
@@ -183,6 +231,7 @@ class LyricsView(Gtk.Stack):
             self._follow(force=True)
         else:
             self._disarm_next_change()
+            self._stop_sweep()
             self._paint(self._current)     # a break's dots stop breathing while hidden
 
     # -- the lyrics --------------------------------------------------------------------
@@ -193,7 +242,9 @@ class LyricsView(Gtk.Stack):
             self._lyrics = lyrics
             self._current = -1
             self._moment = lyrics_model.NO_MOMENT
+            self._position = None
             self._disarm_next_change()
+            self._stop_sweep()
             self._stop_centring()
             self._stop_animation()  # a glide still running would scroll the new song's list
             self.list_view.set_model(
@@ -240,14 +291,16 @@ class LyricsView(Gtk.Stack):
 
     def _follow(self, force=False):
         """Show what is current at the Player's position (lyrics.moment_at(): the line, or
-        a break's dots and how many are lit), bringing the row into view when the row or
-        its break changed (or `force`: the lyrics or the sheet's state changed); then wait
-        for the next change."""
+        a break's dots and how many are lit, or a line's pieces begun), bringing the row
+        into view when the row or its break changed (or `force`: the lyrics or the sheet's
+        state changed); then wait for the next change, and sweep while a piece is sung."""
         lyrics = self._lyrics
         if lyrics is None or not lyrics.synced or self._player is None:
+            self._stop_sweep()
             return
-        moment = lyrics.moment_at(self._player.estimated_position())
-        if moment != self._moment or force:
+        moment = lyrics.moment_at(self._shown_position())
+        changed = moment != self._moment or force
+        if changed:
             previous, self._moment = self._moment, moment
             self._current = moment.index
             self._paint(previous.index)
@@ -255,7 +308,24 @@ class LyricsView(Gtk.Stack):
                 self._paint(moment.index)
             if self._active and (force or moment[:2] != previous[:2]):
                 self._bring_into_view(moment.index)
-        self._arm_next_change()
+        else:
+            self._sing(self._current)     # a sweep moves on within its piece
+        if changed or not self._sweeping:
+            self._arm_next_change()
+        self._update_sweep()
+
+    def _shown_position(self):
+        """The position the lyrics show (seconds): the Player's estimate, but never back by
+        less than HOLD_BACK (the estimate falls back to the last whole second on a pause,
+        and a little at a late report: the lyrics hold there rather than unlight what was
+        sung); a seek further back, or any once a line was clicked, is followed."""
+        estimate = self._player.estimated_position()
+        held = self._position
+        if (held is not None and held - HOLD_BACK < estimate < held
+                and time.monotonic() >= self._hold_after):
+            return held
+        self._position = estimate
+        return estimate
 
     def _arm_next_change(self):
         """One timeout for the next change (lyrics.next_change(): a line's start, a break's,
@@ -268,12 +338,13 @@ class LyricsView(Gtk.Stack):
         if (not self._active or lyrics is None or not lyrics.synced or player is None
                 or player.state != 'playing'):
             return
-        position = player.estimated_position()
-        change = lyrics.next_change(position)
+        estimate = player.estimated_position()
+        # From where the lyrics are shown (held a little ahead of the estimate, at times).
+        change = lyrics.next_change(max(estimate, self._position or 0.0))
         if change is None:
             return
         self._next_change_source = GLib.timeout_add(
-            int(max(change - position, NEXT_CHANGE_FLOOR) * 1000), self._on_next_change)
+            int(max(change - estimate, NEXT_CHANGE_FLOOR) * 1000), self._on_next_change)
 
     def _on_next_change(self):
         self._next_change_source = 0
@@ -296,6 +367,93 @@ class LyricsView(Gtk.Stack):
         _set_current(box, here and not moment.instrumental)
         show_dots(box, moment.step if here and moment.instrumental else 0, animate,
                   breathe=self._active)
+        self._sing_row(box, position)
+
+    # -- the pieces sung ---------------------------------------------------------------
+
+    def _sing(self, position):
+        box = self._rows.get(position)
+        if box is not None:
+            self._sing_row(box, position)
+
+    def _sing_row(self, box, position):
+        """Light the timed pieces of the row at `position` sung so far, when its line is
+        current; any other row's labels are drawn plainly (a recycled row loses what its
+        previous line had sung)."""
+        moment = self._moment
+        line = None
+        if position == moment.index and not moment.instrumental and self._lyrics is not None:
+            line = self._lyrics.lines.get_item(position)
+        ms = round((self._position or 0.0) * 1000)
+        for part in TIMED_PARTS:
+            label = getattr(box, part.attribute)
+            timing = line.timed.get(part.field) if line is not None else None
+            if timing is None:
+                label.sing((), None)
+            else:
+                label.sing(timing.spans, lyrics_model.sung(timing.words, ms, self._sweep))
+
+    def _wants_sweep(self):
+        """Whether a sweep is under way: animations on, the tab shown, the music playing,
+        and a piece of a shown part of the current line being sung."""
+        lyrics, player, moment = self._lyrics, self._player, self._moment
+        if (not self._sweep or not self._active or lyrics is None or player is None
+                or player.state != 'playing' or moment.index < 0 or moment.instrumental):
+            return False
+        box = self._rows.get(moment.index)
+        line = lyrics.lines.get_item(moment.index)
+        if box is None or line is None:
+            return False
+        ms = round((self._position or 0.0) * 1000)
+        return any(part.field in line.timed and getattr(box, part.attribute).get_visible()
+                   and lyrics_model.sung(line.timed[part.field].words, ms, True).fraction
+                   is not None for part in TIMED_PARTS)
+
+    def _update_sweep(self):
+        """Start the sweep's tick when a piece is being sung, stop it when none is (a gap
+        between pieces, the line sung, a pause, the tab hidden): the next change's timeout
+        starts it again at the next piece. Inside the tick, the tick decides."""
+        if self._sweeping:
+            return
+        if not self._wants_sweep():
+            self._stop_sweep()
+        elif self._sweep_tick is None:
+            self._swept_at = 0
+            self._sweep_tick = self.list_view.add_tick_callback(self._on_sweep_tick)
+
+    def _on_sweep_tick(self, _widget, clock):
+        """Each frame of a sweep, at most every SWEEP_INTERVAL: follow the estimate, which
+        redraws the current row's labels whose sung part moved (only them: nothing is laid
+        out again)."""
+        now = clock.get_frame_time()
+        if now - self._swept_at >= SWEEP_INTERVAL:
+            self._swept_at = now
+            self._sweeping = True
+            try:
+                self._follow()
+            finally:
+                self._sweeping = False
+        if self._wants_sweep():
+            return GLib.SOURCE_CONTINUE
+        self._sweep_tick = None
+        return GLib.SOURCE_REMOVE
+
+    def _stop_sweep(self):
+        if self._sweep_tick is not None and not self._sweeping:
+            self.list_view.remove_tick_callback(self._sweep_tick)
+            self._sweep_tick = None
+
+    def _on_animations_changed(self):
+        """gtk-enable-animations changed: sweep, or light whole pieces (reduced motion)."""
+        self._sweep = Gtk.Settings.get_default().get_property('gtk-enable-animations')
+        self._sing(self._current)
+        self._update_sweep()
+
+    def _redraw_current(self):
+        box = self._rows.get(self._current)
+        if box is not None:
+            for part in TIMED_PARTS:
+                getattr(box, part.attribute).queue_draw()
 
     def _users_turn(self):
         """Whether the list is the user's for now: scrolled in the last USER_SCROLL_PAUSE
@@ -462,9 +620,10 @@ class LyricsView(Gtk.Stack):
         box.add_css_class('lyric-line')
         box.side, box.inset = '', 0     # as set_side() left them: across the list
         for part in PARTS:
-            label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
-                              justify=Gtk.Justification.LEFT, visible=False,
-                              css_classes=part.css_classes)
+            kind = LyricLabel if part in TIMED_PARTS else Gtk.Label
+            label = kind(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
+                         justify=Gtk.Justification.LEFT, visible=False,
+                         css_classes=part.css_classes)
             setattr(box, part.attribute, label)
             box.append(label)
         box.dots = Gtk.Box(spacing=8, halign=Gtk.Align.START, css_classes=['lyric-dots'],
@@ -497,6 +656,10 @@ class LyricsView(Gtk.Stack):
             row.add_css_class('stanza')
         else:
             row.remove_css_class('stanza')
+        if line.timed:
+            box.add_css_class('timed')
+        else:
+            box.remove_css_class('timed')
         box.revealer.set_visible(line.instrumental is not None)
         self._rows[position] = box
         self._paint(position, animate=False)
@@ -513,6 +676,7 @@ class LyricsView(Gtk.Stack):
             return
         self._user_scrolled_at = 0.0
         self._keyboard_in_list = False  # until the focus leaves and comes back
+        self._hold_after = time.monotonic() + SEEK_SETTLE  # back to the line, held or not
         self._app.player_command(self._player.seek(self._lyrics.start_of(position)))
 
 
@@ -538,6 +702,195 @@ PARTS = (
     Part('translation_background', 'translation_background',
          ['lyric-background', 'lyric-translation'], 'translations', _BACKGROUND_EXTRA),
 )
+
+# The parts that may be timed by the piece (lyrics.TIMED): drawn by a LyricLabel.
+TIMED_PARTS = tuple(part for part in PARTS
+                    if part.field in {field for field, _words in lyrics_model.TIMED})
+
+
+class LyricLabel(Gtk.Label):
+    """A lyrics label that can light its timed pieces as they are sung (sing()): the part
+    sung at full opacity, the rest at UNSUNG_OPACITY (the dimmed lines' opacity, so the line
+    fills in as it is sung), the piece being sung, while the view sweeps, filled to where it
+    has got with a soft edge. Drawn in do_snapshot as an alpha mask over the label's own
+    drawing: a step only redraws the label, never lays it (or the list) out again. Where
+    each piece is drawn (piece_segments()) is kept until the layout changes: another
+    PangoLayout, or the same one changed (its serial: the text, the width it wraps at, the
+    font, the direction), or other spans."""
+
+    __gtype_name__ = 'AppleMusicLyricLabel'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._spans = ()        # the pieces' Spans in the label's text
+        self._sung = None       # lyrics.Sung, or None: drawn plainly
+        self._layout = None     # the PangoLayout _segments were measured on (kept alive,
+        self._layout_key = None     # so a new one cannot pass for it), its serial, spans
+        self._segments = ()
+
+    @property
+    def sung(self):
+        return self._sung
+
+    def sing(self, spans, sung):
+        """Light the pieces at `spans` (lyrics.Span) as `sung` (a lyrics.Sung) says, or
+        draw the label plainly (`sung` None); redrawn only when that changes."""
+        if sung is None:
+            spans = ()
+        if spans != self._spans or sung != self._sung:
+            self._spans, self._sung = spans, sung
+            self.queue_draw()
+
+    def segments(self):
+        """piece_segments() of the label's layout, measured again only when the layout
+        or the spans changed."""
+        layout = self.get_layout()
+        key = (layout.get_serial(), self._spans)
+        if layout is not self._layout or key != self._layout_key:
+            self._layout, self._layout_key = layout, key
+            self._segments = piece_segments(layout, self._spans)
+        return self._segments
+
+    def do_snapshot(self, snapshot):
+        sung, count = self._sung, len(self._spans)
+        if sung is None or sung.whole >= count:
+            Gtk.Label.do_snapshot(self, snapshot)       # not current, or all sung
+            return
+        unsung = (UNSUNG_OPACITY_HIGH_CONTRAST if Adw.StyleManager.get_default()
+                  .get_high_contrast() else UNSUNG_OPACITY)
+        segments = self.segments()
+        if (not sung.whole and not sung.fraction) or len(segments) != count:
+            snapshot.push_opacity(unsung)               # nothing sung yet
+            Gtk.Label.do_snapshot(self, snapshot)
+            snapshot.pop()
+            return
+        x, y = self.get_layout_offsets()
+        snapshot.push_mask(Gsk.MaskMode.ALPHA)
+        _append_mask(snapshot, segments, sung, unsung, x, y, self.get_width(),
+                     self.get_height())
+        snapshot.pop()
+        Gtk.Label.do_snapshot(self, snapshot)
+        snapshot.pop()
+
+
+def piece_segments(layout, spans):
+    """Where each piece (a lyrics.Span of the layout's text) is drawn: a tuple of
+    segments for each, one for each line the piece is on (a long word may wrap), each
+    (from x, to x, y, height) in the layout's pixels, from where the piece begins to where
+    it ends, so a piece written right to left has its `from` on the right. A layout whose
+    text the spans do not fit has none (). Pango's own LayoutLine.get_x_ranges() returns
+    half its values through PyGObject (its array's length counts pairs): the edges come
+    from index_to_line_x, the leading edge of a piece's first character and the trailing
+    edge of its last, plus the line's x (its alignment)."""
+    text = layout.get_text().encode('utf-8')
+    if not spans or spans[-1].end > len(text):
+        return ()
+    scale = Pango.SCALE
+    lines = []
+    iterator = layout.get_iter()
+    while True:
+        line = iterator.get_line_readonly()
+        logical = iterator.get_line_extents()[1]
+        lines.append((line.get_start_index(), line.get_length(), logical.x / scale,
+                      logical.y / scale, logical.height / scale))
+        if not iterator.next_line():
+            break
+    pieces = []
+    for span in spans:
+        first, start_x = layout.index_to_line_x(span.first, False)
+        last, end_x = layout.index_to_line_x(span.last, True)
+        segments = []
+        for number in range(first, last + 1):
+            start, length, x, y, height = lines[number]
+            begin = start_x if number == first else layout.index_to_line_x(start, False)[1]
+            end = (end_x if number == last else
+                   layout.index_to_line_x(_last_character(text, start, start + length),
+                                          True)[1])
+            segments.append((x + begin / scale, x + end / scale, y, height))
+        pieces.append(tuple(segments))
+    return tuple(pieces)
+
+
+def _last_character(text, start, end):
+    """The first byte of the last character of text[start:end] (UTF-8 bytes)."""
+    index = max(start, end - 1)
+    while index > start and (text[index] & 0xC0) == 0x80:
+        index -= 1
+    return index
+
+
+def mask_parts(segments, sung):
+    """What a LyricLabel's mask lights, from piece_segments() and a lyrics.Sung: the
+    spans drawn at full opacity, (x, y, width, height) each, the pieces sung whole merged
+    line by line (no seam between two pieces), then the soft edge of the piece being sung,
+    (from x, to x, y, height) from full to none, or None. The edge is SWEEP_EDGE either side
+    of where the piece has got, across its segments in order."""
+    lines = {}
+    for segments_of_piece in segments[:sung.whole]:
+        for start, end, y, height in segments_of_piece:
+            lines.setdefault((y, height), []).append((min(start, end), max(start, end)))
+    edge = None
+    if sung.fraction and sung.whole < len(segments):
+        piece = segments[sung.whole]
+        left = sum(abs(end - start) for start, end, _y, _h in piece) * sung.fraction
+        for start, end, y, height in piece:
+            width = abs(end - start)
+            if left >= width:
+                lines.setdefault((y, height), []).append((min(start, end), max(start, end)))
+                left -= width
+                continue
+            direction = 1 if end >= start else -1
+            reached = start + direction * left
+            solid = reached - direction * SWEEP_EDGE
+            if (solid - start) * direction > 0:
+                lines.setdefault((y, height), []).append((min(start, solid),
+                                                          max(start, solid)))
+            else:
+                solid = start
+            edge = (solid, reached + direction * SWEEP_EDGE, y, height)
+            break
+    full = []
+    for (y, height), spans in lines.items():
+        spans.sort()
+        merged = [list(spans[0])]
+        for start, end in spans[1:]:
+            if start <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        full.extend((start, y, end - start, height) for start, end in merged)
+    return full, edge
+
+
+def _rgba(alpha):
+    colour = Gdk.RGBA()
+    colour.red = colour.green = colour.blue = 1.0
+    colour.alpha = alpha
+    return colour
+
+
+_OPAQUE, _CLEAR = _rgba(1.0), _rgba(0.0)
+
+
+def _append_mask(snapshot, segments, sung, unsung, x, y, width, height):
+    """The alpha mask of a LyricLabel whose layout is drawn at (x, y): the label at the
+    `unsung` opacity, then mask_parts() over it."""
+    snapshot.append_color(_rgba(unsung), Graphene.Rect().init(0, 0, width, height))
+    full, edge = mask_parts(segments, sung)
+    for left, top, span, tall in full:
+        snapshot.append_color(_OPAQUE, Graphene.Rect().init(x + left, y + top, span, tall))
+    if edge is not None:
+        start, end, top, tall = edge
+        # A pixel back into the part already lit: no seam where the two meet.
+        back = 1 if end >= start else -1
+        stops = [Gsk.ColorStop(), Gsk.ColorStop()]
+        stops[0].offset, stops[0].color = 0.0, _OPAQUE
+        stops[1].offset, stops[1].color = 1.0, _CLEAR
+        left = min(start - back, end)
+        snapshot.append_linear_gradient(
+            Graphene.Rect().init(x + left, y + top, abs(end - start) + 1, tall),
+            Graphene.Point().init(x + start, y + top), Graphene.Point().init(x + end, y + top),
+            stops)
 
 
 # Where a row's box goes for each side of a duet (lyrics.side(); '' for the lines of a song

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""src/lyrics.py: the engine's lyrics answer as a model, the current line by position, and
-the instrumental breaks between verses with their dots."""
+"""src/lyrics.py: the engine's lyrics answer as a model, the current line by position, the
+instrumental breaks between verses with their dots, and the timed pieces of word-timed lines:
+where each is in its text's bytes, how much is sung at a time, and the moments they make."""
 
 import json
 import pathlib
@@ -11,9 +12,9 @@ import unittest
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
 from applemusic.lyrics import (DOTS, END, INSTRUMENTAL_GAP_MS, MIDDLE, NO_MOMENT, START,
-                               Break, LyricLine, Lyrics, Moment, Word, dot_times, dots_lit,
-                               instrumental_breaks, is_secondary, line_index_at, parse_lines,
-                               side)
+                               Break, LyricLine, Lyrics, Moment, Span, Sung, Word, byte_spans,
+                               dot_times, dots_lit, instrumental_breaks, is_secondary,
+                               line_index_at, parse_lines, side, sung)
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
@@ -520,6 +521,82 @@ class SyllableFixtureTest(unittest.TestCase):
             (0, Break(0, 12399)), (8, Break(43501, 53999)), (16, Break(85001, 96499))])
         self.assertEqual(self.lyrics.moment_at(47), Moment(8, True, 1))
         self.assertEqual(self.lyrics.moment_at(52), Moment(8, True, 3))
+
+
+
+class PiecesTest(unittest.TestCase):
+    """The timed pieces of a word-timed line: their bytes in the text (what Pango indexes a
+    label by), how many are sung at a moment, and the steps they give the line's moment."""
+
+    def test_byte_spans_count_utf8_bytes(self):
+        words = (Word(0, 1, '夜'), Word(1, 2, '明け '), Word(2, 3, 'café '), Word(3, 4, 'ok'))
+        spans = byte_spans(words)
+        self.assertEqual(spans, (Span(0, 0, 3), Span(3, 9, 10), Span(10, 15, 16),
+                                 Span(16, 17, 18)))
+        text = ''.join(word.text for word in words).encode('utf-8')
+        # Each span is its piece's bytes, and its last character starts at `last`.
+        self.assertEqual([text[span.first:span.end].decode() for span in spans],
+                         [word.text for word in words])
+        self.assertEqual([text[span.last:span.end].decode() for span in spans],
+                         ['夜', ' ', ' ', 'k'])
+        self.assertEqual(byte_spans(()), ())
+
+    def test_whole_pieces_light_at_their_start(self):
+        words = (Word(1000, 1400, 'Grey '), Word(1400, 1800, 'morn'), Word(1800, 2200, 'ing'))
+        self.assertEqual(sung(words, 999, False), Sung(0, None))
+        self.assertEqual(sung(words, 1000, False), Sung(1, None))
+        self.assertEqual(sung(words, 1799, False), Sung(2, None))
+        self.assertEqual(sung(words, 1800, False), Sung(3, None))
+        self.assertEqual(sung(words, 5000, False), Sung(3, None))
+
+    def test_a_sweep_fills_the_piece_being_sung(self):
+        words = (Word(1000, 1400, 'Grey '), Word(1400, 1800, 'morn'), Word(2000, 2200, 'ing'))
+        self.assertEqual(sung(words, 999, True), Sung(0, None))
+        self.assertEqual(sung(words, 1000, True), Sung(0, 0.0))
+        self.assertEqual(sung(words, 1100, True), Sung(0, 0.25))
+        self.assertEqual(sung(words, 1700, True), Sung(1, 0.75))
+        # Between two pieces nothing is in progress: no sweep to draw.
+        self.assertEqual(sung(words, 1900, True), Sung(2, None))
+        self.assertEqual(sung(words, 2100, True), Sung(2, 0.5))
+        self.assertEqual(sung(words, 2200, True), Sung(3, None))
+        # A piece without length is sung at its start; an earlier piece still running
+        # (pieces may overlap) counts as sung once a later one has begun.
+        self.assertEqual(sung((Word(500, 500, 'Oh'),), 500, True), Sung(1, None))
+        overlap = (Word(0, 900, 'Lo '), Word(400, 800, 'ng'))
+        self.assertEqual(sung(overlap, 600, True), Sung(1, 0.5))
+
+    def test_a_lines_timed_parts(self):
+        lyrics = Lyrics(fixture('lyrics_syllable.json'))
+        line = lyrics.lines.get_item(1)
+        self.assertEqual(set(line.timed), {'text', 'background'})
+        self.assertEqual(line.timed['text'].words, line.words)
+        self.assertEqual(line.timed['text'].spans, byte_spans(line.words))
+        self.assertEqual(line.timed['background'].spans[-1].end,
+                         len(line.background.encode('utf-8')))
+        japanese = lyrics.lines.get_item(4)
+        self.assertEqual(set(japanese.timed), {'text', 'pronunciation'})
+        self.assertEqual(japanese.timed['text'].spans[-1].end, 3 * len(japanese.text))
+        # Line-timed lyrics have none.
+        self.assertEqual(Lyrics(fixture()).lines.get_item(0).timed, {})
+
+    def test_the_moments_of_word_timed_lines(self):
+        """A word-timed line's moment steps at each piece begun, of its main and background
+        vocals and its pronunciation alike, and next_change() stops at each."""
+        lyrics = Lyrics({'synced': True, 'lines': [
+            {'startMs': 1000, 'endMs': 3000, 'text': 'Low tide', 'background': '(tide)',
+             'words': [{'startMs': 1000, 'endMs': 1500, 'text': 'Low '},
+                       {'startMs': 1500, 'endMs': 2000, 'text': 'tide'}],
+             'backgroundWords': [{'startMs': 1800, 'endMs': 3000, 'text': '(tide)'}]},
+            {'startMs': 4000, 'endMs': 5000, 'text': 'Sea wall'}]})
+        moments, at = [], 0.0
+        while at is not None:
+            moments.append((at, lyrics.moment_at(at)))
+            at = lyrics.next_change(at)
+        self.assertEqual(moments, [
+            (0.0, NO_MOMENT), (1.0, Moment(0, False, 1)), (1.5, Moment(0, False, 2)),
+            (1.8, Moment(0, False, 3)), (4.0, Moment(1, False, 0))])
+        self.assertEqual(lyrics.moment_at(1.499), Moment(0, False, 1))
+        self.assertEqual(lyrics.moment_at(3.5), Moment(0, False, 3))
 
 
 if __name__ == '__main__':
