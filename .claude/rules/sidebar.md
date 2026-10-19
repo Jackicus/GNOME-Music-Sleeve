@@ -17,8 +17,14 @@ its order (folders first, each group by title: library.md); the controller
 drop target, and follows the library's `changed` and `playlists-changed` (a rename moves an
 entry: it is spliced out and in, and the window selects it again by key).
 
-- Items are GObjects, not widgets: no children, no indentation (a folder's contents follow it;
-  its arrow suffix says whether they show). `selected` is an index across all sections.
+- Items are GObjects, not widgets: no children, no indentation of their own (a folder's
+  contents follow it; its arrow suffix says whether they show). The controller indents a
+  nested item's row by giving it `depth-1` to `depth-3` (`sidebar.depth_class()`) in
+  `update_rows()`, its walk over the rows, which also names them; style.css puts a
+  transparent border at the start of the row's child, which adds to the padding (sidebar
+  mode) or margin (page mode) libadwaita gives it. Never a vertical margin on a list's row
+  (GTK aborts in `gtk_list_base_update_adjustments`). `selected` is an index across all
+  sections.
 - A click selects (`notify::selected-item`) and then emits `activated`; a click on the selected
   item only emits `activated`; `set_selected()` only notifies. So selection shows pages and
   `activated` opens and closes folders.
@@ -53,4 +59,6 @@ entry: it is spliced out and in, and the window selects it again by key).
   (tests/test_sidebar.py checks the headers). Page mode has no `.navigation-sidebar`: its
   sections are `AdwPreferencesGroup`s.
 - In sidebar mode it names none of its rows for assistive technology and says nothing of a
-  folder's state; the controller sets both on the rows itself.
+  folder's state; the controller sets both on the rows itself. It builds a mode's rows
+  before it notifies `mode`, so `update_rows()` runs in that handler (and once more in an
+  idle) and the new rows never draw flat.

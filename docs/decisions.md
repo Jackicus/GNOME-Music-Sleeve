@@ -31,10 +31,19 @@ changes, change it here, with the date. The plan they came from is in
   first item (`src/window.py` reveals it from the Player's track, after the Player's grace
   between queues, so a change of queue shows no blink). Ctrl+Shift+N still opens Now
   Playing; Ctrl+3 with no bar leaves the focus and says "Not Playing" to a screen reader.
-- **Playlist folders in the sidebar** (2026-09-27). Folders are sidebar items with a folder icon
-  and a disclosure arrow; activating one shows or hides its playlists and opens the folder's
-  page (in the narrow layout's page mode it only opens the page). `AdwSidebar` cannot indent,
-  so nesting shows through order, the arrow and a nested item's subtitle naming its folder.
+- **Playlist folders in the sidebar** (2026-09-27, indented 2026-10-19). Folders are sidebar
+  items with a folder icon and a disclosure arrow; activating one shows or hides its playlists
+  and opens the folder's page (in the narrow layout's page mode it only opens the page). A
+  folder's contents follow it, indented 28px a level as GNOME Builder's project tree indents
+  (a nested item's icon under its folder's title), up to three levels; deeper items keep the
+  third level's indent. `AdwSidebar` has no indentation of its own, so the controller gives
+  each nested row a `depth-1` to `depth-3` class as it names the rows (and only when the rows
+  match the items one to one; else the sidebar stays flat), and `src/style.css` moves the
+  row's content in, mirrored for right-to-left, the selection still the row's full width. The
+  page mode's boxed lists are indented too: there a folder has no arrow and its contents
+  would otherwise look like top-level playlists. The subtitle that used to name a nested
+  item's folder is gone (one height for every row, as in Builder); the tooltip keeps the
+  whole name, and screen readers hear each row's level.
 - **Sidebar sections: titles and dividers** (2026-10-19). Library and Playlists keep their
   titles (Playlists especially, which the library's folders and playlists fill), and a thin
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider
