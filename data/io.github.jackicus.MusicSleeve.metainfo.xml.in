@@ -109,8 +109,8 @@
           pronunciations, and a full-screen player.
         </p>
         <ul>
-          <li>Show Translations and Show Pronunciations put a line's translation and its pronunciation in your own script under it, from a Translation and Pronunciation button in Now Playing when the song's lyrics have them</li>
-          <li>In songs timed word by word, the words light as they are sung, in a smooth sweep, or a whole word at a time with animations off</li>
+          <li>Show Translations and Show Pronunciations, from a Translation and Pronunciation button in Now Playing: under each line its translation into your language, or how it is pronounced written in your alphabet, or both, when the song's lyrics have them</li>
+          <li>In songs timed word by word, the words light as they are sung, in a smooth sweep, or a word or a syllable at a time with animations off</li>
           <li>Background vocals show as a smaller line of their own under the line they echo</li>
           <li>In a duet each singer's lines sit on their own side, and lines sung together are centred</li>
           <li>Three dots fill in during a long instrumental break</li>
