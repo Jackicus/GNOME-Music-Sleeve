@@ -7,7 +7,8 @@
     scripts/headless.sh scripts/screenshot.py [out.png] --demo [--light] [--size WxH]
                           [--page KEY] [--open KIND:ID] [--sidebar] [--expand ID[,ID…]]
                           [--banner sign-in|expired] [--signed-in [NAME]]
-                          [--now-playing [lyrics|queue]] [--playing] [--search TERM]
+                          [--now-playing [lyrics|localized|syllable|queue]]
+                          [--position SECONDS] [--playing] [--search TERM]
                           [--context-menu [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|rename|delete]
@@ -48,7 +49,12 @@ tests/fixtures/lyrics.json, the album's cover as its artwork) and opens the Now
 Playing sheet on its Lyrics tab, or on Up Next with "queue"; "localized" shows the
 Lyrics tab with tests/fixtures/lyrics_localized.json's lines, which have
 pronunciations and translations (--setting lyrics-pronunciations=true and
-lyrics-translations=true show them). With --demo only.
+lyrics-translations=true show them), and "syllable" with lyrics_syllable.json's, an
+invented word-timed duet (syllables, background vocals, two singers and a group, a long
+intro and a long break between verses) with pronunciations and translations too.
+With --demo only.
+--position SECONDS puts the invented item that many seconds in (65 by default: a
+line of each lyrics fixture is current), say mid-word, or inside a break.
 --playing puts the same item on the Player and leaves the sheet closed: the player
 bar in its playing state. With --demo only.
 --search TERM shows the Search page in Your Library mode with TERM typed (the
@@ -105,8 +111,10 @@ parser.add_argument('--banner', choices=['sign-in', 'expired'],
 parser.add_argument('--signed-in', metavar='NAME', nargs='?', const='',
                     help='show the account as signed in, as NAME when given')
 parser.add_argument('--now-playing', metavar='TAB', nargs='?', const='lyrics',
-                    choices=['lyrics', 'localized', 'queue'],
+                    choices=['lyrics', 'localized', 'syllable', 'queue'],
                     help='an invented item playing, the Now Playing sheet open on TAB')
+parser.add_argument('--position', metavar='SECONDS', type=float,
+                    help='with --now-playing or --playing, the item that many seconds in')
 parser.add_argument('--playing', action='store_true',
                     help='an invented item playing, the sheet closed (the player bar)')
 parser.add_argument('--search', metavar='TERM',
@@ -137,6 +145,8 @@ if args.submenu and not args.context_menu:
     parser.error('--submenu needs --context-menu')
 if (args.now_playing or args.playing) and not args.demo:
     parser.error('--now-playing and --playing need --demo')
+if args.position is not None and not (args.now_playing or args.playing):
+    parser.error('--position needs --now-playing or --playing')
 width, height = (int(n) for n in args.size.split('x'))
 
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light, size=(width, height))
@@ -199,11 +209,12 @@ def open_now_playing(window):
     """--now-playing: the invented item on the Player (the demo's first album playing, with
     the lyrics fixture) and the sheet open on the tab; --playing: the item only, for the
     player bar."""
-    localized = args.now_playing == 'localized'
-    app.player.apply(harness.invented_playing_state(app, lyrics=True, localized=localized))
+    fixture = args.now_playing if args.now_playing in harness.LYRICS_FIXTURES else 'lyrics'
+    app.player.apply(harness.invented_playing_state(app, lyrics=True, fixture=fixture,
+                                                    position=args.position))
     if args.now_playing:
         window.now_playing.tab_stack.set_visible_child_name(
-            'lyrics' if localized else args.now_playing)
+            'queue' if args.now_playing == 'queue' else 'lyrics')
         window.bottom_sheet.set_open(True)
 
 

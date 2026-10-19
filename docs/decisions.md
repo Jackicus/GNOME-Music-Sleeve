@@ -105,6 +105,9 @@ changes, change it here, with the date. The plan they came from is in
   centred in theirs and drifted (28 px wide, 13 at 360); under 400sp the margins shrink to
   the 14 px that still fit two tiles, Radio's the same, the grid never centred (a centred
   scrollable has GTK measure its width for its height, which warns) (#243).
+- **Show Translations and Show Pronunciations stay independent** (2026-10-19), as Apple's
+  web player has them: two separate menu items, and with both on a line shows its
+  pronunciation, then its translation. Checked against Apple's lyrics component (#309).
 
 ## Engine
 

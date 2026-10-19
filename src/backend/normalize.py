@@ -1991,15 +1991,15 @@ def made_for_you_cache_path(cache_dir):
 
 
 def write_answer(path, answer, cache_dir, generation=None):
-    """Keep `answer` at `path` (in the cache at `cache_dir`), atomically,
-    stamped `cached` with when; not once the cache's generation has moved from
-    `generation` (store.py). Best effort: a cache that cannot be written is
-    only a cache."""
+    """Keep `answer` at `path` (in the cache at `cache_dir`), atomically, as
+    JSON without spaces, stamped `cached` with when; not once the cache's
+    generation has moved from `generation` (store.py). Best effort: a cache
+    that cannot be written is only a cache."""
     answer = dict(answer)
     answer['cached'] = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
     try:
-        store.atomic_write(path, lambda f: json.dump(answer, f), root=cache_dir, text=True,
-                           generation=generation)
+        store.atomic_write(path, lambda f: json.dump(answer, f, separators=(',', ':')),
+                           root=cache_dir, text=True, generation=generation)
     except (OSError, ValueError) as error:
         log.warning('could not keep %s: %s', path, error)
     return answer

@@ -35,8 +35,9 @@ paths:
   and no animations, so shots do not depend on the desktop's theme.
 - `screenshot.py` without `--demo` reads the release build's real cache (`APPLE_MUSIC_CACHE`
   names the .Devel build's): never for a shot that is committed or shared. `--now-playing
-  [lyrics|queue]` opens the sheet on an invented item; `--playing` puts the item on the Player
-  with the sheet closed (the bar's playing state); both need `--demo`. `--signed-in [NAME]`,
+  [lyrics|localized|syllable|queue]` opens the sheet on an invented item (the lyrics of
+  `harness.LYRICS_FIXTURES`); `--playing` puts the item on the Player with the sheet closed
+  (the bar's playing state); both need `--demo`, and take `--position SECONDS`. `--signed-in [NAME]`,
   `--banner sign-in|expired` and `--sidebar` (the narrow layout's sidebar) show those states;
   `--help` lists the rest. It shoots once no artwork decode has been in flight for a few polls
   (5 s at most), so a new step that shows artwork needs no delay of its own for it.

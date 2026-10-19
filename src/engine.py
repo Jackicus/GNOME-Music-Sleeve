@@ -34,8 +34,10 @@ UI awaits.
                                          # (MusicKit pauses); previewDidChange events follow it
     await engine.stop_preview()  # the clip playing stopped: True if one was
     await engine.lyrics(catalog_song_id)   # {synced, lines: [{startMs, endMs, text[, stanza]
-                                           # [, pronunciation][, translation]}], languages},
-                                           # from <cache>/lyrics/ when fetched this month
+                                           # [, words][, background][, agent]
+                                           # [, pronunciation][, translation]…}], languages,
+                                           # format} (src/lyrics.py has every field), from
+                                           # <cache>/lyrics/ when fetched this month
     await engine.love('song', id); await engine.unlove('album', id)   # the rating, set or gone
     await engine.rating('song', id)        # 1 loved, -1 disliked, 0 neither
     await engine.add_to_library('album', catalog_id)
@@ -111,11 +113,11 @@ from pathlib import Path
 from gi.repository import Gio, GLib, GObject
 
 from . import cache
+from . import lyrics as lyrics_model
 from .backend import api, chrome, config, normalize, store
 from .backend.api import is_library_id, resource_type
 from .backend.client import EVENT_PREFIX, CDPClient, PipeTransport
 from .backend.errors import EngineError
-from .lyrics import parse_lines
 
 log = logging.getLogger(__name__)
 
@@ -217,29 +219,47 @@ def _shape_artist(raw, item_id, stubs, answers, cache_dir, generation):
     return _fetch_item_art(item, art_urls, cache_dir, generation)
 
 
-def lyrics_answer(answer, languages=None):
-    """The bridge's lyrics answer, or a kept one, as {synced: bool, lines: [{startMs, endMs,
-    text, stanza (only where true), pronunciation and translation (only where there is
-    one)}], languages}: the lines as lyrics.parse_lines reads them (the one validation:
-    times as integers, entities decoded, in time order); anything odd is no lyrics.
-    `languages` are the ones the translations and pronunciations were asked in
-    (api.lyrics_languages), else the answer's own, else None (a file kept before they
-    were asked for)."""
+def lyrics_answer(answer, languages=None, format=None):
+    """The bridge's lyrics answer, or a kept one, as {synced: bool, lines: [line], languages,
+    format}: the lines as lyrics.parse_lines reads them (the one validation: times as
+    integers, entities decoded, words that join to their text, in time order), each with the
+    fields src/lyrics.py's docstring lists, those that are empty left out (`agent` too,
+    unless the song is a duet); anything odd is no lyrics. `languages` are the ones the
+    translations and pronunciations were asked in (api.lyrics_languages), else the answer's
+    own, else None (a file kept before they were asked for). `format` is the shape the lines
+    were read in, lyrics.FORMAT for the bridge's answer, else the answer's own, else 1 (a
+    file kept before the words were)."""
+    parsed = lyrics_model.parse_lines(answer)
+    duet = any(lyrics_model.is_secondary(line.agent) for line in parsed)
     lines = []
-    for line in parse_lines(answer):
+    for line in parsed:
         shaped = {'startMs': line.start_ms, 'endMs': line.end_ms, 'text': line.text}
         if line.stanza:
             shaped['stanza'] = True
-        if line.pronunciation:
-            shaped['pronunciation'] = line.pronunciation
-        if line.translation:
-            shaped['translation'] = line.translation
+        for key, value in (('words', line.words), ('background', line.background),
+                           ('backgroundWords', line.background_words),
+                           ('agent', line.agent if duet else ''),
+                           ('pronunciation', line.pronunciation),
+                           ('pronunciationWords', line.pronunciation_words),
+                           ('pronunciationBackground', line.pronunciation_background),
+                           ('pronunciationBackgroundWords',
+                            line.pronunciation_background_words),
+                           ('translation', line.translation),
+                           ('translationBackground', line.translation_background)):
+            if value and isinstance(value, str):
+                shaped[key] = value
+            elif value:
+                shaped[key] = [{'startMs': word.start_ms, 'endMs': word.end_ms,
+                                'text': word.text} for word in value]
         lines.append(shaped)
     synced = bool(isinstance(answer, dict) and answer.get('synced')) and bool(lines)
-    if languages is None and isinstance(answer, dict) and isinstance(answer.get('languages'),
-                                                                     dict):
-        languages = answer['languages']
-    return {'synced': synced, 'lines': lines, 'languages': languages}
+    own = answer if isinstance(answer, dict) else {}
+    if languages is None and isinstance(own.get('languages'), dict):
+        languages = own['languages']
+    if format is None:
+        kept = own.get('format')
+        format = kept if isinstance(kept, int) and not isinstance(kept, bool) else 1
+    return {'synced': synced, 'lines': lines, 'languages': languages, 'format': format}
 
 
 def _raise_api_errors(answer, what):
@@ -1332,16 +1352,17 @@ class Engine(GObject.Object):
         return self.cache_dir / 'lyrics' / f'{catalog_song_id}.json'
 
     async def lyrics(self, catalog_song_id):
-        """A catalog song's lyrics: {synced, lines: [{startMs, endMs, text, pronunciation?,
-        translation?}], languages} (lyrics_answer's shape), from <cache>/lyrics/<id>.json
-        when they were fetched in the last normalize.LYRICS_MAX_AGE with their translations
-        and pronunciations in `lyrics_languages` (no engine needed then; the read marks the
+        """A catalog song's lyrics: {synced, lines: [{startMs, endMs, text, words?,
+        background?, agent?, pronunciation?, translation?…}], languages, format}
+        (lyrics_answer's shape), from <cache>/lyrics/<id>.json when they were fetched in the
+        last normalize.LYRICS_MAX_AGE in today's lyrics.FORMAT, with their translations and
+        pronunciations in `lyrics_languages` (no engine needed then; the read marks the
         file as played, for prune_caches), else through the bridge (the catalog's TTML with
         its translations and transliterations, parsed in the page) and kept there, stamped,
-        when Apple had any. A file kept in other languages (or before they were asked for)
-        is still the answer when the engine cannot give a new one. No lyrics ({synced:
-        False, lines: []}) is also what the page answers when Apple refuses (no
-        subscription, a network failure), so an empty answer is not kept: the next play
+        when Apple had any. A file kept in other languages or an older format (or before
+        either was kept) is still the answer when the engine cannot give a new one. No
+        lyrics ({synced: False, lines: []}) is also what the page answers when Apple refuses
+        (no subscription, a network failure), so an empty answer is not kept: the next play
         asks again."""
         generation = store.cache_generation()
         catalog_song_id = str(catalog_song_id or '')
@@ -1351,13 +1372,14 @@ class Engine(GObject.Object):
         path = self.lyrics_path(catalog_song_id)
         cached = await asyncio.to_thread(cache.read_kept, path, normalize.LYRICS_MAX_AGE, True)
         kept = lyrics_answer(cached) if cached is not None and cached.get('lines') else None
-        if kept is not None and kept['languages'] == languages:
+        if (kept is not None and kept['languages'] == languages
+                and kept['format'] == lyrics_model.FORMAT):
             return kept
         try:
             client = await self._ready()
             answer = lyrics_answer(
                 await client.bridge('lyrics', catalog_song_id, languages, timeout=LYRICS_TIMEOUT),
-                languages)
+                languages, lyrics_model.FORMAT)
         except EngineError:
             if kept is None:
                 raise

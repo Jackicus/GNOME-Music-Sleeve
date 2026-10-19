@@ -176,6 +176,25 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   `org.freedesktop.secrets` among them, and `StartServiceByName` for it hangs: an activatable
   name is no sign of a working keyring, so the check asks for the activation and waits 5 s.
   dbus-daemon does not end a child it activated when the activation fails or the daemon exits.
+- Apple's syllable-lyrics TTML, read on 18 catalog songs (2026-10-19, structure only:
+  English, Japanese, Korean and Spanish, duets among them). 16 had `itunes:timing="Word"`
+  on the root, 2 `"Line"` (plain text in each `<p>`, no spans; a background vocal there is
+  only parenthesised text). In a word-timed `<p>` every piece is a `<span begin end>`:
+  English words are parted by a whitespace text node, syllables are adjacent spans (a
+  stretched "oh-oh" keeps its hyphens in the spans); Japanese has no spaces at all, a span
+  a character or two. Background vocals are a `<span ttm:role="x-bg">` holding timed spans,
+  the parentheses inside the first and the last; in every case it came last in the `<p>`,
+  after a space, so the folded text reads exactly as the whole `<p>` did. Its times may
+  overlap the main vocals', and the `<p>`'s `end` is the later of the two. The
+  transliteration's `<text>` (Japanese, Korean) is timed span for span with the line (the
+  same begin and end, its own spaces, sometimes inside a span or two between spans), its
+  x-bg timed too; the translation's `<text>` is plain, its x-bg an untimed span with the
+  parentheses inside, and it may leave out a background the line has. Every `<p>` names
+  its singer (`ttm:agent`), some `<div>`s too; the head declares them, `type="person"`,
+  `"group"` (`v3`, `v4`: not always `v1000`) or `"other"` (`v2000`, a few lines of one
+  song). No word ran outside its line's times or before the previous one. The bridge's
+  answer is about 5 times the size it was without the words (14 to 41 KB a song, against
+  3 to 9), so 2,000 kept lyrics may take 60 MB.
 
 ## The sync
 

@@ -151,12 +151,21 @@ def run_app(app, *options):
     return app.run(app.harness_argv + list(options))
 
 
-def invented_playing_state(app, lyrics=False, localized=False):
+# The lyrics fixtures (tests/fixtures/) invented_playing_state() can show, by name.
+LYRICS_FIXTURES = {
+    'lyrics': 'lyrics.json',              # English lines, timed by the line
+    'localized': 'lyrics_localized.json',  # Japanese lines, each with its romanisation
+                                           # and its English translation
+    'syllable': 'lyrics_syllable.json',    # a word-timed duet: syllables, background
+                                           # vocals, two singers and a group, long breaks
+}
+
+
+def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None):
     """A Player.apply() dict: the demo library's first album as the queue, its first track
-    playing 65 s in, the album's cover as the artwork, and with `lyrics` the synced lyrics of
-    tests/fixtures/lyrics.json (with `localized`, lyrics_localized.json's Japanese lines,
-    each with its romanisation and its English translation). The demo cannot play: this is
-    what the Player would show."""
+    playing `position` seconds in (PLAYING_POSITION, 65 s, by default), the album's cover as
+    the artwork, and with `lyrics` the synced lyrics of the LYRICS_FIXTURES file named
+    `fixture`. The demo cannot play: this is what the Player would show."""
     from applemusic.backend import config
     from applemusic.remote import remote_art_path
 
@@ -169,21 +178,22 @@ def invented_playing_state(app, lyrics=False, localized=False):
                for entry in group.get('entries') or []]
     if not entries:
         sys.exit('harness: the demo album has no tracks')
-    for position, entry in enumerate(entries):
+    for index, entry in enumerate(entries):
         entry['artUrl'] = DEMO_ART_URL
-        entry['index'] = position
+        entry['index'] = index
     art_path = remote_art_path(DEMO_ART_URL, config.COVER_SIZE)
     if album.art and art_path and not os.path.exists(art_path):
         os.makedirs(os.path.dirname(art_path), exist_ok=True)
         shutil.copyfile(album.art, art_path)
     state = {
-        'state': 'playing', 'track': entries[0], 'position': PLAYING_POSITION,
+        'state': 'playing', 'track': entries[0],
+        'position': PLAYING_POSITION if position is None else position,
         'duration': entries[0].get('durationMs', 0) / 1000, 'shuffle': 'off',
         'repeat': 'none', 'volume': 0.7, 'queue': {'index': 0, 'items': entries},
     }
     if lyrics:
-        fixture = 'lyrics_localized.json' if localized else 'lyrics.json'
-        with open(os.path.join(ROOT, 'tests', 'fixtures', fixture), encoding='utf-8') as file:
+        path = os.path.join(ROOT, 'tests', 'fixtures', LYRICS_FIXTURES[fixture])
+        with open(path, encoding='utf-8') as file:
             state['lyrics'] = json.load(file)
     return state
 

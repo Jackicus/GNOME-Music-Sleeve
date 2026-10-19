@@ -5,7 +5,8 @@
 
 A Gtk.Stack of four pages: synced lyrics as a Gtk.ListView over the Lyrics object's store
 of LyricLine (a row is a box of the line's wrapping label over its pronunciation's and its
-translation's, smaller; the line current at the Player's position carries the `current` CSS
+translation's, smaller, each showing its background vocals folded into it, as the unsynced
+text does; the line current at the Player's position carries the `current` CSS
 class, the others `dimmed`; a click seeks to the line's start; the line opening a verse or
 a chorus `stanza`, a gap above its box, outside the highlight the box draws for the row),
 unsynced lyrics as one wrapping label in a scrolled window, a spinner while the engine
@@ -398,11 +399,14 @@ class LyricsView(Gtk.Stack):
         position = list_item.get_position()
         box = list_item.get_child()
         line = list_item.get_item()
-        box.label.set_label(line.text)
-        box.pronunciation.set_label(line.pronunciation)
-        box.translation.set_label(line.translation)
+        # Each label shows its part with the background vocals folded in (LyricLine's
+        # shown_* properties), one string each.
+        text = line.shown_text
+        box.label.set_label(text)
+        box.pronunciation.set_label(line.shown_pronunciation)
+        box.translation.set_label(line.shown_translation)
         _show_extras(box, self._shown)
-        list_item.set_accessible_label(line.text)
+        list_item.set_accessible_label(text)
         # A gap before a verse or a chorus, as in the text: the box's margin, outside the
         # highlight the box draws for its row (style.css).
         if line.stanza and position:
@@ -450,9 +454,9 @@ def text_markup(lyrics, extras):
     for index, line in enumerate(lyrics.lines):
         if line.stanza and index:
             texts.append('')
-        texts.append(GLib.markup_escape_text(line.text))
-        for wanted, extra in ((pronunciations, line.pronunciation),
-                              (translations, line.translation)):
+        texts.append(GLib.markup_escape_text(line.shown_text))
+        for wanted, extra in ((pronunciations, line.shown_pronunciation),
+                              (translations, line.shown_translation)):
             if wanted and extra:
                 extra = GLib.markup_escape_text(extra)
                 texts.append(f'<span size="smaller" alpha="70%">{extra}</span>')
