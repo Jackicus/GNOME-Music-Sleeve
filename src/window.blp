@@ -87,8 +87,18 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
   // which covers the tiles), revealed only while something plays (window.py
   // _reveal_player_bar); the sheet over it is Now Playing
   // (widgets/now_playing.blp), which the bar's click, a swipe and app.now-playing open.
-  // Toasts go over the content, above the bar, or into the sheet while it is open.
-  content: Adw.BottomSheet bottom_sheet {
+  // Toasts go over the content, above the bar, or into the sheet while it is open. The
+  // stack's other page, added on first use, is the full-screen player (src/fullscreen.py).
+  content: Stack root_stack {
+    transition-type: crossfade;
+    // The window's size is the page's shown, not the larger of the two.
+    hhomogeneous: false;
+    vhomogeneous: false;
+
+    StackPage {
+      name: "main";
+
+      child: Adw.BottomSheet bottom_sheet {
     bottom-bar: $AppleMusicPlayerBar player_bar {};
 
     sheet: $AppleMusicNowPlayingSheet now_playing {};
@@ -217,6 +227,8 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
       };
     };
     };
+      };
+    }
   };
 }
 

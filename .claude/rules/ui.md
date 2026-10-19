@@ -125,9 +125,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   plays the song's preview (`Player.start_preview`, again to stop; one without a preview
   plays in full), the row marked while the Player's `preview` names it, and the page
   stops a preview it started when it is left (`do_hidden`).
-- The window's keyed actions (`win.back`, `win.search`, `win.focus-*`) are disabled while a
-  dialog is open over the window (`Window._update_actions`); add a new keyed window action
-  there.
+- The window's keyed actions (`win.back`, `win.search`, `win.focus-*`,
+  `win.fullscreen-player`) are disabled while a dialog is open over the window
+  (`Window._update_actions`); add a new keyed window action there. `Window._close_sheet()`
+  uncovers the pages (the full-screen player left, the sheet closed): anything that shows a
+  page or moves the focus into them calls it.
 - Per-item colours (a hero card's band) are drawn in the widget's own `do_snapshot`
   (`append_color`, then chain up) inside its rounded clip: CSS cannot take a value per item.
   Keep Python snapshots off the grid tiles (the hero card is a class of its own).

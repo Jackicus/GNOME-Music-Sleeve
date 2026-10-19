@@ -8,7 +8,8 @@
                           [--page KEY] [--open KIND:ID] [--sidebar] [--expand ID[,ID…]]
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|localized|syllable|queue]]
-                          [--position SECONDS] [--playing] [--search TERM]
+                          [--fullscreen-player [lyrics|localized|syllable|none]]
+                          [--idle] [--position SECONDS] [--playing] [--search TERM]
                           [--context-menu [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|rename|delete]
@@ -57,6 +58,11 @@ With --demo only.
 line of each lyrics fixture is current), say mid-word, or inside a break.
 --playing puts the same item on the Player and leaves the sheet closed: the player
 bar in its playing state. With --demo only.
+--fullscreen-player puts the same item on the Player with the lyrics of the fixture
+named (syllable by default; none: a song without lyrics) and enters the full-screen
+player (win.fullscreen-player, F11's). The harness's window is not resizable, so the
+headless mutter keeps it at --size while it is full screen: the shot is the player at
+that size. --idle shoots it with the controls and the cursor hidden. With --demo only.
 --search TERM shows the Search page in Your Library mode with TERM typed (the
 results of the offline filter; the engine is never started here).
 --context-menu pops up the context menu of the page's first tile or row (the
@@ -118,6 +124,11 @@ parser.add_argument('--now-playing', metavar='TAB', nargs='?', const='lyrics',
                     help='an invented item playing, the Now Playing sheet open on TAB')
 parser.add_argument('--position', metavar='SECONDS', type=float,
                     help='with --now-playing or --playing, the item that many seconds in')
+parser.add_argument('--fullscreen-player', metavar='LYRICS', nargs='?', const='syllable',
+                    choices=['lyrics', 'localized', 'syllable', 'none'],
+                    help='an invented item playing, in the full-screen player')
+parser.add_argument('--idle', action='store_true',
+                    help='with --fullscreen-player, the controls hidden as when idle')
 parser.add_argument('--playing', action='store_true',
                     help='an invented item playing, the sheet closed (the player bar)')
 parser.add_argument('--search', metavar='TERM',
@@ -146,10 +157,13 @@ if args.search:
     args.page = 'search'
 if args.submenu and not args.context_menu:
     parser.error('--submenu needs --context-menu')
-if (args.now_playing or args.playing) and not args.demo:
-    parser.error('--now-playing and --playing need --demo')
-if args.position is not None and not (args.now_playing or args.playing):
-    parser.error('--position needs --now-playing or --playing')
+if (args.now_playing or args.playing or args.fullscreen_player) and not args.demo:
+    parser.error('--now-playing, --playing and --fullscreen-player need --demo')
+if args.position is not None and not (args.now_playing or args.playing
+                                      or args.fullscreen_player):
+    parser.error('--position needs --now-playing, --playing or --fullscreen-player')
+if args.idle and not args.fullscreen_player:
+    parser.error('--idle needs --fullscreen-player')
 width, height = (int(n) for n in args.size.split('x'))
 
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light, size=(width, height))
@@ -215,10 +229,15 @@ def open_now_playing(window):
     """--now-playing: the invented item on the Player (the demo's first album playing, with
     the lyrics fixture) and the sheet open on the tab; --playing: the item only, for the
     player bar."""
-    fixture = args.now_playing if args.now_playing in harness.LYRICS_FIXTURES else 'lyrics'
-    app.player.apply(harness.invented_playing_state(app, lyrics=True, fixture=fixture,
-                                                    position=args.position))
-    if args.now_playing:
+    chosen = args.fullscreen_player or args.now_playing
+    fixture = chosen if chosen in harness.LYRICS_FIXTURES else 'lyrics'
+    app.player.apply(harness.invented_playing_state(app, lyrics=chosen != 'none',
+                                                    fixture=fixture, position=args.position))
+    if args.fullscreen_player:
+        window.activate_action('win.fullscreen-player', None)
+        if args.idle:
+            window.fullscreen_host.view.set_idle(True)
+    elif args.now_playing:
         window.now_playing.tab_stack.set_visible_child_name(
             'queue' if args.now_playing == 'queue' else 'lyrics')
         window.bottom_sheet.set_open(True)
@@ -478,7 +497,7 @@ def _shoot():
         open_item(window)
         GLib.timeout_add(1500, shoot)  # after the push, with the artwork decoded
         return GLib.SOURCE_REMOVE
-    if (args.now_playing or args.playing) and not sheet_opened:
+    if (args.now_playing or args.playing or args.fullscreen_player) and not sheet_opened:
         sheet_opened = True
         open_now_playing(window)
         GLib.timeout_add(1500, shoot)  # the sheet open, the artwork decoded

@@ -22,11 +22,14 @@ The pages reach the window through get_root() and these seams, not its internals
     leave(gone, parent)               away from the pages of playlists and folders deleted
     content_width()                   the content pane's width, before it is laid out too
 
-The sidebar itself is sidebar_view.SidebarController's, which shows pages through
-show_root(key, pop=False), reads `shown` (the key whose root page is at the bottom of the
-navigation stack) and `split_view`, and names the account's settings by account_key(). The
-window keeps the root pages (one per key, built on the first visit), the window's actions and
-their keys (keyboard.py), the account button and the banners, and its own state.
+The full-screen player is fullscreen.FullscreenHost's (`fullscreen_host`), over the window's
+root stack; win.fullscreen-player (F11) enters and leaves it, and _close_sheet() leaves it
+first for whatever shows a page. The sidebar itself is sidebar_view.SidebarController's,
+which shows pages through show_root(key, pop=False), reads `shown` (the key whose root page
+is at the bottom of the navigation stack) and `split_view`, and names the account's settings
+by account_key(). The window keeps the root pages (one per key, built on the first visit),
+the window's actions and their keys (keyboard.py), the account button and the banners, and
+its own state.
 """
 
 import logging
@@ -38,6 +41,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 from . import keyboard, pages, related
 from .actions import ItemActions
 from .backend.errors import EngineError
+from .fullscreen import FullscreenHost
 from .library import ROOT_FOLDER, Item
 from .player import playback_error_text
 from .player_bar import PlayerBar  # noqa: F401  registers $AppleMusicPlayerBar for the template
@@ -73,6 +77,7 @@ class Window(Adw.ApplicationWindow):
     __gtype_name__ = 'AppleMusicWindow'
 
     toast_overlay = Gtk.Template.Child()
+    root_stack = Gtk.Template.Child()
     primary_menu_button = Gtk.Template.Child()
     bottom_sheet = Gtk.Template.Child()
     player_bar = Gtk.Template.Child()
@@ -109,6 +114,9 @@ class Window(Adw.ApplicationWindow):
         self.now_playing.set_player(app.player, app, self.bottom_sheet)
         self._sheet_opened_from = None  # a weak reference to the focus the sheet opened over
         self.bottom_sheet.connect('notify::open', self._on_sheet_open)
+        # The full-screen player (fullscreen.py): its view is built on the first enter.
+        self.fullscreen_host = FullscreenHost(self, self.root_stack, self.now_playing, app.player,
+                                              app)
         # A rename placed in the tree between loads (Library.place_playlists) is followed as a
         # load is: the sidebar retitles and moves the entry, the selection and folders kept.
         self._library_handlers = [
@@ -150,11 +158,13 @@ class Window(Adw.ApplicationWindow):
         # off while a dialog is open over the window (its keys are the dialog's then), and
         # back is off when there is nowhere to go or the Now Playing sheet is open, so the
         # keys reach the focus.
+        # F11 (win.fullscreen-player): the full-screen player, while something plays.
         self._actions = {}
         for name, callback in (('back', self._on_back), ('search', self._on_search),
                                ('focus-sidebar', self._on_focus_sidebar),
                                ('focus-content', self._on_focus_content),
-                               ('focus-player', self._on_focus_player)):
+                               ('focus-player', self._on_focus_player),
+                               ('fullscreen-player', self._on_fullscreen_player)):
             action = Gio.SimpleAction.new(name, None)
             action.connect('activate', callback)
             self.add_action(action)
@@ -164,6 +174,7 @@ class Window(Adw.ApplicationWindow):
         self.split_view.connect('notify::show-content', self._update_actions)
         self.bottom_sheet.connect('notify::open', self._update_actions)
         self.connect('notify::visible-dialog', self._update_actions)
+        self.fullscreen_host.connect_changed(self._update_actions)
         self._update_actions()
 
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
@@ -178,6 +189,8 @@ class Window(Adw.ApplicationWindow):
         key nothing handles goes on to the focus widget. F10 opens the primary menu when
         the sidebar holding it is hidden (GTK's own F10 needs it shown)."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
+        if self.fullscreen_host.shown:
+            self.fullscreen_host.view.wake()  # any key shows the controls again
         if keyboard.is_main_menu(keyval, mods):
             return self._show_primary_menu()
         app = self.get_application()
@@ -216,21 +229,37 @@ class Window(Adw.ApplicationWindow):
 
     def add_toast(self, toast):
         """Show a toast over the content, or inside the Now Playing sheet while that is open
-        (the sheet is modal: the window's overlay is under it)."""
-        if self.bottom_sheet.get_open():
+        (the sheet is modal: the window's overlay is under it), or the full-screen player's
+        while that shows."""
+        if self.fullscreen_host.shown:
+            self.fullscreen_host.view.add_toast(toast)
+        elif self.bottom_sheet.get_open():
             self.now_playing.add_toast(toast)
         else:
             self.toast_overlay.add_toast(toast)
 
     def toggle_now_playing(self):
         """Open the Now Playing sheet, or close it (app.now-playing); not while a dialog is
-        open over the window."""
-        if self.get_visible_dialog() is None:
+        open over the window. From the full-screen player, back to the sheet, open."""
+        if self.get_visible_dialog() is not None:
+            return
+        if self.fullscreen_host.shown:
+            self.fullscreen_host.leave(restore_focus=False)
+            self.bottom_sheet.set_open(True)
+        else:
             self.bottom_sheet.set_open(not self.bottom_sheet.get_open())
 
     def _close_sheet(self):
+        """Uncover the pages: the full-screen player left, the Now Playing sheet closed
+        (whatever shows a page or moves the focus into the window's pages)."""
+        self.fullscreen_host.leave(restore_focus=False)
         if self.bottom_sheet.get_open():
             self.bottom_sheet.set_open(False)
+
+    def _on_fullscreen_player(self, *_args):
+        """win.fullscreen-player (F11, the sheet's Fullscreen, the player's Leave
+        Fullscreen, Escape there): the full-screen player, or back from it."""
+        self.fullscreen_host.toggle()
 
     def _reveal_player_bar(self, *_args):
         """The player bar only while something plays, as GNOME Music shows its own: the
@@ -403,8 +432,9 @@ class Window(Adw.ApplicationWindow):
 
     def shown_item(self):
         """The Item the page shown shows (an album's, a playlist's, an artist's), or None:
-        also while the Now Playing sheet covers it, or the sidebar does (collapsed)."""
-        if self.bottom_sheet.get_open():
+        also while the Now Playing sheet or the full-screen player covers it, or the
+        sidebar does (collapsed)."""
+        if self.bottom_sheet.get_open() or self.fullscreen_host.shown:
             return None
         if self.split_view.get_collapsed() and not self.split_view.get_show_content():
             return None
@@ -732,13 +762,18 @@ class Window(Adw.ApplicationWindow):
 
     def _update_actions(self, *_args):
         """The window's actions are off while a dialog is open over it (their keys go to the
-        dialog, not to the pages behind it); back also while the Now Playing sheet is open
-        (Escape closes that) or there is nowhere to go back to."""
+        dialog, not to the pages behind it); back also while the Now Playing sheet or the
+        full-screen player is open (Escape closes those) or there is nowhere to go back to;
+        the full-screen player only while something plays (or to leave it)."""
         free = self.get_visible_dialog() is None
         for action in self._actions.values():
             action.set_enabled(free)
         self._actions['back'].set_enabled(
-            free and not self.bottom_sheet.get_open() and self._can_go_back())
+            free and not self.bottom_sheet.get_open() and not self.fullscreen_host.shown
+            and self._can_go_back())
+        self._actions['fullscreen-player'].set_enabled(
+            free and (self.fullscreen_host.shown
+                      or self.get_application().player.track is not None))
 
     # Ctrl+1, 2, 3: the focus into the sidebar, the page, the player bar.
 
@@ -780,10 +815,13 @@ class Window(Adw.ApplicationWindow):
 
     def _on_focus_player(self, *_args):
         """win.focus-player: the focus on the play button, the Now Playing sheet's while it
-        is open, else the bar's (on the bar itself, which opens the sheet, when its buttons
-        are off). With nothing playing there is no bar (_reveal_player_bar): the focus stays
-        where it is, and a screen reader hears why."""
-        if self.bottom_sheet.get_open():
+        is open (the full-screen player's while that shows), else the bar's (on the bar
+        itself, which opens the sheet, when its buttons are off). With nothing playing there
+        is no bar (_reveal_player_bar): the focus stays where it is, and a screen reader
+        hears why."""
+        if self.fullscreen_host.shown:
+            self.fullscreen_host.view.focus_controls()
+        elif self.bottom_sheet.get_open():
             self.now_playing.focus_controls()
         elif not self.bottom_sheet.get_reveal_bottom_bar():
             self.announce(_('Not Playing'), Gtk.AccessibleAnnouncementPriority.MEDIUM)
@@ -837,12 +875,14 @@ class Window(Adw.ApplicationWindow):
         for source, handler in self._app_handlers:
             source.disconnect(handler)
         self._app_handlers = []
+        self.fullscreen_host.release()
         self.set_visible(False)
 
     def hide_for_background(self):
         """The window closes while the music plays on (background playback): the dialog on
         top of it and those shown as windows of their own are closed, its state remembered,
-        and it hides, to be presented again as it was."""
+        and it hides, to be presented again as it was (out of the full-screen player)."""
+        self.fullscreen_host.leave(restore_focus=False)
         self._close_dialogs()
         self._save_window_state()
         self.set_visible(False)

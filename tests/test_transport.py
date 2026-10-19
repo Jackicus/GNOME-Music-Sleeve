@@ -230,6 +230,42 @@ class HeartTest(unittest.TestCase):
             self.assertEqual(engine.calls.count(('rating', 'song', '1000000001')), 2)
         asyncio.run(go())
 
+    def test_a_lazy_heart_reads_only_when_caught_up(self):
+        """The full-screen player's heart reads nothing as the item changes; it shows the
+        answers another heart's read brings, and reads on catch_up() only an item nothing
+        has answered for."""
+        async def go():
+            from applemusic.widgets.transport import HeartControl
+
+            _heart, _button, _player, events, engine, app = make_heart()  # the bar's
+            lazy_button = Button()
+            lazy = HeartControl(lazy_button, lazy=True)
+            lazy.attach(_player, app)
+            engine.ratings['1000000001'] = 1
+            events.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+            await app.settle()
+            self.assertEqual(engine.calls.count(('rating', 'song', '1000000001')), 1)
+            self.assertTrue(lazy_button.active)   # the bar's answer
+            lazy.catch_up()
+            await app.settle()
+            self.assertEqual(engine.calls.count(('rating', 'song', '1000000001')), 1)
+            # Alone (no other heart reading): an item read only once it is caught up.
+            player, events, app = make_player(state='up')
+            app.engine = RatingEngine()
+            app.engine.ratings['1000000001'] = 1
+            alone_button = Button()
+            alone = HeartControl(alone_button, lazy=True)
+            alone.attach(player, app)
+            events.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+            await app.settle()
+            self.assertFalse(alone_button.active)
+            self.assertEqual(app.engine.calls, [])
+            alone.catch_up()
+            await app.settle()
+            self.assertEqual(app.engine.calls, [('rating', 'song', '1000000001')])
+            self.assertTrue(alone_button.active)
+        asyncio.run(go())
+
     def test_targets_by_kind(self):
         heart, button, player, events, engine, app = make_heart()
         self.assertIsNone(heart.target())

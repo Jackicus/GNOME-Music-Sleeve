@@ -67,6 +67,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   in your language under it, and **Show Pronunciations**, how a line in another script,
   such as Japanese or Korean, is pronounced, written in the script of your language (Latin
   letters for English). Each stays on for the songs after until you turn it off.
+- **Fullscreen** (the button beside the translation button in Now Playing, or <kbd>F11</kbd>
+  while something plays) fills the screen with the song playing: its artwork large over its
+  own colours, the controls, and the lyrics beside it, larger. When the pointer rests for a
+  few seconds while the music plays, the controls and the pointer fade away; move the
+  pointer or press a key to bring them back. <kbd>Esc</kbd>, <kbd>F11</kbd> or **Leave
+  Fullscreen** goes back to the window as it was. It stays from one song to the next, and
+  closes on its own when nothing plays any more.
 - Your own playlists can be managed from their menus (right-click one in the sidebar or on
   All Playlists, or use **More Options** on its page): **Rename…** changes its name and
   description, **Delete Playlist…** deletes it from your library on all your devices, after

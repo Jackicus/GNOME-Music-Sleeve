@@ -9,8 +9,12 @@ sections(); keyboard.py parses PLAYBACK into its PLAYBACK_KEYS and MAIN_MENU int
 F10, widgets/context_menu.py binds CONTEXT_MENU, and sidebar_view.py binds FOLDER_OPEN and
 FOLDER_CLOSE on the sidebar (keys for the focused row, only with the focus in the sidebar).
 tests/test_shortcuts.py checks that the dialog lists every one of them. Keys that are none of
-these are listed as they are: Escape (the dialogs', the Now Playing sheet's), under General
-with the other keys that act on windows.
+these are listed as they are: Escape (the dialogs', the Now Playing sheet's, the full-screen
+player's), under General with the other keys that act on windows.
+
+F11 is the one accelerator without a modifier: a function key, which no GTK widget takes for
+its own, the HIG's Fullscreen key, set as an accelerator by GNOME's own apps; the window's
+action does nothing while nothing plays (it is disabled).
 
 The playback keys are not accelerators: GTK 4 runs application accelerators in the window's
 capture phase, before the focus widget, so a bare Space would fire while typing in an entry
@@ -33,6 +37,7 @@ ACCELS = {
     'win.focus-sidebar': ('<primary>1',),
     'win.focus-content': ('<primary>2',),
     'win.focus-player': ('<primary>3',),
+    'win.fullscreen-player': ('F11',),
 }
 
 # App action (without "app.") -> the keys the window's own key controller maps to it.
@@ -70,7 +75,7 @@ def sections():
             (_('Preferences'), 'app.preferences'),
             (_('Refresh Library'), 'app.sync'),
             (_('Keyboard Shortcuts'), 'app.shortcuts'),
-            (_('Close Dialog or Now Playing'), CLOSE),
+            (_('Close Dialog, Now Playing or Fullscreen'), CLOSE),
             (_('Close Window'), 'window.close'),
             (_('Quit'), 'app.quit'),
         ]),
@@ -89,5 +94,6 @@ def sections():
             (_('Next'), 'next'),
             (_('Previous'), 'previous'),
             (_('Show or Hide Now Playing'), 'app.now-playing'),
+            (_('Fullscreen Player'), 'win.fullscreen-player'),
         ]),
     ]

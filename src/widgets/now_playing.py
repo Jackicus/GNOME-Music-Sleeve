@@ -12,7 +12,10 @@ view switcher switches. More Options is the item playing's menu (the window's it
 Go to Album, Go to Artist, Add to Playlist…, without Play), made as it opens. Beside the
 volume, while the lyrics have translations or pronunciations, a menu of Show Translations
 and Show Pronunciations (those the lyrics have: the `lyrics-translations` and
-`lyrics-pronunciations` settings' actions). The close
+`lyrics-pronunciations` settings' actions), and Fullscreen (win.fullscreen-player: the
+full-screen player, fullscreen.py), which borrows the LyricsView out of the Lyrics tab's
+`lyrics_slot` while it shows (lend_lyrics(), return_lyrics()), the sheet covered meanwhile
+(set_covered(): its views inactive, open or not). The close
 button sets the bottom sheet's `open` false; Escape and a swipe down are the bottom sheet's
 own; Go to Album and Go to Artist close the sheet too (window.open_item).
 
@@ -57,6 +60,7 @@ class NowPlayingSheet(Adw.Bin):
     volume_button = Gtk.Template.Child()
     volume_adjustment = Gtk.Template.Child()
     lyrics_button = Gtk.Template.Child()
+    fullscreen_button = Gtk.Template.Child()
     layout = Gtk.Template.Child()
     player_column = Gtk.Template.Child()
     item_box = Gtk.Template.Child()
@@ -83,9 +87,13 @@ class NowPlayingSheet(Adw.Bin):
         self._wide = False
         self._compact = False
         self._short = False
+        self._covered = False   # the full-screen player shows over the window
         self.lyrics_view = LyricsView()
         self.queue_view = QueueView()
-        self.tab_stack.add_titled(self.lyrics_view, 'lyrics', _('Lyrics'))
+        # The Lyrics tab holds the LyricsView in a slot, out of which the full-screen
+        # player borrows it while it shows (lend_lyrics()), the tab's page staying.
+        self.lyrics_slot = Adw.Bin(child=self.lyrics_view)
+        self.tab_stack.add_titled(self.lyrics_slot, 'lyrics', _('Lyrics'))
         self.tab_stack.add_titled(self.queue_view, 'queue', _('Up Next'))
         self.tab_stack.connect('notify::visible-child-name', lambda *_: self._on_open_changed())
         self._play = PlayButton(self.play_button)
@@ -221,11 +229,30 @@ class NowPlayingSheet(Adw.Bin):
         self.lyrics_button.set_menu_model(menu)
         self.lyrics_button.set_visible(menu is not None)
 
+    def set_covered(self, covered):
+        """The full-screen player shows over the window (fullscreen.FullscreenHost): the
+        sheet, open or not, is out of sight, its views inactive."""
+        self._covered = covered
+        self._on_open_changed()
+
+    def lend_lyrics(self):
+        """The LyricsView, out of the Lyrics tab, for the full-screen player (inactive, as
+        the sheet is covered first)."""
+        self.lyrics_slot.set_child(None)
+        return self.lyrics_view
+
+    def return_lyrics(self, view):
+        """The LyricsView back in its tab; the sheet makes it active again when it is
+        open on that tab (set_covered(False)), which centres the current line."""
+        self.lyrics_slot.set_child(view)
+
     def _on_open_changed(self):
         is_open = self._bottom_sheet is not None and self._bottom_sheet.get_open()
+        seen = is_open and not self._covered
         shown = self.tab_stack.get_visible_child_name()
-        self.lyrics_view.set_active(is_open and shown == 'lyrics')
-        self.queue_view.set_active(is_open and shown == 'queue')
+        if self.lyrics_view.get_parent() is self.lyrics_slot:  # else the full screen's
+            self.lyrics_view.set_active(seen and shown == 'lyrics')
+        self.queue_view.set_active(seen and shown == 'queue')
         if is_open and not self._open:
             # The bottom sheet puts the focus on the sheet's first focusable widget (the seek
             # slider); the play button is where the keyboard wants to start. After the

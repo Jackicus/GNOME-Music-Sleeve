@@ -69,6 +69,13 @@ list and the script together.
 9. A playlist's Rename… (and New Playlist…) opens its dialog with the cursor in the name;
    Tab reaches the description and the buttons, Enter renames (or creates), and Escape
    closes it with nothing changed. Delete Playlist… asks first, with Cancel the default.
+10. F11 with nothing playing does nothing. With an item playing it shows the full-screen
+    player with the focus on its play button (a screen reader hears the "Fullscreen Player"
+    group, then the button); Tab goes through its controls and into the lyrics and never out
+    of it (the rest of the window is not shown); on a line, Space plays or pauses and Enter
+    seeks to it; Escape (once a menu or a toast has had it) leaves, the window back to its
+    size and the focus back where it was. Now Playing's Fullscreen button shows it too, and F11
+    leaves it, back on that button. The script walks this after step 5.
 
 ## The tools
 

@@ -32,7 +32,7 @@ import asyncio
 import functools
 import itertools
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 
 import gi
 
@@ -496,6 +496,91 @@ def band_colour(rgba, text_opacity=1.0):
     band = Gdk.RGBA()
     band.red, band.green, band.blue, band.alpha = red, green, blue, 1.0
     return band, dark
+
+
+# The full-screen player's field (widgets/fullscreen_player.py's backdrop): the cover shrunk
+# to FIELD_SIZE px a side and box-blurred FIELD_PASSES times over FIELD_RADIUS px (about a
+# Gaussian), stretched over the view, under a black scrim at least SCRIM_FLOOR deep. Its text
+# is white at 90% (libadwaita's osd); the scrim is deep enough for the small text drawn at
+# 70% of that (the artist, the times, a line's translation) to read at WCAG AA's 4.5:1, and
+# for the dimmed lyric lines, large text at the dim opacity (55%), at AA's 3:1 for large text.
+FIELD_SIZE = 32
+FIELD_RADIUS = 3
+FIELD_PASSES = 3
+SCRIM_FLOOR = 0.2
+FIELD_TEXT = ((0.9 * 0.7, 4.5), (0.9 * 0.55, 3.0))
+
+
+def box_blur(pixels, size, radius, passes=FIELD_PASSES):
+    """`pixels` (a size x size square of (r, g, b) tuples, row by row) blurred: `passes` box
+    blurs of `radius` px across and then down, the edges repeated."""
+    for _pass in range(passes):
+        pixels = _blur_lines(pixels, size, radius, across=True)
+        pixels = _blur_lines(pixels, size, radius, across=False)
+    return pixels
+
+
+def _blur_lines(pixels, size, radius, across):
+    out = [None] * (size * size)
+    width = 2 * radius + 1
+    for line in range(size):
+        if across:
+            indices = [line * size + n for n in range(size)]
+        else:
+            indices = [n * size + line for n in range(size)]
+        values = [pixels[index] for index in indices]
+        padded = [values[0]] * radius + values + [values[-1]] * radius
+        sums = [sum(channel) for channel in zip(*padded[:width], strict=True)]
+        for n, index in enumerate(indices):
+            out[index] = (sums[0] / width, sums[1] / width, sums[2] / width)
+            if n + 1 < size:
+                leaving, entering = padded[n], padded[n + width]
+                sums = [total - old + new
+                        for total, old, new in zip(sums, leaving, entering, strict=True)]
+    return out
+
+
+def scrim_alpha(pixels, texts=FIELD_TEXT, floor=SCRIM_FLOOR):
+    """The black scrim's alpha over a field of `pixels` ((r, g, b) tuples in 0-1) under which
+    white text at each of `texts`' opacities reaches its contrast ratio ((opacity, ratio)
+    pairs) on the field's lightest pixel, so everywhere: at least `floor`, in steps of 2%."""
+    lightest = max(pixels, key=luminance, default=(0.0, 0.0, 0.0))
+    for step in range(round(floor * 50), 51):
+        alpha = step / 50
+        shown = tuple(channel * (1 - alpha) for channel in lightest)
+        if all(contrast_ratio((1.0, 1.0, 1.0), opacity, shown) >= ratio
+               for opacity, ratio in texts):
+            return alpha
+    return 1.0
+
+
+Field = namedtuple('Field', 'texture scrim')
+
+
+def load_field(path):
+    """The full-screen backdrop's field for the cover at `path`, in a worker thread: a Field
+    of the cover shrunk and blurred (a FIELD_SIZE px Gdk.Texture) and the scrim its text
+    needs over it (scrim_alpha()), or None when the file does not decode."""
+    try:
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, FIELD_SIZE, FIELD_SIZE, False)
+    except GLib.Error as error:
+        log.debug('Cannot read artwork %s for a field: %s', path, error.message)
+        return None
+    pixels = field_pixels(pixbuf)
+    blurred = box_blur(pixels, FIELD_SIZE, FIELD_RADIUS)
+    data = bytes(min(255, max(0, round(channel * 255)))
+                 for pixel in blurred for channel in pixel)
+    texture = Gdk.MemoryTexture.new(FIELD_SIZE, FIELD_SIZE, Gdk.MemoryFormat.R8G8B8,
+                                    GLib.Bytes.new(data), FIELD_SIZE * 3)
+    return Field(texture, scrim_alpha(blurred))
+
+
+def field_pixels(pixbuf):
+    """A FIELD_SIZE px square pixbuf's pixels as (r, g, b) tuples in 0-1, row by row."""
+    data = pixbuf.read_pixel_bytes().get_data()
+    stride, channels = pixbuf.get_rowstride(), pixbuf.get_n_channels()
+    return [tuple(data[y * stride + x * channels + c] / 255 for c in range(3))
+            for y in range(pixbuf.get_height()) for x in range(pixbuf.get_width())]
 
 
 def display_scale(display):

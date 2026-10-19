@@ -7,7 +7,7 @@ it cost: the frames, the work in each, the CPU, the lyrics list's allocations.
 
     scripts/lyrics_test.py [--fixture NAME] [--start SECONDS] [--seconds N] [--size WxH]
                            [--no-animations] [--pronunciations] [--event-period SECONDS]
-                           [--rtl] [--shot PNG]
+                           [--rtl] [--fullscreen-player] [--shot PNG]
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) on the demo
 library (scripts/harness.py), with animations on unless --no-animations (the word-timed
@@ -37,6 +37,8 @@ moment it played:
   view has one), and how many times each ran;
 - how far the Player's estimate was from the true position, sampled at each frame.
 
+--fullscreen-player plays it in the full-screen player instead of the sheet, its larger
+lines over the backdrop (the window kept at --size, as screenshot.py's is).
 --shot saves the window as it is at the end (a sweep caught mid-piece, which screenshot.py,
 with animations off, cannot show); --rtl lays it out right to left. Compare only headless
 runs. Settings go to a memory backend.
@@ -60,6 +62,8 @@ parser.add_argument('--pronunciations', action='store_true',
 parser.add_argument('--event-period', type=float, default=0.25,
                     help='seconds between position events (default 0.25)')
 parser.add_argument('--rtl', action='store_true', help='lay the window out right to left')
+parser.add_argument('--fullscreen-player', action='store_true',
+                    help='in the full-screen player rather than the sheet')
 parser.add_argument('--shot', metavar='PNG', help='save the window at the end')
 args = parser.parse_args()
 width, height = (int(n) for n in args.size.split('x'))
@@ -131,8 +135,11 @@ def begin():
     app.player.apply(harness.invented_playing_state(app, lyrics=True, fixture=args.fixture,
                                                     position=args.start))
     window.now_playing.tab_stack.set_visible_child_name('lyrics')
-    window.bottom_sheet.set_open(True)
-    GLib.timeout_add(1500, run, window)  # the sheet open and laid out
+    if args.fullscreen_player:
+        window.activate_action('win.fullscreen-player', None)
+    else:
+        window.bottom_sheet.set_open(True)
+    GLib.timeout_add(1500, run, window)  # the sheet (or the player) shown and laid out
     return GLib.SOURCE_REMOVE
 
 

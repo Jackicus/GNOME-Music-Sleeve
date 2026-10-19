@@ -93,6 +93,18 @@ paths:
   their own snapshot (`piece_segments()`, by Pango's UTF-8 byte indices: `lyrics.byte_spans()`),
   never through Pango attributes, which would lay the row and the list out at every word.
   The lyrics hold rather than go back by less than `HOLD_BACK` (a pause's whole second).
+- The full-screen player (`widgets/fullscreen_player.py`, shown by `fullscreen.FullscreenHost`,
+  `win.fullscreen-player`, F11) shares the transport pieces too, and borrows the sheet's one
+  LyricsView: `lend_lyrics()`/`return_lyrics()` move it between the sheet's `lyrics_slot`
+  and the player's, the sheet covered meanwhile (`set_covered`), so `set_active` is called
+  by whichever holds it and never by the other; a second LyricsView would follow the Player
+  for good and paint twice. The player does nothing while hidden (no idle timeout, no fetch,
+  no field: `_show_item()` catches up as it shows) and leaves only when the Player's item
+  goes (after its grace), never from one song to the next; tests/test_fullscreen.py.
+  Its layout is `fullscreen.layout_for()` (a pure function, applied as the view is
+  allocated), its idle `fullscreen.should_hide()`; its background a FullscreenBackdrop over
+  `artwork.load_field()` and `scrim_alpha()`. Check it with `scripts/screenshot.py --demo
+  --fullscreen-player [lyrics|localized|syllable|none] --size WxH` (and `--idle`).
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with
   `Gio.DBusConnection.register_object_with_closures2` (the older call is deprecated since GLib
