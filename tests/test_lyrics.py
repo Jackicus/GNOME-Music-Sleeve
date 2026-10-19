@@ -11,11 +11,11 @@ from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
 from applemusic.lyrics import LyricLine, Lyrics, line_index_at, parse_lines
 
-FIXTURE = pathlib.Path(__file__).parent / 'fixtures' / 'lyrics.json'
+FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
 
-def fixture():
-    with open(FIXTURE, encoding='utf-8') as file:
+def fixture(name='lyrics.json'):
+    with open(FIXTURES / name, encoding='utf-8') as file:
         return json.load(file)
 
 
@@ -30,12 +30,12 @@ class ParseTest(unittest.TestCase):
             {'text': None},
         ]}
         self.assertEqual(parse_lines(answer), [
-            (0, 0, 'Untimed', False), (1000, 2000, 'First', False),
-            (5000, 6000, 'Second', False)])
+            (0, 0, 'Untimed', False, ''), (1000, 2000, 'First', False, ''),
+            (5000, 6000, 'Second', False, '')])
 
     def test_unsynced_lines_keep_their_order(self):
         answer = {'synced': False, 'lines': [{'text': 'B'}, {'text': 'A'}]}
-        self.assertEqual([text for _s, _e, text, _stanza in parse_lines(answer)], ['B', 'A'])
+        self.assertEqual([line[2] for line in parse_lines(answer)], ['B', 'A'])
 
     def test_entities_are_decoded_and_stanzas_kept(self):
         answer = {'synced': False, 'lines': [
@@ -44,8 +44,17 @@ class ParseTest(unittest.TestCase):
             {'text': ' &#32; ', 'stanza': True},  # blank once decoded
             {'text': 'AT&T &lt;3', 'stanza': 'yes'}]}
         self.assertEqual(parse_lines(answer), [
-            (0, 0, 'Rock & Roll \u2019til dawn', True), (0, 0, 'Fish &amp; chips', False),
-            (0, 0, 'AT&T <3', False)])
+            (0, 0, 'Rock & Roll \u2019til dawn', True, ''), (0, 0, 'Fish &amp; chips', False, ''),
+            (0, 0, 'AT&T <3', False, '')])
+
+    def test_pronunciations_are_read_as_the_text_is(self):
+        answer = {'synced': True, 'lines': [
+            {'startMs': 1000, 'text': '\u6f6e\u98a8', 'pronunciation': ' Shiokaze &amp; umi '},
+            {'startMs': 2000, 'text': 'Oh oh', 'pronunciation': 'Oh oh'},  # the same: none
+            {'startMs': 3000, 'text': 'Tide', 'pronunciation': 7},
+            {'startMs': 4000, 'text': '  ', 'pronunciation': 'Nothing to say it of'}]}
+        self.assertEqual([line[4] for line in parse_lines(answer)],
+                         ['Shiokaze & umi', '', ''])
 
     def test_nothing_from_nothing(self):
         for answer in (None, {}, {'lines': None}, {'lines': 'x'}, [], 'text'):
@@ -115,6 +124,20 @@ class LyricsObjectTest(unittest.TestCase):
         self.assertEqual(lyrics.text, 'Verse one\nVerse two\n\nChorus\nChorus again')
         self.assertEqual(len(lyrics), 4)
         self.assertEqual([line.stanza for line in lyrics.lines], [True, False, True, False])
+
+    def test_pronunciations(self):
+        lyrics = Lyrics(fixture('lyrics_pronunciations.json'), '1000000008')
+        self.assertTrue(lyrics.has_pronunciations)
+        first = lyrics.lines.get_item(0)
+        self.assertEqual((first.text, first.pronunciation),
+                         ('\u9727\u306e\u6d77\u306b\u9418\u304c\u9cf4\u308b',
+                          'Kiri no umi ni kane ga naru'))
+        self.assertTrue(all(line.pronunciation for line in lyrics.lines))
+        # The text is the lines' own; the view adds the pronunciations when shown.
+        self.assertNotIn('Kiri', lyrics.text)
+        self.assertFalse(Lyrics(fixture(), '1000000001').has_pronunciations)
+        self.assertEqual(lyrics.lines.get_item(1).pronunciation, 'Minato no akari o kazoeteru')
+        self.assertFalse(Lyrics({'synced': False, 'lines': [{'text': 'One'}]}).has_pronunciations)
 
     def test_synced_without_lines_is_not_synced(self):
         lyrics = Lyrics({'synced': True, 'lines': []})

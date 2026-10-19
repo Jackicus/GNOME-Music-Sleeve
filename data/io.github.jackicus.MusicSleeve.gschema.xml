@@ -43,6 +43,11 @@
       <summary>Play a suggested song as a preview</summary>
       <description>Whether clicking one of a playlist's Suggested Songs plays Apple Music's 30-second preview of it instead of the whole song. A preview leaves the queue as it is: the music playing pauses for it. A song without a preview plays in full.</description>
     </key>
+    <key name="lyrics-pronunciations" type="b">
+      <default>false</default>
+      <summary>Show pronunciations under lyrics</summary>
+      <description>Whether each line of a song's lyrics shows, under it, how it is pronounced, when Apple Music has a pronunciation for the song: lyrics in another script, such as Japanese or Korean, written in the script of your language (for English, Latin letters).</description>
+    </key>
     <key name="browser-command" type="s">
       <default>'google-chrome-stable'</default>
       <summary>Browser program</summary>

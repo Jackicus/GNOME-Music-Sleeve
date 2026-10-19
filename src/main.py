@@ -152,6 +152,9 @@ class Application(Adw.Application):
         self._add_action('start-engine', lambda *_args: self.start_engine())
         self._add_action('show-engine-preferences',
                          lambda *_args: self.show_preferences('engine'))
+        # Show Pronunciations (the Now Playing sheet's More Options, for lyrics that have
+        # them): the setting itself, as a stateful action.
+        self.add_action(self.settings.create_action('lyrics-pronunciations'))
         # Playback, enabled while something plays (the bar's buttons follow). Their keys
         # (Space, Ctrl+Right, Ctrl+Left) are the window's (shortcuts.PLAYBACK), not
         # accelerators, which GTK 4 would fire before a focused entry gets them.

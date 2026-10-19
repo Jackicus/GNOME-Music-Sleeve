@@ -176,16 +176,19 @@
         return Math.round(parseFloat(timeStr) * 1000);
     }
 
-    // Apple's TTML lyrics as {synced, lines: [{startMs, endMs, text, stanza?}]}. Each <p>
-    // is a line, timed when it has `begin` (the lyrics are then synced), its text the
-    // characters of its spans (a <br> a space); the first line of each <div> (a verse, a
-    // chorus) has `stanza: true`. The page's XML parser decodes the entities (&amp;,
-    // &#8217;) and CDATA; TTML it cannot read is no lyrics.
+    // Apple's TTML lyrics as {synced, lines: [{startMs, endMs, text, stanza?,
+    // pronunciation?}]}. Each <p> is a line, timed when it has `begin` (the lyrics are then
+    // synced), its text the characters of its spans (a <br> a space); the first line of each
+    // <div> (a verse, a chorus) has `stanza: true`. A line's pronunciation is the text of
+    // the head's <transliterations><transliteration><text for="…"> named by the line's
+    // `itunes:key`, when it says something else than the line. The page's XML parser
+    // decodes the entities (&amp;, &#8217;) and CDATA; TTML it cannot read is no lyrics.
     function parseTtmlLyrics(ttml) {
         const doc = new DOMParser().parseFromString(String(ttml), 'application/xml');
         if (doc.getElementsByTagName('parsererror').length) {
             return { synced: false, lines: [] };
         }
+        const pronunciations = transliterations(doc);
         const lines = [];
         let synced = false;
         let stanza = null;
@@ -204,9 +207,27 @@
                 line.stanza = true;
                 stanza = div;
             }
+            const key = p.getAttribute('itunes:key');
+            const pronunciation = key ? pronunciations.get(key) : '';
+            if (pronunciation && pronunciation !== text) line.pronunciation = pronunciation;
             lines.push(line);
         }
         return { synced: synced, lines: lines };
+    }
+
+    // The first transliteration in a TTML's head (the one script asked for) as a Map of a
+    // line's key to its text, empty when there is none.
+    function transliterations(doc) {
+        const found = new Map();
+        const head = doc.getElementsByTagNameNS('*', 'head')[0];
+        const transliteration = head && head.getElementsByTagNameNS('*', 'transliteration')[0];
+        if (!transliteration) return found;
+        for (const text of Array.from(transliteration.getElementsByTagNameNS('*', 'text'))) {
+            const key = text.getAttribute('for');
+            const value = elementText(text).replace(/\s+/g, ' ').trim();
+            if (key && value && !found.has(key)) found.set(key, value);
+        }
+        return found;
     }
 
     // The text of an XML element: its text and CDATA, its children's, a <br> as a space.
@@ -778,25 +799,33 @@
             return await apiWrite('/v1/me/library/playlist-folders/' + folderId, {}, { method: 'DELETE' });
         },
 
-        lyrics: async function (catalogSongId) {
+        // A catalog song's lyrics, as music.apple.com asks for them: syllable-lyrics, with
+        // `languages` ({lyrics: 'en-GB', script: 'en-Latn'}, api.lyrics_languages) asking
+        // for the lines' pronunciations in that script (`ttmlLocalizations`, the TTML with
+        // its transliterations), else the plain /lyrics when that request fails. No lyrics
+        // when Apple has none or refuses.
+        lyrics: async function (catalogSongId, languages) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
             const sf = mk.storefrontId || 'us';
-            const path = `/v1/catalog/${sf}/songs/${catalogSongId}/lyrics`;
+            const song = `/v1/catalog/${sf}/songs/${catalogSongId}`;
+            const params = { extend: 'ttmlLocalizations' };
+            if (languages && languages.lyrics) params['l[lyrics]'] = languages.lyrics;
+            if (languages && languages.script) params['l[script]'] = languages.script;
+            let res;
             try {
-                const res = await apiCall(path);
-                const data = (res && res.data && res.data[0]) ? res.data[0] : null;
-                if (!data || !data.attributes) {
+                res = await apiCall(song + '/syllable-lyrics', params);
+            } catch {
+                try {
+                    res = await apiCall(song + '/lyrics');
+                } catch {
                     return { synced: false, lines: [] };
                 }
-                const attrs = data.attributes;
-                if (attrs.ttml) {
-                    return parseTtmlLyrics(attrs.ttml);
-                }
-                return { synced: false, lines: [] };
-            } catch {
-                return { synced: false, lines: [] };
             }
+            const data = (res && res.data && res.data[0]) ? res.data[0] : null;
+            const attrs = (data && data.attributes) || {};
+            const ttml = attrs.ttmlLocalizations || attrs.ttml;
+            return ttml ? parseTtmlLyrics(ttml) : { synced: false, lines: [] };
         },
 
         // A catalog search (the Search page's Apple Music mode). `limit` is

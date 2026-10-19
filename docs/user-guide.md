@@ -55,6 +55,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   favourites, open it on music.apple.com, and, for a song, **Go to Album** and **Go to
   Artist**. The song playing has the same menu: right-click the player bar, or use **More
   Options** in Now Playing; Up Next's songs have theirs too.
+- Now Playing's **Lyrics** follow the song when Apple Music has them timed: click a line to
+  go to it. For lyrics in another script, such as Japanese or Korean, **More Options ›
+  Show Pronunciations** shows under each line how it is pronounced, written in the script
+  of your language (Latin letters for English), when Apple Music has a pronunciation for
+  the song; it stays on for the songs after until you turn it off.
 - Your own playlists can be managed from their menus (right-click one in the sidebar or on
   All Playlists, or use **More Options** on its page): **Rename…** changes its name and
   description, **Delete Playlist…** deletes it from your library on all your devices, after

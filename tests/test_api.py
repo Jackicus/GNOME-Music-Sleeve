@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""src/backend/api.py: library ids, endpoints, resource types, pages and Apple's error answers."""
+"""src/backend/api.py: library ids, endpoints, resource types, pages, Apple's error answers and
+the languages lyrics are asked in."""
 
 import unittest
 
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
 from applemusic.backend.api import (api_error, http_status, is_deleted, is_final,
-                                    is_library_id, item_endpoint, page_data, resource_type,
-                                    track_type)
+                                    is_library_id, item_endpoint, lyrics_languages, page_data,
+                                    resource_type, track_type)
 from applemusic.backend.errors import EngineError
 
 
@@ -134,6 +135,28 @@ class StatusTest(unittest.TestCase):
             self.assertTrue(is_final(final), (final.code, final.status))
         for passing in (error(status=429), error(status=500), error(status=503), error()):
             self.assertFalse(is_final(passing), (passing.code, passing.status))
+
+
+class LyricsLanguagesTest(unittest.TestCase):
+    def test_the_tag_and_the_script_of_the_pronunciations(self):
+        cases = {
+            'en_GB.UTF-8': ('en-GB', 'en-Latn'),
+            'de_DE@euro': ('de-DE', 'de-Latn'),
+            'pt_BR': ('pt-BR', 'pt-Latn'),
+            'ja_JP.UTF-8': ('ja-JP', 'ja-Kana'),
+            'ko_KR.UTF-8': ('ko-KR', 'ko-Hang'),
+            'zh_TW.UTF-8': ('zh-TW', 'zh-Hans'),
+            'ru_RU.UTF-8': ('ru-RU', 'ru-Cyrl'),
+            'sr_RS.UTF-8@latin': ('sr-RS', 'sr-Latn'),  # @latin: Latin whatever the language
+            'el': ('el', 'el-Grek'),
+            'fr-CA': ('fr-CA', 'fr-Latn'),
+        }
+        for name, (tag, script) in cases.items():
+            self.assertEqual(lyrics_languages(name), {'lyrics': tag, 'script': script}, name)
+
+    def test_no_language_is_english(self):
+        for name in ('C', 'C.UTF-8', 'POSIX', '', None, '123'):
+            self.assertEqual(lyrics_languages(name), {'lyrics': 'en', 'script': 'en-Latn'}, name)
 
 
 if __name__ == '__main__':
