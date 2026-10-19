@@ -176,76 +176,176 @@
         return Math.round(parseFloat(timeStr) * 1000);
     }
 
-    // Apple's TTML lyrics as {synced, lines: [{startMs, endMs, text, stanza?,
-    // pronunciation?, translation?}]}. Each <p> is a line, timed when it has `begin` (the
-    // lyrics are then synced), its text the characters of its spans (a <br> a space); the
-    // first line of each <div> (a verse, a chorus) has `stanza: true`. A line's
-    // pronunciation is the text of the head's <transliterations><transliteration><text
-    // for="…"> named by the line's `itunes:key`, its translation the same under
-    // <translations><translation>, each when it says something else than the line. The
-    // page's XML parser decodes the entities (&amp;, &#8217;) and CDATA; TTML it cannot
-    // read is no lyrics.
+    // Apple's TTML lyrics as {synced, lines: [Line]}. Each <p> is a line, timed when it has
+    // `begin` (the lyrics are then synced); the first line of each <div> (a verse, a chorus)
+    // has `stanza: true`. A line's vocals are split in two: `text`, the main vocals, and
+    // `background`, the background vocals (a <span ttm:role="x-bg">, parentheses and all, as
+    // Apple writes them), each its characters with the spaces run together and the ends
+    // trimmed (a <br> a space). When the root says itunes:timing="Word", `words` and
+    // `backgroundWords` are their timed <span>s as [{startMs, endMs, text}], in order, each
+    // piece's text with the spaces that follow it, so that the pieces joined are the text:
+    // a piece without a trailing space is a syllable joined to the next. `agent` is the
+    // singer the <p> (or its <div>) names, `ttm:agent="v2"`, kept only when some line's is
+    // not v1 (Apple's duet). The line's pronunciation is the head's
+    // <transliterations><transliteration><text for="…"> named by its `itunes:key`, split the
+    // same way (`pronunciation`, `pronunciationBackground`, and their words when timed), its
+    // translation the same under <translations><translation> (`translation`,
+    // `translationBackground`), each when it says something else than the line. Empty
+    // fields are left out. The page's XML parser decodes the entities (&amp;, &#8217;) and
+    // CDATA; TTML it cannot read is no lyrics.
     function parseTtmlLyrics(ttml) {
         const doc = new DOMParser().parseFromString(String(ttml), 'application/xml');
         if (doc.getElementsByTagName('parsererror').length) {
             return { synced: false, lines: [] };
         }
-        const pronunciations = localization(doc, 'transliteration');
-        const translations = localization(doc, 'translation');
+        const root = doc.getElementsByTagNameNS('*', 'tt')[0];
+        const timed = Boolean(root) && root.getAttribute('itunes:timing') === 'Word';
+        const pronunciations = localization(doc, 'transliteration', timed);
+        const translations = localization(doc, 'translation', false);
         const lines = [];
         let synced = false;
         let stanza = null;
         for (const p of Array.from(doc.getElementsByTagNameNS('*', 'p'))) {
-            const text = elementText(p).replace(/\s+/g, ' ').trim();
-            if (!text) continue;
+            const sung = vocals(p, timed);
+            if (!sung.text && !sung.background) continue;
             const begin = p.getAttribute('begin');
             if (begin) synced = true;
             const line = {
                 startMs: parseTimeMs(begin),
                 endMs: parseTimeMs(p.getAttribute('end')),
-                text: text
+                text: sung.text
             };
             const div = enclosing(p, 'div');
             if (div && div !== stanza) {
                 line.stanza = true;
                 stanza = div;
             }
+            addVocals(line, '', sung, true);
+            const agent = p.getAttribute('ttm:agent') || (div && div.getAttribute('ttm:agent'));
+            if (agent) line.agent = agent;
             const key = p.getAttribute('itunes:key');
-            const pronunciation = key ? pronunciations.get(key) : '';
-            if (pronunciation && pronunciation !== text) line.pronunciation = pronunciation;
-            const translation = key ? translations.get(key) : '';
-            if (translation && translation !== text) line.translation = translation;
+            const pronunciation = key ? pronunciations.get(key) : null;
+            if (pronunciation && !sameVocals(pronunciation, sung)) {
+                addVocals(line, 'pronunciation', pronunciation, true);
+            }
+            const translation = key ? translations.get(key) : null;
+            if (translation && !sameVocals(translation, sung)) {
+                addVocals(line, 'translation', translation, false);
+            }
             lines.push(line);
+        }
+        if (!lines.some(line => line.agent && line.agent !== 'v1')) {
+            for (const line of lines) delete line.agent;
         }
         return { synced: synced, lines: lines };
     }
 
+    // `sung`'s parts on `line` under `prefix` ('' for the line's own: text, words,
+    // background, backgroundWords; 'pronunciation' for pronunciation,
+    // pronunciationWords, pronunciationBackground…), the empty ones left out.
+    function addVocals(line, prefix, sung, withWords) {
+        const name = part => prefix ? prefix + part[0].toUpperCase() + part.slice(1) : part;
+        if (prefix && sung.text) line[prefix] = sung.text;
+        if (withWords && sung.words.length) line[name('words')] = sung.words;
+        if (sung.background) line[name('background')] = sung.background;
+        if (withWords && sung.backgroundWords.length) {
+            line[name('backgroundWords')] = sung.backgroundWords;
+        }
+    }
+
+    function sameVocals(a, b) {
+        return a.text === b.text && a.background === b.background;
+    }
+
     // The first <transliteration> or <translation> (`name`) in a TTML's head (the one
-    // asked for) as a Map of a line's key to its text, empty when there is none.
-    function localization(doc, name) {
+    // asked for) as a Map of a line's key to its vocals, empty when there is none.
+    function localization(doc, name, timed) {
         const found = new Map();
         const head = doc.getElementsByTagNameNS('*', 'head')[0];
         const localized = head && head.getElementsByTagNameNS('*', name)[0];
         if (!localized) return found;
         for (const text of Array.from(localized.getElementsByTagNameNS('*', 'text'))) {
             const key = text.getAttribute('for');
-            const value = elementText(text).replace(/\s+/g, ' ').trim();
-            if (key && value && !found.has(key)) found.set(key, value);
+            const sung = vocals(text, timed);
+            if (key && (sung.text || sung.background) && !found.has(key)) found.set(key, sung);
         }
         return found;
     }
 
-    // The text of an XML element: its text and CDATA, its children's, a <br> as a space.
-    function elementText(element) {
-        let text = '';
-        for (const child of Array.from(element.childNodes)) {
-            if (child.nodeType === 3 || child.nodeType === 4) {
-                text += child.nodeValue;
-            } else if (child.nodeType === 1) {
-                text += child.localName === 'br' ? ' ' : elementText(child);
+    // An element's vocals: {text, words, background, backgroundWords}. Its text and CDATA
+    // (a <br> a space) go to the main vocals, those inside a <span ttm:role="x-bg"> to the
+    // background; with `timed`, each outermost <span begin> is a piece of words, the text
+    // after it up to the next one (the spaces between words) going with it.
+    function vocals(element, timed) {
+        const parts = { main: [], background: [] };
+        const walk = (node, part, span) => {
+            for (const child of Array.from(node.childNodes)) {
+                if (child.nodeType === 3 || child.nodeType === 4) {
+                    parts[part].push({ text: child.nodeValue, span: span });
+                } else if (child.nodeType !== 1) {
+                    continue;
+                } else if (child.localName === 'br') {
+                    parts[part].push({ text: ' ', span: span });
+                } else if (child.getAttribute('ttm:role') === 'x-bg') {
+                    walk(child, 'background', null);
+                } else {
+                    const opens = timed && !span && child.getAttribute('begin') !== null;
+                    walk(child, part, opens ? child : span);
+                }
+            }
+        };
+        walk(element, 'main', null);
+        const main = shapeVocals(parts.main);
+        const background = shapeVocals(parts.background);
+        return {
+            text: main.text, words: main.words,
+            background: background.text, backgroundWords: background.words
+        };
+    }
+
+    // {text, words} from a part's runs of text, each with the <span begin> it is in (or
+    // null): the text with its spaces run together and its ends trimmed, and the pieces of
+    // the timed spans, trimmed the same way, so that they join to the text (none when some
+    // of the text is in no span).
+    function shapeVocals(runs) {
+        const text = runs.map(run => run.text).join('').replace(/\s+/g, ' ').trim();
+        const pieces = [];
+        for (const run of runs) {
+            const last = pieces[pieces.length - 1];
+            if (run.span && (!last || last.span !== run.span)) {
+                pieces.push({ span: run.span, text: run.text });
+            } else if (last) {
+                last.text += run.text;
+            } else if (run.text.trim()) {
+                return { text: text, words: [] };   // words before the first span
             }
         }
-        return text;
+        const words = [];
+        let spaced = true;  // the pieces so far end in a space (or there are none)
+        for (const piece of pieces) {
+            let value = piece.text.replace(/\s+/g, ' ');
+            if (spaced) value = value.replace(/^ /, '');
+            if (!value) continue;
+            if (value === ' ') {    // a span of spaces: the space after the word before it
+                words[words.length - 1].text += ' ';
+                spaced = true;
+                continue;
+            }
+            spaced = value.endsWith(' ');
+            words.push({
+                startMs: parseTimeMs(piece.span.getAttribute('begin')),
+                endMs: parseTimeMs(piece.span.getAttribute('end')),
+                text: value
+            });
+        }
+        while (words.length) {
+            const last = words[words.length - 1];
+            last.text = last.text.replace(/ $/, '');
+            if (last.text) break;
+            words.pop();
+        }
+        if (words.map(word => word.text).join('') !== text) return { text: text, words: [] };
+        return { text: text, words: words };
     }
 
     function enclosing(node, localName) {

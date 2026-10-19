@@ -1263,7 +1263,8 @@ class PlaybackTest(EngineFixture):
              'pronunciation': 'Out on the water'}]}  # the same as the line: none
         self.page.bridge_answers['lyrics'] = answer
         lyrics = await self.engine.lyrics('1000000001')
-        self.assertEqual(lyrics, {'synced': True, 'languages': self.LANGUAGES, 'lines': [
+        self.assertEqual(lyrics, {'synced': True, 'languages': self.LANGUAGES, 'format': 2,
+                                  'lines': [
             {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights',
              'pronunciation': 'Minato no akari'},
             {'startMs': 4000, 'endMs': 6000, 'text': 'Out on the water'}]})
@@ -1271,7 +1272,8 @@ class PlaybackTest(EngineFixture):
         self.assertTrue(path.is_file())
         kept = json.loads(path.read_text(encoding='utf-8'))
         self.assertIn('cached', kept)  # stamped: lyrics expire
-        self.assertEqual({key: kept[key] for key in ('synced', 'lines', 'languages')}, lyrics)
+        self.assertEqual({key: kept[key] for key in ('synced', 'lines', 'languages', 'format')},
+                         lyrics)
         # Again: from the file, no bridge call, and no engine needed.
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
         self.assertEqual(await self.engine.lyrics('1000000001'), lyrics)
@@ -1316,6 +1318,70 @@ class PlaybackTest(EngineFixture):
             await self.engine.lyrics('1000000007')
         self.assertEqual(raised.exception.code, 'engine-down')
 
+    async def test_lyrics_carry_words_background_vocals_and_singers(self):
+        await self.up_for_lyrics()
+
+        def words(*pieces):
+            return [{'startMs': start, 'endMs': end, 'text': text}
+                    for start, end, text in pieces]
+        self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
+            {'startMs': 1000, 'endMs': 4000, 'text': 'Harbour lights', 'agent': 'v1',
+             'words': words((1000, 1500, 'Har'), (1500, 2000, 'bour '), (2000, 3000, 'lights')),
+             'background': '(lights)', 'backgroundWords': words((3000, 4000, '(lights)'))},
+            {'startMs': 5000, 'endMs': 8000, 'text': '\u6f6e', 'agent': 'v2',
+             'words': words((5000, 6000, 'Tide')),            # not the text: no words
+             'pronunciation': 'Shio', 'pronunciationWords': words((5000, 6000, 'Shio')),
+             'pronunciationBackground': '', 'translation': 'Tide',
+             'translationBackground': '(tide)'}]}
+        lyrics = await self.engine.lyrics('1000000010')
+        self.assertEqual(lyrics['lines'], [
+            {'startMs': 1000, 'endMs': 4000, 'text': 'Harbour lights', 'agent': 'v1',
+             'words': words((1000, 1500, 'Har'), (1500, 2000, 'bour '), (2000, 3000, 'lights')),
+             'background': '(lights)', 'backgroundWords': words((3000, 4000, '(lights)'))},
+            {'startMs': 5000, 'endMs': 8000, 'text': '\u6f6e', 'agent': 'v2',
+             'pronunciation': 'Shio', 'pronunciationWords': words((5000, 6000, 'Shio')),
+             'translation': 'Tide', 'translationBackground': '(tide)'}])
+        kept = json.loads((self.cache / 'lyrics' / '1000000010.json').read_text('utf-8'))
+        self.assertEqual((kept['lines'], kept['format']), (lyrics['lines'], 2))
+        # One singer only: no agents kept.
+        self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
+            {'startMs': 1000, 'text': 'One', 'agent': 'v1'},
+            {'startMs': 2000, 'text': 'Two', 'agent': 'v1'}]}
+        solo = await self.engine.lyrics('1000000011')
+        self.assertEqual([sorted(line) for line in solo['lines']],
+                         [['endMs', 'startMs', 'text']] * 2)
+
+    async def test_lyrics_kept_in_an_older_format_are_asked_again(self):
+        await self.up_for_lyrics()
+        older = {'synced': True, 'languages': self.LANGUAGES, 'lines': [
+            {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights (lights)'}]}
+        path = self.cache / 'lyrics' / '1000000012.json'
+        normalize.write_answer(str(path), older, str(self.cache))  # before the words
+        self.assertEqual(engine_module.lyrics_answer(older)['format'], 1)
+        self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
+            {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights',
+             'background': '(lights)'}]}
+        lyrics = await self.engine.lyrics('1000000012')
+        self.assertEqual((lyrics['format'], lyrics['lines'][0]['background']), (2, '(lights)'))
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['format'], 2)
+        self.assertEqual(len(self.page.bridge_calls), 1)
+        # Kept now: not asked again.
+        await self.engine.lyrics('1000000012')
+        self.assertEqual(len(self.page.bridge_calls), 1)
+        # An older file is still the answer while the engine cannot give a new one, and
+        # when Apple answers none.
+        path = self.cache / 'lyrics' / '1000000013.json'
+        normalize.write_answer(str(path), older, str(self.cache))
+        self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
+        kept = await self.engine.lyrics('1000000013')
+        self.assertEqual((kept['format'], kept['lines'][0]['text']),
+                         (1, 'Harbour lights (lights)'))
+        await self.engine.stop()
+        self.assertEqual((await self.engine.lyrics('1000000013'))['format'], 1)
+        # A format that is not a number is the oldest.
+        for odd in ('2', True, None, 2.0):
+            self.assertEqual(engine_module.lyrics_answer(dict(older, format=odd))['format'], 1, odd)
+
     async def test_lyrics_are_decoded_even_when_kept_before(self):
         await self.up_for_lyrics()
         self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
@@ -1329,7 +1395,8 @@ class PlaybackTest(EngineFixture):
             {'startMs': 2000, 'endMs': 3000, 'text': 'Again'}])
         # A file an older version kept with the entities in it reads decoded.
         path = self.cache / 'lyrics' / '1000000005.json'
-        normalize.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES, 'lines': [
+        normalize.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES,
+                                           'format': 2, 'lines': [
             {'startMs': 0, 'endMs': 0, 'text': 'Salt &amp; &quot;air&quot;',
              'pronunciation': 'Shio &amp; kaze'}]}, str(self.cache))
         line = (await self.engine.lyrics('1000000005'))['lines'][0]
@@ -1359,7 +1426,7 @@ class PlaybackTest(EngineFixture):
 
     async def test_no_lyrics_are_not_kept(self):
         await self.up_for_lyrics()
-        none = {'synced': False, 'lines': [], 'languages': self.LANGUAGES}
+        none = {'synced': False, 'lines': [], 'languages': self.LANGUAGES, 'format': 2}
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
         self.assertEqual(await self.engine.lyrics('1000000002'), none)
         self.page.bridge_answers['lyrics'] = None  # not a dict either

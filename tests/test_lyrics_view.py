@@ -46,6 +46,14 @@ class MarkupTest(unittest.TestCase):
             small('Tide &amp; wind'), 'Oh oh', '', '海', small('Umi')]))
         self.assertEqual(text_markup(lyrics, Shown(False, True)), '\n'.join([
             '潮 &amp; &lt;風&gt;', small('Tide &amp; wind'), 'Oh oh', '', '海']))
+        # Background vocals read in their line, in each part.
+        sung = Lyrics({'synced': False, 'lines': [
+            {'text': '潮', 'background': '(潮 & 風)', 'pronunciation': 'Shio',
+             'pronunciationBackground': '(shio)', 'translation': 'Tide',
+             'translationBackground': '(tide)'}]})
+        self.assertEqual(text_markup(sung, Shown(False, False)), '潮 (潮 &amp; 風)')
+        self.assertEqual(text_markup(sung, Shown(True, True)), '\n'.join([
+            '潮 (潮 &amp; 風)', small('Shio (shio)'), small('Tide (tide)')]))
         plain = Lyrics({'synced': False, 'lines': [{'text': 'A & B'}]})
         self.assertEqual(text_markup(plain, Shown(True, True)), 'A &amp; B')
         self.assertEqual(text_markup(None, Shown(True, True)), '')
@@ -102,6 +110,16 @@ class LyricsViewTest(unittest.TestCase):
         self.play(fixture('lyrics.json'))
         self.assertTrue(wait_for(lambda: len(self.shown()) > 2))
         self.assertEqual({row[1:] for row in self.shown()}, {(None, None)})
+
+    def test_the_background_vocals_show_in_their_line(self):
+        self.app.settings.set_boolean('lyrics-pronunciations', True)
+        self.app.settings.set_boolean('lyrics-translations', True)
+        self.play(fixture('lyrics_syllable.json'))
+        self.assertTrue(wait_for(lambda: len(self.shown()) > 7), self.shown())
+        self.assertEqual(self.shown()[1], ('I keep the lantern burning (burning)', None, None))
+        self.assertEqual(self.shown()[6], ('波の音を数えて (数えて)',
+                                           'Nami no oto o kazoete (kazoete)',
+                                           'Counting the sound of the waves (counting)'))
 
     def test_a_verse_gap_is_outside_the_highlight(self):
         from gi.repository import Gdk, Gtk

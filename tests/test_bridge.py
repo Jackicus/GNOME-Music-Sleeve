@@ -25,6 +25,9 @@ import unittest
 
 from tests import ROOT
 
+from applemusic.engine import lyrics_answer
+from applemusic.lyrics import FORMAT, folded
+
 HARNESS = pathlib.Path(__file__).with_name('bridge_harness.js')
 BRIDGE = ROOT / 'src' / 'backend' / 'bridge.js'
 GJS = shutil.which('gjs')
@@ -52,30 +55,83 @@ TTML = (
 
 # The same song's syllable-lyrics answer with its transliterations, as music.apple.com asks
 # for it (extend=ttmlLocalizations; invented words): the head's <text for="…"> name the
-# lines by their itunes:key, word-timed spans and a background vocal (ttm:role="x-bg")
-# among them; one line has none, one's is the line itself, a <text> names no line. The
-# translations are the same shape.
+# lines by their itunes:key, word-timed spans and a background vocal (ttm:role="x-bg", its
+# parentheses inside it, as Apple writes them) among them; one line has none, one's is the
+# line itself, a <text> names no line. The translations are the same shape. Every line is
+# v1's: no duet.
 TTML_LOCALIZED = (
     '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"'
     ' xmlns:ttm="http://www.w3.org/ns/ttml#metadata" itunes:timing="Word" xml:lang="ja">'
-    '<head><metadata><iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal">'
+    '<head><metadata><ttm:agent type="person" xml:id="v1"/>'
+    '<iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal">'
     '<translations><translation type="subtitle" xml:lang="en-US">'
-    '<text for="L1">Fog on the sea (<span ttm:role="x-bg">the sea</span>)</text>'
+    '<text for="L1">Fog on the sea <span ttm:role="x-bg">(the sea)</span></text>'
     '<text for="L2">Oh oh</text><text for="L3">Tide</text></translation></translations>'
     '<transliterations><transliteration xml:lang="ja-Latn">'
-    '<text for="L1"><span xmlns="http://www.w3.org/ns/ttml" begin="1">Kiri</span> '
-    '<span xmlns="http://www.w3.org/ns/ttml" begin="2">no</span> '
-    '<span xmlns="http://www.w3.org/ns/ttml" begin="3">umi</span> '
+    '<text for="L1"><span xmlns="http://www.w3.org/ns/ttml" begin="1" end="2">Kiri</span> '
+    '<span xmlns="http://www.w3.org/ns/ttml" begin="2" end="3">no</span> '
+    '<span xmlns="http://www.w3.org/ns/ttml" begin="3" end="4">umi</span> '
     '<span xmlns="http://www.w3.org/ns/ttml" ttm:role="x-bg">(<span>umi</span>)</span></text>'
     '<text for="L2">Oh oh</text>'
     '<text for="L9">Nobody&#8217;s</text>'
-    '</transliteration><transliteration xml:lang="ja-Kana"><text for="L1">\u304d\u308a</text>'
+    '</transliteration><transliteration xml:lang="ja-Kana"><text for="L1">きり</text>'
     '</transliteration></transliterations></iTunesMetadata></metadata></head>'
-    '<body><div begin="1" end="9">'
-    '<p begin="1" end="4" itunes:key="L1"><span begin="1">\u9727\u306e</span>'
-    '<span begin="3">\u6d77</span> <span ttm:role="x-bg">(\u6d77)</span></p>'
+    '<body><div begin="1" end="9" ttm:agent="v1">'
+    '<p begin="1" end="4" itunes:key="L1" ttm:agent="v1"><span begin="1" end="3">霧の</span>'
+    '<span begin="3" end="4">海</span> <span ttm:role="x-bg">(海)</span></p>'
     '<p begin="5" end="7" itunes:key="L2">Oh oh</p>'
-    '<p begin="7" end="9" itunes:key="L3">\u6f6e</p>'
+    '<p begin="7" end="9" itunes:key="L3">潮</p>'
+    '</div></body></tt>'
+)
+
+# A word-timed duet as syllable-lyrics answers it (invented words, the structure of Apple's):
+# the head declares the singers (two people and a group); a <p> names its singer, or its
+# <div> does. Within a line, whitespace between the timed <span>s parts the words and
+# adjacent spans are syllables of one; the background vocals are a <span ttm:role="x-bg">
+# of timed spans of their own after the main vocals, their parentheses in the first and the
+# last. The transliteration is timed the same way, x-bg and all (with a space inside a span
+# and two between spans); the translation's background is an untimed x-bg span. One line is
+# all background, one has a <br>, one has words outside any span (no words then), and the
+# first line's translation is the line itself.
+TTML_DUET = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"'
+    ' xmlns:ttm="http://www.w3.org/ns/ttml#metadata" itunes:timing="Word" xml:lang="en">'
+    '<head><metadata><ttm:agent type="person" xml:id="v1"/>'
+    '<ttm:agent type="person" xml:id="v2"/><ttm:agent type="group" xml:id="v3"/>'
+    '<iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal" leadingSilence="0">'
+    '<translations><translation type="subtitle" xml:lang="en-GB">'
+    '<text for="L1">Grey morning, harbour light</text>'
+    '<text for="L2">Counting the waves <span ttm:role="x-bg">(counting)</span></text>'
+    '</translation></translations>'
+    '<transliterations><transliteration xml:lang="ja-Latn">'
+    '<text for="L2"><span begin="10.000" end="10.400">Na</span>'
+    '<span begin="10.400" end="10.800">mi</span> <span begin="10.800" end="11.200">o</span>  '
+    '<span begin="11.200" end="12.000">ka zo e te</span> <span ttm:role="x-bg">'
+    '<span begin="12.200" end="12.600">(ka</span><span begin="12.600" end="13.000">zo e te)'
+    '</span></span></text>'
+    '</transliteration></transliterations></iTunesMetadata></metadata></head>'
+    '<body dur="24.000"><div begin="1.000" end="4.000" itunes:songPart="Verse">'
+    '<p begin="1.000" end="4.000" itunes:key="L1" ttm:agent="v1">'
+    '<span begin="1.000" end="1.500">Grey</span> <span begin="1.500" end="2.000">morn</span>'
+    '<span begin="2.000" end="2.400">ing,</span> <span begin="2.400" end="3.000">har</span>'
+    '<span begin="3.000" end="3.300">bour</span> <span begin="3.300" end="4.000">light</span>'
+    '</p></div>'
+    '<div begin="10.000" end="13.000" itunes:songPart="Verse" ttm:agent="v2">'
+    '<p begin="10.000" end="13.000" itunes:key="L2">'
+    '<span begin="10.000" end="10.800">波の</span>'
+    '<span begin="10.800" end="12.000">数え</span> <span ttm:role="x-bg">'
+    '<span begin="12.200" end="12.600">(数</span>'
+    '<span begin="12.600" end="13.000">え)</span></span></p></div>'
+    '<div begin="14.000" end="24.000" itunes:songPart="Chorus">'
+    '<p begin="14.000" end="17.000" itunes:key="L3" ttm:agent="v3">'
+    '<span begin="14.000" end="15.000">All</span> <span begin="15.000" end="16.000">to</span>'
+    '<br/><span begin="16.000" end="17.000">gether</span></p>'
+    '<p begin="18.000" end="20.000" itunes:key="L4" ttm:agent="v1"><span ttm:role="x-bg">'
+    '<span begin="18.000" end="19.000">(Oh</span> <span begin="19.000" end="20.000">oh)</span>'
+    '</span></p>'
+    '<p begin="21.000" end="24.000" itunes:key="L5" ttm:agent="v2">Ah '
+    '<span begin="21.000" end="24.000">yes</span></p>'
     '</div></body></tt>'
 )
 
@@ -116,6 +172,7 @@ def run_scenarios(scenarios):
              f'const SONG = {SONG};',
              f'const TTML = {json.dumps(TTML)};',
              f'const TTML_LOCALIZED = {json.dumps(TTML_LOCALIZED)};',
+             f'const TTML_DUET = {json.dumps(TTML_DUET)};',
              'const SCENARIOS = {']
     for name, body in scenarios.items():
         parts.append(f'{json.dumps(name)}: async ({{bridge, mk, posted, page, audios, failAudio}})'
@@ -500,9 +557,15 @@ class BridgeTest(unittest.TestCase):
             ['api.music', '/v1/catalog/gb/songs/1000000001/syllable-lyrics',
              {'extend': 'ttmlLocalizations', 'l[lyrics]': 'en-GB', 'l[script]': 'en-Latn'}]])
         self.assertEqual(value['pronounced'], {'synced': True, 'lines': [
-            {'startMs': 1000, 'endMs': 4000, 'text': '\u9727\u306e\u6d77 (\u6d77)',
-             'stanza': True, 'pronunciation': 'Kiri no umi (umi)',
-             'translation': 'Fog on the sea (the sea)'},
+            {'startMs': 1000, 'endMs': 4000, 'text': '\u9727\u306e\u6d77', 'stanza': True,
+             'words': [{'startMs': 1000, 'endMs': 3000, 'text': '\u9727\u306e'},
+                       {'startMs': 3000, 'endMs': 4000, 'text': '\u6d77'}],
+             'background': '(\u6d77)',          # untimed: no words
+             'pronunciation': 'Kiri no umi', 'pronunciationBackground': '(umi)',
+             'pronunciationWords': [{'startMs': 1000, 'endMs': 2000, 'text': 'Kiri '},
+                                    {'startMs': 2000, 'endMs': 3000, 'text': 'no '},
+                                    {'startMs': 3000, 'endMs': 4000, 'text': 'umi'}],
+             'translation': 'Fog on the sea', 'translationBackground': '(the sea)'},
             {'startMs': 5000, 'endMs': 7000, 'text': 'Oh oh'},    # the same as the line
             {'startMs': 7000, 'endMs': 9000, 'text': '\u6f6e',
              'translation': 'Tide'}]})                           # no pronunciation
@@ -510,6 +573,57 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual([call[1] for call in value['fellBack']], [
             '/v1/catalog/gb/songs/1000000001/syllable-lyrics',
             '/v1/catalog/gb/songs/1000000001/lyrics'])
+
+    @scenario("""
+        mk.apiAnswers['/v1/catalog/gb/songs/1000000001/syllable-lyrics'] = {data: [{attributes: {
+            ttmlLocalizations: TTML_DUET}}]};
+        return await bridge.lyrics('1000000001', {lyrics: 'en-GB', script: 'en-Latn'});
+    """)
+    def test_lyrics_words_background_vocals_and_singers(self, value):
+        def words(*pieces):
+            return [{'startMs': start, 'endMs': end, 'text': text}
+                    for start, end, text in pieces]
+        self.maxDiff = None
+        self.assertEqual(value, {'synced': True, 'lines': [
+            # Words parted by spaces, syllables joined; the translation the line itself.
+            {'startMs': 1000, 'endMs': 4000, 'text': 'Grey morning, harbour light',
+             'stanza': True, 'agent': 'v1',
+             'words': words((1000, 1500, 'Grey '), (1500, 2000, 'morn'),
+                            (2000, 2400, 'ing, '), (2400, 3000, 'har'),
+                            (3000, 3300, 'bour '), (3300, 4000, 'light'))},
+            # The singer its <div>'s; background vocals, timed, in each part.
+            {'startMs': 10000, 'endMs': 13000, 'text': '\u6ce2\u306e\u6570\u3048',
+             'stanza': True, 'agent': 'v2',
+             'words': words((10000, 10800, '\u6ce2\u306e'), (10800, 12000, '\u6570\u3048')),
+             'background': '(\u6570\u3048)',
+             'backgroundWords': words((12200, 12600, '(\u6570'), (12600, 13000, '\u3048)')),
+             'pronunciation': 'Nami o ka zo e te',
+             'pronunciationWords': words((10000, 10400, 'Na'), (10400, 10800, 'mi '),
+                                         (10800, 11200, 'o '), (11200, 12000, 'ka zo e te')),
+             'pronunciationBackground': '(kazo e te)',
+             'pronunciationBackgroundWords': words((12200, 12600, '(ka'),
+                                                   (12600, 13000, 'zo e te)')),
+             'translation': 'Counting the waves', 'translationBackground': '(counting)'},
+            # A group's line; a <br> is a space.
+            {'startMs': 14000, 'endMs': 17000, 'text': 'All to gether', 'stanza': True,
+             'agent': 'v3',
+             'words': words((14000, 15000, 'All '), (15000, 16000, 'to '),
+                            (16000, 17000, 'gether'))},
+            # Background vocals alone.
+            {'startMs': 18000, 'endMs': 20000, 'text': '', 'agent': 'v1',
+             'background': '(Oh oh)',
+             'backgroundWords': words((18000, 19000, '(Oh '), (19000, 20000, 'oh)'))},
+            # A word outside the spans: no words.
+            {'startMs': 21000, 'endMs': 24000, 'text': 'Ah yes', 'agent': 'v2'}]})
+        # Every piece joins to its text, and the engine keeps them all.
+        kept = lyrics_answer(value, {'lyrics': 'en-GB', 'script': 'en-Latn'}, FORMAT)
+        self.assertEqual(kept['lines'], value['lines'])
+        # As the views show them, the lines read as the TTML's whole text does.
+        self.assertEqual([folded(line['text'], line.get('background', ''))
+                          for line in value['lines']],
+                         ['Grey morning, harbour light',
+                          '\u6ce2\u306e\u6570\u3048 (\u6570\u3048)',
+                          'All to gether', '(Oh oh)', 'Ah yes'])
 
     # -- search ----------------------------------------------------------------------------
 

@@ -21,7 +21,9 @@ What to shoot: $ARGUMENTS
      its playing state; `--now-playing [lyrics|queue]`: the same with the Now Playing sheet
      open on that tab (`localized`: Lyrics, invented Japanese lines with pronunciations and
      translations, shown with `--setting lyrics-pronunciations=true` and
-     `--setting lyrics-translations=true`);
+     `--setting lyrics-translations=true`; `syllable`: Lyrics, an invented word-timed duet
+     with background vocals, a long intro and a long break); `--position SECONDS` puts the
+     item that far in (65 by default), mid-word or inside a break;
    - `--signed-in [NAME]`: the account button signed in (an invented NAME: its avatar's colour
      follows the name); `--banner sign-in|expired`: the sign-in banner;
    - `--sidebar` (the narrow layout: the sidebar rather than the page), `--expand first`,
