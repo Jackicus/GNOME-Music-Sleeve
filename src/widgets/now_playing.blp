@@ -6,7 +6,8 @@ using Adw 1;
 
 // Now Playing (widgets/now_playing.py): the AdwBottomSheet's sheet. A header bar with the
 // close button at the start (the sheet's drag handle sits over it) and More Options, the
-// heart, the volume and the lyrics' Translation and Pronunciation menu at the end, then, in a clamp, the item playing (artwork, title, artist, transport,
+// heart, the volume, the lyrics' Translation and Pronunciation menu and Fullscreen at the end,
+// then, in a clamp, the item playing (artwork, title, artist, transport,
 // seek) and the Lyrics / Up Next tabs (an inline view switcher over a view stack whose pages
 // now_playing.py builds). `wide` (the window's 900sp breakpoint) puts the two side by side;
 // `compact` (600sp) shrinks the artwork; `short` (the window's height breakpoints) puts a
@@ -98,6 +99,19 @@ template $AppleMusicNowPlayingSheet: Adw.Bin {
 
       // Show Translations and Show Pronunciations, shown while the lyrics have either: its
       // menu holds those they have (now_playing.py).
+      // The full-screen player (window.py's win.fullscreen-player, F11).
+      [end]
+      Button fullscreen_button {
+        icon-name: "view-fullscreen-symbolic";
+        tooltip-text: _("Fullscreen");
+        action-name: "win.fullscreen-player";
+        valign: center;
+
+        styles [
+          "flat",
+        ]
+      }
+
       [end]
       MenuButton lyrics_button {
         icon-name: "translate-symbolic";

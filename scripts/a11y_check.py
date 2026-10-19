@@ -521,6 +521,9 @@ async def walkthrough(window):
     check('Ctrl+3 with nothing playing leaves the focus where it is',
           window.get_focus() is resting and not window.bottom_sheet.get_open(),
           describe(window.get_focus()))
+    await key(window, 'F11', 0.6)
+    check('F11 with nothing playing does nothing', not window.fullscreen_host.shown
+          and window.get_focus() is resting, describe(window.get_focus()))
     await key(window, '<primary><shift>n', 0.8)
     check('Ctrl+Shift+N opens Now Playing all the same (Nothing Queued)',
           window.bottom_sheet.get_open())
@@ -640,6 +643,7 @@ async def walkthrough(window):
     check('Down, Enter plays the next entry', jumps == [1], jumps)
     await key(window, 'Escape', 0.8)
     check('Escape closes the sheet', not window.bottom_sheet.get_open())
+    await fullscreen_player(window)
     print('-- back')
     await key(window, '<alt>Left', 0.8)
     check('Alt+Left goes back to Albums', window.navigation_view.get_visible_page() is grid)
@@ -912,6 +916,62 @@ async def walkthrough(window):
 
 # -- names ---------------------------------------------------------------------------------
 
+async def fullscreen_player(window):
+    """The full-screen player: F11 in, the focus on its play button, Tab through it and
+    never out of it, Space and Enter on a line, Escape out, the window and the focus as they
+    were; then in from Now Playing's Fullscreen and out with F11, back on that button."""
+    print('-- full-screen player')
+    host = window.fullscreen_host
+    sheet = window.now_playing
+    resting = window.get_focus()
+    size, maximized = window.get_default_size(), window.is_maximized()
+    await key(window, 'F11', 0.8)
+    await until(lambda: host.shown and window.get_focus() is host.view.play_button)
+    check('F11 shows the full-screen player, the focus on its play button',
+          host.shown and window.is_fullscreen() and window.get_focus() is host.view.play_button,
+          describe(window.get_focus()))
+    stayed, lines = True, False
+    for _ in range(16):
+        await key(window, 'Tab', 0.05)
+        stayed = stayed and inside(window.get_focus(), host.view)
+        lines = lines or inside(window.get_focus(), sheet.lyrics_view.list_view)
+        if lines:
+            break
+    check('Tab goes through its controls to the lyrics, never out of it',
+          stayed and lines and window.get_focus().get_mapped(), describe(window.get_focus()))
+    actions = []
+    action = app.lookup_action('play-pause')
+    handler = action.connect('activate', lambda *_: actions.append('play-pause'))
+    await key(window, 'space')
+    action.disconnect(handler)
+    host.view.toast_overlay.dismiss_all()  # the demo's "not available", which Escape closes
+    seeks = []
+    undo = watch('seek', seeks)
+    await key(window, 'Down')
+    await key(window, 'Return')
+    undo()
+    check('Space on a line plays or pauses, Enter seeks to it',
+          actions == ['play-pause'] and len(seeks) == 1, (actions, seeks))
+    await key(window, 'Escape', 0.8)
+    await until(lambda: not host.shown and window.get_focus() is resting)
+    check('Escape leaves it: the window and the focus as they were',
+          not host.shown and not window.is_fullscreen()
+          and window.get_default_size() == size and window.is_maximized() == maximized
+          and window.get_focus() is resting, describe(window.get_focus()))
+    await key(window, '<primary><shift>n', 0.8)
+    sheet.fullscreen_button.grab_focus()
+    await key(window, 'Return', 0.8)
+    await until(lambda: host.shown)
+    check("Now Playing's Fullscreen shows it", host.shown)
+    await key(window, 'F11', 0.8)
+    await until(lambda: not host.shown and window.get_focus() is sheet.fullscreen_button)
+    check('F11 leaves it, back in Now Playing on Fullscreen',
+          not host.shown and window.bottom_sheet.get_open()
+          and window.get_focus() is sheet.fullscreen_button, describe(window.get_focus()))
+    await key(window, 'Escape', 0.8)
+    await until(lambda: not window.bottom_sheet.get_open())
+
+
 async def unnamed(label):
     process = Gio.Subprocess.new([sys.executable, os.path.abspath(__file__), '--dump'],
                                  Gio.SubprocessFlags.STDOUT_PIPE
@@ -951,6 +1011,11 @@ async def names(window):
     await asyncio.sleep(1.0)
     total += await unnamed('Now Playing')
     window.bottom_sheet.set_open(False)
+    window.activate_action('win.fullscreen-player', None)
+    await asyncio.sleep(1.0)
+    total += await unnamed('Fullscreen Player')
+    window.activate_action('win.fullscreen-player', None)
+    await asyncio.sleep(0.5)
     dialog = app.show_preferences()
     await asyncio.sleep(1.0)
     total += await unnamed('Preferences')

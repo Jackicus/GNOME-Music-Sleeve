@@ -643,5 +643,43 @@ class TestReadableBand(unittest.TestCase):
         self.assertAlmostEqual(band[0] / rgb[0], band[1] / rgb[1], places=6)
 
 
+
+class TestField(unittest.TestCase):
+    """The full-screen player's field: the cover blurred, under a scrim its text reads on."""
+
+    def test_the_scrim_lets_the_text_read_on_the_lightest_pixel(self):
+        for colour in ((1.0, 1.0, 1.0), (0.9, 0.5, 0.1), (0.2, 0.4, 0.8), (0.95, 0.9, 0.3)):
+            pixels = [(0.05, 0.05, 0.05)] * 10 + [colour]
+            alpha = artwork.scrim_alpha(pixels)
+            shown = tuple(channel * (1 - alpha) for channel in colour)
+            for opacity, ratio in artwork.FIELD_TEXT:
+                self.assertGreaterEqual(artwork.contrast_ratio((1, 1, 1), opacity, shown),
+                                        ratio, (colour, opacity))
+            # And no deeper than it needs, beyond the floor.
+            if alpha > artwork.SCRIM_FLOOR:
+                lighter = tuple(channel * (1 - alpha + 0.02) for channel in colour)
+                self.assertTrue(any(
+                    artwork.contrast_ratio((1, 1, 1), opacity, lighter) < ratio
+                    for opacity, ratio in artwork.FIELD_TEXT), colour)
+
+    def test_a_dark_field_takes_the_floor(self):
+        self.assertEqual(artwork.scrim_alpha([(0.1, 0.05, 0.2)] * 4), artwork.SCRIM_FLOOR)
+        self.assertEqual(artwork.scrim_alpha([]), artwork.SCRIM_FLOOR)
+        self.assertGreater(artwork.scrim_alpha([(1.0, 1.0, 1.0)]),
+                           artwork.scrim_alpha([(0.5, 0.5, 0.5)]))
+
+    def test_the_blur_spreads_and_keeps_the_colour(self):
+        size = 8
+        flat = [(0.25, 0.5, 0.75)] * (size * size)
+        for got, want in zip(artwork.box_blur(flat, size, 2), flat, strict=True):
+            for a, b in zip(got, want, strict=True):
+                self.assertAlmostEqual(a, b)
+        spike = [(0.0, 0.0, 0.0)] * (size * size)
+        spike[3 * size + 3] = (1.0, 1.0, 1.0)
+        blurred = artwork.box_blur(spike, size, 1, passes=1)
+        self.assertAlmostEqual(blurred[3 * size + 3][0], 1 / 9)
+        self.assertAlmostEqual(blurred[2 * size + 4][0], 1 / 9)
+        self.assertEqual(blurred[0][0], 0.0)
+
 if __name__ == '__main__':
     unittest.main()

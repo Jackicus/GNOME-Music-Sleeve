@@ -617,6 +617,32 @@ class LyricsViewTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertGreaterEqual(bounds.get_y(), 18)
 
+    def test_the_focus_comes_back_to_a_line_on_screen(self):
+        """GTK's list keeps its focused row's widget, unmapped, once scrolled away from it,
+        and focuses it again when the focus comes back: the view moves it to the current
+        line, on screen, where the keys reach it."""
+        from gi.repository import Gtk
+
+        self.play(fixture('lyrics_syllable.json'))
+        self.player.apply({'position': 40})
+        list_view = self.view.list_view
+        self.assertTrue(wait_for(lambda: 0 in self.view._rows))
+        list_view.scroll_to(0, Gtk.ListScrollFlags.FOCUS, None)
+        root = self.view.get_root()
+        self.assertTrue(wait_for(lambda: root.get_focus() is not None))
+        first = root.get_focus()
+        self.view.set_size_request(-1, 150)  # a few lines shown
+        root.set_default_size(400, 150)
+        adjustment = self.view.scrolled.get_vadjustment()
+        root.set_focus(None)
+        self.assertTrue(wait_for(lambda: adjustment.get_upper() > adjustment.get_page_size() * 2))
+        adjustment.set_value(adjustment.get_upper())
+        self.assertTrue(wait_for(lambda: not first.get_mapped()))
+        list_view.grab_focus()
+        self.assertTrue(wait_for(lambda: root.get_focus() is not None
+                                 and root.get_focus().get_mapped()))
+        self.assertTrue(root.get_focus().is_ancestor(list_view))
+
     def test_the_unsynced_text_follows_the_settings(self):
         self.play({'synced': False, 'lines': [
             {'text': '潮', 'pronunciation': 'Shio', 'translation': 'Tide'},

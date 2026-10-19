@@ -446,15 +446,21 @@ def find_descendant(widget, cls):
 
 class HeartControl:
     """A Gtk.ToggleButton that loves the item playing: see the module. Its accessible name
-    is the template's ("Favourite"); the tooltip says what a click does."""
+    is the template's ("Favourite"); the tooltip says what a click does.
 
-    def __init__(self, button):
+    A `lazy` heart (the full-screen player's, which is mostly hidden) reads no rating as the
+    item changes: it shows the answers to the others' reads (the engine's `rated`), and
+    catch_up() reads the item's when nothing has answered for it yet."""
+
+    def __init__(self, button, lazy=False):
         self.button = button
         self._player = None
         self._app = None
+        self._lazy = lazy
         self._syncing = False
         self._reading = None  # the task reading the item's rating
         self._shown = None    # the target the heart shows, read once per item
+        self._known = None    # the target an answer has come for
         button.connect('toggled', self._on_toggled)
 
     def attach(self, player, app):
@@ -477,6 +483,7 @@ class HeartControl:
 
     def _on_engine_state(self):
         self._shown = None  # a fresh engine: read the rating again
+        self._known = None
         self._on_track()
 
     def _on_track(self):
@@ -490,6 +497,16 @@ class HeartControl:
         self.show(False)
         self.button.set_sensitive(target is not None)
         self._cancel_read()
+        if not self._lazy:
+            self._read_rating(target)
+
+    def catch_up(self):
+        """A lazy heart shown: read the item's rating unless an answer has come for it."""
+        target = self.target()
+        if target != self._known and (self._reading is None or self._reading.done()):
+            self._read_rating(target)
+
+    def _read_rating(self, target):
         engine = self._app.engine if self._app is not None else None
         if (target is not None and engine is not None and not self._app.demo
                 and engine.state == 'up' and engine.authorized):
@@ -508,6 +525,7 @@ class HeartControl:
 
     def _on_rated(self, _engine, kind, item_id, value):
         if (kind, item_id) == self.target():
+            self._known = (kind, item_id)
             self.show(value == 1)
 
     def show(self, loved):

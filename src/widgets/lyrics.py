@@ -38,7 +38,8 @@ parts the same way (text_markup()). The pronunciations (Apple's transliterations
 translations show while the `lyrics-pronunciations` and `lyrics-translations` settings are
 on, which the sheet's Translation and Pronunciation menu switches.
 
-The list follows playback only while the sheet is open (set_active), and only when the
+The list follows playback only while shown (set_active: the sheet open on its Lyrics tab,
+or the full-screen player, into which the one view moves), and only when the
 current row changes (a line, a break beginning or ending: lyrics.moment_at()): scroll_to
 brings the row on screen, and once the list's geometry has held still for a frame (a tick
 callback: the sheet's opening lays the list out over a few frames, and a break's dots a few
@@ -608,6 +609,19 @@ class LyricsView(Gtk.Stack):
         self._keyboard_in_list = True
         self._stop_animation()
         self._stop_centring()
+        GLib.idle_add(self._focus_shown_line)
+
+    def _focus_shown_line(self):
+        """Tab puts the focus back on the row the list last had it on, which GTK keeps,
+        unmapped, once the list has scrolled away from it (the view following the song, or
+        laid out anew in another place): the keys would reach nothing. The line current
+        instead, brought into view."""
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        if (focus is not None and focus.is_ancestor(self.list_view) and not focus.get_mapped()
+                and self.list_view.get_model().get_n_items() > 0):
+            self.list_view.scroll_to(max(self._current, 0), Gtk.ListScrollFlags.FOCUS, None)
+        return GLib.SOURCE_REMOVE
 
     def _on_focus_leave(self, _controller):
         self._keyboard_in_list = False

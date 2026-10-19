@@ -177,6 +177,43 @@ changes, change it here, with the date. The plan they came from is in
   as reduced motion) each piece lights whole as it begins, on the existing timeout. The
   position is the Player's estimate, whole seconds refined, about 130 ms behind on average:
   not offset here, the same lag the line highlighting has (#304).
+- **A full-screen player, not a full-screen lyrics view** (2026-10-19). Full screen shows
+  the song playing as Apple Music's full-screen player does (#308): the artwork large, the
+  title and the artist, the seek bar and the transport, and the lyrics beside them, larger,
+  or the artwork centred alone for a song without; one column (a small cover beside the
+  titles, the lyrics, the controls at the bottom) when the window is narrow or portrait,
+  down to 360 px. It is a view of its own (`widgets/fullscreen_player.py`), the second page
+  of a `Gtk.Stack` whose first is the bottom sheet, built on first use and kept: not the Now
+  Playing sheet laid out anew, since an `AdwBottomSheet` never covers the whole window (its
+  top gap, its handle, the content dimmed behind it). While it shows, the rest of the window
+  is unmapped, so the pages let go of what they follow and Tab cannot leave it. There is one
+  lyrics view: it moves from the sheet's Lyrics tab into the player and back
+  (`fullscreen.FullscreenHost`), active in one place at a time, so one place paints, steps
+  and sweeps the lyrics; back in the sheet it centres the current line again. It is entered
+  from Fullscreen in Now Playing (beside the translation button) or F11, the HIG's
+  Fullscreen key and the one accelerator without a modifier (a function key no widget
+  takes), off while nothing plays (still listed among the shortcuts); Escape (once a menu
+  or a toast has had it), F11 and Leave Fullscreen leave. The window is fullscreened and
+  put back as it was: GTK keeps its size and maximized state through it, so quitting while
+  full screen saves the normal state, and a window that was full screen before (a window
+  manager's shortcut) stays so; the window manager taking it out of full screen leaves the
+  player. It leaves on its own only when nothing plays any more (the Player's item gone,
+  after its grace between queues): one song giving way to the next, an album or a playlist
+  playing through, keeps it, and so does a pause. The window's keys that go to its pages
+  (Ctrl+F, Ctrl+1, Ctrl+2, Ctrl+Shift+N, Go to Album) leave it first. Dark whatever the
+  colour scheme, as GNOME's full-screen media views (Videos, Loupe) are: libadwaita's
+  `osd` style (white text, controls for an on-screen display, the play button white) over
+  a field made from the artwork's own pixels (shrunk to 32 px and blurred in a thread,
+  stretched over the view) rather than Apple's background colour, which needs no bridge
+  change and works for any artwork, under a black scrim just deep enough for its text to
+  read at WCAG AA on the field's lightest pixel (`artwork.scrim_alpha()`: 4.5:1 for the
+  small text at 70%, 3:1 for the dimmed lyric lines, large text), drawn by a widget of its
+  own so the lyrics' redraws never draw it again. After three seconds without pointer
+  motion or a key, while the music plays and nothing is in use (a menu open, the pointer or
+  the keyboard focus on the controls), the header bar slides away, the seek bar and the
+  transport fade (their room and focus kept) and the pointer hides, as in GNOME Videos;
+  with animations off they go at once. Nothing runs or is fetched while it is not shown.
+  MPRIS's `Fullscreen` stays false: no client uses it (#313).
 
 ## Engine
 

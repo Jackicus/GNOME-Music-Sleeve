@@ -29,6 +29,10 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   initial order only, or call `sort_by_column(None, …)` first.
 - A `Gtk.StringFilter` over `Gtk.ClosureExpression.new(str, lambda item: item.search_key, None)`
   filters tens of thousands of items in one pass (fold the text first, `ignore-case: false`).
+- A `Gtk.ListView` keeps its focused row's widget alive, unmapped (not child-visible), once
+  it has scrolled away from it, and Tab back into the list focuses that widget: the keys
+  then reach nothing (GTK delivers them to the list). `LyricsView` moves the focus to the
+  current line when it finds it there.
 - A `Gtk.SliceListModel` whose `offset` plus `size` passes `G_MAXUINT` wraps its end and
   ignores changes after it, or reports them wrongly (a `Gtk.ListView` over it has crashed):
   "the rest from N" is `size = GLib.MAXUINT32 - N`, set again whenever the offset changes.
@@ -57,6 +61,10 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   child's natural height (clamped to the window), so a full-height sheet asks for a tall one;
   the child is laid out while closed and keeps that size briefly after opening, so wait for the
   adjustment's `changed`. Opening focuses its first focusable widget; closing restores focus.
+- `Gtk.Window.fullscreen()` keeps the window's `default-size` and `is_maximized()` as they
+  were (so the state saved while full screen is the normal one). The headless mutter makes
+  a non-resizable window (the scripts' harness) full screen in name only, at its size.
+  `AdwToastOverlay` takes Escape while a toast shows.
 - `Adw.NavigationView` pops on Escape, Back, Alt+Left (local shortcuts: only with the focus
   inside it) and the mouse back button; a push moves the focus into the new page. `win.back`
   covers the rest. A push maps, unmaps and maps the pushed page again: stop a page's requests

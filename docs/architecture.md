@@ -31,7 +31,10 @@ touches widgets.
   `account.py`'s, background playback `background.py`'s, the startup marks `timing.py`'s.
 - **Window** (`window.py`): an `AdwBottomSheet` whose content is the split view (the
   `AdwSidebar` and an `AdwNavigationView`) and whose bottom bar and sheet are the player bar and
-  Now Playing. Choosing a sidebar item replaces the navigation stack with that destination's
+  Now Playing; the banners sit under the visible page's header bar. The bottom sheet is one page
+  of a `Gtk.Stack`; the other, built on first use, is the full-screen player
+  (`widgets/fullscreen_player.py`), which `fullscreen.py`'s host shows, the window fullscreened,
+  moving Now Playing's one lyrics view into it and back. Choosing a sidebar item replaces the navigation stack with that destination's
   root page; tiles and rows push album, playlist, artist and See All pages through the window's
   `open_item()`, `open_shelf()` and `open_songs()` (an artist the library has: the library's
   page of them, `pages/library_artist.py`, over `discography.py`; Apple Music's page of an
