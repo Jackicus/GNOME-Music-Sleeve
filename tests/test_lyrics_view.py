@@ -693,9 +693,11 @@ class PieceGeometryTest(unittest.TestCase):
         self.assertEqual(ys, sorted(ys))
         self.assertEqual(ys[0], 0)
         self.assertGreater(ys[-1], 0)
-        # The first piece on the second line starts at its left again.
+        # The first piece on the second line starts at its left again, left of where the
+        # piece before it (on the first line) ends.
         second = ys.index(next(y for y in ys if y > 0))
-        self.assertLess(segments[second][0][0], segments[second - 1][0][0])
+        self.assertEqual(segments[second][0][0], 0)
+        self.assertLess(segments[second][0][0], segments[second - 1][-1][1])
         # A piece too long for a line is split across the lines it is on.
         _label, layout, spans = self.label(self.words('Ooooooooooooooooooooooh'), width=60)
         (piece,) = piece_segments(layout, spans)
