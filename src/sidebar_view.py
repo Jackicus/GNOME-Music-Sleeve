@@ -3,7 +3,7 @@
 
 """The window's sidebar: its sections and items, the Playlists section following the library,
 the selection, the folders' expansion, the playlists' context menu and drop target, and the
-rows' accessible names.
+rows' accessible names and indentation.
 
     sidebar = SidebarController(window, sidebar_widget, library, settings, item_actions)
     sidebar.select(key)               # select key's item (Home's when there is none), show its page
@@ -34,6 +34,11 @@ close it without changing the page, Left on a nested item moves to its folder. A
 dragged over a closed folder opens it after a moment (SPRING_DELAY_MS), so a playlist inside
 can take the drop. The open folders are kept in the expanded-folders setting, written a
 moment after the last change (EXPANDED_WRITE_DELAY_MS) and when the window closes.
+
+Nesting: a nested item's row carries a style class for its depth (sidebar.depth_class(),
+`depth-1` to `depth-3`), which style.css indents, set with the rows' accessible names and
+levels by update_rows() whenever the rows can have changed (a reload's splices, a folder
+opened or closed, the switch between the sidebar and page modes, which builds new rows).
 """
 
 import logging
@@ -44,8 +49,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 from . import sections, shortcuts
 from .library import ROOT_FOLDER, TrackRef
 from .sections import ALL_PLAYLISTS, FAVOURITE_SONGS, HOME, PLAYLISTS_SECTION
-from .sidebar import (SidebarEntry, SidebarItem, is_shown, plan_update, playlist_entries,
-                      reveal)
+from .sidebar import (DEPTH_CLASSES, SidebarEntry, SidebarItem, depth_class, is_shown,
+                      plan_update, playlist_entries, reveal)
 from .widgets.util import descendants
 
 log = logging.getLogger(__name__)
@@ -110,8 +115,8 @@ class SidebarController:
             self._sidebar.append(section)
 
         self._sidebar.connect('notify::selected-item', self._on_selected_item)
-        # The page mode (the collapsed layout) builds new rows: named again once built,
-        # and the folders' arrows shown only in the sidebar mode.
+        # The page mode (the collapsed layout) builds new rows: named and indented again
+        # once built, and the folders' arrows shown only in the sidebar mode.
         self._sidebar.connect('notify::mode', self._on_mode_changed)
         self._sidebar.connect('activated', self._on_activated)
         self._sidebar.connect('setup-menu', self._on_setup_menu)
@@ -340,7 +345,10 @@ class SidebarController:
         page_mode = self._page_mode()
         for position in range(self._fixed_count, self._playlist_store.get_n_items()):
             self._playlist_section.get_item(position).set_arrow_visible(not page_mode)
-        GLib.idle_add(self.update_accessibility)  # once the mode's rows are built
+        # libadwaita builds the mode's rows before it notifies; should a version build them
+        # later, the idle finds them.
+        self.update_rows()
+        GLib.idle_add(self.update_rows)
         self.reveal_selected()  # the new rows, centred again by libadwaita as they map
 
     def update_playlists(self):
@@ -377,7 +385,7 @@ class SidebarController:
             self._positions = {entry.key: position
                                for position, entry in enumerate(self._playlist_store)}
         if splices or retitles:
-            self.update_accessibility()
+            self.update_rows()
         if splices or retitles or log.isEnabledFor(logging.DEBUG):
             folders = [entry.folder_id for entry in entries if entry.kind == 'folder']
             log.debug('Sidebar: %d folders, %d playlists (%d retitled, %d splices) in %.1f ms; '
@@ -404,7 +412,7 @@ class SidebarController:
             item = self._playlist_section.get_item(position)
             item.set_visible(is_shown(entry, self._expanded))
             item.set_expanded(entry.folder_id in self._expanded)
-        self.update_accessibility()
+        self.update_rows()
 
     def _schedule_expanded_write(self):
         """Write the expanded folders EXPANDED_WRITE_DELAY_MS after the last change (a
@@ -518,12 +526,13 @@ class SidebarController:
             return False
         return self._item_actions.drop(playlist, value)
 
-    # -- the rows, for their accessible names and states ---------------------------------
+    # -- the rows, for their accessible names and states and their indentation -----------
     # AdwSidebar builds a row per item, hidden ones too, in item order (one Gtk.ListBox in
     # the sidebar mode, one boxed list per section in the page mode, which it builds anew
     # when the mode changes) and names none of them in the sidebar mode, nor says whether a
-    # folder is expanded or how deep an item is nested. Found by walking its widgets; if
-    # they ever stop matching the items one to one, nothing is set.
+    # folder is expanded or how deep an item is nested, nor indents one. Found by walking
+    # its widgets; if they ever stop matching the items one to one, nothing is set (and the
+    # sidebar stays flat).
 
     def rows(self):
         rows = []
@@ -538,17 +547,27 @@ class SidebarController:
         rows = self.rows()
         return rows[index] if 0 <= index < len(rows) else None
 
-    def update_accessibility(self):
+    def update_rows(self):
         """Name each sidebar row after its item; give the Playlists section's rows their
-        level (a nested item's folder is a level up) and folders their expanded state."""
+        level (a nested item's folder is a level up) and folders their expanded state; and
+        give each row the depth class of its item (none at the top level, nor in the other
+        sections), taking away any other, so style.css indents it."""
         items = self._sidebar.get_items()
         for index, row in enumerate(self.rows()):
             item = items.get_item(index)
             row.update_property([Gtk.AccessibleProperty.LABEL], [item.get_title()])
+            depth = 0
             if isinstance(item, SidebarItem):
-                row.update_property([Gtk.AccessibleProperty.LEVEL], [item.entry.depth + 1])
+                depth = item.entry.depth
+                row.update_property([Gtk.AccessibleProperty.LEVEL], [depth + 1])
                 if item.entry.kind == 'folder':
                     # An int: the state is "true, false or undefined".
                     row.update_state([Gtk.AccessibleState.EXPANDED],
                                      [int(item.entry.folder_id in self._expanded)])
+            wanted = depth_class(depth)
+            for name in DEPTH_CLASSES:
+                if name == wanted:
+                    row.add_css_class(name)
+                else:
+                    row.remove_css_class(name)
         return GLib.SOURCE_REMOVE

@@ -4,7 +4,7 @@
 
 """Render the app's window to a PNG, for checking UI changes without a human.
 
-    scripts/headless.sh scripts/screenshot.py [out.png] --demo [--light] [--size WxH]
+    scripts/headless.sh scripts/screenshot.py [out.png] --demo [--light] [--rtl] [--size WxH]
                           [--page KEY] [--open KIND:ID] [--sidebar] [--expand ID[,ID…]]
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|localized|syllable|queue]]
@@ -82,6 +82,8 @@ the menu the sidebar fills for it, beside its row (--expand the folder holding i
 --scroll PX scrolls the page shown down by PX pixels before the shot (its first
 scrolled window that scrolls vertically): the rest of a page taller than the
 virtual monitor, which a --size cannot show.
+--rtl lays the window out right to left, as a right-to-left language would
+(Gtk.Widget.set_default_direction), its strings still the source's.
 """
 
 import argparse
@@ -95,6 +97,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('out', nargs='?', default=os.path.join(harness.ROOT, 'build',
                                                             'screenshot.png'))
 parser.add_argument('--light', action='store_true')
+parser.add_argument('--rtl', action='store_true', help='lay the window out right to left')
 parser.add_argument('--size', default='1100x760')
 parser.add_argument('--page')
 parser.add_argument('--demo', action='store_true', help='show the demo library in build/demo')
@@ -152,6 +155,9 @@ width, height = (int(n) for n in args.size.split('x'))
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light, size=(width, height))
 
 from gi.repository import Adw, Gdk, GLib, Graphene, Gtk  # noqa: E402  (after make_app)
+
+if args.rtl:
+    Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)  # before the window is made
 
 
 def first_folder():

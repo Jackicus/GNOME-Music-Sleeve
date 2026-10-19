@@ -44,6 +44,38 @@ sidebar .navigation-sidebar > .header:not(.first) {
   background-size: calc(100% - 12px) 1px;
 }
 
+/* A folder's contents in the window's sidebar, indented by depth as a tree (sidebar_view.py
+   gives a nested item's row `depth-1` to `depth-3`), in both its modes: the sidebar's list and
+   the narrow layout's boxed lists, where the indent is the only sign of nesting. A transparent
+   border at the start of the row's child moves the content in, whatever libadwaita puts
+   inside, on top of the space it gives that child already (padding in the sidebar mode, a
+   margin in the page mode's rows), which a margin or padding here would replace. The row, its
+   selection and hover with it, keeps the list's width. 28px puts a nested item's icon under
+   its folder's title. Never a vertical margin on a list's row. */
+sidebar row.depth-1 > *:dir(ltr) {
+  border-left: 28px solid transparent;
+}
+
+sidebar row.depth-2 > *:dir(ltr) {
+  border-left: 56px solid transparent;
+}
+
+sidebar row.depth-3 > *:dir(ltr) {
+  border-left: 84px solid transparent;
+}
+
+sidebar row.depth-1 > *:dir(rtl) {
+  border-right: 28px solid transparent;
+}
+
+sidebar row.depth-2 > *:dir(rtl) {
+  border-right: 56px solid transparent;
+}
+
+sidebar row.depth-3 > *:dir(rtl) {
+  border-right: 84px solid transparent;
+}
+
 /* Grid pages (pages/grid.blp). The top padding scrolls with the tiles and leaves room for the
    page title laid over it: the title's 24px + 12px margins and a title-1 line, which grows with
    the text size as em does. The sides are the grid view's margins (grid.blp), which its
