@@ -4,13 +4,15 @@
 """AppleMusicLyricsView: the Now Playing sheet's Lyrics tab, following the Player.
 
 A Gtk.Stack of four pages: synced lyrics as a Gtk.ListView over the Lyrics object's store
-of LyricLine (a row is the line's wrapping label over its pronunciation's, smaller; the line
-current at the Player's position carries the `current` CSS class, the others `dimmed`; a
-click seeks to the line's start), unsynced lyrics as one wrapping label in a scrolled
-window, a spinner while the engine reads them, and a compact status page otherwise:
-"Lyrics" with nothing playing, "No Lyrics" for a song without them. The pronunciations
-(Apple's transliterations) show while the `lyrics-pronunciations` setting is on, which
-Show Pronunciations in the sheet's More Options switches.
+of LyricLine (a row is a box of the line's wrapping label over its pronunciation's and its
+translation's, smaller; the line current at the Player's position carries the `current` CSS
+class, the others `dimmed`; a click seeks to the line's start; the line opening a verse or
+a chorus `stanza`, a gap above its box, outside the highlight the box draws for the row),
+unsynced lyrics as one wrapping label in a scrolled window, a spinner while the engine
+reads them, and a compact status page otherwise: "Lyrics" with nothing playing, "No
+Lyrics" for a song without them. The pronunciations (Apple's transliterations) and the
+translations show while the `lyrics-pronunciations` and `lyrics-translations` settings are
+on, which the sheet's Translation and Pronunciation menu switches.
 
 The list follows playback only while the sheet is open (set_active), and only when the
 current line changes: scroll_to brings the row on screen, and once the list's geometry has
@@ -26,6 +28,7 @@ line's start, so the highlight moves as the line begins rather than up to a seco
 
 import logging
 import time
+from collections import namedtuple
 from gettext import gettext as _
 
 from gi.repository import Adw, GLib, Gtk, Pango
@@ -52,7 +55,7 @@ class LyricsView(Gtk.Stack):
         self._app = None
         self._active = False
         self._lyrics = None
-        self._pronunciations = False    # the setting: show the lines' pronunciations
+        self._shown = Shown(False, False)   # the settings: the lines' extras shown
         self._current = -1              # the index of the line current, or -1
         self._rows = {}                 # bound position -> its row's box
         self._centre_pending = None     # a line to centre once its row holds still
@@ -129,9 +132,9 @@ class LyricsView(Gtk.Stack):
         player.connect('notify::track', lambda *_: self._update_page())
         player.connect('notify::position', lambda *_: self._follow())
         player.connect('notify::state', lambda *_: self._follow())
-        app.settings.connect('changed::lyrics-pronunciations',
-                             lambda *_: self._on_pronunciations_changed())
-        self._pronunciations = app.settings.get_boolean('lyrics-pronunciations')
+        for key in SETTINGS:
+            app.settings.connect(f'changed::{key}', lambda *_: self._on_shown_changed())
+        self._shown = shown(app.settings)
         self._on_lyrics()
 
     def set_active(self, active):
@@ -156,21 +159,21 @@ class LyricsView(Gtk.Stack):
             self.list_view.set_model(
                 Gtk.NoSelection(model=lyrics.lines if lyrics is not None and lyrics.synced
                                 else None))
-            self.text_label.set_markup(text_markup(lyrics, self._pronunciations))
+            self.text_label.set_markup(text_markup(lyrics, self._shown))
             self.scrolled.get_vadjustment().set_value(0)
             self.text_scrolled.get_vadjustment().set_value(0)
         self._update_page()
         self._follow(force=True)
 
-    def _on_pronunciations_changed(self):
-        """Show or hide the pronunciations of the rows on screen (the rest follow as they
-        are bound) and in the text; the current line, taller or shorter now, is brought
-        into view again."""
-        self._pronunciations = self._app.settings.get_boolean('lyrics-pronunciations')
+    def _on_shown_changed(self):
+        """Show or hide the pronunciations and translations of the rows on screen (the rest
+        follow as they are bound) and in the text; the current line, taller or shorter
+        now, is brought into view again."""
+        self._shown = shown(self._app.settings)
         for box in self._rows.values():
-            _show_pronunciation(box, self._pronunciations)
+            _show_extras(box, self._shown)
         if self._lyrics is not None:
-            self.text_label.set_markup(text_markup(self._lyrics, self._pronunciations))
+            self.text_label.set_markup(text_markup(self._lyrics, self._shown))
         self._follow(force=True)
 
     def _update_page(self):
@@ -382,11 +385,13 @@ class LyricsView(Gtk.Stack):
         box.label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
                               justify=Gtk.Justification.LEFT)
         box.label.add_css_class('title-3')
-        box.pronunciation = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
-                                      justify=Gtk.Justification.LEFT, visible=False)
-        box.pronunciation.add_css_class('lyric-pronunciation')
         box.append(box.label)
-        box.append(box.pronunciation)
+        for name in ('pronunciation', 'translation'):
+            label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
+                              justify=Gtk.Justification.LEFT, visible=False)
+            label.add_css_class(f'lyric-{name}')
+            setattr(box, name, label)
+            box.append(label)
         list_item.set_child(box)
 
     def _on_bind(self, _factory, list_item):
@@ -395,9 +400,12 @@ class LyricsView(Gtk.Stack):
         line = list_item.get_item()
         box.label.set_label(line.text)
         box.pronunciation.set_label(line.pronunciation)
-        _show_pronunciation(box, self._pronunciations)
+        box.translation.set_label(line.translation)
+        _show_extras(box, self._shown)
         list_item.set_accessible_label(line.text)
-        if line.stanza and position:  # a gap before a verse or a chorus, as in the text
+        # A gap before a verse or a chorus, as in the text: the box's margin, outside the
+        # highlight the box draws for its row (style.css).
+        if line.stanza and position:
             box.add_css_class('stanza')
         else:
             box.remove_css_class('stanza')
@@ -419,27 +427,41 @@ class LyricsView(Gtk.Stack):
         self._app.player_command(self._player.seek(self._lyrics.start_of(position)))
 
 
-def text_markup(lyrics, pronunciations):
+# What the lines show besides their text, and the settings that say so.
+Shown = namedtuple('Shown', 'pronunciations translations')
+SETTINGS = ('lyrics-pronunciations', 'lyrics-translations')
+
+
+def shown(settings):
+    return Shown(*(settings.get_boolean(key) for key in SETTINGS))
+
+
+def text_markup(lyrics, extras):
     """The unsynced view's text as Pango markup: the lines one to a line, a blank line
-    before each stanza, and with `pronunciations` each line's pronunciation after it, smaller
-    and fainter; '' for no lyrics."""
+    before each stanza, and after each line its pronunciation and its translation, smaller
+    and fainter, as `extras` (a Shown) asks; '' for no lyrics."""
     if lyrics is None:
         return ''
-    if not (pronunciations and lyrics.has_pronunciations):
+    pronunciations = extras.pronunciations and lyrics.has_pronunciations
+    translations = extras.translations and lyrics.has_translations
+    if not (pronunciations or translations):
         return GLib.markup_escape_text(lyrics.text)
     texts = []
     for index, line in enumerate(lyrics.lines):
         if line.stanza and index:
             texts.append('')
         texts.append(GLib.markup_escape_text(line.text))
-        if line.pronunciation:
-            pronunciation = GLib.markup_escape_text(line.pronunciation)
-            texts.append(f'<span size="smaller" alpha="70%">{pronunciation}</span>')
+        for wanted, extra in ((pronunciations, line.pronunciation),
+                              (translations, line.translation)):
+            if wanted and extra:
+                extra = GLib.markup_escape_text(extra)
+                texts.append(f'<span size="smaller" alpha="70%">{extra}</span>')
     return '\n'.join(texts)
 
 
-def _show_pronunciation(box, shown):
-    box.pronunciation.set_visible(shown and bool(box.pronunciation.get_label()))
+def _show_extras(box, extras):
+    box.pronunciation.set_visible(extras.pronunciations and bool(box.pronunciation.get_label()))
+    box.translation.set_visible(extras.translations and bool(box.translation.get_label()))
 
 
 def _set_current(box, current):

@@ -34,8 +34,8 @@ UI awaits.
                                          # (MusicKit pauses); previewDidChange events follow it
     await engine.stop_preview()  # the clip playing stopped: True if one was
     await engine.lyrics(catalog_song_id)   # {synced, lines: [{startMs, endMs, text[, stanza]
-                                           # [, pronunciation]}], script}, from
-                                           # <cache>/lyrics/ when fetched this month
+                                           # [, pronunciation][, translation]}], languages},
+                                           # from <cache>/lyrics/ when fetched this month
     await engine.love('song', id); await engine.unlove('album', id)   # the rating, set or gone
     await engine.rating('song', id)        # 1 loved, -1 disliked, 0 neither
     await engine.add_to_library('album', catalog_id)
@@ -217,25 +217,29 @@ def _shape_artist(raw, item_id, stubs, answers, cache_dir, generation):
     return _fetch_item_art(item, art_urls, cache_dir, generation)
 
 
-def lyrics_answer(answer, script=None):
+def lyrics_answer(answer, languages=None):
     """The bridge's lyrics answer, or a kept one, as {synced: bool, lines: [{startMs, endMs,
-    text, stanza (only where true), pronunciation (only where there is one)}], script}: the
-    lines as lyrics.parse_lines reads them (the one validation: times as integers, entities
-    decoded, in time order); anything odd is no lyrics. `script` is the one the
-    pronunciations were asked in (api.lyrics_languages), else the answer's own, else None (a
-    file kept before pronunciations were asked for)."""
+    text, stanza (only where true), pronunciation and translation (only where there is
+    one)}], languages}: the lines as lyrics.parse_lines reads them (the one validation:
+    times as integers, entities decoded, in time order); anything odd is no lyrics.
+    `languages` are the ones the translations and pronunciations were asked in
+    (api.lyrics_languages), else the answer's own, else None (a file kept before they
+    were asked for)."""
     lines = []
-    for start, end, text, stanza, pronunciation in parse_lines(answer):
-        line = {'startMs': start, 'endMs': end, 'text': text}
-        if stanza:
-            line['stanza'] = True
-        if pronunciation:
-            line['pronunciation'] = pronunciation
-        lines.append(line)
+    for line in parse_lines(answer):
+        shaped = {'startMs': line.start_ms, 'endMs': line.end_ms, 'text': line.text}
+        if line.stanza:
+            shaped['stanza'] = True
+        if line.pronunciation:
+            shaped['pronunciation'] = line.pronunciation
+        if line.translation:
+            shaped['translation'] = line.translation
+        lines.append(shaped)
     synced = bool(isinstance(answer, dict) and answer.get('synced')) and bool(lines)
-    if script is None and isinstance(answer, dict) and isinstance(answer.get('script'), str):
-        script = answer['script']
-    return {'synced': synced, 'lines': lines, 'script': script}
+    if languages is None and isinstance(answer, dict) and isinstance(answer.get('languages'),
+                                                                     dict):
+        languages = answer['languages']
+    return {'synced': synced, 'lines': lines, 'languages': languages}
 
 
 def _raise_api_errors(answer, what):
@@ -391,8 +395,8 @@ class Engine(GObject.Object):
         self._tasks = set()    # small tasks of the engine's own, held until they end
         self._probe = None     # the task asking a page that timed out whether it answers
         self._storefront = None  # the account's, as the last status read had it
-        # The language lyrics are asked in and the script of their pronunciations: the
-        # user's (GLib's first language name: LANGUAGE, LC_ALL, LC_MESSAGES, LANG).
+        # The language lyrics are translated into and the script of their pronunciations:
+        # the user's (GLib's first language name: LANGUAGE, LC_ALL, LC_MESSAGES, LANG).
         self.lyrics_languages = api.lyrics_languages(GLib.get_language_names()[0])
 
     @property
@@ -1328,16 +1332,17 @@ class Engine(GObject.Object):
         return self.cache_dir / 'lyrics' / f'{catalog_song_id}.json'
 
     async def lyrics(self, catalog_song_id):
-        """A catalog song's lyrics: {synced, lines: [{startMs, endMs, text, pronunciation?}],
-        script} (lyrics_answer's shape), from <cache>/lyrics/<id>.json when they were fetched
-        in the last normalize.LYRICS_MAX_AGE with their pronunciations in the script of
-        `lyrics_languages` (no engine needed then; the read marks the file as played, for
-        prune_caches), else through the bridge (the catalog's TTML with its
-        transliterations, parsed in the page) and kept there, stamped, when Apple had any. A
-        file kept in another script (or before pronunciations were asked for) is still the
-        answer when the engine cannot give a new one. No lyrics ({synced: False, lines: []})
-        is also what the page answers when Apple refuses (no subscription, a network
-        failure), so an empty answer is not kept: the next play asks again."""
+        """A catalog song's lyrics: {synced, lines: [{startMs, endMs, text, pronunciation?,
+        translation?}], languages} (lyrics_answer's shape), from <cache>/lyrics/<id>.json
+        when they were fetched in the last normalize.LYRICS_MAX_AGE with their translations
+        and pronunciations in `lyrics_languages` (no engine needed then; the read marks the
+        file as played, for prune_caches), else through the bridge (the catalog's TTML with
+        its translations and transliterations, parsed in the page) and kept there, stamped,
+        when Apple had any. A file kept in other languages (or before they were asked for)
+        is still the answer when the engine cannot give a new one. No lyrics ({synced:
+        False, lines: []}) is also what the page answers when Apple refuses (no
+        subscription, a network failure), so an empty answer is not kept: the next play
+        asks again."""
         generation = store.cache_generation()
         catalog_song_id = str(catalog_song_id or '')
         if not CATALOG_ID_RE.fullmatch(catalog_song_id):
@@ -1346,13 +1351,13 @@ class Engine(GObject.Object):
         path = self.lyrics_path(catalog_song_id)
         cached = await asyncio.to_thread(cache.read_kept, path, normalize.LYRICS_MAX_AGE, True)
         kept = lyrics_answer(cached) if cached is not None and cached.get('lines') else None
-        if kept is not None and kept['script'] == languages['script']:
+        if kept is not None and kept['languages'] == languages:
             return kept
         try:
             client = await self._ready()
             answer = lyrics_answer(
                 await client.bridge('lyrics', catalog_song_id, languages, timeout=LYRICS_TIMEOUT),
-                languages['script'])
+                languages)
         except EngineError:
             if kept is None:
                 raise

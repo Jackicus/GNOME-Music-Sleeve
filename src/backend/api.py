@@ -15,7 +15,8 @@ The standard library only; engine.py and actions.py use it.
     api_error(answer, 'search')         # EngineError('api', 'search: 404 Not Found: …',
                                         # status=404) for Apple's {errors: [...]}, else None
     lyrics_languages('ja_JP.UTF-8')     # {'lyrics': 'ja-JP', 'script': 'ja-Kana'}: what a
-                                        # lyrics request asks its pronunciations in
+                                        # lyrics request asks its translations and
+                                        # pronunciations in
 """
 
 from .errors import EngineError
