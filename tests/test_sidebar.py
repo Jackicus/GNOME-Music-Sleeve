@@ -252,8 +252,8 @@ class TestEntries(unittest.TestCase):
 
 class SectionHeadersTest(unittest.TestCase):
     """style.css draws the divider above each titled section on the header libadwaita gives
-    it: `sidebar .navigation-sidebar > .header:not(.first) > .heading`. These are the nodes
-    that selector needs, in the sidebar mode only."""
+    it, `sidebar .navigation-sidebar > .header:not(.first)`: each section but the first has
+    one, which shows its title and not libadwaita's own separator, in the sidebar mode only."""
 
     @requires_gtk
     def test_titled_sections_headers_carry_what_the_css_selects(self):
@@ -276,11 +276,10 @@ class SectionHeadersTest(unittest.TestCase):
                          [True] + [False] * (len(specs) - 1))
         self.assertIsNone(specs[0].title)
         for spec, header in zip(specs[1:], headers[1:], strict=True):
-            shown = [child for child in children(header) if child.get_child_visible()]
-            self.assertEqual(len(shown), 1)
-            self.assertIsInstance(shown[0], Gtk.Label)
-            self.assertTrue(shown[0].has_css_class('heading'))
-            self.assertEqual(shown[0].get_label(), spec.title)
+            self.assertEqual([widget.get_label() for widget in shown(header)
+                              if isinstance(widget, Gtk.Label)], [spec.title])
+            self.assertFalse([widget for widget in shown(header)
+                              if isinstance(widget, Gtk.Separator)])
 
         # The page mode's sections are boxed lists, which the selector does not reach.
         sidebar.set_mode(Adw.SidebarMode.PAGE)
@@ -293,6 +292,15 @@ def children(widget):
     while child is not None:
         yield child
         child = child.get_next_sibling()
+
+
+def shown(widget):
+    """The descendants of widget that its parents show (a stack's visible child, not the
+    others)."""
+    for child in children(widget):
+        if child.get_child_visible() and child.get_visible():
+            yield child
+            yield from shown(child)
 
 
 if __name__ == '__main__':

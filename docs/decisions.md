@@ -39,8 +39,9 @@ changes, change it here, with the date. The plan they came from is in
   titles (Playlists especially, which the library's folders and playlists fill), and a thin
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider
   only above an untitled section, so `src/style.css` draws it on a titled section's header
-  (`.navigation-sidebar > .header:not(.first) > .heading`), in the separator's colour, inset
-  and spacing; no Python touches AdwSidebar's widgets. The first section (Search, Home, New,
+  (`.navigation-sidebar > .header:not(.first)`, a background line), in the separator's colour,
+  inset and spacing; no Python touches AdwSidebar's widgets, and nothing in the rule depends
+  on what libadwaita puts inside the header (1.9 and 1.10 differ there). The first section (Search, Home, New,
   Radio) stays untitled with no divider; the narrow layout's page mode, whose sections are
   boxed lists, has none.
 - **Playlists in Apple Music's order** (2026-10-03). Apple's API lists a folder's contents in
