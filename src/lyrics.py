@@ -8,9 +8,10 @@ the line current at a playback position, which the Now Playing sheet highlights.
     lyrics = Lyrics(answer, catalog_id)
     lyrics.synced          # True when the lines carry times (Apple's TTML had begin="…")
     lyrics.lines           # Gio.ListStore of LyricLine, in time order
-    lyrics.text            # every line (its shown_text) on its own line, a blank line before
-                           # each stanza (a verse, a chorus: a line the answer marks `stanza`):
-                           # the unsynced view
+    lyrics.text            # the lines as plain text: each line's main vocals on a line, its
+                           # background vocals on a line of their own under it, a blank line
+                           # before each stanza (a verse, a chorus: a line the answer marks
+                           # `stanza`); the unsynced view, without its extras
     lyrics.has_pronunciations   # some line has a pronunciation (Apple's transliteration:
                                 # Japanese written in Latin letters, say)
     lyrics.has_translations     # some line has a translation (into the user's language)
@@ -72,14 +73,6 @@ _WORDS = (('words', 'words', 'text'), ('background_words', 'backgroundWords', 'b
            'pronunciation_background'))
 
 
-def folded(text, background):
-    """A line's vocals as one line: the main vocals, then the background vocals after them
-    (where Apple's TTML puts them)."""
-    if text and background:
-        return f'{text} {background}'
-    return text or background
-
-
 def is_secondary(agent):
     """Whether a line sung by `agent` is the secondary singer's, by Apple's rule: any singer
     but v1 (another person, a group, everyone). A song is a duet when some line is."""
@@ -115,21 +108,6 @@ class LyricLine(GObject.Object):
         if line is not None:
             for name, value in line._asdict().items():
                 setattr(self, name, value)
-
-    # What the views show of the line: each part with its background vocals folded into it,
-    # as one line (folded()). The row's bind and Lyrics.text read these.
-
-    @property
-    def shown_text(self):
-        return folded(self.text, self.background)
-
-    @property
-    def shown_pronunciation(self):
-        return folded(self.pronunciation, self.pronunciation_background)
-
-    @property
-    def shown_translation(self):
-        return folded(self.translation, self.translation_background)
 
 
 def _ms(value):
@@ -248,7 +226,7 @@ class Lyrics(GObject.Object):
         for index, line in enumerate(parsed):
             if line.stanza and index:
                 texts.append('')
-            texts.append(folded(line.text, line.background))
+            texts.extend(text for text in (line.text, line.background) if text)
         self.text = '\n'.join(texts)
 
     def __len__(self):

@@ -184,8 +184,9 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   stretched "oh-oh" keeps its hyphens in the spans); Japanese has no spaces at all, a span
   a character or two. Background vocals are a `<span ttm:role="x-bg">` holding timed spans,
   the parentheses inside the first and the last; in every case it came last in the `<p>`,
-  after a space, so the folded text reads exactly as the whole `<p>` did. Its times may
-  overlap the main vocals', and the `<p>`'s `end` is the later of the two. The
+  after a space, so the main and the background vocals joined by a space read exactly as
+  the whole `<p>` did. Its times may overlap the main vocals', and the `<p>`'s `end` is
+  the later of the two. The
   transliteration's `<text>` (Japanese, Korean) is timed span for span with the line (the
   same begin and end, its own spaces, sometimes inside a span or two between spans), its
   x-bg timed too; the translation's `<text>` is plain, its x-bg an untimed span with the

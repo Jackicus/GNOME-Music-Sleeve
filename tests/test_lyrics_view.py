@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""widgets/lyrics.py's pronunciations and translations: each line's under it while
-`lyrics-pronunciations` and `lyrics-translations` are on, in the synced list and the
-unsynced text; a verse's gap outside the highlight of its line; and the Now Playing
-sheet's Translation and Pronunciation menu, offered for lyrics that have either. (The model
-is test_lyrics.py's.)"""
+"""widgets/lyrics.py's rows and text: each line's pronunciation and translation under it
+while `lyrics-pronunciations` and `lyrics-translations` are on, its background vocals on a
+line of their own under those, with their own extras, in the synced list and the unsynced
+text; a verse's gap outside the highlight of its line; and the Now Playing sheet's
+Translation and Pronunciation menu, offered for lyrics that have either. (The model is
+test_lyrics.py's.)"""
 
 import json
 import unittest
@@ -22,6 +23,20 @@ FIRST = ('霧の海に鐘が鳴る', 'Kiri no umi ni kane ga naru',
 def fixture(name):
     with open(FIXTURES / name, encoding='utf-8') as file:
         return json.load(file)
+
+
+def visible_parts(box):
+    """A row's parts, top to bottom (widgets.lyrics.PARTS), each label's text while it is
+    shown, None while it is hidden."""
+    from applemusic.widgets.lyrics import PARTS
+
+    labels = [getattr(box, part.attribute) for part in PARTS]
+    children, child = [], box.get_first_child()
+    while child is not None:
+        children.append(child)
+        child = child.get_next_sibling()
+    assert children == labels, children
+    return tuple(label.get_label() if label.get_visible() else None for label in labels)
 
 
 @requires_gtk
@@ -46,14 +61,24 @@ class MarkupTest(unittest.TestCase):
             small('Tide &amp; wind'), 'Oh oh', '', '海', small('Umi')]))
         self.assertEqual(text_markup(lyrics, Shown(False, True)), '\n'.join([
             '潮 &amp; &lt;風&gt;', small('Tide &amp; wind'), 'Oh oh', '', '海']))
-        # Background vocals read in their line, in each part.
+        # Background vocals on a line of their own, smaller, with their own extras under
+        # them; a line of background vocals only is the background.
         sung = Lyrics({'synced': False, 'lines': [
             {'text': '潮', 'background': '(潮 & 風)', 'pronunciation': 'Shio',
              'pronunciationBackground': '(shio)', 'translation': 'Tide',
-             'translationBackground': '(tide)'}]})
-        self.assertEqual(text_markup(sung, Shown(False, False)), '潮 (潮 &amp; 風)')
+             'translationBackground': '(tide)'},
+            {'text': '', 'background': '(Oh oh)', 'translation': 'Oh oh!', 'stanza': True}]})
+        background = '<span size="90%" alpha="70%">{}</span>'.format
+        smaller = '<span size="80%" alpha="60%">{}</span>'.format
+        self.assertEqual(text_markup(sung, Shown(False, False)), '\n'.join([
+            '潮', background('(潮 &amp; 風)'), '', background('(Oh oh)')]))
         self.assertEqual(text_markup(sung, Shown(True, True)), '\n'.join([
-            '潮 (潮 &amp; 風)', small('Shio (shio)'), small('Tide (tide)')]))
+            '潮', small('Shio'), small('Tide'), background('(潮 &amp; 風)'),
+            smaller('(shio)'), smaller('(tide)'), '', small('Oh oh!'),
+            background('(Oh oh)')]))
+        self.assertEqual(text_markup(sung, Shown(False, True)), '\n'.join([
+            '潮', small('Tide'), background('(潮 &amp; 風)'), smaller('(tide)'), '',
+            small('Oh oh!'), background('(Oh oh)')]))
         plain = Lyrics({'synced': False, 'lines': [{'text': 'A & B'}]})
         self.assertEqual(text_markup(plain, Shown(True, True)), 'A &amp; B')
         self.assertEqual(text_markup(None, Shown(True, True)), '')
@@ -81,15 +106,13 @@ class LyricsViewTest(unittest.TestCase):
         self.player.apply({'state': 'paused', 'track': TRACK, 'position': 0, 'duration': 120,
                            'lyrics': lyrics})
 
-    def shown(self):
-        """The rows bound, in order: (the line, then its pronunciation and its translation
-        when shown, else None)."""
+    def shown(self, background=False):
+        """The rows bound, in order: (the line, its pronunciation and its translation) as
+        shown, None for a label hidden; with `background`, the background vocals' three
+        after them."""
         rows = self.view._rows
-
-        def visible(label):
-            return label.get_label() if label.get_visible() else None
-        return [(rows[position].label.get_label(), visible(rows[position].pronunciation),
-                 visible(rows[position].translation)) for position in sorted(rows)]
+        return [visible_parts(rows[position])[:None if background else 3]
+                for position in sorted(rows)]
 
     def test_the_synced_lines_show_their_extras_while_the_settings_are_on(self):
         self.play(fixture('lyrics_localized.json'))
@@ -109,17 +132,88 @@ class LyricsViewTest(unittest.TestCase):
         self.app.settings.set_boolean('lyrics-translations', True)
         self.play(fixture('lyrics.json'))
         self.assertTrue(wait_for(lambda: len(self.shown()) > 2))
-        self.assertEqual({row[1:] for row in self.shown()}, {(None, None)})
+        self.assertEqual({row[1:] for row in self.shown(True)}, {(None,) * 5})
 
-    def test_the_background_vocals_show_in_their_line(self):
-        self.app.settings.set_boolean('lyrics-pronunciations', True)
-        self.app.settings.set_boolean('lyrics-translations', True)
+    def test_the_background_vocals_show_under_their_line(self):
         self.play(fixture('lyrics_syllable.json'))
         self.assertTrue(wait_for(lambda: len(self.shown()) > 7), self.shown())
-        self.assertEqual(self.shown()[1], ('I keep the lantern burning (burning)', None, None))
-        self.assertEqual(self.shown()[6], ('波の音を数えて (数えて)',
-                                           'Nami no oto o kazoete (kazoete)',
-                                           'Counting the sound of the waves (counting)'))
+        self.assertEqual(self.shown(True)[0], ('Grey morning on the jetty', *[None] * 5))
+        self.assertEqual(self.shown(True)[1], ('I keep the lantern burning', None, None,
+                                               '(burning)', None, None))
+        self.assertEqual(self.shown(True)[6], ('波の音を数えて', None, None, '(数えて)',
+                                               None, None))
+        self.app.settings.set_boolean('lyrics-pronunciations', True)
+        self.app.settings.set_boolean('lyrics-translations', True)
+        self.assertTrue(wait_for(lambda: self.shown(True)[6][1] is not None), self.shown(True))
+        self.assertEqual(self.shown(True)[6], (
+            '波の音を数えて', 'Nami no oto o kazoete', 'Counting the sound of the waves',
+            '(数えて)', '(kazoete)', '(counting)'))
+        self.app.settings.set_boolean('lyrics-pronunciations', False)
+        self.assertTrue(wait_for(lambda: self.shown(True)[6][1] is None), self.shown(True))
+        self.assertEqual(self.shown(True)[6], (
+            '波の音を数えて', None, 'Counting the sound of the waves', '(数えて)', None,
+            '(counting)'))
+        # The background follows its line's state.
+        box = self.view._rows[1]
+        self.assertTrue(box.has_css_class('dimmed'))
+        self.player.apply({'position': 17})
+        self.assertTrue(wait_for(lambda: box.has_css_class('current')))
+        self.assertIs(box.background.get_parent(), box)
+
+    def test_a_row_rebound_shows_only_its_new_lines_parts(self):
+        """A recycled row bound to a line with background vocals, then to lines without
+        them or with nothing else: only the new line's parts show, and a screen reader
+        hears the main vocals, then the background."""
+        from gi.repository import GObject
+
+        from applemusic.lyrics import LyricLine, Lyrics
+        from applemusic.widgets.lyrics import Shown
+
+        class Item(GObject.Object):
+            """A stand-in Gtk.ListItem: the factory's handlers ask only this of it."""
+
+            def __init__(self):
+                super().__init__()
+                self.child = self.line = self.spoken = None
+
+            def set_child(self, child):
+                self.child = child
+
+            def get_child(self):
+                return self.child
+
+            def get_item(self):
+                return self.line
+
+            def get_position(self):
+                return 3
+
+            def set_accessible_label(self, label):
+                self.spoken = label
+
+        lines = Lyrics({'synced': True, 'lines': [
+            {'startMs': 1000, 'text': 'Harbour lights', 'background': '(lights)',
+             'pronunciation': 'Ha-bor', 'pronunciationBackground': '(laits)',
+             'translation': 'Luces del puerto', 'translationBackground': '(luces)'},
+            {'startMs': 2000, 'text': 'Low tide'},
+            {'startMs': 3000, 'text': '', 'background': '(Oh oh)'}]}).lines
+        self.view._shown = Shown(True, True)
+        item = Item()
+        self.view._on_setup(None, item)
+        bound = []
+        for line in (*lines, LyricLine(), lines[0]):
+            item.line = line
+            self.view._on_bind(None, item)
+            bound.append((visible_parts(item.child), item.spoken))
+            self.view._on_unbind(None, item)
+        self.assertEqual(bound, [
+            (('Harbour lights', 'Ha-bor', 'Luces del puerto', '(lights)', '(laits)',
+              '(luces)'), 'Harbour lights (lights)'),
+            (('Low tide', *[None] * 5), 'Low tide'),
+            ((None, None, None, '(Oh oh)', None, None), '(Oh oh)'),
+            ((None,) * 6, ''),
+            (('Harbour lights', 'Ha-bor', 'Luces del puerto', '(lights)', '(laits)',
+              '(luces)'), 'Harbour lights (lights)')])
 
     def test_a_verse_gap_is_outside_the_highlight(self):
         from gi.repository import Gdk, Gtk
@@ -154,6 +248,18 @@ class LyricsViewTest(unittest.TestCase):
         self.assertEqual(self.view.text_label.get_text(), '潮\nShio\n風')
         self.app.settings.set_boolean('lyrics-translations', True)
         self.assertEqual(self.view.text_label.get_text(), '潮\nShio\nTide\n風')
+
+    def test_the_unsynced_text_puts_the_background_under_its_line(self):
+        answer = {'synced': False, 'lines': [
+            {'text': '潮', 'background': '(潮)', 'translation': 'Tide',
+             'translationBackground': '(tide)'},
+            {'text': '', 'background': '(Oh oh)'}, {'text': '風'}]}
+        self.play(answer)
+        self.assertEqual(self.view.text_label.get_text(), '潮\n(潮)\n(Oh oh)\n風')
+        self.assertEqual(self.view.text_label.get_text(), self.player.lyrics.text)
+        self.app.settings.set_boolean('lyrics-translations', True)
+        self.assertEqual(self.view.text_label.get_text(),
+                         '潮\nTide\n(潮)\n(tide)\n(Oh oh)\n風')
 
 
 @requires_gtk

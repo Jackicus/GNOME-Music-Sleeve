@@ -117,6 +117,16 @@ changes, change it here, with the date. The plan they came from is in
 - **Show Translations and Show Pronunciations stay independent** (2026-10-19), as Apple's
   web player has them: two separate menu items, and with both on a line shows its
   pronunciation, then its translation. Checked against Apple's lyrics component (#309).
+- **Background vocals on a line of their own, parentheses kept** (2026-10-19). A line's
+  background vocals (echoes, ad-libs) show under its main vocals and their pronunciation
+  and translation, smaller and fainter, with their own pronunciation and translation under
+  them, smaller still: Apple's own lyrics component stacks them so, and the unsynced text
+  does the same. The text is Apple's as it is, parentheses and all: Apple's view shows them
+  too (it strips them only to compare the background with its translation), they mark the
+  line as an echo where size and shade alone are faint (a dimmed line, a screen reader's
+  reading of the row), and the background's pronunciation and translation carry their own,
+  which would read oddly under a background without. Folding the background into its line
+  as one string, as before, lost the difference between the singer and the echo (#306).
 
 ## Engine
 
