@@ -56,7 +56,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Artist**. The song playing has the same menu: right-click the player bar, or use **More
   Options** in Now Playing; Up Next's songs have theirs too.
 - Now Playing's **Lyrics** follow the song when Apple Music has them timed: click a line to
-  go to it. Background vocals, such as echoes, show under their line, smaller. In a duet
+  go to it. Where the music plays on without words for a while, before the first verse or
+  between two, three dots fill in until the singing comes back. Background vocals, such
+  as echoes, show under their line, smaller. In a duet
   each singer's lines keep to a side of their own, and lines sung together sit in the
   middle. When Apple Music has translations or pronunciations for a song's lyrics, the
   translation button (beside the volume) offers **Show Translations**, each line's meaning

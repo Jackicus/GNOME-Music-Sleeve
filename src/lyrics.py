@@ -21,6 +21,13 @@ the line current at a playback position, which the Now Playing sheet highlights.
                            # or MIDDLE
     lyrics.index_at(42.5)  # the index of the line current 42.5 s in, -1 before the first
                            # (and always for unsynced lyrics)
+    line.instrumental      # the instrumental break before the line (instrumental_breaks():
+                           # a Break of its start_ms and end_ms), or None
+    lyrics.moment_at(42.5) # what the synced view shows 42.5 s in, a Moment: the row current
+                           # (`index`), whether it is in the break before its line
+                           # (`instrumental`), and how far into its steps (`step`: the dots
+                           # lit, 1 to DOTS, in a break; 0 on a line)
+    lyrics.next_change(42.5)   # when moment_at() next changes (seconds), or None
 
 A line of the answer (FORMAT 2), every field but the times and `text` left out when empty:
 
@@ -38,8 +45,18 @@ A line of the answer (FORMAT 2), every field but the times and `text` left out w
      pronunciationBackgroundWords,  # the transliteration, split and timed as the line is
      translation, translationBackground}   # the translation, split the same way
 
-The current line is the last one that has started: Apple's lines have end times too, but the
-highlight stays on a line through the gap before the next one, as Apple's own view does.
+The current line (index_at) is the last one that has started: Apple's lines have end times
+too, but the highlight stays on a line through the gap before the next one, as Apple's own
+view does. moment_at() differs only in an instrumental break: synced lyrics whose first line
+starts more than INSTRUMENTAL_GAP_MS (9 s) in have one before it, from 0, and a verse (a
+line marked `stanza`) that starts more than that after the end of every line before it has
+one from that end, each ending a millisecond before its line, as Apple's lyrics component
+has them. A gap within a verse has none. A break belongs to the line after it
+(`instrumental`): the view shows its dots in that line's row, so the rows stay one to one
+with the lines (and the keyboard's stops with them), and moment_at() makes that row current
+through the break, its DOTS dots lit one after another, the first as the break begins, the
+next at each further DOTS-th of it. next_change() is the one clock of the view's stepping:
+every moment a row begins, a break begins or a dot lights.
 parse_lines() is the one reading of an answer, and its one validation: the Engine keeps what
 it gives (engine.lyrics_answer), so a lyrics file cached before a fix reads as the fix would
 have it. GObject and Gio only, no GTK: tests feed it invented answers.
@@ -76,6 +93,21 @@ _WORDS = (('words', 'words', 'text'), ('background_words', 'backgroundWords', 'b
            'pronunciation_background'))
 
 
+# Apple's rule: an instrumental break shows only where the music plays on without words for
+# longer than this.
+INSTRUMENTAL_GAP_MS = 9000
+# A break's dots, lit one after another across it.
+DOTS = 3
+
+# An instrumental break: when it starts and ends (milliseconds, both within it).
+Break = namedtuple('Break', 'start_ms end_ms')
+
+# What the synced view shows at a moment (Lyrics.moment_at): the row current (-1: none),
+# whether it is in the break before its line, and the step it is at (the dots lit).
+Moment = namedtuple('Moment', 'index instrumental step')
+NO_MOMENT = Moment(-1, False, 0)
+
+
 def is_secondary(agent):
     """Whether a line sung by `agent` is the secondary singer's, by Apple's rule: any singer
     but v1 (another person, a group, everyone). A song is a duet when some line is."""
@@ -109,7 +141,8 @@ class LyricLine(GObject.Object):
     unless the song is a duet) and so the side of the view it goes on (`side`, which its
     Lyrics sets: side()). The timed pieces (`words`, `background_words`,
     `pronunciation_words`, `pronunciation_background_words`) are tuples of Word, empty for
-    lyrics timed by the line. See the module for the fields."""
+    lyrics timed by the line; `instrumental` is the Break before the line, or None. See the
+    module for the fields."""
 
     __gtype_name__ = 'AppleMusicLyricLine'
 
@@ -129,6 +162,7 @@ class LyricLine(GObject.Object):
         self.side = ''
         self.words = self.background_words = ()
         self.pronunciation_words = self.pronunciation_background_words = ()
+        self.instrumental = None
         if line is not None:
             for name, value in line._asdict().items():
                 setattr(self, name, value)
@@ -219,13 +253,52 @@ def parse_lines(answer):
     return lines
 
 
+def instrumental_breaks(lines):
+    """The instrumental breaks of synced lines (Line tuples or LyricLines in time order),
+    one for each line, by Apple's rules: a Break or None. The first line has one when it
+    starts more than INSTRUMENTAL_GAP_MS in, from 0 to a millisecond before it; a line that
+    opens a verse (`stanza`) has one when it starts more than that after the latest end of
+    the lines before it, from a millisecond after that end to a millisecond before it. A
+    line without an end (no later than its start) leaves no break after it, its length
+    unknown; a gap between two lines of one verse has none."""
+    breaks = [None] * len(lines)
+    if lines and lines[0].start_ms > INSTRUMENTAL_GAP_MS:
+        breaks[0] = Break(0, lines[0].start_ms - 1)
+    end = None      # the latest end so far, None after a line without one
+    for index, line in enumerate(lines):
+        if (index and line.stanza and end is not None
+                and line.start_ms - end > INSTRUMENTAL_GAP_MS):
+            breaks[index] = Break(end + 1, line.start_ms - 1)
+        if line.end_ms > line.start_ms:
+            end = line.end_ms if end is None else max(end, line.end_ms)
+        else:
+            end = None
+    return breaks
+
+
+def dots_lit(instrumental, ms):
+    """How many of a break's DOTS are lit `ms` into the song (inside the break): the first
+    from its start, one more at each further DOTS-th of it."""
+    length = instrumental.end_ms - instrumental.start_ms + 1
+    return 1 + min(DOTS - 1, max(0, ms - instrumental.start_ms) * DOTS // length)
+
+
+def dot_times(instrumental):
+    """When a break's dots light (milliseconds): its start, then each further DOTS-th."""
+    length = instrumental.end_ms - instrumental.start_ms + 1
+    return [instrumental.start_ms + -(-step * length // DOTS) for step in range(DOTS)]
+
+
 def line_index_at(starts, seconds):
     """The index of the line current `seconds` in, given the lines' start times in
     milliseconds, ascending: the last line that has started, or -1 before the first."""
     if not starts:
         return -1
-    ms = int(max(0.0, float(seconds)) * 1000)
-    return bisect.bisect_right(starts, ms) - 1
+    return bisect.bisect_right(starts, _position_ms(seconds)) - 1
+
+
+def _position_ms(seconds):
+    return int(max(0.0, float(seconds)) * 1000)
 
 
 class Lyrics(GObject.Object):
@@ -246,9 +319,17 @@ class Lyrics(GObject.Object):
         items = [LyricLine(line) for line in parsed]
         for item in items:
             item.side = side(item.agent, self.duet)
+        self._breaks = instrumental_breaks(parsed) if self.synced else [None] * len(parsed)
+        for item, instrumental in zip(items, self._breaks, strict=True):
+            item.instrumental = instrumental
         self.lines = Gio.ListStore(item_type=LyricLine)
         self.lines.splice(0, 0, items)
         self._starts = [line.start_ms for line in parsed] if self.synced else []
+        changes = set(self._starts)
+        for instrumental in self._breaks:
+            if instrumental is not None:
+                changes.update(dot_times(instrumental))
+        self._changes = sorted(changes)
         texts = []
         for index, line in enumerate(parsed):
             if line.stanza and index:
@@ -263,6 +344,26 @@ class Lyrics(GObject.Object):
         """The index of the line current `seconds` into the song, or -1 (before the first
         line, or unsynced lyrics)."""
         return line_index_at(self._starts, seconds)
+
+    def moment_at(self, seconds):
+        """What the synced view shows `seconds` into the song (a Moment): in a break, the
+        row of the line after it, its dots lit so far; else the line current (index_at),
+        at step 0. NO_MOMENT before the first line (with no break before it) and always
+        for unsynced lyrics."""
+        ms = _position_ms(seconds)
+        index = bisect.bisect_right(self._starts, ms) - 1
+        following = index + 1
+        if following < len(self._starts):
+            instrumental = self._breaks[following]
+            if instrumental is not None and instrumental.start_ms <= ms:
+                return Moment(following, True, dots_lit(instrumental, ms))
+        return Moment(index, False, 0) if index >= 0 else NO_MOMENT
+
+    def next_change(self, seconds):
+        """When moment_at() next changes after `seconds` (seconds: a line's start, a
+        break's, a dot lighting), or None after the last."""
+        index = bisect.bisect_right(self._changes, _position_ms(seconds))
+        return self._changes[index] / 1000 if index < len(self._changes) else None
 
     def start_of(self, index):
         """Where the line at `index` starts, in seconds (a click on it seeks there)."""

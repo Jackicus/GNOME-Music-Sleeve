@@ -142,6 +142,23 @@ changes, change it here, with the date. The plan they came from is in
   singer is centred too, which still says "neither of the two". Right to left, the sides are
   mirrored (GTK flips the labels' alignment and the margins). The unsynced text stays as it
   is, and the singers are not named to a screen reader, as Apple names none (#307).
+- **Instrumental breaks by Apple's rules, their dots in the next line's row** (2026-10-19).
+  Apple's lyrics component shows three dots before the first verse when the first line
+  starts after 9 s (from 0 to a millisecond before it) and between two verses (TTML `<div>`s;
+  here a line marked `stanza`) when the next verse starts more than 9 s after the previous
+  line's end (from a millisecond after that end), and never between the lines of one verse:
+  `lyrics.instrumental_breaks()` follows it, from the latest end of the lines before (a duet's
+  lines overlap), and none after a line without an end. The dots are not a row of their own,
+  as Apple's are, but open (a `Gtk.Revealer`) over the line after the break, in that line's
+  row: GTK 4.22's list stops its arrow keys at an item that cannot take the focus, so a break
+  item would either trap the keyboard or be an invisible stop on it, and every reader of the
+  lines (the text, the menu, a click's seek) would have to skip it. During a break that row
+  is current, its line still dimmed; the dots light one at a time, the first as the break
+  begins and the next at each third, on the same single timeout that moves the highlight to
+  the next line (`Lyrics.next_change()`), with a CSS fade and a gentle breathing of the group;
+  with animations off GTK runs neither, and the revealer opens at once, so the dots only
+  step. In a duet they sit on the side of the line that follows, where the eye goes next.
+  The intro's dots are the first row, so at the start of a song the list is at its top (#305).
 
 ## Engine
 

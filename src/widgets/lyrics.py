@@ -8,36 +8,48 @@ of LyricLine, unsynced lyrics as one wrapping label in a scrolled window, a spin
 the engine reads them, and a compact status page otherwise: "Lyrics" with nothing playing,
 "No Lyrics" for a song without them.
 
-A synced row is a box (`lyric-line`) of wrapping labels, one for each of PARTS, top to
+A synced row (`lyric-row`) is the dots of the instrumental break before its line, if it has
+one, over the line's box (`lyric-line`) of wrapping labels, one for each of PARTS, top to
 bottom: the main vocals (`box.label`, title-3), their pronunciation and translation
 (`box.pronunciation`, `box.translation`), then the background vocals (`box.background`,
 smaller and fainter: `lyric-background`) and theirs (`box.pronunciation_background`,
-`box.translation_background`, smaller still), as Apple's own view stacks them. A label
-with nothing to show is hidden: a line of background vocals only has no main label. The
-line current at the Player's position carries the `current` CSS class, the others
-`dimmed`; a click seeks to the line's start; the line opening a verse or a chorus
-`stanza`, a gap above its box, outside the highlight the box draws for the row. In a duet
-each row goes on its line's side (`lyrics.side()`, set by set_side()): the lead singer's
-lines at the start, their labels aligned to it, the second singer's at the end, aligned to
-that, a group's in the middle, centred, each box narrowed to duet_measure() of the list's
-width by a margin on its other side (or both), so the two singers read as two columns, as
-Apple's own view has them; GTK mirrors the labels' alignment and the margins in a
-right-to-left layout. A song that is not a duet has its rows across the list. The
-unsynced text stacks the same parts the same way (text_markup()). The pronunciations
-(Apple's transliterations) and the translations show while the `lyrics-pronunciations` and
-`lyrics-translations` settings are on, which the sheet's Translation and Pronunciation
-menu switches.
+`box.translation_background`, smaller still), as Apple's own view stacks them. A label with
+nothing to show is hidden: a line of background vocals only has no main label. The line
+current at the Player's position carries the `current` CSS class, the others `dimmed`; a
+click seeks to the line's start; the row of a line opening a verse or a chorus `stanza`, a
+gap above it, outside the highlight the line's box draws. The break's DOTS dots
+(`lyric-dots`, small round boxes in the foreground colour) take no room until the break
+begins: a Gtk.Revealer slides them open, the row then current with its line still dimmed,
+lights them one after another across the break (show_dots(): a dot `lit` as its DOTS-th of
+the break begins, its opacity eased by CSS) while the group breathes (a CSS animation of
+its scale, `breathing`), and slides them shut as the line begins, as Apple's own view does.
+With animations off (gtk-enable-animations) GTK runs no CSS animation or transition and the
+revealer opens and shuts at once: the dots only step. The dots are part of the row, not an
+item of their own, so the keyboard's stops stay the lines (GTK's list stops its arrow keys
+at an item that cannot take the focus), and a click on the row seeks to its line, even
+during the break. In a duet each row goes on its line's side (`lyrics.side()`, set by
+set_side()): the lead singer's lines at the start, their labels aligned to it, the second
+singer's at the end, aligned to that, a group's in the middle, centred, each box narrowed
+to duet_measure() of the list's width by a margin on its other side (or both), the break's
+dots on its line's side too, so the two singers read as two columns, as Apple's own view
+has them; GTK mirrors the labels' alignment and the margins in a right-to-left layout. A
+song that is not a duet has its rows across the list. The unsynced text stacks the same
+parts the same way (text_markup()). The pronunciations (Apple's transliterations) and the
+translations show while the `lyrics-pronunciations` and `lyrics-translations` settings are
+on, which the sheet's Translation and Pronunciation menu switches.
 
 The list follows playback only while the sheet is open (set_active), and only when the
-current line changes: scroll_to brings the row on screen, and once the list's geometry has
-held still for a frame (a tick callback: the sheet's opening lays the list out over a few
-frames) the row glides to the middle of the view; before the first line it glides back to
-the top. Not while the list is the user's: scrolled by wheel, touch or scrollbar in the
-last USER_SCROLL_PAUSE seconds, or with the focus on a line (a click or Enter on a line
-seeks there and hands the list back). The line current is found at the Player's
+current row changes (a line, a break beginning or ending: lyrics.moment_at()): scroll_to
+brings the row on screen, and once the list's geometry has held still for a frame (a tick
+callback: the sheet's opening lays the list out over a few frames, and a break's dots a few
+more) the row glides to the middle of the view; before the first line it glides back to the
+top. Not while the list is the user's: scrolled by wheel, touch or scrollbar in the last
+USER_SCROLL_PAUSE seconds, or with the focus on a line (a click or Enter on a line seeks
+there and hands the list back). What is current is found at the Player's
 estimated_position() (MusicKit reports whole seconds; the lines start at milliseconds), on
 each position event and, while shown and playing, from one GLib timeout armed for the next
-line's start, so the highlight moves as the line begins rather than up to a second after.
+change (lyrics.next_change(): a line's start, a break's, a dot lighting), so the highlight
+moves as the line begins rather than up to a second after: the one clock the rows step by.
 A duet's margins follow the list's width (its horizontal adjustment's page), set again on
 the rows bound when it changes, from an idle (not inside the list's allocation).
 """
@@ -56,8 +68,9 @@ log = logging.getLogger(__name__)
 USER_SCROLL_PAUSE = 4.0    # seconds after the user scrolls before the list follows again
 CENTRE_DURATION = 300      # ms, the glide bringing the current line to the middle
 SETTLE_FRAMES = 40         # frames to wait for the row's geometry to hold still, at most
-NEXT_LINE_FLOOR = 0.05     # seconds: the least a timeout for the next line waits (no spin
+NEXT_CHANGE_FLOOR = 0.05   # seconds: the least a timeout for the next change waits (no spin
                            # when the estimate stands still before a line's start)
+REVEAL_DURATION = 250      # ms, a break's dots sliding open or shut
 DUET_SHARE = 0.6           # a duet's line takes this share of the list's width (Apple's)...
 DUET_MIN_WIDTH = 280       # px: ...or this much, in a narrow list, the whole width at most
 
@@ -76,7 +89,8 @@ class LyricsView(Gtk.Stack):
         self._active = False
         self._lyrics = None
         self._shown = Shown(False, False)   # the settings: the lines' extras shown
-        self._current = -1              # the index of the line current, or -1
+        self._current = -1              # the index of the row current, or -1
+        self._moment = lyrics_model.NO_MOMENT   # what is current (lyrics.moment_at())
         self._rows = {}                 # bound position -> its row's box
         self._centre_pending = None     # a line to centre once its row holds still
         self._tick = None               # the tick callback watching for that
@@ -86,7 +100,7 @@ class LyricsView(Gtk.Stack):
         self._user_scrolled_at = 0.0
         self._keyboard_in_list = False  # the focus is on a line: the list is the user's
         self._animation = None
-        self._next_line_source = 0      # the timeout for the next line's start, while armed
+        self._next_change_source = 0    # the timeout for the next change, while armed
         self._width = 0                 # the list's width, as its adjustment last said
         self._inset = 0                 # a duet's row's margin: the width it leaves
         self._inset_source = 0          # the idle setting a new one on the rows, while armed
@@ -168,7 +182,8 @@ class LyricsView(Gtk.Stack):
             self._user_scrolled_at = 0.0
             self._follow(force=True)
         else:
-            self._disarm_next_line()
+            self._disarm_next_change()
+            self._paint(self._current)     # a break's dots stop breathing while hidden
 
     # -- the lyrics --------------------------------------------------------------------
 
@@ -177,7 +192,8 @@ class LyricsView(Gtk.Stack):
         if lyrics is not self._lyrics:
             self._lyrics = lyrics
             self._current = -1
-            self._disarm_next_line()
+            self._moment = lyrics_model.NO_MOMENT
+            self._disarm_next_change()
             self._stop_centring()
             self._stop_animation()  # a glide still running would scroll the new song's list
             self.list_view.set_model(
@@ -223,49 +239,63 @@ class LyricsView(Gtk.Stack):
     # -- the current line --------------------------------------------------------------
 
     def _follow(self, force=False):
-        """Mark the line current at the Player's position and bring it into view when it
-        changed (or `force`: the lyrics or the sheet's state changed); then wait for the
-        next line's start."""
+        """Show what is current at the Player's position (lyrics.moment_at(): the line, or
+        a break's dots and how many are lit), bringing the row into view when the row or
+        its break changed (or `force`: the lyrics or the sheet's state changed); then wait
+        for the next change."""
         lyrics = self._lyrics
         if lyrics is None or not lyrics.synced or self._player is None:
             return
-        index = lyrics.index_at(self._player.estimated_position())
-        if index != self._current or force:
-            previous, self._current = self._current, index
-            self._style(previous)
-            self._style(index)
-            if self._active:
-                self._bring_into_view(index)
-        self._arm_next_line()
+        moment = lyrics.moment_at(self._player.estimated_position())
+        if moment != self._moment or force:
+            previous, self._moment = self._moment, moment
+            self._current = moment.index
+            self._paint(previous.index)
+            if moment.index != previous.index:
+                self._paint(moment.index)
+            if self._active and (force or moment[:2] != previous[:2]):
+                self._bring_into_view(moment.index)
+        self._arm_next_change()
 
-    def _arm_next_line(self):
-        """One timeout for the moment the next line starts, while the tab is shown and the
-        music plays (the position events alone are up to a second late); it replaces any
-        pending one, and the next position or state event arms it again."""
-        self._disarm_next_line()
+    def _arm_next_change(self):
+        """One timeout for the next change (lyrics.next_change(): a line's start, a break's,
+        a dot lighting), while the tab is shown and the music plays (the position events
+        alone are up to a second late); it replaces any pending one, and the next position
+        or state event arms it again."""
+        self._disarm_next_change()
         lyrics = self._lyrics
         player = self._player
         if (not self._active or lyrics is None or not lyrics.synced or player is None
-                or player.state != 'playing' or self._current + 1 >= len(lyrics)):
+                or player.state != 'playing'):
             return
-        delay = lyrics.start_of(self._current + 1) - player.estimated_position()
-        self._next_line_source = GLib.timeout_add(
-            int(max(delay, NEXT_LINE_FLOOR) * 1000), self._on_next_line)
+        position = player.estimated_position()
+        change = lyrics.next_change(position)
+        if change is None:
+            return
+        self._next_change_source = GLib.timeout_add(
+            int(max(change - position, NEXT_CHANGE_FLOOR) * 1000), self._on_next_change)
 
-    def _on_next_line(self):
-        self._next_line_source = 0
+    def _on_next_change(self):
+        self._next_change_source = 0
         self._follow()
         return GLib.SOURCE_REMOVE
 
-    def _disarm_next_line(self):
-        if self._next_line_source:
-            GLib.source_remove(self._next_line_source)
-            self._next_line_source = 0
+    def _disarm_next_change(self):
+        if self._next_change_source:
+            GLib.source_remove(self._next_change_source)
+            self._next_change_source = 0
 
-    def _style(self, position):
+    def _paint(self, position, animate=True):
+        """Show the row at `position` (if it is bound) as the moment has it: its line
+        current or dimmed, its break's dots open, lit so far, or shut."""
         box = self._rows.get(position)
-        if box is not None:
-            _set_current(box, position == self._current)
+        if box is None:
+            return
+        moment = self._moment
+        here = position == moment.index
+        _set_current(box, here and not moment.instrumental)
+        show_dots(box, moment.step if here and moment.instrumental else 0, animate,
+                  breathe=self._active)
 
     def _users_turn(self):
         """Whether the list is the user's for now: scrolled in the last USER_SCROLL_PAUSE
@@ -358,9 +388,11 @@ class LyricsView(Gtk.Stack):
         return GLib.SOURCE_REMOVE
 
     def _geometry(self, box):
-        """(row y, row height, page, upper) for the row holding `box`, in the list's
-        coordinates, or None while it has no place yet."""
-        row = box.get_parent() or box
+        """(row y, row height, page, upper) for the row holding `box` (its line's), in the
+        list's coordinates, or None while it has no place yet."""
+        row = box
+        for _level in range(2):     # the box's lyric-row, then the list's row
+            row = row.get_parent() or row
         ok, bounds = row.compute_bounds(self.list_view)
         adjustment = self.scrolled.get_vadjustment()
         page = adjustment.get_page_size()
@@ -425,6 +457,7 @@ class LyricsView(Gtk.Stack):
     # -- the list -----------------------------------------------------------------------
 
     def _on_setup(self, _factory, list_item):
+        row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=['lyric-row'])
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.add_css_class('lyric-line')
         box.side, box.inset = '', 0     # as set_side() left them: across the list
@@ -434,29 +467,43 @@ class LyricsView(Gtk.Stack):
                               css_classes=part.css_classes)
             setattr(box, part.attribute, label)
             box.append(label)
-        list_item.set_child(box)
+        box.dots = Gtk.Box(spacing=8, halign=Gtk.Align.START, css_classes=['lyric-dots'],
+                           accessible_role=Gtk.AccessibleRole.PRESENTATION)
+        for _dot in range(lyrics_model.DOTS):
+            box.dots.append(Gtk.Box(valign=Gtk.Align.CENTER, css_classes=['lyric-dot'],
+                                    accessible_role=Gtk.AccessibleRole.PRESENTATION))
+        box.revealer = Gtk.Revealer(child=box.dots, visible=False,
+                                    transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                    transition_duration=REVEAL_DURATION)
+        box.lit = 0                     # as show_dots() left them: shut
+        row.append(box.revealer)
+        row.append(box)
+        row.line = box
+        list_item.set_child(row)
 
     def _on_bind(self, _factory, list_item):
         position = list_item.get_position()
-        box = list_item.get_child()
+        row = list_item.get_child()
+        box = row.line
         line = list_item.get_item()
         for part in PARTS:
             getattr(box, part.attribute).set_label(getattr(line, part.field))
         _show_parts(box, self._shown)
         set_side(box, line.side, self._inset)
         list_item.set_accessible_label(spoken(line))
-        # A gap before a verse or a chorus, as in the text: the box's margin, outside the
-        # highlight the box draws for its row (style.css).
+        # A gap before a verse or a chorus, as in the text: the row's margin, outside the
+        # highlight its line's box draws (style.css); a break's dots open inside it.
         if line.stanza and position:
-            box.add_css_class('stanza')
+            row.add_css_class('stanza')
         else:
-            box.remove_css_class('stanza')
+            row.remove_css_class('stanza')
+        box.revealer.set_visible(line.instrumental is not None)
         self._rows[position] = box
-        _set_current(box, position == self._current)
+        self._paint(position, animate=False)
 
     def _on_unbind(self, _factory, list_item):
         position = list_item.get_position()
-        if self._rows.get(position) is list_item.get_child():
+        if self._rows.get(position) is list_item.get_child().line:
             del self._rows[position]
 
     def _on_activate(self, _list_view, position):
@@ -497,12 +544,12 @@ PARTS = (
 # that is not one): its labels' xalign and justification, and the share of the row's inset
 # its start margin takes (its end margin has the rest). GTK mirrors all of them in a
 # right-to-left layout.
-Side = namedtuple('Side', 'xalign justify start')
+Side = namedtuple('Side', 'xalign justify start halign')
 SIDES = {
-    '': Side(0.0, Gtk.Justification.LEFT, 0.0),
-    lyrics_model.START: Side(0.0, Gtk.Justification.LEFT, 0.0),
-    lyrics_model.END: Side(1.0, Gtk.Justification.RIGHT, 1.0),
-    lyrics_model.MIDDLE: Side(0.5, Gtk.Justification.CENTER, 0.5),
+    '': Side(0.0, Gtk.Justification.LEFT, 0.0, Gtk.Align.START),
+    lyrics_model.START: Side(0.0, Gtk.Justification.LEFT, 0.0, Gtk.Align.START),
+    lyrics_model.END: Side(1.0, Gtk.Justification.RIGHT, 1.0, Gtk.Align.END),
+    lyrics_model.MIDDLE: Side(0.5, Gtk.Justification.CENTER, 0.5, Gtk.Align.CENTER),
 }
 
 
@@ -516,21 +563,24 @@ def duet_measure(width):
 def set_side(box, side, inset):
     """Put a row's box on `side` (a duet's line's, lyrics.side(); '' across the list) with
     `inset` px of the list's width left beside it: every label aligned to the side, the
-    margin on the other side (both halves for the middle). A row bound again loses its
-    previous line's side. Cheap when nothing changes: a row keeps what it was given."""
+    margin on the other side (both halves for the middle), and the dots of the break before
+    the line placed the same way. A row bound again loses its previous line's side. Cheap
+    when nothing changes: a row keeps what it was given."""
     if not side:
         inset = 0
     if box.side == side and box.inset == inset:
         return
     box.side, box.inset = side, inset
-    xalign, justify, start = SIDES[side]
+    xalign, justify, start, halign = SIDES[side]
     for part in PARTS:
         label = getattr(box, part.attribute)
         label.set_xalign(xalign)
         label.set_justify(justify)
     start = int(inset * start)
-    box.set_margin_start(start)
-    box.set_margin_end(inset - start)
+    for widget in (box, box.dots):
+        widget.set_margin_start(start)
+        widget.set_margin_end(inset - start)
+    box.dots.set_halign(halign)
 
 
 def shown(settings):
@@ -572,6 +622,40 @@ def _show_parts(box, extras):
     for part in PARTS:
         label = getattr(box, part.attribute)
         label.set_visible(bool(label.get_label()) and _wanted(part, extras))
+
+
+def show_dots(box, lit, animate=True, breathe=True):
+    """Show the dots of the break before a row's line with `lit` of them lit (shut for 0),
+    sliding them open or shut when `animate` (not when a row is bound: a recycled row shows
+    its state at once), the group breathing while open and `breathe` (the tab shown: a CSS
+    animation asks for every frame). A row's dots shut keep the lights they had, so they do
+    not go dark as they slide away."""
+    if lit:
+        if lit != box.lit:
+            for index, dot in enumerate(_children(box.dots)):
+                if index < lit:
+                    dot.add_css_class('lit')
+                else:
+                    dot.remove_css_class('lit')
+            box.lit = lit
+    if lit and breathe:
+        box.dots.add_css_class('breathing')
+    else:
+        box.dots.remove_css_class('breathing')
+    revealer = box.revealer
+    if revealer.get_reveal_child() != bool(lit):
+        if not animate:
+            revealer.set_transition_type(Gtk.RevealerTransitionType.NONE)
+        revealer.set_reveal_child(bool(lit))
+        if not animate:
+            revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+
+
+def _children(widget):
+    child = widget.get_first_child()
+    while child is not None:
+        yield child
+        child = child.get_next_sibling()
 
 
 def _set_current(box, current):

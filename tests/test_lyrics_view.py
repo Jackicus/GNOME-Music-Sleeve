@@ -6,11 +6,13 @@ while `lyrics-pronunciations` and `lyrics-translations` are on, its background v
 line of their own under those, with their own extras, in the synced list and the unsynced
 text; a verse's gap outside the highlight of its line; and the Now Playing sheet's
 Translation and Pronunciation menu, offered for lyrics that have either; a duet's rows on
-their singers' sides, mirrored right to left, and a recycled row losing its old side. (The
-model is test_lyrics.py's.)"""
+their singers' sides, mirrored right to left, and a recycled row losing its old side; an
+instrumental break's dots, opening over the line after it, lit step by step, and shut as
+the line begins. (The model is test_lyrics.py's.)"""
 
 import json
 import unittest
+from unittest import mock
 
 from tests import ROOT
 from tests.gtk import SCHEMA_ID, requires_gtk, wait_for
@@ -65,6 +67,15 @@ def make_list_item():
             self.spoken = label
 
     return Item()
+
+
+def lit(box):
+    """How many of a row's break dots are lit, and whether they are open (as asked: the
+    revealer may still be sliding)."""
+    from applemusic.widgets.lyrics import _children
+
+    return (sum(dot.has_css_class('lit') for dot in _children(box.dots)),
+            box.revealer.get_reveal_child())
 
 
 def alignment(box):
@@ -219,7 +230,7 @@ class LyricsViewTest(unittest.TestCase):
         for line in (*lines, LyricLine(), lines[0]):
             item.line = line
             self.view._on_bind(None, item)
-            bound.append((visible_parts(item.child), item.spoken))
+            bound.append((visible_parts(item.child.line), item.spoken))
             self.view._on_unbind(None, item)
         self.assertEqual(bound, [
             (('Harbour lights', 'Ha-bor', 'Luces del puerto', '(lights)', '(laits)',
@@ -245,11 +256,14 @@ class LyricsViewTest(unittest.TestCase):
         self.view._inset = 120
         item = make_list_item()
         self.view._on_setup(None, item)
-        bound = []
+        bound, dots = [], []
         for line in (duet[0], duet[1], duet[0], duet[2], solo[0], duet[2], duet[0]):
             item.line = line
             self.view._on_bind(None, item)
-            bound.append((alignment(item.child), item.spoken))
+            box = item.child.line
+            bound.append((alignment(box), item.spoken))
+            dots.append((box.dots.get_halign().value_nick, box.dots.get_margin_start(),
+                         box.dots.get_margin_end()))
             self.view._on_unbind(None, item)
         end = (1.0, 'right', 120, 0)
         start = (0.0, 'left', 0, 120)
@@ -259,6 +273,97 @@ class LyricsViewTest(unittest.TestCase):
             (end, 'Harbour lights (lights)'), (start, 'Low tide'),
             (end, 'Harbour lights (lights)'), (middle, 'All aboard'), (across, 'Sea wall'),
             (middle, 'All aboard'), (end, 'Harbour lights (lights)')])
+        # A break's dots go on its line's side.
+        self.assertEqual(dots, [('end', 120, 0), ('start', 0, 120), ('end', 120, 0),
+                                ('center', 60, 60), ('start', 0, 0), ('center', 60, 60),
+                                ('end', 120, 0)])
+
+    def test_a_row_rebound_switches_between_a_break_and_a_line(self):
+        """A recycled row bound to a line with a break shows its dots, open and lit as the
+        moment has them, at once; bound to a line without one, none; bound again to a
+        break that is not current, shut."""
+        from applemusic.lyrics import Break, LyricLine, Moment
+
+        after_break = LyricLine()
+        after_break.text, after_break.instrumental = 'Low tide', Break(0, 8999)
+        plain = LyricLine()
+        plain.text = 'Sea wall'
+        item = make_list_item()
+        self.view._on_setup(None, item)
+        self.view._active = True    # the tab shown: the open dots breathe
+        self.addCleanup(setattr, self.view, '_active', False)
+        states = []
+        for line, moment in ((after_break, Moment(3, True, 2)), (plain, Moment(3, False, 0)),
+                             (after_break, Moment(2, False, 0)),
+                             (after_break, Moment(3, True, 3))):
+            self.view._moment = moment
+            item.line = line
+            self.view._on_bind(None, item)
+            box = item.child.line
+            states.append((box.revealer.get_visible(), *lit(box),
+                           box.revealer.get_child_revealed(), box.has_css_class('current'),
+                           box.dots.has_css_class('breathing')))
+            self.view._on_unbind(None, item)
+        self.assertEqual(states, [
+            (True, 2, True, True, False, True),     # in the break: open, two lit, line dim
+            (False, 2, False, False, True, False),  # a line without a break, current
+            (True, 2, False, False, False, False),  # a break not current: shut
+            (True, 3, True, True, False, True)])
+
+    def test_a_breaks_dots_open_step_and_shut(self):
+        """The invented duet's 12.4 s intro: the first row current with its dots open, a
+        dot more lit at each third, then its line current, the dots shut; a break between
+        verses opens over its line, the line before it dimmed."""
+        self.play(fixture('lyrics_syllable.json'))
+        self.assertTrue(wait_for(lambda: 8 in self.view._rows), sorted(self.view._rows))
+        rows = self.view._rows
+        first = rows[0]
+        self.assertEqual(self.view._current, 0)
+        self.assertEqual(lit(first), (1, True))
+        self.assertTrue(first.has_css_class('dimmed'))  # the line is still to come
+        # The group breathes only while the tab is shown.
+        self.assertFalse(first.dots.has_css_class('breathing'))
+        self.view.set_active(True)
+        self.addCleanup(self.view.set_active, False)
+        self.assertTrue(first.dots.has_css_class('breathing'))
+        self.assertTrue(first.revealer.get_visible())
+        self.assertFalse(rows[1].revealer.get_visible())
+        for position, expected in ((4.2, (2, True)), (8.3, (3, True)), (12.4, (3, False))):
+            self.player.apply({'position': position})
+            self.assertTrue(wait_for(lambda: lit(first) == expected), (position, lit(first)))  # noqa: B023
+        self.assertTrue(first.has_css_class('current'))
+        self.assertFalse(first.dots.has_css_class('breathing'))
+        self.assertTrue(wait_for(lambda: not first.revealer.get_child_revealed()))
+        # The break before the third verse.
+        self.player.apply({'position': 43.4})
+        self.assertTrue(wait_for(lambda: rows[7].has_css_class('current')))
+        self.player.apply({'position': 47.5})
+        self.assertTrue(wait_for(lambda: lit(rows[8]) == (2, True)), lit(rows[8]))
+        self.assertEqual(self.view._current, 8)
+        self.assertTrue(rows[7].has_css_class('dimmed') and rows[8].has_css_class('dimmed'))
+
+    def test_the_timeout_waits_for_the_next_dot(self):
+        """While playing, the one timeout is armed for the next change: a dot lighting in a
+        break, the next line's start on a line."""
+        from applemusic.widgets import lyrics as view_module
+
+        self.view.set_active(True)
+        self.addCleanup(self.view.set_active, False)
+        self.play(fixture('lyrics_syllable.json'))
+        delays = []
+
+        def timeout_add(delay, callback):
+            delays.append(delay)
+            return 0
+
+        for position in (4.0, 13.0):
+            self.player.apply({'state': 'playing', 'position': position})
+            with mock.patch.object(view_module.GLib, 'timeout_add', timeout_add):
+                self.view._arm_next_change()
+        # 4.134 s: the second dot of the intro; 16.3 s: the second line.
+        self.assertEqual(len(delays), 2)
+        self.assertAlmostEqual(delays[0], 134, delta=30)
+        self.assertAlmostEqual(delays[1], 3300, delta=30)
 
     def test_the_measure_of_a_duets_lines(self):
         from applemusic.widgets.lyrics import duet_measure
@@ -346,12 +451,12 @@ class LyricsViewTest(unittest.TestCase):
         rows = self.view._rows
         # The fixture's second verse starts at its fifth line; the first line has no gap.
         self.assertEqual([position for position in range(6)
-                          if rows[position].has_css_class('stanza')], [4])
-        # The gap is the box's margin: the box (which draws the highlight) is no taller than
+                          if rows[position].get_parent().has_css_class('stanza')], [4])
+        # The gap is the row's margin: the box (which draws the highlight) is no taller than
         # its neighbour without one, and starts lower in its row.
         self.assertTrue(wait_for(lambda: rows[4].get_height() > 0))
         self.assertEqual(rows[4].get_height(), rows[3].get_height())
-        ok, bounds = rows[4].compute_bounds(rows[4].get_parent())
+        ok, bounds = rows[4].compute_bounds(rows[4].get_parent().get_parent())
         self.assertTrue(ok)
         self.assertGreaterEqual(bounds.get_y(), 18)
 
