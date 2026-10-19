@@ -77,9 +77,15 @@ paths:
   from the entry playing on, its size set again with each offset (`queue.slice_size()`,
   gtk-notes.md; tests/test_queue.py); the lyrics list is the user's while they scroll it
   (wheel, touch, scrollbar) or have the focus on a line. A lyrics row's side in a duet
-  (its labels' alignment, its box's horizontal margins) is set only through
-  `widgets.lyrics.set_side()`, at bind and when the list's width changes, from the line's
-  `side` (`lyrics.side()`).
+  (its labels' alignment, its box's horizontal margins, its break's dots) is set only
+  through `widgets.lyrics.set_side()`, at bind and when the list's width changes, from the
+  line's `side` (`lyrics.side()`). An instrumental break (`lyrics.instrumental_breaks()`,
+  Apple's 9 s rule) belongs to the line after it (`LyricLine.instrumental`), its dots in
+  that line's row, never an item of its own (a list item that cannot take the focus stops
+  GTK's arrow keys). What the synced view shows is `Lyrics.moment_at()` (the row current,
+  in its break or not, and its step: the dots lit), and it steps on one GLib timeout armed
+  for `Lyrics.next_change()`, never a per-frame tick: a new kind of step (a word sung)
+  goes into those two.
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with
   `Gio.DBusConnection.register_object_with_closures2` (the older call is deprecated since GLib

@@ -318,7 +318,8 @@ button.release-card {
    the play button largest; the lyrics as title-3 lines (widgets/lyrics.py), each with its
    pronunciation and translation under it when shown, then its background vocals, smaller,
    with theirs; the current line at full opacity (the others carry .dimmed), a line fading
-   between the two; the queue's rows as the detail pages' track rows. */
+   between the two; an instrumental break's dots over the line after it; the queue's rows
+   as the detail pages' track rows. */
 .now-playing .play-button {
   min-width: 56px;
   min-height: 56px;
@@ -345,9 +346,10 @@ listview.lyrics-list {
 
 /* A lyrics row draws nothing itself: its line's box (.lyric-line) has the padding and the
    rounded hover, press and focus, as libadwaita's activatable rows, so that a verse's gap,
-   the box's margin, stays outside them (GTK's list rows take no vertical margin). A duet's
-   box is narrowed to its singer's side by a horizontal margin widgets/lyrics.py sets from
-   the list's width (set_side()), so the highlight sits on that side too. */
+   the margin of the row's child (.lyric-row), stays outside them (GTK's list rows take no
+   vertical margin), and so do a break's dots over the line. A duet's box is narrowed to
+   its singer's side by a horizontal margin widgets/lyrics.py sets from the list's width
+   (set_side()), so the highlight sits on that side too. */
 listview.lyrics-list > row {
   margin: 0 6px;
   padding: 0;
@@ -364,15 +366,15 @@ listview.lyrics-list > row {
   transition: opacity 200ms ease-out;
 }
 
-listview.lyrics-list > row:hover > .lyric-line {
+listview.lyrics-list > row:hover > .lyric-row > .lyric-line {
   background-color: color-mix(in srgb, currentColor 7%, transparent);
 }
 
-listview.lyrics-list > row:active > .lyric-line {
+listview.lyrics-list > row:active > .lyric-row > .lyric-line {
   background-color: color-mix(in srgb, currentColor 16%, transparent);
 }
 
-listview.lyrics-list > row:focus-visible > .lyric-line {
+listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
   outline: 2px solid color-mix(in srgb, var(--accent-color) 50%, transparent);
 }
 
@@ -381,8 +383,40 @@ listview.lyrics-list > row:focus-visible > .lyric-line {
 }
 
 /* The first line of a verse or a chorus: a gap before it, as the unsynced text has. */
-.lyric-line.stanza {
+.lyric-row.stanza {
   margin-top: 18px;
+}
+
+/* An instrumental break's dots, over the line after it while the break plays (a revealer
+   opens them): round, in the text's colour, faint until lit one after another across the
+   break, the group breathing while open: a pulse of its opacity, which only redraws it (a
+   scale would lay the list out again at every frame). With animations off GTK runs neither
+   the breathing nor the fade: the dots light in steps. */
+.lyric-dots {
+  margin: 10px 12px 12px;
+}
+
+.lyric-dots.breathing {
+  animation: lyric-breathe 2400ms ease-in-out infinite;
+}
+
+@keyframes lyric-breathe {
+  from { opacity: 1; }
+  50% { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+.lyric-dot {
+  min-width: 12px;
+  min-height: 12px;
+  border-radius: 9999px;
+  background-color: currentColor;
+  opacity: 0.25;
+  transition: opacity 600ms ease-out;
+}
+
+.lyric-dot.lit {
+  opacity: 1;
 }
 
 /* A line's pronunciation and translation, under it: smaller and fainter than the line

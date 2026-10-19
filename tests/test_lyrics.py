@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""src/lyrics.py: the engine's lyrics answer as a model, and the current line by position."""
+"""src/lyrics.py: the engine's lyrics answer as a model, the current line by position, and
+the instrumental breaks between verses with their dots."""
 
 import json
 import pathlib
@@ -9,8 +10,10 @@ import unittest
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.lyrics import (END, MIDDLE, START, LyricLine, Lyrics, Word, is_secondary,
-                               line_index_at, parse_lines, side)
+from applemusic.lyrics import (DOTS, END, INSTRUMENTAL_GAP_MS, MIDDLE, NO_MOMENT, START,
+                               Break, LyricLine, Lyrics, Moment, Word, dot_times, dots_lit,
+                               instrumental_breaks, is_secondary, line_index_at, parse_lines,
+                               side)
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
@@ -161,6 +164,137 @@ class LyricsObjectTest(unittest.TestCase):
         self.assertFalse(lyrics.synced)
         self.assertEqual(len(lyrics), 0)
         self.assertEqual(lyrics.text, '')
+
+
+def timed(*lines):
+    """Synced lyrics from (start, end, stanza) for each line, its text invented."""
+    return Lyrics({'synced': True, 'lines': [
+        {'startMs': start, 'endMs': end, 'text': f'Line {index}', 'stanza': stanza}
+        for index, (start, end, stanza) in enumerate(lines)]})
+
+
+def breaks(*lines):
+    return [line.instrumental for line in timed(*lines).lines]
+
+
+class BreaksTest(unittest.TestCase):
+    """Apple's instrumental breaks: before a first line more than 9 s in, and between two
+    verses more than 9 s apart."""
+
+    def test_the_rule_is_nine_seconds(self):
+        self.assertEqual(INSTRUMENTAL_GAP_MS, 9000)
+        self.assertEqual(DOTS, 3)
+
+    def test_an_intro(self):
+        self.assertEqual(breaks((9001, 12000, True)), [Break(0, 9000)])
+        self.assertEqual(breaks((12400, 16000, True), (16300, 19800, False)),
+                         [Break(0, 12399), None])
+        # Exactly 9 s, or less: none.
+        self.assertEqual(breaks((9000, 12000, True)), [None])
+        self.assertEqual(breaks((1200, 4800, True)), [None])
+        # Whether the first line opens a verse or not.
+        self.assertEqual(breaks((20000, 24000, False)), [Break(0, 19999)])
+
+    def test_between_verses(self):
+        # The next verse 9.001 s after the previous line's end: from that end to the line.
+        self.assertEqual(breaks((1000, 2000, True), (2500, 4000, False),
+                                (13001, 15000, True)),
+                         [None, None, Break(4001, 13000)])
+        # Exactly 9 s, or less: none.
+        self.assertEqual(breaks((1000, 2000, True), (2500, 4000, False),
+                                (13000, 15000, True)), [None, None, None])
+        self.assertEqual(breaks((1000, 2000, True), (5000, 6000, True)), [None, None])
+
+    def test_none_within_a_verse(self):
+        self.assertEqual(breaks((1000, 2000, True), (30000, 32000, False),
+                                (60000, 62000, False)), [None, None, None])
+
+    def test_from_the_latest_end(self):
+        """Lines that overlap (a duet): the break starts after the last voice has ended."""
+        self.assertEqual(breaks((1000, 9000, True), (2000, 4000, False),
+                                (20000, 22000, True)), [None, None, Break(9001, 19999)])
+        # ...which may leave no break at all.
+        self.assertEqual(breaks((1000, 12000, True), (2000, 3000, False),
+                                (14000, 16000, True)), [None, None, None])
+
+    def test_none_after_a_line_without_an_end(self):
+        self.assertEqual(breaks((1000, 0, True), (20000, 22000, True)), [None, None])
+        self.assertEqual(breaks((1000, 2000, True), (3000, 3000, False),
+                                (20000, 22000, True)), [None, None, None])
+        # A line without an end at the start of a verse ends nothing: the break after the
+        # next is from its end.
+        self.assertEqual(breaks((1000, 2000, True), (3000, 0, True), (4000, 5000, False),
+                                (20000, 22000, True)), [None, None, None, Break(5001, 19999)])
+
+    def test_none_for_unsynced_or_empty_lyrics(self):
+        unsynced = Lyrics({'synced': False, 'lines': [
+            {'startMs': 20000, 'endMs': 22000, 'text': 'One', 'stanza': True},
+            {'startMs': 40000, 'endMs': 42000, 'text': 'Two', 'stanza': True}]})
+        self.assertEqual([line.instrumental for line in unsynced.lines], [None, None])
+        self.assertEqual(unsynced.moment_at(30), NO_MOMENT)
+        self.assertIsNone(unsynced.next_change(0))
+        empty = Lyrics({'synced': True, 'lines': []})
+        self.assertEqual((empty.moment_at(0), empty.next_change(0)), (NO_MOMENT, None))
+        self.assertEqual(instrumental_breaks([]), [])
+        self.assertIsNone(LyricLine().instrumental)
+
+    def test_the_dots_light_across_a_break(self):
+        """The first dot as the break begins, the next at each further third."""
+        instrumental = Break(4001, 13000)
+        self.assertEqual(dot_times(instrumental), [4001, 7001, 10001])
+        self.assertEqual([dots_lit(instrumental, ms) for ms in
+                          (4001, 7000, 7001, 10000, 10001, 13000)], [1, 1, 2, 2, 3, 3])
+        # A length that does not divide: each step at the first millisecond past its third.
+        odd = Break(0, 9999)
+        self.assertEqual(dot_times(odd), [0, 3334, 6667])
+        self.assertEqual([dots_lit(odd, ms) for ms in (3333, 3334, 6666, 6667)], [1, 2, 2, 3])
+        # Every time dot_times() gives, dots_lit() steps there and not a millisecond before.
+        for start, end in ((0, 12399), (43501, 53999), (85001, 96499)):
+            for step, ms in enumerate(dot_times(Break(start, end)), 1):
+                self.assertEqual(dots_lit(Break(start, end), ms), step)
+                if ms > start:
+                    self.assertEqual(dots_lit(Break(start, end), ms - 1), step - 1)
+
+    def test_the_moments_through_a_song(self):
+        """moment_at() through an intro, a verse, a break and the next verse; next_change()
+        walks from one change to the next."""
+        lyrics = timed((12000, 14000, True), (14500, 16000, False), (28000, 30000, True))
+        self.assertEqual(lyrics.moment_at(0), Moment(0, True, 1))
+        self.assertEqual(lyrics.moment_at(4.0), Moment(0, True, 2))
+        self.assertEqual(lyrics.moment_at(11.999), Moment(0, True, 3))
+        self.assertEqual(lyrics.moment_at(12), Moment(0, False, 0))
+        self.assertEqual(lyrics.moment_at(16), Moment(1, False, 0))   # to its end...
+        self.assertEqual(lyrics.moment_at(16.001), Moment(2, True, 1))  # ...then the break
+        self.assertEqual(lyrics.moment_at(27.999), Moment(2, True, 3))
+        self.assertEqual(lyrics.moment_at(28), Moment(2, False, 0))
+        self.assertEqual(lyrics.moment_at(600), Moment(2, False, 0))
+        moments, at = [], 0.0
+        while at is not None:
+            moments.append((at, lyrics.moment_at(at)))
+            at = lyrics.next_change(at)
+        self.assertEqual(moments, [
+            (0.0, Moment(0, True, 1)), (4.0, Moment(0, True, 2)), (8.0, Moment(0, True, 3)),
+            (12.0, Moment(0, False, 0)), (14.5, Moment(1, False, 0)),
+            (16.001, Moment(2, True, 1)), (20.001, Moment(2, True, 2)),
+            (24.001, Moment(2, True, 3)), (28.0, Moment(2, False, 0))])
+        # Without breaks, the lines as index_at() has them, from before the first.
+        plain = timed((1000, 2000, True), (3000, 4000, False))
+        self.assertEqual(plain.moment_at(0.5), NO_MOMENT)
+        self.assertEqual(plain.next_change(0.5), 1.0)
+        self.assertEqual(plain.moment_at(3.5), Moment(1, False, 0))
+        self.assertIsNone(plain.next_change(3.5))
+
+    def test_the_lines_read_as_before(self):
+        """The breaks are the lines' own: the store, the text, the line current, a line's
+        start and what the lyrics have are as they were."""
+        lyrics = timed((12000, 14000, True), (14500, 16000, False), (28000, 30000, True))
+        self.assertEqual(len(lyrics), 3)
+        self.assertEqual([line.text for line in lyrics.lines], ['Line 0', 'Line 1', 'Line 2'])
+        self.assertEqual(lyrics.text, 'Line 0\nLine 1\n\nLine 2')
+        self.assertEqual(lyrics.index_at(0), -1)
+        self.assertEqual(lyrics.index_at(20), 1)    # the last line started, as before
+        self.assertEqual((lyrics.start_of(0), lyrics.start_of(2)), (12.0, 28.0))
+        self.assertFalse(lyrics.has_pronunciations or lyrics.has_translations or lyrics.duet)
 
 
 class WordsTest(unittest.TestCase):
@@ -336,6 +470,7 @@ class SyllableFixtureTest(unittest.TestCase):
     def test_every_line_is_timed_by_the_word(self):
         self.assertTrue(self.lyrics.synced)
         self.assertEqual(len(self.lines), 18)
+        self.assertEqual(len(self.lyrics), 18)
         for line in self.lines:
             self.assertEqual(''.join(word.text for word in line.words), line.text)
         # Syllables: a piece with no space after it, joined to the next, in English and in
@@ -378,6 +513,13 @@ class SyllableFixtureTest(unittest.TestCase):
                 if line.stanza]
         self.assertGreaterEqual(sum(gap > 9000 for gap in gaps), 2)
         self.assertEqual(sum(line.stanza for line in self.lines), 5)
+        # The intro (12.4 s), the 10.5 s gap before the third verse and the 11.5 s gap
+        # before the last; the 1 s gap before the fourth has none.
+        self.assertEqual([(index, line.instrumental) for index, line in enumerate(self.lines)
+                          if line.instrumental], [
+            (0, Break(0, 12399)), (8, Break(43501, 53999)), (16, Break(85001, 96499))])
+        self.assertEqual(self.lyrics.moment_at(47), Moment(8, True, 1))
+        self.assertEqual(self.lyrics.moment_at(52), Moment(8, True, 3))
 
 
 if __name__ == '__main__':
