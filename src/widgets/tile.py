@@ -51,7 +51,8 @@ class Tile(Gtk.Box):
     """A 160 px square cover over a title and a dim subtitle, one line each; in the ARTIST
     shape, a round portrait over a centred name; in the VIDEO shape, a 284×160 frame, a play
     symbol over it under the pointer or the keyboard focus (`video_size`, (width, height):
-    VIDEO_SIZE, or a video grid's GRID_VIDEO_SIZE). With year=True the line under the
+    VIDEO_SIZE, or a video grid's GRID_VIDEO_SIZE). A favourite (Item.favourite) has a small
+    heart at the end of the line under the title. With year=True the line under the
     title is the year (an artist's own albums, where the artist goes without saying). A line
     too long for the tile ends in an ellipsis, and the tooltip shows the whole of both; the
     list item's accessible label has them too (labels.bind_label()).
@@ -85,6 +86,7 @@ class Tile(Gtk.Box):
         self._shape = COVER
         self._folder = False
         self._item = None
+        self._favourite = False  # the heart shown
         self._handler = None  # the bound Item's notify handler
         self.avatar = None  # the artist shape's portrait, made when first wanted
         self.play_symbol = None  # the video shape's play symbol, made when first wanted
@@ -158,6 +160,7 @@ class Tile(Gtk.Box):
             self.placeholder_icon.set_from_icon_name(icon_name)
             self.placeholder_icon.set_pixel_size(size)
         self._show_label(item)
+        self.show_favourite(item.favourite)
         self._slot.set_paths(item.thumb or item.art)
 
     def _show_label(self, item):
@@ -167,6 +170,19 @@ class Tile(Gtk.Box):
         else:
             subtitle = item.subtitle or ''
         self.subtitle_label.set_text(subtitle)
+
+    def show_favourite(self, favourite):
+        """The heart at the end of the subtitle line, for a favourite (Item.favourite): the
+        line's `favourite` style class (style.css draws it in room the line always keeps),
+        changed only when it changes, so the tile is never laid out again for it. An
+        artist's tile has no subtitle line, so no heart."""
+        favourite = bool(favourite)
+        if favourite != self._favourite:
+            self._favourite = favourite
+            if favourite:
+                self.subtitle_label.add_css_class('favourite')
+            else:
+                self.subtitle_label.remove_css_class('favourite')
 
     def unbind(self):
         if self._handler is not None:
@@ -183,6 +199,8 @@ class Tile(Gtk.Box):
             self._show_label(item)
         elif name in ('thumb', 'art') and not self._slot.set_paths(item.thumb or item.art):
             self._slot.refresh()
+        elif name == 'favourite':
+            self.show_favourite(item.favourite)
 
     def _on_query_tooltip(self, _tile, _x, _y, _keyboard, tooltip):
         """The whole title and subtitle, when either line is cut short; nothing otherwise.

@@ -17,7 +17,7 @@ from unittest import mock
 from tests.page_harness import PageTestCase, playing, track
 
 
-def library_json(cache, tracks):
+def library_json(cache, tracks, favourites=None):
     play = {'kind': 'album', 'id': 'l.album001'}
     album = {'id': 'l.album001', 'kind': 'album', 'title': 'Invented Album',
              'subtitle': 'Invented Artist', 'play': play,
@@ -26,6 +26,8 @@ def library_json(cache, tracks):
                                      for n in range(tracks)]}]}
     data = {'version': 1, 'generated': '2026-01-01T00:00:00Z', 'storefront': 'gb',
             'sections': {'albums': [album], 'playlists': [], 'radio': []}, 'shelves': []}
+    if favourites is not None:
+        data['favourites'] = {'songs': favourites}
     Path(cache, 'library.json').write_text(json.dumps(data), encoding='utf-8')
 
 
@@ -61,10 +63,10 @@ class SongsPageTest(PageTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    async def songs_page(self, tracks):
+    async def songs_page(self, tracks, favourites=None):
         from applemusic.pages.songs import SongsPage
 
-        library_json(self.cache, tracks)
+        library_json(self.cache, tracks, favourites)
         await self.library.load()
         page = await self.show_root(SongsPage(self.library, 'Songs'))
         self.assertTrue(await self.until(lambda: page._rows.get_n_items() == tracks, 2))
@@ -205,6 +207,30 @@ class SongsPageTest(PageTestCase):
         self.app.player.track = None
         self.assertFalse(any(cell.playing for cell in cells.values()))
         self.assertEqual(rows['l.album001.t1.2'].get_accessible_description(), '3:00')
+
+
+    async def test_favourites_have_hearts_and_favourites_only_shows_them(self):
+        ids = [track('l.album001', n)['id'] for n in range(5)]
+        page = await self.songs_page(5, favourites=[ids[1], ids[3]])
+        self.addCleanup(self.app.settings.reset, 'favourites-only')
+        self.assertTrue(await self.until(lambda: len(page._title_cells) == 5))
+        cells = {cell.get_item().id: cell.get_child() for cell in page._title_cells}
+        self.assertEqual(sorted(song_id for song_id, cell in cells.items()
+                                if cell.favourite_icon.get_opacity() == 1), [ids[1], ids[3]])
+        rows = {row.get_item().id: row for row in page._row_items}
+        self.assertTrue(rows[ids[1]].get_accessible_label().endswith(', favourite'))
+        self.assertFalse(rows[ids[0]].get_accessible_label().endswith(', favourite'))
+        page.activate_action('songs.favourites-only', None)
+        self.assertEqual([row.id for row in page._rows], [ids[1], ids[3]])
+        self.assertEqual(page.count_label.get_label(), '2 of 5 songs')
+        # A heart taken back here: the table follows at once.
+        self.library.set_favourite(ids[1], False)
+        self.assertEqual([row.id for row in page._rows], [ids[3]])
+        self.library.set_favourite(ids[3], False)
+        self.assertEqual(page.results_stack.get_visible_child_name(), 'no-results')
+        self.assertEqual(page.no_results_page.get_title(), 'No Favourite Songs')
+        page.activate_action('songs.favourites-only', None)
+        self.assertEqual(page._rows.get_n_items(), 5)
 
 
 def _variant(text):

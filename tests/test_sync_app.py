@@ -105,6 +105,38 @@ def answers():
     return wired
 
 
+def favoured(wired):
+    """The answers with Apple's inFavorites and dateAdded where the extended listings carry
+    them (invented): the first song and its album, the first playlist and the first video
+    favourites; the album and the playlists dated, the songs not (as Apple has it)."""
+    songs = json.loads(json.dumps(wired[app_sync.SONGS_ENDPOINT]))
+    for number, song in enumerate(songs['data']):
+        song['attributes']['inFavorites'] = number == 0
+        for album in (song.get('relationships') or {}).get('albums', {}).get('data', []):
+            album['attributes'].update(inFavorites=True, dateAdded='2025-04-01T10:00:00Z')
+    wired[app_sync.SONGS_ENDPOINT] = songs
+    playlists = json.loads(json.dumps(wired[app_sync.PLAYLISTS_ENDPOINT]))
+    for number, raw in enumerate(playlists['data']):
+        raw['attributes'].update(inFavorites=number == 0,
+                                 dateAdded=f'2025-03-0{number + 1}T09:00:00Z')
+    wired[app_sync.PLAYLISTS_ENDPOINT] = playlists
+    videos = json.loads(json.dumps(wired[app_sync.VIDEOS_ENDPOINT]))
+    for number, raw in enumerate(videos['data']):
+        raw['attributes']['inFavorites'] = number == 0
+    wired[app_sync.VIDEOS_ENDPOINT] = videos
+    return wired
+
+
+def refusing_favourites(answer):
+    """A listing that answers 400 when asked for inFavorites, as an Apple that no longer
+    takes the extension would."""
+    def page(params):
+        if 'inFavorites' in str(params.get('extend', '')):
+            raise EngineError('api', 'invented refusal', status=400)
+        return answer
+    return page
+
+
 class SyncTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -226,6 +258,87 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.library.song_count(), 2)
         self.assertEqual(sorted(track.id for track in self.library.songs),
                          ['i.abc123', 'i.def456'])
+
+    async def test_dates_and_favourites_come_with_the_listings(self):
+        plain = FakeEngine(answers())  # what a sync asks without the extension, first
+        await app_sync.sync_library(plain, Library())
+        os.remove(os.path.join(self.cache, 'library.json'))
+        engine = FakeEngine(favoured(answers()))
+        counts = await app_sync.sync_library(engine, self.library, self.report)
+        # The listings asked for inFavorites, the songs' albums too: no request more.
+        asked = dict(engine.calls)
+        self.assertEqual(asked[app_sync.SONGS_ENDPOINT]['extend'], 'inFavorites')
+        self.assertEqual(asked[app_sync.SONGS_ENDPOINT]['extend[library-albums]'], 'inFavorites')
+        self.assertEqual(asked[app_sync.PLAYLISTS_ENDPOINT]['extend'], 'tags,inFavorites')
+        self.assertEqual(asked[app_sync.VIDEOS_ENDPOINT]['extend'], 'inFavorites')
+        self.assertEqual(sorted(path for path, _params in engine.calls),
+                         sorted(path for path, _params in plain.calls))
+        data = self.read_json()
+        self.assertEqual(data['version'], 3)
+        self.assertEqual(data['favourites'], {
+            'songs': ['1724040711'], 'albums': ['l.alb123'], 'playlists': ['p.pl123'],
+            'videos': ['i.mv0001', '1724040900']})
+        self.assertEqual(counts['favourites'], 5)
+        sections = data['sections']
+        album = next(a for a in sections['albums'] if a['id'] == 'l.alb123')
+        self.assertEqual(album['added'], '2025-04-01T10:00:00Z')
+        stand_in = next(a for a in sections['albums'] if a['id'] != 'l.alb123')
+        self.assertNotIn('added', stand_in)  # songs carry no date: a loose song's album none
+        self.assertEqual(next(p for p in sections['playlists'] if p['id'] == 'p.pl123')
+                         ['added'], '2025-03-01T09:00:00Z')
+        # The library: hearts, and Recently Added newest first, the undated last.
+        library = self.library
+        self.assertTrue(library.by_id('album', 'l.alb123').favourite)
+        self.assertTrue(library.by_id('playlist', 'p.pl123').favourite)
+        self.assertTrue(library.by_id('video', 'i.mv0001').favourite)
+        stand_in_id = stand_in['id']
+        self.assertEqual([item.id for item in library.recently_added],
+                         ['l.alb123', 'p.pl789', 'p.pl456', 'p.pl123', stand_in_id])
+        await library.build_songs()
+        hearts = {track.id: library.is_favourite(track) for track in library.songs}
+        self.assertEqual(hearts, {'i.abc123': True, 'i.def456': False})
+
+    async def test_a_refused_extension_is_read_again_plainly(self):
+        wired = answers()  # Apple's plain answers, to the plain requests
+        for path in (app_sync.SONGS_ENDPOINT, app_sync.PLAYLISTS_ENDPOINT,
+                     app_sync.VIDEOS_ENDPOINT):
+            wired[path] = refusing_favourites(wired[path])
+        engine = FakeEngine(wired)
+        with self.assertLogs('applemusic.sync', 'WARNING') as logs:
+            await app_sync.sync_library(engine, self.library)
+        self.assertEqual(len([line for line in logs.output if 'refused' in line]), 3)
+        self.assertIn((app_sync.PLAYLISTS_ENDPOINT, {'extend': 'tags', 'limit': 100,
+                                                     'offset': 0}), engine.calls)
+        data = self.read_json()
+        # The songs' favourites are then Favourite Songs' songs, by their catalog ids; the
+        # rest has none to show.
+        self.assertEqual(data['favourites'], {
+            'songs': ['987654321', '987654322', '987654323'], 'albums': [], 'playlists': [],
+            'videos': []})
+        self.assertEqual(len(data['sections']['albums']), 2)  # the sync went on
+
+    async def test_a_listing_failing_otherwise_still_fails_the_sync(self):
+        wired = answers()
+        wired[app_sync.SONGS_ENDPOINT] = EngineError('api', 'invented', status=500)
+        with self.assertRaises(EngineError):
+            await app_sync.sync_library(FakeEngine(wired), self.library)
+
+    async def test_the_short_passes_keep_the_favourites_they_do_not_read(self):
+        await app_sync.sync_library(FakeEngine(favoured(answers())), self.library)
+        before = self.read_json()['favourites']
+        # Apple's favourites changed everywhere since; a playlists pass reads the playlists
+        # alone, a quick pass everything but the videos.
+        changed = answers()
+        await app_sync.sync_library(FakeEngine(changed), self.library, playlists=True)
+        after = self.read_json()['favourites']
+        self.assertEqual((after['songs'], after['albums'], after['videos']),
+                         (before['songs'], before['albums'], before['videos']))
+        self.assertEqual(after['playlists'], [])
+        await app_sync.sync_library(FakeEngine(changed), self.library, quick=True)
+        after = self.read_json()['favourites']
+        self.assertEqual(after['videos'], before['videos'])
+        self.assertEqual(after['albums'], [])
+        self.assertEqual(after['songs'], ['987654321', '987654322', '987654323'])
 
     async def test_not_signed_in_writes_nothing(self):
         engine = FakeEngine(answers(), authorized=False)

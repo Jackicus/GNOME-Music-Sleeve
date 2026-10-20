@@ -356,8 +356,9 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 ## library.json
 
 `<cache>/library.json`, written by `src/sync.py` (and `scripts/demo_library.py`), read by
-`src/library.py`. Version 2: an album's track `index` counts on across its discs; the app
-syncs an older file again at once.
+`src/library.py`. Version 3: Items carry `added` and the file `favourites`; version 2: an
+album's track `index` counts on across its discs. The app syncs an older file again at once
+(an older one still reads: no dates, no hearts, Recently Added Apple's shelf).
 
 ```jsonc
 {
@@ -368,7 +369,10 @@ syncs an older file again at once.
               {"key": "heavy-rotation", "title": "", …}, {"key": "recently-added", …}],
                                                 // empty titles: the app titles them by key
   "folders": [{"id": "root", "title": "", "parent": null,
-               "children": [{"kind": "playlist", "id": "p.…"}, {"kind": "folder", "id": "p.…"}]}]
+               "children": [{"kind": "playlist", "id": "p.…"}, {"kind": "folder", "id": "p.…"}]}],
+  "favourites": {"songs": ["<catalog id, else i.…>"], "albums": ["l.…", "<catalog id>"],
+                 "playlists": ["p.…"], "videos": ["i.…", "<catalog id>"]}
+                                                // the account's favourites (inFavorites)
 }
 
 Item = {
@@ -386,6 +390,9 @@ Item = {
                                 // not checked against the API yet)
   "attributes": {"isFavourites": true, "canEdit": false, "canDelete": false},   // playlists,
                                                      // when they apply
+  "added": "2025-05-01T09:00:00Z",                   // Apple's dateAdded, as Apple writes it
+                                                     // (albums, playlists; videos when
+                                                     // dated): left out when unknown
   "modified": "2025-05-01T09:00:00Z",                // playlists: Apple's lastModifiedDate as
                                                      // listed when `groups` was last read; the
                                                      // sync keeps them while it holds (sync.py);
@@ -405,6 +412,23 @@ Track = {"id": "i.…", "catalogId": "…" /* or null */, "title": "…", "artis
                                          // 'song' or 'musicVideo' instead)
          "autoplay": true}               // a queue entry autoplay added (only then)
 ```
+
+The dates and favourites come with the listings the sync reads (`sync.SONGS_PARAMS`,
+`PLAYLIST_PARAMS`, `VIDEOS_PARAMS`: `extend=inFavorites`, the songs' included albums by
+`extend[library-albums]=inFavorites`), no request more: `normalize.date_added()` keeps a
+library resource's `dateAdded`, `normalize.favourite_ids()` the ids of those with
+`inFavorites: true` (a song by its catalog id, else its own: the id the app rates it by;
+anything else by its library and catalog ids). Apple's documentation gives `dateAdded` to
+library albums (a date) and playlists (a date and time), not to songs or music videos, and
+`inFavorites` to library songs, albums, playlists and music videos. Checked live on
+2026-10-20 (read only, counts kept, nothing else): of 100 library songs read with
+`extend=inFavorites`, every one carried the key, 3 were rated 1 (the app's favourite) and
+those 3 were `inFavorites: true`, with no mismatch either way, so a favourite made by the
+app's rating write reads back as one; every included album carried both `inFavorites` and
+`dateAdded`, and 50 of 50 albums' `dateAdded` were full timestamps (to the second), not the
+documented date; no song carried `dateAdded` (0 of 100); the extended read took no longer
+(1.33 s plain, 1.21 s extended, for 100 songs). Music videos were not tried (that library
+had none): the app offers their Date Added only when the data has it.
 
 An artist's page (`Engine.artist_page()`, `normalize.artist_page()`) is
 `{id, artist, latest: {key, title, item} | null, topSongs: {key, title, items, more} | null,

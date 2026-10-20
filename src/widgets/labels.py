@@ -32,22 +32,31 @@ def _format(name):
             'part': _('{label}, {part}'),
             # Translators: added to what a screen reader says for a song with explicit lyrics.
             'explicit': _('{label}, explicit'),
+            # Translators: added to what a screen reader says for a song, album, playlist or
+            # music video the user has marked as a favourite (the heart it shows).
+            'favourite': _('{label}, favourite'),
         })
     return _formats[name]
 
 
 def accessible_label(item, artist=False):
     """A tile's name: the title and the subtitle; the title alone for an artist (`artist`, or
-    an Item of kind 'artist': the name is all there is) or an item without a subtitle."""
+    an Item of kind 'artist': the name is all there is) or an item without a subtitle; and
+    "favourite" for a favourite (the heart the tile shows)."""
     if artist or item.kind == 'artist' or not item.subtitle:
-        return item.title
-    return _format('subtitle').format(title=item.title, subtitle=item.subtitle)
+        label = item.title
+    else:
+        label = _format('subtitle').format(title=item.title, subtitle=item.subtitle)
+    if item.favourite and not artist and item.kind != 'artist':
+        label = _format('favourite').format(label=label)
+    return label
 
 
-def track_label(track, show_artist=True, show_album=True):
+def track_label(track, show_artist=True, show_album=True, favourite=False):
     """A track row's name: its title, then its artist and its album when the row shows them
-    and they are known (a missing one is left out, not read as an empty field), and
-    "explicit" for explicit lyrics (the badge the row shows)."""
+    and they are known (a missing one is left out, not read as an empty field), "explicit"
+    for explicit lyrics (the badge the row shows), and "favourite" for one of the account's
+    favourites (`favourite`: the row's heart)."""
     parts = [track.title, track.artist if show_artist else '',
              track.album if show_album else '']
     parts = [part for part in parts if part]
@@ -56,6 +65,8 @@ def track_label(track, show_artist=True, show_album=True):
         label = _format('part').format(label=label, part=part)
     if track.explicit:
         label = _format('explicit').format(label=label)
+    if favourite:
+        label = _format('favourite').format(label=label)
     return label
 
 
@@ -108,14 +119,14 @@ def flow_child(widget, label):
 
 def bind_label(list_item, item, artist=False):
     """Name a recycled tile's list item accessible_label(item, artist), and name it again
-    whenever the Item's title or subtitle changes while it is bound: a reload merges new
+    whenever the Item's title, subtitle or favourite changes while it is bound: a reload merges new
     values into the Item and a list does not rebind it (the tile follows its Item the same
     way). unbind_label() in the factory's unbind stops it."""
     unbind_label(list_item)
     list_item.set_accessible_label(accessible_label(item, artist))
 
     def on_notify(notified, pspec):
-        if pspec.name in ('title', 'subtitle'):
+        if pspec.name in ('title', 'subtitle', 'favourite'):
             list_item.set_accessible_label(accessible_label(notified, artist))
 
     list_item.label_handler = (item, item.connect('notify', on_notify))

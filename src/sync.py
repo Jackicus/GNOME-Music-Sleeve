@@ -74,6 +74,14 @@ The Item dicts written here carry two keys beyond the normalisers' shape (both i
 README): `artUrl`, the cover's URL at config.COVER_SIZE, which fetch_cover() downloads to the
 item's `art` path; and a playlist's `modified`, the stamp its kept tracks are checked against.
 
+The account's favourites and the dates added come with the listings, at no request more: the
+songs, playlists and videos are read with `extend=inFavorites` (the songs' included albums
+too), and the normalisers keep each library resource's `dateAdded` as the Item's `added`.
+library.json's `favourites` is {section: ids} (FAVOURITE_SECTIONS, _favourites()): a section
+a pass did not read keeps last time's, and songs read without `inFavorites` are the Favourite
+Songs playlist's songs. A listing that refuses the extension (a 4xx) is read again without
+it (_listing()): the hearts may go, the sync does not.
+
 LibrarySync runs sync_library() for the app, one at a time: it says whether one is `running`
 and relays its `progress(section, done, total)` (progress_text() words it for the window's
 banner), and toasts how it ended.
@@ -116,7 +124,16 @@ RADIO_ENDPOINT = '/v1/me/recent/radio-stations'
 RECOMMENDATIONS_ENDPOINT = '/v1/me/recommendations'
 APPLE_ROOT_FOLDER = 'p.playlistsroot'
 FAVOURITE_TAG = 'favorited'
-PLAYLIST_PARAMS = {'extend': 'tags'}
+# The listings ask for `inFavorites` too (the songs' included albums with the typed form),
+# which costs no request: the account's favourites, as the hearts and the Favourites Only
+# filter show them. Each listing has a plain form it falls back to should Apple refuse the
+# extension (_listing), so a change at Apple's end costs the hearts, never the sync.
+SONGS_PARAMS = {'include': 'albums', 'extend': 'inFavorites',
+                'extend[library-albums]': 'inFavorites'}
+SONGS_PLAIN = {'include': 'albums'}
+PLAYLIST_PARAMS = {'extend': 'tags,inFavorites'}
+PLAYLIST_PLAIN = {'extend': 'tags'}
+VIDEOS_PARAMS = {'extend': 'inFavorites'}
 FOLDER_PARAMS = {'omit[resource]': 'autos', 'platform': 'web'}
 PAGE = 100
 PLAYLIST_CONCURRENCY = 4   # playlists whose tracks are fetched at once
@@ -131,9 +148,13 @@ SHELF_DEFS = (
 )
 
 
-# library.json's format: 2 since each album's tracks are numbered across its discs. A file of
-# an older version is synced again at once (sync_due's library_ok).
-LIBRARY_VERSION = 2
+# library.json's format: 2 since each album's tracks are numbered across its discs, 3 since
+# Items carry `added` and the file `favourites`. A file of an older version is synced again
+# at once (sync_due's library_ok).
+LIBRARY_VERSION = 3
+
+# The sections of library.json's `favourites`, each the ids normalize.favourite_ids() gives.
+FAVOURITE_SECTIONS = ('songs', 'albums', 'playlists', 'videos')
 
 # The sync-interval choices Preferences offers, in hours, in its order: every hour, every
 # 6 hours, every day, manually (0: only when asked).
@@ -285,8 +306,8 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
 
     # 1. The songs, each with its album: the Albums and Artists sections come from them.
     report('songs', 0, None)
-    raw['songs'] = await engine.api_pages(
-        SONGS_ENDPOINT, {'include': 'albums'}, page=PAGE, unique=True,
+    raw['songs'] = await _listing(
+        engine, SONGS_ENDPOINT, SONGS_PARAMS, SONGS_PLAIN,
         progress=lambda done, total: report('songs', done, total))
 
     # 2. The playlists, then each one's tracks (a few at a time), bar those whose listing
@@ -376,22 +397,37 @@ def _keep_going(error):
 
 
 async def _fetch_videos(engine, report):
-    """The music videos listing, or None when it could not be read (last time's kept)."""
+    """The music videos listing (asking for inFavorites: _listing), or None when it could not
+    be read (last time's kept)."""
     report('videos', 0, None)
     try:
-        return await engine.api_pages(
-            VIDEOS_ENDPOINT, page=PAGE, unique=True,
+        return await _listing(
+            engine, VIDEOS_ENDPOINT, VIDEOS_PARAMS, None,
             progress=lambda done, total: report('videos', done, total))
     except EngineError as error:
         _keep_going(error)
         return None
 
 
+async def _listing(engine, endpoint, params, plain, progress=None):
+    """A library listing read with `params` (which ask for `inFavorites`), or, when Apple
+    refuses them (a 4xx other than a 404), read again with `plain` (None: no parameters):
+    the extension is worth the hearts, not the sync."""
+    try:
+        return await engine.api_pages(endpoint, params, page=PAGE, unique=True,
+                                      progress=progress)
+    except EngineError as error:
+        if error.status is None or not 400 <= error.status < 500 or error.status == 404:
+            raise
+        log.warning('sync: %s refused the favourites (%s): read without them', endpoint,
+                    error.status)
+    return await engine.api_pages(endpoint, plain, page=PAGE, unique=True, progress=progress)
+
+
 async def _fetch_playlists(engine):
     """The playlist listing, without the playlists the account deleted that Apple still
     lists (api.is_deleted)."""
-    listing = await engine.api_pages(PLAYLISTS_ENDPOINT, PLAYLIST_PARAMS, page=PAGE,
-                                     unique=True)
+    listing = await _listing(engine, PLAYLISTS_ENDPOINT, PLAYLIST_PARAMS, PLAYLIST_PLAIN)
     return [raw for raw in listing if not api.is_deleted(raw)]
 
 
@@ -556,6 +592,7 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
                              for item in raw['stations']]
     shelves = _shelves(raw['shelves'], cache_dir, art_urls, previous)
     folders = raw['folders'] if raw['folders'] is not None else previous.folders()
+    favourites = _favourites(raw, sections['playlists'], previous)
     raw.clear()  # the answers are not needed for the long artwork step
     previous.forget()
 
@@ -566,12 +603,14 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
         'sections': sections,
         'shelves': shelves,
         'folders': folders,
+        'favourites': favourites,
     }
     add_art_urls(library_data, art_urls)
     for name in ('albums', 'artists', 'playlists', 'videos', 'radio'):
         counts[name] = len(sections[name])
     counts['folders'] = max(0, len(folders) - 1)  # the root is not a folder of the user's
     counts['shelves'] = sum(len(shelf['items']) for shelf in shelves)
+    counts['favourites'] = sum(len(ids) for ids in favourites.values())
 
     # The thumbnails first, and the listing only once they are on disk, so tiles never show
     # placeholders for artwork that is about to arrive. A failure is logged, nothing more.
@@ -598,7 +637,7 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
         f'{counts[name]} {label}' for name, label in (
             ('albums', 'albums'), ('artists', 'artists'), ('playlists', 'playlists'),
             ('loose', 'loose songs'), ('videos', 'videos'), ('radio', 'stations'),
-            ('folders', 'folders'))))
+            ('folders', 'folders'), ('favourites', 'favourites'))))
     return counts
 
 
@@ -639,6 +678,46 @@ def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous):
             item['modified'] = attributes['lastModifiedDate']
         playlists.append(item)
     return playlists
+
+
+def _favourites(raw, playlists, previous):
+    """library.json's `favourites`: {section: ids} (FAVOURITE_SECTIONS), each read from the
+    answers' `inFavorites` (normalize.favourite_ids), the songs' albums from the albums the
+    songs listing includes. A section this pass did not read (a playlists pass's songs and
+    albums, a quick pass's videos) keeps last time's. Songs read without `inFavorites` (Apple
+    refused it, or ignored it) are the Favourite Songs playlist's songs, which Apple keeps as
+    the songs favourited, by the same ids."""
+    favourites = {}
+    if raw['songs'] is None:
+        favourites['songs'] = previous.favourites('songs')
+        favourites['albums'] = previous.favourites('albums')
+    else:
+        favourites['songs'], seen = normalize.favourite_ids(raw['songs'], songs=True)
+        favourites['albums'] = normalize.favourite_ids(
+            normalize.included_albums(raw['songs']))[0]
+        if not seen:
+            favourites['songs'] = favourite_songs_ids(playlists)
+    favourites['playlists'] = normalize.favourite_ids(raw['playlists'])[0]
+    if raw['videos'] is None:
+        favourites['videos'] = previous.favourites('videos')
+    else:
+        favourites['videos'] = normalize.favourite_ids(raw['videos'])[0]
+    return favourites
+
+
+def favourite_songs_ids(playlists):
+    """The ids of the songs in the Favourite Songs playlist (the playlist Item flagged
+    FAVOURITES): each song's catalog id, else its own, as favourite_ids() records songs."""
+    ids = {}
+    for item in playlists:
+        if (item.get('attributes') or {}).get(FAVOURITES) is not True:
+            continue
+        for group in item.get('groups') or []:
+            for entry in group.get('entries') or []:
+                song_id = entry.get('catalogId') or entry.get('id')
+                if song_id:
+                    ids[str(song_id)] = None
+    return list(ids)
 
 
 def _shelves(shelves_raw, cache_dir, art_urls, previous):
@@ -695,6 +774,13 @@ class _Previous:
 
     def folders(self):
         return [entry for entry in self._read().get('folders') or [] if isinstance(entry, dict)]
+
+    def favourites(self, name):
+        """Last time's favourites of one section (FAVOURITE_SECTIONS): none from a file
+        before them."""
+        favourites = self._read().get('favourites')
+        ids = favourites.get(name) if isinstance(favourites, dict) else None
+        return [value for value in ids or [] if isinstance(value, str) and value]
 
     def playlist(self, playlist_id):
         if self._playlists is None:

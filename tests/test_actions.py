@@ -1379,6 +1379,15 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.actions.menu_for(LIBRARY_ALBUM)
         self.assertEqual(self.loved_shown(), (True, False))
 
+    def test_the_menu_shows_the_librarys_favourite_at_once(self):
+        # library.json's favourites (Library.is_favourite), before the engine has said.
+        self.app.engine.state = 'down'
+        self.app.library.is_favourite = lambda obj: obj is LIBRARY_ALBUM
+        self.actions.menu_for(LIBRARY_ALBUM)
+        self.assertEqual(self.loved_shown(), (False, True))
+        self.actions.menu_for(LIBRARY_TRACK)
+        self.assertEqual(self.loved_shown(), (True, False))
+
 
 class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
     """New Playlist, Rename, Delete and Remove from Playlist: the dialogs stood in for (what

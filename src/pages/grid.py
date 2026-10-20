@@ -3,12 +3,13 @@
 
 """AppleMusicGridPage: a root page showing a model of Items as a grid of tiles.
 
-The chain is the page's store → Gtk.SortListModel (the header's sort choice, or none) →
-ReversedModel (that order backwards, for a descending text) → Gtk.NoSelection → Gtk.GridView,
-whose factory recycles AppleMusicTiles. Sorting uses Gtk.StringSorter and Gtk.NumericSorter
-over Gtk.PropertyExpressions, which compute one key per item and sort in C: about 10 ms for
-2,000 albums, against 25 ms for a Python Gtk.CustomSorter, whose cost grows with every
-comparison rather than every item.
+The chain is the page's store → Gtk.FilterListModel (Favourites Only, on a page that offers it:
+a Gtk.BoolFilter on Item.favourite, or no filter) → Gtk.SortListModel (the header's sort
+choice, or none) → ReversedModel (that order backwards, for a descending text) →
+Gtk.NoSelection → Gtk.GridView, whose factory recycles AppleMusicTiles. Sorting uses
+Gtk.StringSorter and Gtk.NumericSorter over Gtk.PropertyExpressions, which compute one key per
+item and sort in C: about 10 ms for 2,000 albums, against 25 ms for a Python
+Gtk.CustomSorter, whose cost grows with every comparison rather than every item.
 """
 
 from gettext import gettext as _
@@ -80,9 +81,43 @@ SORTS = {
     'title': (lambda: _('Title'), ('title',), False),
     'artist': (lambda: _('Artist'), ('subtitle', 'year', 'title'), False),
     'year': (lambda: _('Year'), ('year', 'title'), True),
+    # Newest first: Apple's dateAdded (Item.added), to the second.
+    'added': (lambda: _('Date Added'), ('added', 'title'), True),
 }
 # The properties compared as numbers; the rest are text.
-NUMBERS = frozenset({'year'})
+NUMBERS = frozenset({'year', 'added'})
+
+
+def favourites_only(tag):
+    """Whether the root page with that tag was last left showing its favourites only (the
+    favourites-only setting); False without one (a pushed page, a test's stand-in)."""
+    settings = getattr(app(), 'settings', None)
+    if not tag or settings is None:
+        return False
+    return tag in settings.get_strv('favourites-only')
+
+
+def remember_favourites_only(tag, favourites):
+    """Remember a root page's Favourites Only (the favourites-only setting, by page tag)."""
+    settings = getattr(app(), 'settings', None)
+    if not tag or settings is None:
+        return
+    tags = [name for name in settings.get_strv('favourites-only') if name != tag]
+    if favourites:
+        tags.append(tag)
+    settings.set_strv('favourites-only', sorted(tags))
+
+
+def offered(model, key):
+    """Whether the items of `model` have the property `key` sorts first by (SORTS), for a
+    sort that is offered only where the data has it (`data_sorts`: a music video's Date
+    Added, which Apple may not give): any item with a value (a page of a few items: it
+    reads them all when none has one)."""
+    name = SORTS[key][1][0]
+    for position in range(model.get_n_items()):
+        if model.get_item(position).get_property(name):
+            return True
+    return False
 
 
 def make_sorter(key, descending=False):
@@ -154,11 +189,15 @@ class GridPage(Adw.NavigationPage):
     Descending (page.sort-order): a key chosen comes its own way round (Year newest first,
     the rest A to Z) and the direction turns it; the key is remembered per root page in the
     grid-sort setting, the direction for the page's life. No keys keeps the model's own
-    order. `artist` makes round portrait tiles, `video` music videos' 16:9 ones (wider
-    columns). `root` is false for a page pushed over
-    another. Root or pushed, the header bar shows the title while the big one is out of view
-    (HeaderTitle). The in-content title follows the page's `title`, on the page's margin,
-    where the first column's cover is. The loading and empty states follow the library's
+    order. `data_sorts` are keys offered only while the items have data for them (offered():
+    a music video's Date Added). `favourites`, (title, description), adds Favourites Only to
+    the menu (then Sort and Filter, shown while the filter is on whatever it leaves), with
+    the empty state's words for no favourite left; remembered per root page in the
+    favourites-only setting. `artist` makes round portrait tiles, `video` music videos' 16:9
+    ones (wider columns). `root` is false for a page pushed over another. Root or pushed, the
+    header bar shows the title while the big one is out of view (HeaderTitle). The
+    in-content title follows the page's `title`, on the page's margin, where the first
+    column's cover is. The loading and empty states follow the library's
     state (the first sync filling an empty library is loading) and the model's item count. A
     playlist folder's page is one too (pages.folder()): its folders are tiles with a folder
     icon. `drag` makes the tiles draggable (widgets/dnd.py): All Playlists' and a folder's,
@@ -178,7 +217,7 @@ class GridPage(Adw.NavigationPage):
 
     def __init__(self, library, title, model, sorts=(), artist=False, video=False, root=True,
                  icon_name=None, empty_title=None, empty_description=None, missing_title=None,
-                 missing_description=None, drag=False):
+                 missing_description=None, drag=False, data_sorts=(), favourites=None):
         super().__init__(title=title)
         self._library = library
         self._get_model = model if callable(model) else lambda: model
@@ -198,10 +237,18 @@ class GridPage(Adw.NavigationPage):
         self.empty_page.set_icon_name(icon_name)
         self._sign_in = SignInOffer(self.empty_page)  # Sign In… while signed out
 
-        self._sort_keys = tuple(sorts)
+        self._all_sorts = tuple(sorts) + tuple(data_sorts)
+        self._data_sorts = frozenset(data_sorts)
+        self._sort_keys = tuple(sorts)  # those offered now (_update_sorts)
         self._order = (sorts[0], SORTS[sorts[0]][2]) if sorts else None  # (key, descending)
         sorter, backwards = make_sorter(*self._order) if sorts else (None, False)
-        self._sorted = Gtk.SortListModel(model=self._model(), sorter=sorter)
+        # Favourites Only: `favourites` is (empty title, empty description) on a page that
+        # offers it, the status page's words when no favourite is left to show.
+        self._favourites_texts = favourites
+        self._favourite_filter = Gtk.BoolFilter(
+            expression=Gtk.PropertyExpression.new(Item, None, 'favourite'))
+        self._filtered = Gtk.FilterListModel(model=self._model())
+        self._sorted = Gtk.SortListModel(model=self._filtered, sorter=sorter)
         self._shown = ReversedModel(self._sorted)
         self._shown.set_backwards(backwards)
         # Every signal of a child or of an object the page holds is connected weakly
@@ -225,28 +272,39 @@ class GridPage(Adw.NavigationPage):
         context_menu.attach(self.grid_view, drag=drag)
 
         # Sort By: a menu of the orders and of the directions, as radio items of the stateful
-        # page.sort and page.sort-order actions.
+        # page.sort and page.sort-order actions, and on a page that offers it Favourites
+        # Only, a check item of page.favourites-only (the button is Sort and Filter then).
         self._sort_restored = False  # the remembered choice applied (once the page's tag is)
         self._sort_action = Gio.SimpleAction.new_stateful(
             'sort', GLib.VariantType.new('s'), GLib.Variant('s', sorts[0] if sorts else ''))
         self._order_action = Gio.SimpleAction.new_stateful(
             'sort-order', GLib.VariantType.new('s'), GLib.Variant('s', _direction(backwards)))
+        self._favourites_action = Gio.SimpleAction.new_stateful(
+            'favourites-only', None, GLib.Variant('b', False))
         connect_weak(self._sort_action, 'change-state', self._on_sort_chosen)
         connect_weak(self._order_action, 'change-state', self._on_order_chosen)
+        connect_weak(self._favourites_action, 'change-state', self._on_favourites_only)
         actions = Gio.SimpleActionGroup()
         actions.add_action(self._sort_action)
         actions.add_action(self._order_action)
+        actions.add_action(self._favourites_action)
         self.insert_action_group('page', actions)
         menu = Gio.Menu()
-        keys = Gio.Menu()
-        for key in sorts:
-            keys.append(SORTS[key][0](), f'page.sort::{key}')
-        menu.append_section(None, keys)
+        self._keys_menu = Gio.Menu()
+        menu.append_section(None, self._keys_menu)
         directions = Gio.Menu()
         directions.append(_('Ascending'), 'page.sort-order::ascending')
         directions.append(_('Descending'), 'page.sort-order::descending')
         menu.append_section(None, directions)
+        if favourites is not None:
+            filters = Gio.Menu()
+            filters.append(_('Favourites Only'), 'page.favourites-only')
+            menu.append_section(None, filters)
+            self.sort_button.set_tooltip_text(_('Sort and Filter'))
+            self.sort_button.update_property([Gtk.AccessibleProperty.LABEL],
+                                             [_('Sort and Filter')])
         self.sort_button.set_menu_model(menu)
+        self._update_sorts()
 
         connect_weak(self.scrolled_window.get_vadjustment(), 'value-changed', self._on_scrolled)
         self._header_title = HeaderTitle(self.header_bar, self.title_label, self.scrolled_window)
@@ -255,6 +313,8 @@ class GridPage(Adw.NavigationPage):
         self._handlers.add(library, 'notify::state', self._update_state)
         self._handlers.add(library, 'notify::syncing', self._update_state)
         self._handlers.add(library, 'changed', self._on_library_changed)
+        if favourites is not None:
+            self._handlers.add(library, 'favourites-changed', self._on_favourites_changed)
         self._update_state()
 
     def _model(self):
@@ -272,28 +332,72 @@ class GridPage(Adw.NavigationPage):
         Adw.NavigationPage.do_map(self)
         if not self._sort_restored:
             self._sort_restored = True
+            self._update_sorts()
             self._restore_sort()
+            if self._favourites_texts is not None and favourites_only(self.get_tag()):
+                self._favourites_action.change_state(GLib.Variant('b', True))
         self._on_library_changed()
+        self._on_favourites_changed()  # what changed while the page was hidden
 
     def _on_library_changed(self, *_args):
         model = self._model()
-        if model is not self._sorted.get_model():
-            self._sorted.set_model(model)
+        if model is not self._filtered.get_model():
+            self._filtered.set_model(model)
+        self._update_sorts()
         self._update_state()
+
+    def _update_sorts(self):
+        """The orders the Sort By menu offers: the page's, and those of `data_sorts` the items
+        have data for (offered()). An order no longer offered gives way to the first."""
+        model = self._filtered.get_model()
+        keys = tuple(key for key in self._all_sorts
+                     if key not in self._data_sorts or offered(model, key))
+        if keys == self._sort_keys and self._keys_menu.get_n_items():
+            return
+        self._sort_keys = keys
+        self._keys_menu.remove_all()
+        for key in keys:
+            self._keys_menu.append(SORTS[key][0](), f'page.sort::{key}')
+        if self._order is not None and self._order[0] not in keys and keys:
+            self._sort(keys[0])
+
+    # Favourites Only.
+
+    def _on_favourites_only(self, action, value):
+        action.set_state(value)
+        favourites = value.get_boolean()
+        self._filtered.set_filter(self._favourite_filter if favourites else None)
+        remember_favourites_only(self.get_tag(), favourites)
+        self._update_state()
+
+    def _on_favourites_changed(self, *_args):
+        """The account's favourites changed (a sync, or a heart): Favourites Only shows the
+        new ones (the tiles follow their Items' notify::favourite themselves)."""
+        if self._filtered.get_filter() is not None:
+            self._favourite_filter.changed(Gtk.FilterChange.DIFFERENT)
 
     def _update_state(self, *_args):
         library = self._library
+        filtered = self._filtered.get_filter() is not None
         if self._sorted.get_n_items():
             name = 'items'
         elif library.state == 'loading' or (library.state == 'empty' and library.syncing):
             name = 'loading'  # the first sync is on its way
         else:
             name = 'empty'
-            title, description = self._missing_texts if self._missing else self._empty
+            if self._missing:
+                title, description = self._missing_texts
+            elif filtered and self._filtered.get_model().get_n_items():
+                title, description = self._favourites_texts  # only the filter left none
+            else:
+                title, description = self._empty
             self.empty_page.set_title(title)
             self._sign_in.set_description(description)
         self.stack.set_visible_child_name(name)
-        self.sort_button.set_visible(name == 'items' and len(self._sort_keys) > 1)
+        # Shown while Favourites Only is on, whatever it leaves, so it can be turned off.
+        self.sort_button.set_visible(
+            (name == 'items' and (len(self._sort_keys) > 1 or self._favourites_texts is not None))
+            or (filtered and not self._missing))
 
     # Sorting.
 

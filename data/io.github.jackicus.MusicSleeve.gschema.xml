@@ -122,7 +122,12 @@
     <key name="grid-sort" type="a{ss}">
       <default>{}</default>
       <summary>Sort order of each grid page</summary>
-      <description>The order last chosen in a grid page's Sort By menu (title, artist or year), by page: albums, artists or music-videos.</description>
+      <description>The order last chosen in a grid page's Sort By menu (title, artist, year or added), by page: albums, artists or music-videos.</description>
+    </key>
+    <key name="favourites-only" type="as">
+      <default>[]</default>
+      <summary>Library pages showing favourites only</summary>
+      <description>The pages (albums, music-videos, songs) last left with Favourites Only chosen in their Sort and Filter menu.</description>
     </key>
   </schema>
 </schemalist>

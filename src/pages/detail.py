@@ -232,10 +232,10 @@ class _Row(Gtk.Box):
             self.append(widget)
         self.track_row.set_visible(False)
 
-    def show_track(self, track, album_artist, table=False, playing=False):
+    def show_track(self, track, album_artist, table=False, playing=False, favourite=False):
         self._remove_widgets()
         self.track_row.set_visible(True)
-        self.track_row.bind(track, album_artist, table, playing)
+        self.track_row.bind(track, album_artist, table, playing, favourite)
 
     def clear(self):
         self._remove_widgets()
@@ -421,6 +421,7 @@ class DetailPage(Adw.NavigationPage):
         self._handlers.add(library, 'notify::state', self._follow)
         self._handlers.add(library, 'changed', self._follow)
         self._handlers.add(library, 'item-added', self._on_item_added)
+        self._handlers.add(library, 'favourites-changed', self._update_favourites)
         self._playing = PlayingMark(getattr(app(), 'player', None))
         if self._playing.player is not None:
             self._handlers.add(self._playing.player, 'notify::track', self._on_track_changed)
@@ -452,6 +453,7 @@ class DetailPage(Adw.NavigationPage):
         Adw.NavigationPage.do_map(self)
         self._follow()  # what a reload changed while the page was hidden
         self._update_playing()  # and the item playing now
+        self._update_favourites()  # and the favourites
         self._engine_status.watch()
         if should_fetch(self.item, self._fetched):
             self._fetch(self.item)  # a fetch cancelled when the page was hidden
@@ -1077,10 +1079,24 @@ class DetailPage(Adw.NavigationPage):
         the album too in a table."""
         table = self._is_table()
         playing = self._playing.matches(track)
-        list_item.get_child().show_track(track, self._album_artist, table, playing)
-        show_artist = self._album_artist is None or track.artist != self._album_artist
-        list_item.set_accessible_label(track_label(track, show_artist, show_album=table))
+        favourite = self._library.is_favourite(track)
+        list_item.get_child().show_track(track, self._album_artist, table, playing, favourite)
+        list_item.set_accessible_label(self._track_label(track, table, favourite))
         list_item.set_accessible_description(self._playing.description(track, playing))
+
+    def _track_label(self, track, table, favourite):
+        show_artist = self._album_artist is None or track.artist != self._album_artist
+        return track_label(track, show_artist, show_album=table, favourite=favourite)
+
+    def _update_favourites(self, *_args):
+        """The account's favourites changed (a sync, or a heart): the bound rows' hearts and
+        names again."""
+        table = self._is_table()
+        for list_item in self._bound:
+            track = list_item.get_item()
+            favourite = self._library.is_favourite(track)
+            list_item.get_child().track_row.set_favourite(favourite)
+            list_item.set_accessible_label(self._track_label(track, table, favourite))
 
     def _on_track_changed(self, _player, _pspec):
         self._update_playing()

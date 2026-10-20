@@ -93,8 +93,10 @@ through the playlists pass of a sync (sync.py). A track removed has its playlist
 as an add does.
 The menus of the player's queue (the item playing's in the Now Playing sheet and the player
 bar, Up Next's) have no Play, which would replace the queue: activating the row plays it.
-An item's rating (loved, Suggest Less or neither) is not in the library: a menu shows what
-the engine said last (its `rated` signal), and asks again (engine.rating) as it opens.
+An item's rating (loved, Suggest Less or neither): a menu shows what the engine said last
+this session (its `rated` signal), else whether the library holds it as a favourite
+(library.json's favourites, Library.is_favourite), and asks again (engine.rating) as it
+opens.
 
 Only Gio, GLib and GObject at import time besides Gtk's UriLauncher, used when a page is
 opened: tests build the menus and run the actions with a stand-in window, app and engine.
@@ -854,7 +856,11 @@ class ItemActions:
         self._remember(named, obj)
         rated = rating_target(obj)
         self._menu_rated = rated
-        self._show_rating(self._ratings.get(rated, 0) if rated else 0)
+        rating = self._ratings.get(rated) if rated is not None else 0
+        if rating is None:  # the engine has not said this session: the library's favourites
+            is_favourite = getattr(self.library, 'is_favourite', None)
+            rating = 1 if is_favourite is not None and is_favourite(obj) else 0
+        self._show_rating(rating)
         if rated is not None and self._engine_ready():
             self.app.spawn(self._refine(rated))
         return menu

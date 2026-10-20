@@ -105,6 +105,26 @@ changes, change it here, with the date. The plan they came from is in
   bar, Now Playing and the full-screen player stays two states (a Suggest Less shows it
   empty): a third state there would be a control nobody could read at a glance. A menu asks
   the engine for the rating as it opens, the one read it made for the favourite already.
+- **Favourites and dates come with the listings** (2026-10-20, #347). The sync asks the
+  library listings it already reads for `inFavorites` (`extend=inFavorites`, the songs'
+  included albums by `extend[library-albums]=`), which costs no request, rather than reading
+  ratings or the catalog's `personalRating` for the whole library (135 to 400 requests more
+  for 40,000 songs). Checked live: a song rated 1, as the app favourites it, is
+  `inFavorites: true`. A listing that refuses the extension is read again without it, and the
+  songs' favourites are then Favourite Songs' songs. library.json keeps them as one list of
+  ids per section, not a flag per entry: a song is many Tracks (its album, each playlist,
+  Songs), which are immutable records, and a heart changed in the app changes one set
+  (`Library.set_favourite`, from the Engine's `rated`). The file is not rewritten for it:
+  the next sync reads Apple's state, so a heart changed here and then the app restarted
+  before a sync shows the file's state until a sync or a menu's rating read corrects it
+  (accepted: rewriting a 50 MB library.json per click is not). Recently Added is the
+  library's albums and playlists (and the music videos Apple dates) by `dateAdded`, to the
+  second (albums carry a time, checked live, despite the documentation's date), ties in
+  Apple's recently-added order; a loose song's stand-in album, which has no date, last.
+  The heart in a row or tile is a dimmed mark, as the explicit badge is, that comes and
+  goes without a layout: an image shown by its opacity in a row, a CSS background in room a
+  tile's subtitle line always keeps (an image more a tile cost 12 ms a grid's first build); Favourites Only is a check item in the
+  sort menu (Sort and Filter, as Nautilus puts Show Hidden Files beside its sort orders).
 - **A refresh on a schedule** (2026-09-28). The library is synced when the last sync is older
   than the chosen interval, or when library.json is missing, unreadable or of an older
   version, checked by a timer, when the engine comes up and when the library has been read;

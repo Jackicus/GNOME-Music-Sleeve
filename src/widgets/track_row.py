@@ -15,6 +15,9 @@ from .track_links import TrackLink
 # The thumbnail's edge in a playlist's rows (track_row.blp's cover), which the header's first
 # column leaves room for.
 COVER_SIZE = 40
+# A favourite's heart before a row's time (track_row.blp's favourite_icon), which the header
+# leaves room for before Time.
+FAVOURITE_SIZE = 12
 
 _words = {}
 
@@ -99,13 +102,15 @@ class TrackRow(Gtk.Box):
 
     The row of the track playing (`playing`, set by bind() or set_playing() as the page
     follows the Player) shows a play icon in the number's slot, or over the thumbnail, and
-    its title bold (style.css's `.playing`): nothing that changes its size.
+    its title bold (style.css's `.playing`): nothing that changes its size. A favourite's row
+    has a heart before the time (`favourite`, bind() or set_favourite()), shown by its opacity.
     """
 
     __gtype_name__ = 'AppleMusicTrackRow'
 
     _track = None
     _playing = False
+    _favourite = False
 
     number_stack = Gtk.Template.Child()
     number_label = Gtk.Template.Child()
@@ -116,6 +121,7 @@ class TrackRow(Gtk.Box):
     title_label = Gtk.Template.Child()
     explicit_badge = Gtk.Template.Child()
     artist_label = Gtk.Template.Child()
+    favourite_icon = Gtk.Template.Child()
     duration_label = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
@@ -137,11 +143,12 @@ class TrackRow(Gtk.Box):
         """Whether the row is marked as the track playing."""
         return self._playing
 
-    def bind(self, track, album_artist=None, table=False, playing=False):
+    def bind(self, track, album_artist=None, table=False, playing=False, favourite=False):
         """Show track. album_artist given: an album's row, numbered, with the artist shown only
         when it is not the album's; None: a playlist's row, with thumbnail and artist, under
         the title, or with `table`, in a column of its own beside the album's. `playing`:
-        the track is the one playing (is_playing())."""
+        the track is the one playing (is_playing()); `favourite`: one of the account's
+        (Library.is_favourite), a heart before the time."""
         self._track = track
         album = album_artist is not None
         table = table and not album
@@ -163,6 +170,14 @@ class TrackRow(Gtk.Box):
             self.album_link.show(track)
         self.duration_label.set_text(track.duration_label)
         self.set_playing(playing)
+        self.set_favourite(favourite)
+
+    def set_favourite(self, favourite):
+        """Show the heart of a favourite, or not: by its opacity, only when it changes."""
+        favourite = bool(favourite)
+        if favourite != self._favourite:
+            self._favourite = favourite
+            self.favourite_icon.set_opacity(1 if favourite else 0)
 
     def set_playing(self, playing):
         """Mark the row as the track playing, or not (only when it changes: a style change
@@ -209,6 +224,7 @@ class TrackTableHeader(Gtk.Box):
         for title in (_('Title'), _('Artist'), _('Album')):
             columns.append(self._title(Gtk.Label(label=title, xalign=0)))
         self.append(columns)
+        self.append(Gtk.Box(width_request=FAVOURITE_SIZE))  # over the rows' hearts
         # "Time", as wide as the rows' durations: a stack sized by its widest child, an
         # inscription of the rows' duration_label's chars and classes that it never shows
         # (the title's smaller font would make the column narrower than theirs).

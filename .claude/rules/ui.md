@@ -155,6 +155,14 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - Per-item colours (a hero card's band) are drawn in the widget's own `do_snapshot`
   (`append_color`, then chain up) inside its rounded clip: CSS cannot take a value per item.
   Keep Python snapshots off the grid tiles (the hero card is a class of its own).
+- A favourite's heart, dimmed: a TrackRow's before its time and a SongTitle's at its end are
+  images shown by their opacity (`set_favourite()`); a tile's is style.css's
+  `.tile-subtitle.favourite` background in room its subtitle line always keeps
+  (`show_favourite()`: an image more a tile cost 12 ms a grid's first build). Tiles follow
+  `notify::favourite`, pages mark their bound rows again on
+  the library's `favourites-changed`. Albums, Music Videos and Songs have Favourites Only
+  in their Sort and Filter menu (`grid.favourites_only()`, the favourites-only setting);
+  a sort the data may lack (a video's Date Added) is a grid's `data_sorts`.
 
 ## HIG, style and icons
 

@@ -136,6 +136,19 @@ template $AppleMusicTrackRow: Box {
     }
   }
 
+  // A favourite's heart, before the time: always there, shown by its opacity (track_row.py).
+  Image favourite_icon {
+    icon-name: "heart-filled-symbolic";
+    pixel-size: 12;
+    valign: center;
+    opacity: 0;
+    accessible-role: presentation;
+
+    styles [
+      "dimmed",
+    ]
+  }
+
   // "3:41", and room for an hour or more ("1:02:03") when the row has it.
   Inscription duration_label {
     min-chars: 5;

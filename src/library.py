@@ -19,6 +19,15 @@ which only older syncs wrote, holds Track dicts: the library's loose songs, whic
 store takes after the albums' tracks, by id (the sync now leaves them under their stand-in
 albums only). `sections.videos` holds Items of kind 'video'.
 
+Since version 3 an Item may carry `added` (Apple's dateAdded: Item.added, in seconds) and the
+file `favourites`, {section: ids} (favourite_set()): the account's favourites, a song by its
+catalog id (else its library id), anything else by its library and catalog ids. Each Item's
+`favourite` is set from them, and Library.is_favourite() answers for a Track (the rows ask
+as they bind); Library.set_favourite() follows the app's own changes (the Engine's `rated`)
+and `favourites-changed` says the set changed. `recently_added` is the library's albums,
+playlists and dated videos, newest added first (recently_added_order()), or, from a file
+without dates, Apple's own recently-added shelf.
+
 load() makes new objects for everything; reload() (after a sync) reads the file again and brings
 the models up to date in place: an Item or Track still in the library keeps its object, so open
 pages and scroll positions survive. hide() makes every load leave out what was just removed
@@ -54,6 +63,7 @@ import threading
 import time
 import unicodedata
 from array import array
+from datetime import UTC, datetime
 from gettext import gettext as _
 from gettext import ngettext
 
@@ -131,7 +141,10 @@ TRACK_KINDS = {'songs': 'song', 'library-songs': 'song',
 # The Item properties that views over the stores sort and filter by (pages/grid.py's SORTS,
 # the search page's filters). When a reload changes one, the stores holding the Item splice
 # it over itself so that those models place it again.
-SORT_KEYS = frozenset(('title', 'subtitle', 'year'))
+SORT_KEYS = frozenset(('title', 'subtitle', 'year', 'added'))
+
+# The sections of library.json's `favourites` (sync.FAVOURITE_SECTIONS), read as one set.
+FAVOURITE_SECTIONS = ('songs', 'albums', 'playlists', 'videos')
 
 
 def _text(value):
@@ -151,6 +164,34 @@ def _reader(type, default=None):
     if type is int:
         return _number
     return lambda value: _text(value) or default
+
+
+def added_seconds(value):
+    """An Item's `added` (Apple's dateAdded: a year, a date, or a date and time, UTC when it
+    names no zone) as seconds since the epoch, or 0 when it has none or is not one."""
+    if not isinstance(value, str) or not value:
+        return 0
+    try:
+        if len(value) == 4 and value.isdigit():
+            when = datetime(int(value), 1, 1, tzinfo=UTC)
+        else:
+            when = datetime.fromisoformat(value)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=UTC)
+        return int(when.timestamp())
+    except (ValueError, OverflowError, OSError):
+        return 0
+
+
+def favourite_set(value):
+    """library.json's `favourites` ({section: [id]}, FAVOURITE_SECTIONS) as one frozenset of
+    ids: a song's catalog id (else its library id), an album's, playlist's or video's library
+    id and catalog id. Nothing from a file before them."""
+    if not isinstance(value, dict):
+        return frozenset()
+    return frozenset(entry for name in FAVOURITE_SECTIONS
+                     for entry in (value.get(name) if isinstance(value.get(name), list) else ())
+                     if isinstance(entry, str) and entry)
 
 
 def _is_count(value):
@@ -564,6 +605,17 @@ class Item(GObject.Object):
     explicit = raw_property('explicit', bool, False, writable=True)
     catalog_id = raw_property('catalogId', str, writable=True)
     url = raw_property('url', str, writable=True)
+    # Whether the account has it as a favourite: set by the Library from library.json's
+    # `favourites` and as the app favourites it (Library.set_favourite), notified as it
+    # changes.
+    favourite = model_property('favourite', bool, False)
+
+    def _get_added(self):
+        return self.added_seconds()
+
+    # When it was added to the library (`added`), as seconds since the epoch; 0 unknown.
+    added = GObject.Property(type=GObject.TYPE_INT64, default=0, getter=_get_added,
+                             flags=GObject.ParamFlags.READABLE)
 
     def __init__(self, data):
         super().__init__()
@@ -571,6 +623,14 @@ class Item(GObject.Object):
         self.play = data.get('play') or {}
         self._groups = None
         self._count = None  # count-label's text, made when first read (merge() forgets it)
+        self._favourite = False
+        self._added = None  # `added` in seconds, worked out when first read
+
+    def added_seconds(self):
+        """The `added` property, read without a GObject call (sorting thousands)."""
+        if self._added is None:
+            self._added = added_seconds(self.raw.get('added'))
+        return self._added
 
     # The raw keys count_text() reads, groups aside.
     _COUNT_KEYS = ('trackCount', 'durationMs', 'albumCount', 'countLabel')
@@ -663,6 +723,7 @@ class Item(GObject.Object):
                 groups_changed = True
         merged = [entry for entry in self._MERGED if replace or entry[1] in data]
         before = [read(old.get(key)) for _name, key, read in merged]
+        added = old.get('added')
         counts = [old.get(key) for key in self._COUNT_KEYS]
         if replace:
             self.raw = data
@@ -674,6 +735,9 @@ class Item(GObject.Object):
         raw = self.raw
         changed = [name for (name, key, read), value in zip(merged, before, strict=True)
                    if read(raw.get(key)) != value]
+        if (replace or 'added' in data) and raw.get('added') != added:
+            self._added = None
+            changed.append('added')
         if data.get('play'):
             self.play = data['play']
         if self.kind == 'album' and 'thumb' in changed:
@@ -1117,6 +1181,7 @@ class Library(GObject.Object):
         'changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'playlists-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'item-added': (GObject.SignalFlags.RUN_FIRST, None, (str, str)),
+        'favourites-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def _get_syncing(self):
@@ -1146,6 +1211,7 @@ class Library(GObject.Object):
         self.playlists = Gio.ListStore(item_type=Item)
         self.radio = Gio.ListStore(item_type=Item)
         self.videos = Gio.ListStore(item_type=Item)
+        self.recently_added = Gio.ListStore(item_type=Item)
         self.shelves = []
         self.batch_size = BATCH_SIZE
         self._songs = Gio.ListStore(item_type=Track)
@@ -1153,6 +1219,7 @@ class Library(GObject.Object):
         self._song_count = 0
         self._index = {}  # (kind, id) -> Item
         self._favourites = None  # the Favourite Songs playlist, found by each load
+        self._favourite_ids = frozenset()  # library.json's favourites, and the app's changes
         self._loose = []  # sections.songs: the loose songs' Track dicts
         self._loose_tracks = {}  # id -> Track, for the loose songs wrapped so far
         self._tree = PlaylistTree()
@@ -1359,6 +1426,54 @@ class Library(GObject.Object):
     def favourite_songs(self):
         """The Favourite Songs playlist (Item.favourites), or None when the library has none."""
         return self._favourites
+
+    def is_favourite(self, obj):
+        """Whether a Track or an Item is one of the account's favourites: a track by its
+        catalog id or its own, an Item by its id or its catalog id (two set lookups: rows
+        ask it as they bind)."""
+        ids = self._favourite_ids
+        if not ids or obj is None:
+            return False
+        raw = obj.raw
+        if raw.get('id') in ids:
+            return True
+        catalog_id = raw.get('catalogId')
+        return catalog_id is not None and str(catalog_id) in ids
+
+    def set_favourite(self, item_id, favourite):
+        """The account made (or unmade) a favourite of the song, album, playlist or video
+        with that id, as the app rated it (Engine's `rated`: a song by its catalog id, else
+        its own; anything else by the id it was rated by). Taken away, every id the library
+        knows the same Item by goes too, its library and its catalog id. The Items holding
+        it notify `favourite`, and `favourites-changed` says rows should look again.
+        Returns whether anything changed. Kept until the next load: library.json is the
+        sync's to write."""
+        item_id = str(item_id or '')
+        if not item_id:
+            return False
+        ids = set(self._favourite_ids)
+        if favourite:
+            ids.add(item_id)
+        else:
+            ids.discard(item_id)
+            for item in self._index.values():
+                raw = item.raw
+                if raw.get('id') == item_id or raw.get('catalogId') == item_id:
+                    ids.discard(raw.get('id'))
+                    ids.discard(raw.get('catalogId'))
+        if ids == self._favourite_ids:
+            return False
+        self._favourite_ids = frozenset(ids)
+        self._mark_favourites(self._index.values())
+        self.emit('favourites-changed')
+        return True
+
+    def _mark_favourites(self, items):
+        """Set each Item's `favourite` from the ids (notified only where it changes)."""
+        for item in items:
+            favourite = self.is_favourite(item)
+            if item._favourite != favourite:
+                item.favourite = favourite
 
     def load(self):
         """Read library.json from the cache directory and fill the models from it: a
@@ -1576,10 +1691,24 @@ class Library(GObject.Object):
         self._held = None
         self._added = {key: item for key, item in self._added.items()
                        if self._find_held(item) is None} if keep else {}
+        favourites = favourite_set(data.get('favourites'))
+        favourites_changed = favourites != self._favourite_ids
+        self._favourite_ids = favourites
+        self._mark_favourites(index.values())
+        recent = self.shelf('recently-added')
+        # The albums and playlists (Favourite Songs aside: Apple's own, never added), and the
+        # music videos Apple dates (its documentation gives them no dateAdded).
+        candidates = [item for item in self.albums]
+        candidates += [item for item in self.playlists if not item.favourites]
+        candidates += [item for item in self.videos if item.added_seconds()]
+        apply_diff(self.recently_added, recently_added_order(
+            candidates, list(recent.items) if recent is not None else []))
         for item in tree.changed:
             changed[item] = None
         if changed:
             self._notify_changed(changed)
+        if favourites_changed:
+            self.emit('favourites-changed')
         if self._songs_wanted:
             await self._fill_songs(generation)
 
@@ -1947,6 +2076,24 @@ def title_key(text):
         bare = ''.join(char for char in unicodedata.normalize('NFD', bare)
                        if not unicodedata.combining(char))
     return [_char_keys.get(char) or _char_key(char) for char in bare], folded
+
+
+def recently_added_order(items, recent):
+    """Recently Added: the library's albums, playlists and videos (`items`), newest `added`
+    first, ties in the order of Apple's own recently-added list (`recent`, its first hundred,
+    the Home shelf's), then by title; those without a date (a loose song's stand-in album)
+    last, by title. With no dates at all (a library.json from before them) Apple's list as
+    it is."""
+    dated = [item for item in items if item.added_seconds()]
+    if not dated:
+        return list(recent)
+    rank = {id(item): position for position, item in enumerate(recent)}
+    last = len(rank)
+    dated.sort(key=lambda item: (-item.added_seconds(), rank.get(id(item), last),
+                                 title_key(item.title)))
+    undated = sorted((item for item in items if not item.added_seconds()),
+                     key=lambda item: title_key(item.title))
+    return dated + undated
 
 
 def place_key(item):

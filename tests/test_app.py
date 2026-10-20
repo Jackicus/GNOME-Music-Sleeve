@@ -251,6 +251,17 @@ class BackgroundTest(AppTestCase):
         self.assertEqual((withdrawn, released), ([main.BACKGROUND_NOTIFICATION], [True]))
 
 
+class RatedTest(AppTestCase):
+    def test_the_library_follows_the_engines_ratings(self):
+        # A favourite made or taken back here, or a rating read (Engine's `rated`): the
+        # library's hearts follow at once. Suggest Less (-1) is no favourite.
+        calls = []
+        self.app.library = mock.Mock(set_favourite=lambda *args: calls.append(args))
+        for value in (1, 0, -1):
+            self.app._on_rated(None, 'song', '9001', value)
+        self.assertEqual(calls, [('9001', True), ('9001', False), ('9001', False)])
+
+
 class DemoTest(unittest.TestCase):
     def setUp(self):
         self.addCleanup(config.set_build_profile, 'default')

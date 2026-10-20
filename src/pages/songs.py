@@ -112,6 +112,7 @@ class SongsPage(Adw.NavigationPage):
     title_label = Gtk.Template.Child()
     count_label = Gtk.Template.Child()
     results_stack = Gtk.Template.Child()
+    no_results_page = Gtk.Template.Child()
     column_view = Gtk.Template.Child()
     title_column = Gtk.Template.Child()
     artist_column = Gtk.Template.Child()
@@ -125,6 +126,7 @@ class SongsPage(Adw.NavigationPage):
         self._order = None  # a SongOrder over the songs as they are, made when first needed
         self._ordered = []  # every song, in the chosen order
         self._search = ''  # the filter's text, folded
+        self._favourites_only = False  # the menu's Favourites Only
         self._matches = []  # the ordered songs that match it
         self._shown = []  # what the table's rows hold (the last matches that were any)
         self._follow = False  # the songs changed: the rows follow, keeping their place
@@ -133,6 +135,7 @@ class SongsPage(Adw.NavigationPage):
         self._bound = False  # a row has been bound (the startup timing's mark)
         self._title_cells = set()  # the title cells bound: marked again as the item playing changes
         self._row_items = set()  # and the rows bound (their descriptions)
+        self._favourites_restored = False  # Favourites Only as last chosen, once mapped
 
         self.title_label.set_label(title)
         self._header_title = HeaderTitle(self.header_bar, self.title_label)  # while loading
@@ -206,6 +209,12 @@ class SongsPage(Adw.NavigationPage):
         for action in (self._sort_column, self._sort_order):
             connect_weak(action, 'change-state', self._on_sort_chosen)
             actions.add_action(action)
+        # Favourites Only (songs.favourites-only, a check item), remembered as the grids'
+        # is (grid.favourites_only()), under this page's key.
+        self._favourites_action = Gio.SimpleAction.new_stateful(
+            'favourites-only', None, GLib.Variant('b', False))
+        connect_weak(self._favourites_action, 'change-state', self._on_favourites_only)
+        actions.add_action(self._favourites_action)
         self.insert_action_group('songs', actions)
         self.column_view.sort_by_column(self.title_column, Gtk.SortType.ASCENDING)
         self.column_view.get_sorter().connect('changed', self._on_sort_changed)
@@ -213,6 +222,7 @@ class SongsPage(Adw.NavigationPage):
         self._handlers.add(library, 'notify::state', self._update_state)
         self._handlers.add(library, 'notify::songs-ready', self._update_state)
         self._handlers.add(library, 'notify::syncing', self._update_state)
+        self._handlers.add(library, 'favourites-changed', self._on_favourites_changed)
         # The item playing (a test's stand-in application may have no player).
         self._playing = PlayingMark(getattr(app(), 'player', None))
         if self._playing.player is not None:
@@ -237,10 +247,16 @@ class SongsPage(Adw.NavigationPage):
 
     def do_map(self):
         Adw.NavigationPage.do_map(self)
+        if not self._favourites_restored:
+            self._favourites_restored = True
+            from .grid import favourites_only
+            if favourites_only(self.get_tag()):
+                self._favourites_action.change_state(GLib.Variant('b', True))
         if not self._library.songs_ready:
             app().spawn(self._library.build_songs())
         self._update_state()
         self._update_playing()  # the item playing now, changed or not while hidden
+        self._on_favourites_changed()  # and the favourites, changed or not while hidden
 
     # Order and filter.
 
@@ -331,10 +347,13 @@ class SongsPage(Adw.NavigationPage):
 
     def _filter(self):
         search = self._search
+        matches = self._ordered
+        if self._favourites_only:
+            is_favourite = self._library.is_favourite
+            matches = [track for track in matches if is_favourite(track)]
         if search:
-            self._matches = [track for track in self._ordered if search in track.search_key]
-        else:
-            self._matches = self._ordered
+            matches = [track for track in matches if search in track.search_key]
+        self._matches = matches
         # With no matches the rows stay as they were, hidden behind "No Results Found": the
         # next matches can then recycle their widgets rather than build new ones.
         if self._matches or not self._ordered:
@@ -383,7 +402,16 @@ class SongsPage(Adw.NavigationPage):
             return
         shown = len(self._matches)
         self.results_stack.set_visible_child_name('table' if shown else 'no-results')
-        if self._search:
+        if not shown:
+            favourites = self._favourites_only and not self._search
+            self.no_results_page.set_icon_name(
+                'heart-outline-symbolic' if favourites else 'edit-find-symbolic')
+            self.no_results_page.set_title(
+                _('No Favourite Songs') if favourites else _('No Results Found'))
+            self.no_results_page.set_description(
+                _('Songs you mark as favourites appear here') if favourites
+                else _('Try a different filter'))
+        if self._search or self._favourites_only:
             label = ngettext('{shown} of {total} song', '{shown} of {total} songs', total)
         else:
             label = ngettext('{total} song', '{total} songs', total)
@@ -487,7 +515,7 @@ class SongsPage(Adw.NavigationPage):
     def _bind_row(self, _factory, row):
         track = row.get_item()
         self._row_items.add(row)
-        row.set_accessible_label(track_label(track))
+        row.set_accessible_label(track_label(track, favourite=self._library.is_favourite(track)))
         row.set_accessible_description(
             self._playing.description(track, self._playing.matches(track)))
 
@@ -500,7 +528,8 @@ class SongsPage(Adw.NavigationPage):
     def _bind_title(self, _factory, cell):
         track = cell.get_item()
         self._title_cells.add(cell)
-        cell.get_child().bind(track, self._playing.matches(track))
+        cell.get_child().bind(track, self._playing.matches(track),
+                              self._library.is_favourite(track))
         if not self._bound:
             self._bound = True
             mark_bound(self)
@@ -508,6 +537,35 @@ class SongsPage(Adw.NavigationPage):
     def _unbind_title(self, _factory, cell):
         self._title_cells.discard(cell)
         cell.get_child().unbind()
+
+    # Favourites.
+
+    def _on_favourites_only(self, action, value):
+        """The menu's Favourites Only: the table shows the favourites alone, or every song;
+        remembered for the page (grid.remember_favourites_only)."""
+        action.set_state(value)
+        favourites = value.get_boolean()
+        if favourites == self._favourites_only:
+            return
+        self._favourites_only = favourites
+        from .grid import remember_favourites_only
+        remember_favourites_only(self.get_tag(), favourites)
+        self._follow = False
+        self._filter()
+        self._announce_count()
+
+    def _on_favourites_changed(self, *_args):
+        """The account's favourites changed (a sync, or a heart here): the bound rows show
+        them again, and Favourites Only shows the new ones, keeping its place."""
+        is_favourite = self._library.is_favourite
+        for cell in self._title_cells:
+            cell.get_child().set_favourite(is_favourite(cell.get_item()))
+        for row in self._row_items:
+            track = row.get_item()
+            row.set_accessible_label(track_label(track, favourite=is_favourite(track)))
+        if self._favourites_only and self._ordered:
+            self._follow = True
+            self._filter()
 
     # The song playing.
 

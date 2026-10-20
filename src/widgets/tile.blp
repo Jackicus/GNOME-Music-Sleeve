@@ -68,7 +68,10 @@ template $AppleMusicTile: Box {
     text-overflow: ellipsize_end;
   }
 
-  // An artist's tile has none (tile.py); an empty one keeps its line.
+  // An artist's tile has none (tile.py); an empty one keeps its line. A favourite's heart
+  // ends it: style.css's `.tile-subtitle.favourite`, a background image in room the line
+  // always keeps (tile.py), so no widget more is made by the hundred, and nothing is laid out
+  // again when it comes or goes.
   Inscription subtitle_label {
     xalign: 0;
     min-lines: 1;
@@ -77,6 +80,7 @@ template $AppleMusicTile: Box {
     styles [
       "caption",
       "dimmed",
+      "tile-subtitle",
     ]
   }
 }
