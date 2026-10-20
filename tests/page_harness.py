@@ -67,6 +67,8 @@ def classes():
         return _stand_ins
     from gi.repository import Adw, Gtk
 
+    from applemusic.recent_searches import RecentSearches
+
     class Engine(GObject.Object):
         state = GObject.Property(type=str, default='down')
         authorized = GObject.Property(type=bool, default=False)
@@ -152,9 +154,11 @@ def classes():
             self.actions = []
             self.reported = []
             self.toasts = []
+            self.recent_searches = RecentSearches()  # in memory: never the real cache
 
         def reset(self):
             self.engine = Engine()
+            self.recent_searches = RecentSearches()
             self.player.track = None
             self.player.preview = ''
             self.player.previews = []

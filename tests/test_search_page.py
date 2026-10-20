@@ -11,6 +11,7 @@ import unittest
 from tests.page_harness import PageTestCase, album, playing, track
 
 from applemusic.backend.errors import EngineError
+from applemusic.library import Item
 
 
 class SearchPageTest(PageTestCase):
@@ -156,6 +157,65 @@ class SearchPageTest(PageTestCase):
         self.assertEqual(rows[songs[0]['id']].get_accessible_description(), '3:00')
         self.app.player.track = None
         self.assertFalse(any(item.get_child().playing for item in page._bound_songs))
+
+    LANDING = {'categories': [{'id': 'g1', 'kind': 'category', 'title': 'Invented Genre'}]}
+
+    def signed_in_engine(self):
+        self.app.engine.state = 'ready'
+        self.app.engine.authorized = True
+        self.app.engine.answers['landing'] = self.LANDING
+
+    async def test_an_opened_result_is_recently_searched_on_the_landing(self):
+        self.signed_in_engine()
+        self.app.engine.answers['search'] = self.RESULTS
+        page = await self.search_page()
+        self.assertEqual(page.stack.get_visible_child_name(), 'landing')
+        self.assertFalse(page.recent_box.get_visible())  # nothing searched yet
+        page.search_entry.set_text('inv')
+        page._on_entry_activated(page.search_entry)
+        await self.settle()
+        shelf = page._column.widgets[0]
+        shelf.list_view.emit('activate', 0)  # a result's tile
+        self.assertEqual([item.id for item in self.window.opened], ['c1'])
+        self.assertEqual(self.app.recent_searches.items.get_item(0).id, 'c1')
+        self.type(page, '')
+        await self.settle()
+        self.assertEqual(page.stack.get_visible_child_name(), 'landing')
+        self.assertTrue(page.recent_box.get_visible())
+        child = page.recent_box.get_child_at_index(0)
+        self.assertEqual(child.get_child().context_item.id, 'c1')
+        page.recent_box.emit('child-activated', child)  # opened again from the landing
+        self.assertEqual([item.id for item in self.window.opened], ['c1', 'c1'])
+        page.recent_clear_button.emit('clicked')
+        self.assertFalse(page.recent_box.get_visible())
+        self.assertFalse(page.recent_header.get_visible())
+
+    async def test_a_top_hit_and_your_library_are_remembered_a_category_not(self):
+        self.signed_in_engine()
+        self.app.engine.answers['suggest'] = {
+            'terms': [], 'items': [{'id': 'c9', 'kind': 'artist', 'title': 'Invented Band'}]}
+        self.library.albums.append(Item(album(1, tracks=0)))
+        page = await self.search_page()
+        page.categories_box.emit('child-activated', page.categories_box.get_child_at_index(0))
+        self.assertEqual(self.app.recent_searches.items.get_n_items(), 0)
+        self.type(page, 'inv')
+        await self.settle()
+        page.suggestions_list.emit('row-activated', page.suggestions_list.get_row_at_index(0))
+        page.set_mode('library')
+        self.type(page, 'invented')
+        page.albums_shelf.list_view.emit('activate', 0)
+        recent = self.app.recent_searches.items
+        self.assertEqual([recent.get_item(i).kind for i in range(recent.get_n_items())],
+                         ['album', 'artist'])
+
+    async def test_recently_searched_shows_without_categories(self):
+        self.signed_in_engine()
+        self.app.engine.answers['landing'] = {'categories': []}
+        self.app.recent_searches.add(Item(album(1, tracks=0)))
+        page = await self.search_page()
+        self.assertEqual(page.stack.get_visible_child_name(), 'landing')
+        self.assertTrue(page.recent_box.get_visible())
+        self.assertFalse(page.categories_title_label.get_visible())
 
     async def test_a_dropped_page_is_freed(self):
         # Sign-out drops the page (window.forget_account_pages()).

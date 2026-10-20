@@ -9,31 +9,13 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
     width-request: 360;
     height-request: 200;
 
-    // Narrow: the mode toggle goes under the entry, as wide as the page (side by side they
-    // need about 640 px).
-    Adw.Breakpoint {
-      condition ("max-width: 640sp")
-
-      setters {
-        search_row.orientation: vertical;
-        search_row.halign: fill;
-        search_entry.hexpand: true;
-        search_entry.width-request: -1;
-        mode_toggle.halign: center;
-      }
-    }
-
-    // Narrower still: the category tiles one a line, too (two would break their names
-    // mid-word). The last breakpoint that matches is the one applied: this repeats the one
-    // above.
+    // Narrow: the mode toggle under the entry, and the category tiles one a line (two would
+    // break their names mid-word).
     Adw.Breakpoint {
       condition ("max-width: 520sp")
 
       setters {
         search_row.orientation: vertical;
-        search_row.halign: fill;
-        search_entry.hexpand: true;
-        search_entry.width-request: -1;
         mode_toggle.halign: center;
         categories_box.min-children-per-line: 1;
         categories_box.max-children-per-line: 1;
@@ -53,54 +35,47 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
           "view",
         ]
 
-        Label title_label {
-          xalign: 0;
-          ellipsize: end;
+        // The entry and the mode, centred as wide as the suggestions under them, with no
+        // title: the entry names the page. The page's handlers are connected in search.py
+        // (weakly: sign-out drops it).
+        Adw.Clamp {
+          maximum-size: 600;
+          tightening-threshold: 480;
           margin-start: 24;
           margin-end: 24;
-          margin-top: 24;
-
-          styles [
-            "title-1",
-          ]
-        }
-
-        // The entry and the mode on the page's 24 px margin, as the title and the results
-        // are. The page's handlers are connected in search.py (weakly: sign-out drops it).
-        Box search_row {
-          spacing: 12;
-          halign: start;
-          margin-start: 24;
-          margin-end: 24;
-          margin-top: 12;
+          margin-top: 6;
           margin-bottom: 12;
 
-          SearchEntry search_entry {
-            width-request: 360;
-            placeholder-text: _("Search Apple Music");
+          child: Box search_row {
+            spacing: 12;
 
-            accessibility {
-              label: _("Search");
-            }
-          }
+            SearchEntry search_entry {
+              hexpand: true;
+              placeholder-text: _("Search Apple Music");
 
-          Adw.ToggleGroup mode_toggle {
-            valign: center;
-
-            accessibility {
-              label: _("Search In");
+              accessibility {
+                label: _("Search");
+              }
             }
 
-            Adw.Toggle {
-              name: "music";
-              label: _("Apple Music");
-            }
+            Adw.ToggleGroup mode_toggle {
+              valign: center;
 
-            Adw.Toggle {
-              name: "library";
-              label: _("Your Library");
+              accessibility {
+                label: _("Search In");
+              }
+
+              Adw.Toggle {
+                name: "music";
+                label: _("Apple Music");
+              }
+
+              Adw.Toggle {
+                name: "library";
+                label: _("Your Library");
+              }
             }
-          }
+          };
         }
 
         Stack stack {
@@ -152,9 +127,10 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
             };
           }
 
-          // Before anything is typed: Apple's browse categories, a flow box of tiles (a few
-          // tens, made once each; a Gtk.GridView could not sit under the heading in one
-          // scrolled window).
+          // Before anything is typed: what was opened from Search lately (recent_searches.py)
+          // and Apple's browse categories, flow boxes of tiles (at most LIMIT and a few tens,
+          // made once each; a Gtk.GridView could not sit under a heading in one scrolled
+          // window).
           StackPage {
             name: "landing";
 
@@ -166,7 +142,58 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
                 spacing: 12;
                 margin-bottom: 18;
 
-                Label {
+                Box recent_header {
+                  spacing: 12;
+                  margin-start: 24;
+                  margin-end: 14;
+
+                  styles [
+                    "shelf-header",
+                  ]
+
+                  Label recent_title_label {
+                    label: _("Recently Searched");
+                    xalign: 0;
+                    ellipsize: end;
+                    hexpand: true;
+
+                    styles [
+                      "title-2",
+                    ]
+                  }
+
+                  Button recent_clear_button {
+                    label: _("Clear");
+                    valign: center;
+                    tooltip-text: _("Clear Recently Searched");
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+                }
+
+                FlowBox recent_box {
+                  homogeneous: true;
+                  selection-mode: none;
+                  activate-on-single-click: true;
+                  min-children-per-line: 1;
+                  max-children-per-line: 5;
+                  column-spacing: 12;
+                  row-spacing: 12;
+                  valign: start;
+                  margin-start: 24;
+                  margin-end: 24;
+                  margin-bottom: 12;
+
+                  accessibility {
+                    labelled-by: [
+                      recent_title_label,
+                    ];
+                  }
+                }
+
+                Label categories_title_label {
                   label: _("Browse Categories");
                   xalign: 0;
                   ellipsize: end;
