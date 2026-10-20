@@ -651,6 +651,12 @@
         return String(err.errorCode || err.name || '');
     }
 
+    // The bitrate MusicKit streams at, in kbps (mk.bitrate: 256 or 64), or null when it says
+    // none.
+    function currentBitrate(mk) {
+        return (mk && typeof mk.bitrate === 'number' && mk.bitrate > 0) ? mk.bitrate : null;
+    }
+
     // The MusicKit events the app follows, each with the plain data it is
     // posted with — the shapes the answers below use (nowPlaying, queue),
     // read from the instance at the moment of the event rather than from
@@ -719,6 +725,10 @@
         },
         autoplayEnabledDidChange: function (mk, e) {
             return { autoplay: typeof e === 'boolean' ? e : !!mk.autoplayEnabled };
+        },
+        playbackBitrateDidChange: function (mk, e) {
+            const bitrate = (e && typeof e.bitrate === 'number' && e.bitrate > 0) ? e.bitrate : currentBitrate(mk);
+            return { bitrate: bitrate };
         }
     };
 
@@ -793,7 +803,7 @@
                 engine: true,
                 authorized: !!(mk && mk.isAuthorized),
                 storefront: (mk && mk.storefrontId) ? mk.storefrontId : 'us',
-                bitrate: (mk && typeof mk.bitrate === 'number') ? mk.bitrate : 256
+                bitrate: currentBitrate(mk)
             };
         },
 
@@ -1200,6 +1210,21 @@
             return { autoplay: !!mk.autoplayEnabled, canAutoplay: queueCapabilities(mk).canAutoplay };
         },
 
+        // The streaming bitrate set (mk.bitrate: 64 kbps is PlaybackBitrate.STANDARD, High
+        // Efficiency; anything else HIGH, 256 kbps, High Quality) or only read (null):
+        // {bitrate}, what MusicKit has after the set (null: it says none). The app sets its
+        // own at every start and page load; MusicKit may still choose another itself.
+        bitrate: function (kbps) {
+            const mk = getMusicKit();
+            if (!mk) throw new Error('MusicKit not initialized');
+            if (kbps !== null && kbps !== undefined) {
+                const rates = window.MusicKit.PlaybackBitrate || {};
+                const wanted = Number(kbps) === 64 ? (rates.STANDARD || 64) : (rates.HIGH || 256);
+                if (mk.bitrate !== wanted) mk.bitrate = wanted;
+            }
+            return { bitrate: currentBitrate(mk) };
+        },
+
         // The item's rating set (`value` 1, a favourite, or -1, Suggest Less: a PUT, which
         // replaces the other) or taken away (anything else: a DELETE).
         rating: async function (kind, id, value) {
@@ -1565,7 +1590,11 @@
             const handlers = {};
             Object.keys(EVENT_DATA).forEach(function (name) {
                 const handler = function (event) { postEvent(name, event); };
-                mk.addEventListener(name, handler);
+                try {
+                    mk.addEventListener(name, handler);
+                } catch {
+                    return;  // an event this MusicKit does not know: the others still come
+                }
                 handlers[name] = handler;
             });
             window.__appleMusicListeners = {

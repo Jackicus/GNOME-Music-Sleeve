@@ -48,6 +48,15 @@
       <summary>Autoplay similar music</summary>
       <description>Whether Apple Music keeps playing similar songs when the queue ends, added to Up Next under Autoplay. The app sets it on the playback engine at every start: it is the app's setting, not the account's, and Apple Music's other players keep their own.</description>
     </key>
+    <key name="streaming-quality" type="s">
+      <choices>
+        <choice value="high"/>
+        <choice value="standard"/>
+      </choices>
+      <default>'high'</default>
+      <summary>Streaming quality</summary>
+      <description>The bitrate Apple Music streams at: 'high' (High Quality, 256 kbps AAC) or 'standard' (High Efficiency, 64 kbps AAC, which uses less data). The app sets it on the playback engine at every start and page load, and at once when it changes; MusicKit may still choose 64 kbps itself on a slow connection. Lossless is not available in the web player.</description>
+    </key>
     <key name="lyrics-translations" type="b">
       <default>false</default>
       <summary>Show translations under lyrics</summary>

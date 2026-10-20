@@ -138,10 +138,12 @@ def _classes():
         authorized = GObject.Property(type=bool, default=False)
         headless = GObject.Property(type=bool, default=True)
         widevine = GObject.Property(type=bool, default=True)
+        bitrate = GObject.Property(type=int, default=0)
 
         def __init__(self):
             super().__init__()
             self.calls = []
+            self.status_bitrate = 256  # what status() reads of MusicKit
             self.artist_answer = None  # what artist_page() answers: engine-down while None
             self.album_answer = None  # what album_page() answers, the same way
             self.suggestions = None  # what playlist_suggestions() answers, the same way
@@ -155,6 +157,11 @@ def _classes():
 
         async def stop(self):
             self.calls.append('stop')
+
+        async def status(self):
+            self.calls.append('status')
+            self.bitrate = self.status_bitrate
+            return {'bitrate': self.status_bitrate}
 
         async def restart(self, visible=None):
             self.calls.append('restart')
@@ -1555,6 +1562,49 @@ class HandlerTest(WidgetTestCase):
             finally:
                 self.app.settings.reset('sync-interval')
                 self.app.settings.reset('last-sync')
+                await self.asyncTearDown()  # the dialogs closed with the cache still patched
+
+    async def test_preferences_streaming_quality(self):
+        """The quality row is the streaming-quality setting, both ways, and says the bitrate
+        MusicKit streams at while the engine runs, read again as the dialog opens."""
+        from applemusic.dialogs.preferences import PreferencesDialog
+
+        engine = self.app.engine
+        self.addCleanup(self.app.settings.reset, 'streaming-quality')
+        with tempfile.TemporaryDirectory() as cache, \
+                mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+            try:
+                engine.props.state = 'up'
+                engine.status_bitrate = 64
+                dialog = await self.presented(PreferencesDialog(self.app))
+                row = dialog.quality_row
+                self.assertEqual(row.get_selected(), 0)  # High Quality, the default
+                self.assertTrue(await self.until(lambda: engine.bitrate == 64))
+                self.assertIn('status', engine.calls)
+                self.assertEqual(row.get_subtitle(), 'Streaming at 64 kbps now')
+                row.set_selected(1)
+                self.assertEqual(self.app.settings.get_string('streaming-quality'), 'standard')
+                self.app.settings.set_string('streaming-quality', 'high')
+                self.assertEqual(row.get_selected(), 0)
+                engine.props.bitrate = 256
+                self.assertEqual(row.get_subtitle(), 'Streaming at 256 kbps now')
+                engine.props.state = 'down'
+                self.assertEqual(row.get_subtitle(), 'High Efficiency uses less data')
+                dialog.force_close()
+                # The demo: the row is the setting all the same, no engine asked.
+                engine.calls.clear()
+                engine.props.state = 'up'
+                self.app.demo = True
+                dialog = await self.presented(PreferencesDialog(self.app))
+                dialog.quality_row.set_selected(1)
+                self.assertEqual(self.app.settings.get_string('streaming-quality'), 'standard')
+                self.assertNotIn('status', engine.calls)
+                self.assertEqual(dialog.quality_row.get_subtitle(),
+                                 'High Efficiency uses less data')
+            finally:
+                self.app.demo = False
+                engine.props.state = 'down'
+                engine.props.bitrate = 0
                 await self.asyncTearDown()  # the dialogs closed with the cache still patched
 
     async def test_preferences_account_always_has_a_row(self):

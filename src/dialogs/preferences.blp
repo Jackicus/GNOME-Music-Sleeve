@@ -110,6 +110,20 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
           valign: center;
         }
       }
+
+      // The streaming-quality setting, in engine.QUALITIES' order; the subtitle says the
+      // bitrate MusicKit streams at while the engine runs (preferences.py).
+      Adw.ComboRow quality_row {
+        title: _("Streaming Quality");
+        subtitle: _("High Efficiency uses less data");
+
+        model: StringList {
+          strings [
+            _("High Quality"),
+            _("High Efficiency"),
+          ]
+        };
+      }
     }
 
     Adw.PreferencesGroup {

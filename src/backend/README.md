@@ -46,7 +46,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 
 | Call | Answer |
 |---|---|
-| `status()` | `{ready, engine, authorized, storefront, bitrate}` |
+| `status()` | `{ready, engine, authorized, storefront, bitrate}` (`bitrate`: `mk.bitrate` in kbps, null when MusicKit has none) |
 | `drm()` | `{widevine: true}`, or `{widevine: false, error}` when the browser refuses Widevine (`navigator.requestMediaKeySystemAccess`, AAC in MP4) or has no Encrypted Media Extensions; never a throw |
 | `accountName()` | the account's name as the page shows it (`.account-menu .user__name`), or null; null while a sign-in control is on the page |
 | `signin()` | `mk.authorize()`, then `{authorized}` |
@@ -64,6 +64,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `queueClear()` | `{ok: true, cleared}`: everything after the item playing out of the queue (`queue.clearAfterCurrent()`), its queue items kept for `queueUndoClear()`; or `{error, code: 'NOT_EDITABLE'}` |
 | `queueUndoClear()` | `{ok: true, restored}`: the queue items the last `queueClear()` took, spliced back after the item playing while it is the same item (`queue.spliceQueueItems(position + 1, count, items)` over what follows it, the items as one array, autoplay's refill dropped when Clear took autoplay entries: "Autoplay across queues"), once, kept until the splice is done; `restored` is how many of Clear's MusicKit put in; or `{error, code}` (`STALE`: nothing kept, or another item plays) |
 | `autoplay(on)` | `{autoplay, canAutoplay}` after `mk.autoplayEnabled = on` (null: only read) |
+| `bitrate(kbps)` | `{bitrate}` after `mk.bitrate` is set: 64 is `MusicKit.PlaybackBitrate.STANDARD` (High Efficiency), anything else `HIGH` (256, High Quality); null only reads. `bitrate` is null when MusicKit says none ("Streaming quality") |
 | `queueJump(index)` | `{ok: true}` (`mk.changeToMediaAtIndex`) |
 | `rating(kind, id, value)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, tracks)` | `{ok: true}`, or a throw with Apple's status and message. `tracks` is `[{id, type}]`, appended in order by one `POST /v1/me/library/playlists/<id>/tracks` `{data: tracks}` (`addToPlaylist(playlistId, songId, type)`, one song, still works); the engine sends an album's or a playlist's in runs of `api.PLAYLIST_BATCH` (100), one after the other: Apple documents no limit, and none has been checked yet. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
 | `createPlaylist(attributes, tracks, parentId)` | `{id}`, the new playlist's; `attributes` `{name, description?}`, `tracks` `[{id, type}]` |
@@ -241,6 +242,19 @@ the app never sees them. `Player.undo_clear()` orders its store the same way
 (`player.undone_tail()`). Live: a queue of the item and five songs, Clear, the refill, Undo
 4 s later: the five back and the refill after them (16 entries, ten autoplay, one batch);
 then Clear and Undo 0.2 s later, before the refill: 16 entries, ten autoplay, one batch.
+
+### Streaming quality (#368)
+
+MusicKit JS streams AAC at 256 kbps (`MusicKit.PlaybackBitrate.HIGH`) or 64 kbps
+(`STANDARD`), nothing higher (docs/decisions.md, "Not possible through the web player").
+`mk.bitrate` is read and written as a property; MusicKit may also set it on its own (64 kbps
+on a slow connection), and is expected to post `playbackBitrateDidChange` (`{bitrate}`) when
+it changes. Not checked live yet: whether a set takes effect on the item playing or from the
+next one, whether the web player keeps a choice of its own as it loads (the app sets its
+`streaming-quality` again at every start and after every `bridgeReset`, when MusicKit has
+another), and that the event exists in MusicKit v3 under that name (`subscribe()` skips an
+event `addEventListener` refuses, so the others still come). The harness's instance posts the
+event when `bitrate` is set to another value.
 
 ### Ratings: Favourite and Suggest Less
 
@@ -524,6 +538,7 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 | `playbackVolumeDidChange` | `{volume}` |
 | `mediaPlaybackError` | `{code, message}` (`code`: MusicKit's `errorCode`, such as `CONTENT_UNAVAILABLE`, else '') |
 | `autoplayEnabledDidChange` | `{autoplay}`: MusicKit's autoplay turned on or off |
+| `playbackBitrateDidChange` | `{bitrate}`: the kbps MusicKit streams at changed (the app's set, or MusicKit's own choice); the event's `bitrate`, else `mk.bitrate` ("Streaming quality") |
 | `previewDidChange` | `{id}` as a preview starts; `{id: null, ended, reason}` as it stops (`ended` its id; `reason` `ended`, `error`, `stopped`, `replaced` or `playback`, MusicKit taken in hand). The bridge's own, not MusicKit's |
 | `bridgeReset` | `{}`: the client's own, after it put the bridge back into a new document |
 
