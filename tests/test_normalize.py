@@ -1402,15 +1402,18 @@ class TestPruneCaches(unittest.TestCase):
         return sorted(os.listdir(os.path.join(self.tmp_dir, folder)))
 
     def test_what_only_grows_is_trimmed(self):
+        keep = normalize.ANSWER_KEEP_AGE
         day = normalize.ANSWER_MAX_AGE
         for number in range(5):  # played 0 to 4 hours ago
             self.put(f'lyrics/{number}.json', age=number * 3600)
-        self.put('categories/old.json', age=day + 60)
+        self.put('categories/old.json', age=keep + 60)
         self.put('categories/fresh.json', age=60)
-        self.put('artists/1724049001.json', age=day + 60)
+        self.put('categories/yesterday.json', age=2 * day)  # stale, still the offline answer
+        self.put('artists/1724049001.json', age=keep + 60)
         self.put('artists/1724049002.json', age=60)
-        self.put('albums/1724049100.json', age=day + 60)
-        self.put('landing.json', age=day + 60)
+        self.put('albums/1724049100.json', age=keep + 60)
+        self.put('landing.json', age=keep + 60)
+        self.put('radio.json', age=2 * day)
         self.put('browse.json', age=60)
         self.put('.x.json.tmp', age=2 * 3600)  # a crash's leftover
         self.put('lyrics/.y.tmp', age=2 * 3600)
@@ -1426,12 +1429,13 @@ class TestPruneCaches(unittest.TestCase):
         self.assertEqual(gone, {'remote-art': 1, 'lyrics': 3, 'answers': 4, 'items': 2,
                                 'temps': 2})
         self.assertEqual(self.names('lyrics'), ['0.json', '1.json'])
-        self.assertEqual(self.names('categories'), ['fresh.json'])
+        self.assertEqual(self.names('categories'), ['fresh.json', 'yesterday.json'])
         self.assertEqual(self.names('artists'), ['1724049002.json'])
         self.assertEqual(self.names('remote-art'), ['0.jpg', '1.jpg'])
         self.assertEqual(self.names('albums'), [])
         self.assertEqual(self.names(), ['.z.tmp', 'albums', 'art', 'artists', 'browse.json',
-                                        'categories', 'library.json', 'lyrics', 'remote-art'])
+                                        'categories', 'library.json', 'lyrics', 'radio.json',
+                                        'remote-art'])
         # Again: nothing more to do.
         self.assertFalse(any(normalize.prune_caches(self.tmp_dir, now=self.now,
                                                     remote_bytes=250, lyrics_keep=2).values()))

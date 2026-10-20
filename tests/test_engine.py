@@ -2936,6 +2936,24 @@ class SearchTest(EngineFixture):
                 await command()
             self.assertEqual(raised.exception.code, 'engine-down', name)
 
+    async def test_an_answer_past_its_day_outlives_the_startup_prune(self):
+        # The prune at every startup and sync leaves an answer a day or two old, so a launch
+        # with the engine down still has it to answer, stale; one past the keep age goes.
+        two_days = time.time() - 2 * 24 * 3600
+        path = self.cache / 'radio.json'
+        normalize.write_answer(str(path), {'shelves': [], 'name': 'radio'}, str(self.cache))
+        self.expire(path)
+        os.utime(path, (two_days, two_days))
+        old = self.cache / 'charts.json'
+        normalize.write_answer(str(old), {'shelves': []}, str(self.cache))
+        long_ago = time.time() - normalize.ANSWER_KEEP_AGE - 60
+        os.utime(old, (long_ago, long_ago))
+        gone = normalize.prune_caches(str(self.cache))
+        self.assertEqual(gone['answers'], 1)
+        self.assertFalse(old.exists())
+        answer = await self.engine.radio()
+        self.assertEqual((answer['name'], answer['stale']), ('radio', True))
+
     async def test_an_old_answer_is_asked_again_when_apple_can_be(self):
         await self.up()
         self.page.bridge_answers['searchLanding'] = {'data': []}
