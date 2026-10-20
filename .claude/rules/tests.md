@@ -9,10 +9,21 @@ paths:
   the `if __name__ == '__main__': unittest.main()` guard. Run all with
   `python3 -m unittest discover -s tests` from the repo root, or one with
   `python3 -m unittest tests.test_player`; `meson test -C build --suite unit` runs the same.
-- Every test module imports `tests` before `applemusic` (`from tests import ROOT`): discovery
-  imports test modules as top-level modules, and importing `tests` is what registers `src/` as
-  the `applemusic` package and puts GSettings on the memory backend with this tree's schema, so
-  no test touches the desktop's settings.
+- Every test module imports `tests` before `applemusic` (`from tests import ROOT`;
+  test_isolation checks): discovery imports test modules as top-level modules, and importing
+  `tests` is what keeps the process off the developer's files, registers `src/` as the
+  `applemusic` package and puts GSettings on the memory backend with this tree's schema, so no
+  test touches the desktop's settings. Before the app is imported it points `XDG_CACHE_HOME`,
+  `XDG_DATA_HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME` into `tests.TEST_HOME`, a fresh
+  temporary directory removed at exit, and unsets `APPLE_MUSIC_CACHE`, `APPLE_MUSIC_PROFILE`,
+  `APPLE_MUSIC_DEBUG_PORT` and `APPLE_MUSIC_HOST_SESSION_BUS`: the default cache
+  (`config.cache_dir()`) and Chrome profile are empty directories in there, so a test that
+  forgets its own set-up reads nothing real (test_isolation loads a Library from it). A child
+  process a test starts that imports `tests` again keeps its parent's `TEST_HOME` and what the
+  test set (`MUSIC_SLEEVE_TEST_HOME`), as tests/service_app.py does. The toolkit's caches
+  (glycin's, the GL shader cache) start cold there on every run, as on CI, so the first frames
+  are slower: a widget test waits (`wait_for()`) for what comes after a frame, never trusting
+  one `pump()`.
 - Put logic in non-widget classes and pure functions and test it with stand-ins (as
   test_mpris.py, test_player.py and test_actions.py do). A test that must build widgets uses
   `tests/gtk.py`: `@requires_gtk` on the class or method (it skips without a display or a
@@ -29,8 +40,9 @@ paths:
   finds it through `pages.app()` and it outlives the module that set it — so a widget test that
   builds a page makes its own with `page_harness.stand_in_app()`.
 - Tests never start Chrome, touch the real profile or cache, or reach the network (a server
-  the test runs itself on 127.0.0.1, as test_normalize's artwork fetch does, is fine): point
-  `APPLE_MUSIC_CACHE` (and `APPLE_MUSIC_PROFILE`) at a temporary directory. test_engine.py runs
+  the test runs itself on 127.0.0.1, as test_normalize's artwork fetch does, is fine): a test
+  that reads or writes a cache still points `APPLE_MUSIC_CACHE` (and `APPLE_MUSIC_PROFILE`) at
+  a temporary directory of its own, so tests do not share `TEST_HOME`'s. test_engine.py runs
   on gi.events' `GLibEventLoop` (`loop_factory`), as the app does, with `chrome.find_chrome`
   patched to a script that runs `tests/fake_chrome_relay.py` through the real `Engine._spawn`:
   it relays the DevTools pipe to test_client.py's `FakeBrowser` over a Unix socket and lives and
