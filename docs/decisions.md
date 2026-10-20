@@ -142,6 +142,17 @@ changes, change it here, with the date. The plan they came from is in
   bar, Now Playing and the full-screen player stays two states (a Suggest Less shows it
   empty): a third state there would be a control nobody could read at a glance. A menu asks
   the engine for the rating as it opens, the one read it made for the favourite already.
+- **An artist's favourite is a star, not a rating** (2026-10-20, #357). Apple's players star
+  an artist on their page, and the web player writes it to `/v1/me/favorites`, not to the
+  ratings (an artist's ratings path is always a 404), so the app does the same: a star toggle
+  (Adwaita's `starred-symbolic`) beside Play, and Favourite / Remove from Favourites in an
+  artist's menus, but no Suggest Less, whose write for an artist is unverified. The state is
+  the artist page's own read (`extend=inFavorites`), so the page's first build asks nothing
+  more; a menu reads it alone as it opens, past MusicKit's cache. A press shows the new state
+  at once and puts it back, with the error's toast, when Apple refuses. The library holds no
+  artists' favourites (library.json's are songs, albums, playlists and videos), so a library
+  artist's tile shows no heart; a library artist the app has not matched to Apple Music has
+  no star until their page has found them.
 - **Favourites and dates come with the listings** (2026-10-20, #347). The sync asks the
   library listings it already reads for `inFavorites` (`extend=inFavorites`, the songs'
   included albums by `extend[library-albums]=`), which costs no request, rather than reading

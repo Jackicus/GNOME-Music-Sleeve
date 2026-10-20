@@ -92,14 +92,18 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   **Go to Artist** in a menu, opens their page on Apple Music, whose **In Your Library**
   leads back with **See All**. That page opens with Apple's wide picture of the artist, their
   name over it, when Apple has one (about half of its artists do), else with their round
-  portrait; their latest release sits beside their top songs unless the window is narrow. In a narrow window the list comes first, and choosing an
+  portrait; their latest release sits beside their top songs unless the window is narrow.
+  The star beside **Play** makes the artist one of your favourites (Apple Music uses them for
+  its recommendations; it does not add them to your library), and pressing it again takes
+  that back; **Favourite** and **Remove from Favourites** in an artist's menu do the same.
+  In a narrow window the list comes first, and choosing an
   artist shows their albums, with a back button.
 - A title too long for its tile ends in "…": rest the pointer on the tile to read all of it.
   Music videos are wide tiles, with a play symbol under the pointer.
 - Right-click a song, an album or a playlist (or press and hold it, or press
   <kbd>Menu</kbd>) for its menu: play it next or later, add it to a playlist or your
   favourites, open it on music.apple.com, and, for a song, **Go to Album** and **Go to
-  Artist**. **Suggest Less** (for a song, an album, a playlist, a station or a music video)
+  Artist**; an artist's menu has **Favourite** too. **Suggest Less** (for a song, an album, a playlist, a station or a music video)
   tells Apple Music to recommend less like it; **Undo Suggest Less** takes that back. A
   favourite offers no Suggest Less, and **Favourite** replaces a Suggest Less. The song playing has the same menu: right-click the player bar, or use **More
   Options** in Now Playing; Up Next's songs have theirs too. A radio show or a category

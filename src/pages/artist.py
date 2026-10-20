@@ -12,7 +12,7 @@ from gettext import pgettext as C_
 
 from gi.repository import Adw, GLib, Gtk
 
-from ..actions import can_play
+from ..actions import can_play, favourite_target
 from ..backend.api import is_library_id
 from ..backend.errors import EngineError
 from ..discography import library_artist
@@ -106,6 +106,14 @@ class ArtistPage(Adw.NavigationPage):
     where the artist is from, when born or formed, and the genre) and Similar Artists. The
     header bar shows the name once the big one has scrolled away.
 
+    The star beside Play is the artist's favourite (not a rating: Engine.favourite_artist),
+    shown once the catalog's answer says whether they are one (its `favourite`, read with the
+    page, no request more; an answer kept from before that was asked reads it on its own,
+    Engine.is_favourite_artist). A press shows the new state at once and puts it back when the
+    write fails (item_actions.favourite_artist reports why); the star follows the engine's
+    `rated` for the artist while the page is shown (a menu's Favourite), and what the item
+    actions last heard when it is shown again.
+
     Which catalog artist: a catalog artist's own id, or the catalog id a library artist
     carries; a library artist the sync made up from its songs' names is found through its
     songs (Engine.catalog_artist; related.artist_song_ids(), from the library's albums). The
@@ -137,6 +145,7 @@ class ArtistPage(Adw.NavigationPage):
     name_label = Gtk.Template.Child()
     caption_label = Gtk.Template.Child()
     play_button = Gtk.Template.Child()
+    favourite_button = Gtk.Template.Child()
     more_button = Gtk.Template.Child()
     top_row = Gtk.Template.Child()
     release_box = Gtk.Template.Child()
@@ -178,6 +187,9 @@ class ArtistPage(Adw.NavigationPage):
         self._release = None  # the release card's Item
         self._shelves = []  # the catalog's ShelfModels, as shown
         self._top = None  # the top songs' ShelfModel
+        self._favourite_id = None  # the catalog artist the star is for, once the answer says
+        self._favourite = None  # the star's state: True, False, or None (not shown)
+        self._syncing_star = False  # the star set from here, not pressed
         # What the status page says when the engine cannot answer, and what its button does.
         self._engine_status = EngineStatus(app(), self._show_status, self._refetch, {
             'engine-down': _('Start the engine to see the rest of this artist’s music'),
@@ -189,6 +201,7 @@ class ArtistPage(Adw.NavigationPage):
         self._library_shelf = ShelfModel('library', _('In Your Library'), [])
         connect_weak(self.status_button, 'clicked', self._on_status_clicked)
         connect_weak(self.play_button, 'clicked', self._on_play_clicked)
+        connect_weak(self.favourite_button, 'toggled', self._on_favourite_toggled)
         connect_weak(self.more_notes_button, 'clicked', self._on_more_notes_clicked)
         connect_weak(self.release_button, 'clicked', self._on_release_clicked)
         self.more_button.set_create_popup_func(weak_method(self._on_more_popup))
@@ -206,6 +219,7 @@ class ArtistPage(Adw.NavigationPage):
         self._handlers.add(library, 'changed', self._show)
         self._handlers.add(item, 'groups-changed', self._show)
         self._handlers.add(item, 'notify', self._on_item_notify)
+        self._handlers.add(app().engine, 'rated', self._on_rated)
         self._show()
 
     def _on_item_notify(self, _item, _pspec):
@@ -252,7 +266,8 @@ class ArtistPage(Adw.NavigationPage):
         self.hero_row.set_valign(Gtk.Align.END if shown else Gtk.Align.FILL)
         self.hero_row.set_margin_top(BANNER_TEXT_TOP if shown else 0)
         self.hero_row.set_margin_bottom(24 if shown else 0)
-        for widget, name in ((self.hero, 'on-banner'), (self.more_button, 'osd')):
+        for widget, name in ((self.hero, 'on-banner'), (self.favourite_button, 'osd'),
+                             (self.more_button, 'osd')):
             if shown:
                 widget.add_css_class(name)
             else:
@@ -416,6 +431,7 @@ class ArtistPage(Adw.NavigationPage):
         self._shelves = page_shelves(answer.get('shelves'))
         for shelf in self._shelves + ([self._top] if self._top else []):
             shelf.complete = self._completer(answer.get('id'), shelf)
+        self._take_favourite(answer)
         self._show_hero()
         self._show_sections()
         if self._art_task is not None and not self._art_task.done():
@@ -477,6 +493,7 @@ class ArtistPage(Adw.NavigationPage):
     def do_map(self):
         Adw.NavigationPage.do_map(self)
         self._show()  # what a reload changed while the page was hidden
+        self._catch_up_favourite()
         self._engine_status.watch()
         clock = self.get_frame_clock()
         if clock is not None and self._painted is None:
@@ -514,6 +531,85 @@ class ArtistPage(Adw.NavigationPage):
         play = self._play_target()
         if play is not None:
             self.get_root().play_request(play, shuffle=False)
+
+    # The star: the artist one of the account's favourites.
+
+    def _take_favourite(self, answer):
+        """The star from the catalog's answer: its `favourite` (the page's own read, no request
+        more), or, from an answer kept from before that was asked, one read of it."""
+        target = favourite_target(self._catalog_artist) if self._catalog_artist else None
+        self._favourite_id = target[1] if target is not None else None
+        favourite = answer.get('favourite')
+        if self._favourite_id is None:
+            self._show_favourite(None)
+        elif isinstance(favourite, bool):
+            self._show_favourite(favourite)
+        else:
+            self._show_favourite(None)
+            if not app().demo:
+                app().spawn(self._read_favourite(self._favourite_id))
+
+    async def _read_favourite(self, artist_id):
+        try:
+            favourite = await app().engine.is_favourite_artist(artist_id)
+        except EngineError as error:
+            log.info('artist %s, favourite: %s', artist_id, error)
+            return
+        if artist_id == self._favourite_id:
+            self._show_favourite(bool(favourite))
+
+    def _show_favourite(self, favourite):
+        """The star as `favourite` says: pressed for a favourite, hidden for None."""
+        self._favourite = favourite
+        self.favourite_button.set_visible(favourite is not None)
+        self._syncing_star = True
+        try:
+            self.favourite_button.set_active(bool(favourite))
+        finally:
+            self._syncing_star = False
+        self._dress_star(bool(favourite))
+
+    def _dress_star(self, favourite):
+        self.favourite_button.set_icon_name('starred-symbolic' if favourite
+                                            else 'non-starred-symbolic')
+        self.favourite_button.set_tooltip_text(_('Remove from Favourites') if favourite
+                                               else _('Favourite'))
+
+    def _on_favourite_toggled(self, button):
+        """A press: the new state at once, put back when the write fails (reported)."""
+        if self._syncing_star:
+            return
+        favourite = button.get_active()
+        before = self._favourite
+        self._favourite = favourite
+        self._dress_star(favourite)
+        actions = getattr(self.get_root(), 'item_actions', None)
+        task = None
+        if actions is not None and self._catalog_artist is not None:
+            task = actions.favourite_artist(self._catalog_artist, favourite, quiet=True)
+        if task is None:
+            self._show_favourite(before)
+            return
+        app().spawn(self._settle_favourite(task, favourite, before))
+
+    async def _settle_favourite(self, task, favourite, before):
+        if await task is not True and self._favourite == favourite:
+            self._show_favourite(before)
+
+    def _on_rated(self, _engine, kind, item_id, value):
+        """The engine's word on the artist's favourite (a menu's Favourite, a read)."""
+        if kind == 'artist' and item_id == self._favourite_id:
+            self._show_favourite(value == 1)
+
+    def _catch_up_favourite(self):
+        """What the item actions last heard of the star while the page was hidden."""
+        actions = getattr(self.get_root(), 'item_actions', None)
+        known = getattr(actions, 'known_rating', None)
+        if self._favourite_id is None or known is None:
+            return
+        value = known(('artist', self._favourite_id))
+        if value is not None:
+            self._show_favourite(value == 1)
 
     def _on_release_clicked(self, _button):
         if self._release is not None:

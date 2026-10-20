@@ -128,7 +128,8 @@ template $AppleMusicArtistPage: Adw.NavigationPage {
                   ]
                 }
 
-                // Play (the artist's top songs, from the catalog) and the artist's own menu.
+                // Play (the artist's top songs, from the catalog), the star (one of the
+                // account's favourites, once the catalog says) and the artist's own menu.
                 Box buttons_box {
                   spacing: 12;
                   margin-top: 12;
@@ -144,6 +145,21 @@ template $AppleMusicArtistPage: Adw.NavigationPage {
                     styles [
                       "pill",
                       "suggested-action",
+                    ]
+                  }
+
+                  ToggleButton favourite_button {
+                    icon-name: "non-starred-symbolic";
+                    tooltip-text: _("Favourite");
+                    valign: center;
+                    visible: false;
+
+                    accessibility {
+                      label: _("Favourite");
+                    }
+
+                    styles [
+                      "circular",
                     ]
                   }
 

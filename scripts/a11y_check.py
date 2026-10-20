@@ -607,6 +607,18 @@ async def walkthrough(window):
     check('an artist opens with the focus on Play', inside(window.get_focus(), artist.play_button),
           describe(window.get_focus()))
     await key(window, 'Tab')
+    check('Tab: the star', window.get_focus() is artist.favourite_button,
+          describe(window.get_focus()))
+    starred = artist.favourite_button.get_active()
+    await key(window, 'space')  # the demo engine remembers it for the session
+    await until(lambda: artist.favourite_button.get_active() != starred)
+    check('Space stars the artist, or takes the star back',
+          artist.favourite_button.get_active() != starred
+          and window.get_focus() is artist.favourite_button)
+    await key(window, 'space')
+    await until(lambda: artist.favourite_button.get_active() == starred)
+    check('Space again puts it back', artist.favourite_button.get_active() == starred)
+    await key(window, 'Tab')
     check('Tab: More Options', inside(window.get_focus(), artist.more_button))
     await key(window, 'Tab')
     check('Tab: the latest release', window.get_focus() is artist.release_button,
@@ -638,6 +650,9 @@ async def walkthrough(window):
     check(f'an artist with {look} opens with the focus on Play',
           other.banner.get_visible() != banner
           and inside(window.get_focus(), other.play_button), describe(window.get_focus()))
+    await key(window, 'Tab')
+    check(f'Tab: the star, over {look}', window.get_focus() is other.favourite_button,
+          describe(window.get_focus()))
     await key(window, 'Tab')
     check(f'Tab: More Options, over {look}', inside(window.get_focus(), other.more_button))
     window.navigation_view.pop()  # back to the album, as the steps below expect

@@ -68,6 +68,8 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `rating(kind, id, value)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, songId, type)` | `{ok: true}`, or a throw with Apple's status and message. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
 | `createPlaylist(attributes, tracks, parentId)` | `{id}`, the new playlist's; `attributes` `{name, description?}`, `tracks` `[{id, type}]` |
 | `removeFromLibrary(type, id)` | `{ok: true}`, or a throw as above: `DELETE /v1/me/library/<type>/<id>` (below) |
+| `favourite(type, id, on)` | `{ok: true}`, or a throw as above: `POST /v1/me/favorites?ids[<type>]=<id>` (`on`), else a `DELETE` of the same; the web player's `UpdateFavoritesIntent` (an artist's star, below) |
+| `apiFresh(path, params)` | the JSON body of a `GET` through the request builder, never answered from `music()`'s cache (a read that must see a write: an artist's `inFavorites`); a throw with Apple's status and message |
 | `libraryHas(type, id)` | `{has}`: `GET /v1/me/library/<type>/<id>` through the request builder (a read that must see a removal), `has` false for Apple's 404; a throw for any other failure |
 | `updatePlaylist(id, attributes)`, `deletePlaylist(id)`, `removeFromPlaylist(id, type, trackId)`, `replacePlaylistTracks(id, tracks)`, `updateFolder(id, attributes)`, `deleteFolder(id)` | `{ok: true}`, or a throw as above (the requests below) |
 | `createFolder(attributes, parentId)` | `{id}`, the new folder's; `attributes` `{name}`, `parentId` the folder it goes in (none: the top level) |
@@ -200,7 +202,32 @@ Less. Checked against a real account on 2026-10-20 (MusicKit
 
 The menus follow the web player: Favourite or Remove from Favourites, and Suggest Less (not
 beside a favourite) or Undo Suggest Less (`actions.rating_actions()`). An artist's favourite
-is not a rating (below).
+is not a rating ("Favourites of artists", below): an artist's menu has Favourite or Remove
+from Favourites alone (`actions.favourite_items()`).
+
+### Favourites of artists
+
+An artist's favourite (Apple's star on the artist page, which shapes recommendations; #357)
+is not a rating, and favouriting an artist does not add them to the library. The app writes
+it with the bridge's `favourite('artists', id, on)` (`Engine.favourite_artist()`,
+`unfavourite_artist()`) and reads it as the artist page's `inFavorites` (`extend=inFavorites`
+in `api.ARTIST_PARAMS`: no request more), or alone through `apiFresh` with
+`api.FAVOURITE_PARAMS` (`Engine.is_favourite_artist()`, which an artist's menu asks as it
+opens). The engine remembers what it wrote and read this session over a page kept for a day,
+and a write patches the kept page (`normalize.patch_answer()`, its `cached` stamp kept).
+Checked against a real account on 2026-10-20 (MusicKit `playback/AppleMusic-2642.7.0-external`,
+the `gb` storefront), one artist favourited and unfavourited, put back:
+
+| Request | Apple's answer |
+|---|---|
+| `POST /v1/me/favorites?ids[artists]=<catalog id>` | 202. The web player's `UpdateFavoritesIntent`, which takes any `ids[<type>]`; DELETE to unfavourite (204) |
+| `GET /v1/catalog/<sf>/artists/<id>?extend=inFavorites` | `attributes.inFavorites`, a boolean, true within 200 ms of the POST |
+| `GET /v1/catalog/<sf>?ids[artists]=<id>&fields[artists]=personalRating&relate=library&omit[resource]=autos` | `personalRating: 1` while favourited, absent otherwise (how the web player's menus read it; the app reads `inFavorites`) |
+| `GET /v1/me/ratings/artists/<id>` | 404 whether favourited or not: an artist's favourite is not a rating |
+
+The catalog read that finds an item's library twin (`api.library_twin_params()`, above) also
+gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
+`fields[<type>]=inLibrary,personalRating`.
 
 ### The Radio page
 
@@ -317,21 +344,6 @@ and a position inside it (from about 112, counting up), with `isPlayingAtLiveEdg
 does nothing, `pause()` leaves it playing, `mk.stop()` ends it (state `stopped`, no item).
 The bridge's `nowPlaying()` gives `track.type: 'radioStation'`, `durationMs: 0` and that
 position and duration. So a live item is told by its type and `isLive`, not by its duration.
-
-### Favourites of artists (#357)
-
-The catalog read that finds an item's library twin (`api.library_twin_params()`, above) also
-gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
-`fields[<type>]=inLibrary,personalRating`.
-
-| Request | Apple's answer |
-|---|---|
-| `POST /v1/me/favorites?ids[artists]=<catalog id>` | 202. The web player's `UpdateFavoritesIntent`, which takes any `ids[<type>]`; DELETE to unfavourite (204) |
-| `GET /v1/catalog/<sf>/artists/<id>?extend=inFavorites` | `attributes.inFavorites`, a boolean, true within 200 ms of the POST |
-| `GET /v1/catalog/<sf>?ids[artists]=<id>&fields[artists]=personalRating&relate=library&omit[resource]=autos` | `personalRating: 1` while favourited, absent otherwise |
-| `GET /v1/me/ratings/artists/<id>` | 404 whether favourited or not: an artist's favourite is not a rating |
-
-Favouriting an artist does not add them to the library.
 
 ### Credits (#364)
 
@@ -477,14 +489,17 @@ had none): the app offers their Date Added only when the data has it.
 
 An artist's page (`Engine.artist_page()`, `normalize.artist_page()`) is
 `{id, artist, banner: {url, crop, width, height, color} | null, latest: {key, title, item} |
-null, topSongs: {key, title, items, more} | null, shelves: [{key, title, items, more}]}`:
+null, topSongs: {key, title, items, more} | null, shelves: [{key, title, items, more}],
+favourite: bool | null}`:
 `artist` an Item without groups whose `summary` is the biography, with `origin`,
 `bornOrFormed` (Apple's own words) and `isGroup` where Apple has them; `banner` the wide
 header ("An artist's banner" above); `latest` the featured or latest release, with its
 `releaseDate`; the top songs song Items with their `album`; each shelf one of the artist's views in music.apple.com's
 order, titled as Apple titles it, `more` when `Engine.artist_view()` has more of it. A
 video about the artist (an interview, a film) is a `link` Item: its `url` is its page,
-its subtitle its length, and it has nothing to play.
+its subtitle its length, and it has nothing to play. `favourite` is the artist's
+`inFavorites` (`normalize.in_favourites()`; null when Apple does not say): the star
+("Favourites of artists" above).
 
 What an album's page shows under its tracks (`Engine.album_page()`, `normalize.album_page()`)
 is `{id, artistId, artistName, release: {releaseDate?, copyright?, recordLabel?},

@@ -1077,6 +1077,49 @@ class BridgeTest(unittest.TestCase):
         ])
 
     @scenario("""
+        mk.writeStatus = 202;
+        mk.writeBody = '';
+        const made = await bridge.favourite('artists', '1000000005', true);
+        mk.writeStatus = 204;
+        const taken = await bridge.favourite('artists', '1000000005', false);
+        mk.writeStatus = 200;
+        mk.writeBody = JSON.stringify({data: [{id: '1000000005', type: 'artists',
+                                               attributes: {inFavorites: true}}]});
+        const read = await bridge.apiFresh('/v1/catalog/gb/artists/1000000005',
+                                           {extend: 'inFavorites'});
+        mk.writeStatus = 404;
+        mk.writeBody = JSON.stringify({errors: [{title: 'Resource Not Found'}]});
+        let missing = null;
+        try {
+            await bridge.apiFresh('/v1/catalog/gb/artists/1', {extend: 'inFavorites'});
+        } catch (error) {
+            missing = String(error);
+        }
+        mk.writeStatus = 403;
+        let refused = null;
+        try { await bridge.favourite('artists', '1000000005', true); } catch (error) {
+            refused = String(error);
+        }
+        return {made, taken, read, missing, refused, calls: mk.calls};
+    """)
+    def test_an_artists_favourite(self, value):
+        # The web player's UpdateFavoritesIntent, through the request builder, and the state
+        # read the same way (music() may answer from its cache).
+        self.assertEqual((value['made'], value['taken']), ({'ok': True}, {'ok': True}))
+        self.assertEqual(value['read']['data'][0]['attributes'], {'inFavorites': True})
+        self.assertIn('HTTP 404 Resource Not Found', value['missing'])
+        self.assertIn('HTTP 403', value['refused'])
+        self.assertEqual(value['calls'][:3], [
+            ['request', '/v1/me/favorites', {'params': {'ids[artists]': '1000000005'},
+                                             'method': 'POST'}],
+            ['request', '/v1/me/favorites', {'params': {'ids[artists]': '1000000005'},
+                                             'method': 'DELETE'}],
+            ['request', '/v1/catalog/gb/artists/1000000005',
+             {'params': {'extend': 'inFavorites'}, 'method': 'GET'}],
+        ])
+        self.assertNotIn('api.music', [call[0] for call in value['calls']])
+
+    @scenario("""
         mk.writeStatus = 201;
         mk.writeBody = JSON.stringify({data: [{id: 'p.new1', type: 'library-playlists'}]});
         const created = await bridge.createPlaylist(

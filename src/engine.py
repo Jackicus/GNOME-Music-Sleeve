@@ -49,6 +49,9 @@ UI awaits.
     await engine.suggest_less('station', id)   # the rating -1 (in place of a favourite);
                                                # unlove() takes it away too
     await engine.rating('song', id)        # 1 loved, -1 Suggest Less, 0 neither
+    await engine.favourite_artist(id); await engine.unfavourite_artist(id)   # a catalog
+                                           # artist's star (/v1/me/favorites: not a rating)
+    await engine.is_favourite_artist(id)   # its inFavorites, read past MusicKit's cache
     await engine.add_to_library('album', catalog_id)
     await engine.remove_from_library('song', library_id)   # the library id removed (a catalog
                                                            # id is read for its twin first)
@@ -74,8 +77,9 @@ UI awaits.
     await engine.browse()        # {shelves}: the New page (the editorial groupings)
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.radio()         # {shelves[, expires]}: the Radio page (the radio grouping)
-    await engine.artist_page(id) # {id, artist, banner, latest, topSongs, shelves}: a catalog
-                                 # artist's page, every view of it at once
+    await engine.artist_page(id) # {id, artist, banner, latest, topSongs, shelves,
+                                 # favourite}: a catalog artist's page, every view of it at
+                                 # once, and whether they are a favourite
     await engine.album_page(id, song_id=None)   # {id, artistId, artistName, release,
                                  # shelves}: what an album's page shows under its tracks (a
                                  # library album's through one of its songs)
@@ -103,7 +107,9 @@ Widevine (asked once per start, beside it: play() and queue_jump() then raise 'n
 no song would play; previews still do); the `event(name, data)` signal re-emits the bridge's
 MusicKit events (name without the 'am:' prefix), and `rated(kind, id, value)` follows love(),
 unlove(), suggest_less() and rating() (the kind and id as they were asked, value 1 loved, -1
-Suggest Less, 0 neither), so a heart shows what a menu did, and `lost(reason)` says the engine
+Suggest Less, 0 neither), so a heart shows what a menu did, and ('artist', catalog id, 1 or
+0) follows favourite_artist(), unfavourite_artist(), is_favourite_artist() and an
+artist_page() that says (the page's star), and `lost(reason)` says the engine
 went down on its own (Chrome crashed or was killed, the page crashed, closed or stopped
 answering), never for a stop, a restart or quitting. Every failure is an EngineError; nothing
 here blocks the loop: Chrome is a Gio.Subprocess (awaitable wait_async), the connection is the
@@ -111,8 +117,9 @@ asynchronous CDPClient over Chrome's DevTools pipe (its descriptors 3 and 4: no 
 and the JSON shaping and artwork HTTP of item() run in a thread. In demo mode (`demo=True`)
 start() and stop() do nothing and every command raises EngineError('engine-down') at once, but
 for a kept answer the demo library invented (scripts/demo_library.py writes its artists' and
-albums' pages, marked `demo`), answered from its cache, and a search or its suggestions, answered
-from the invented catalog it writes (demo-search.json: demo_search()).
+albums' pages, marked `demo`), answered from its cache, a search or its suggestions, answered
+from the invented catalog it writes (demo-search.json: demo_search()), and an artist's
+favourite, which the session only remembers.
 
 The browser command (`browser_command`) and the preferred mode (`prefer_headless`) are read
 when Chrome is spawned, so a change applies at the next start and a running Chrome is left
@@ -296,6 +303,15 @@ def _raise_api_errors(answer, what):
     error = api.api_error(answer, what)
     if error is not None:
         raise error
+
+
+def _catalog_artist_id(artist_id):
+    """A catalog artist's id as a string; EngineError('usage') for none or a library id
+    (only the catalog's artists can be favourites)."""
+    artist_id = str(artist_id or '')
+    if not artist_id or api.is_library_id(artist_id):
+        raise EngineError('usage', 'a favourite artist needs a catalog artist id')
+    return artist_id
 
 
 def _shape_and_keep(shaper, raw, path, cache_dir, generation, basis=None):
@@ -482,6 +498,9 @@ class Engine(GObject.Object):
         self.api_retry_delay = API_RETRY_DELAY
         self._catalog_artists = {}  # a library artist's name, folded -> its catalog id, or None
         self._related = {}  # (kind, catalog id) -> related()'s answer
+        # catalog artist id -> whether they are a favourite, as this session wrote or read it
+        # (an artist's page kept for a day says what it was when fetched)
+        self._favourite_artists = {}
         # While set (a reason), start() refuses with 'engine-down': sign-out sets it while it
         # stops Chrome and deletes the profile, which a Chrome started meanwhile would rewrite.
         self.refuse_starts = None
@@ -889,6 +908,7 @@ class Engine(GObject.Object):
         self.authorized = False
         self._storefront = None
         self._related = {}  # the next account's storefront may differ
+        self._favourite_artists = {}  # and its favourites
         self.state = 'down'
 
     async def _close_browser(self, client, process):
@@ -1023,6 +1043,7 @@ class Engine(GObject.Object):
                 self.authorized = authorized
             self._storefront = None  # the account's may differ: the next status says
             self._related = {}
+            self._favourite_artists = {}
         elif name == 'bridgeReset':
             # The page loaded a new document, and the bridge is back in it: what MusicKit
             # held (the sign-in, the queue) may have changed with it. The Player hears it too.
@@ -1603,6 +1624,49 @@ class Engine(GObject.Object):
         self.emit('rated', str(kind), str(item_id), value)
         return value
 
+    # An artist's favourite is not a rating (src/backend/README.md): the web player's
+    # /v1/me/favorites, and the catalog read's inFavorites.
+
+    async def favourite_artist(self, artist_id):
+        """Make the catalog artist one of the account's favourites (POST
+        /v1/me/favorites?ids[artists]=<id>, the bridge's favourite()). It does not add them
+        to the library. `rated('artist', id, 1)` follows, and the artist's kept page says so
+        (normalize.patch_answer). In demo mode only this session remembers it."""
+        await self._favourite_artist(artist_id, True)
+
+    async def unfavourite_artist(self, artist_id):
+        """The artist no longer one of the account's favourites (the same DELETE)."""
+        await self._favourite_artist(artist_id, False)
+
+    async def _favourite_artist(self, artist_id, favourite):
+        artist_id = _catalog_artist_id(artist_id)
+        if not self.demo:
+            generation = store.cache_generation()
+            client = await self._require_signed_in('favourite artists')
+            await client.bridge('favourite', 'artists', artist_id, favourite)
+            await asyncio.to_thread(
+                normalize.patch_answer, normalize.artist_cache_path(str(self.cache_dir), artist_id),
+                {'favourite': favourite}, str(self.cache_dir), generation)
+        self._favourite_artists[artist_id] = favourite
+        self.emit('rated', 'artist', artist_id, 1 if favourite else 0)
+
+    async def is_favourite_artist(self, artist_id):
+        """Whether the catalog artist is one of the account's favourites: the catalog read's
+        `inFavorites` (api.FAVOURITE_PARAMS) through the bridge's apiFresh (the request
+        builder: music() may answer from its cache from before a change). False when Apple
+        does not say. `rated('artist', id, 1 or 0)` follows."""
+        artist_id = _catalog_artist_id(artist_id)
+        client = await self._require_signed_in('read favourites')
+        storefront = await self._current_storefront()
+        answer = await client.bridge(
+            'apiFresh', api.ARTIST_ENDPOINT.format(storefront=storefront, id=artist_id),
+            api.FAVOURITE_PARAMS, timeout=READ_TIMEOUT)
+        _raise_api_errors(answer, 'favourite')
+        favourite = normalize.in_favourites(answer) is True
+        self._favourite_artists[artist_id] = favourite
+        self.emit('rated', 'artist', artist_id, 1 if favourite else 0)
+        return favourite
+
     async def add_to_library(self, kind, item_id):
         """Add a catalog song, album, playlist or music video to the library (POST
         /v1/me/library?ids[<type>s]=<id>). A library id is refused: it is there already."""
@@ -2082,9 +2146,16 @@ class Engine(GObject.Object):
             return await self._api(
                 client, api.ARTIST_ENDPOINT.format(storefront=storefront, id=artist_id),
                 api.ARTIST_PARAMS, timeout=READ_TIMEOUT)
-        return await self._kept_answer(
+        answer = await self._kept_answer(
             normalize.artist_cache_path(str(self.cache_dir), artist_id), refresh, fetch,
             normalize.artist_page)
+        # The favourite as this session last wrote or read it, over a kept answer's.
+        known = self._favourite_artists.get(artist_id)
+        if known is not None:
+            answer['favourite'] = known
+        if isinstance(answer.get('favourite'), bool):
+            self.emit('rated', 'artist', artist_id, 1 if answer['favourite'] else 0)
+        return answer
 
     async def artist_view(self, artist_id, view):
         """One of an artist's views (api.ARTIST_VIEWS) whole, for its See All: its Items as

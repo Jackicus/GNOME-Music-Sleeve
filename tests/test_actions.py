@@ -14,8 +14,9 @@ from gi.repository import Gio, GLib, GObject
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.actions import (ItemActions, build_menu, can_play, describe, fill_sidebar_menu,
-                                is_apple_music_url, is_removable_playlist, is_shareable,
+from applemusic.actions import (ItemActions, build_menu, can_play, describe,
+                                favourite_target, fill_sidebar_menu, is_apple_music_url,
+                                is_removable_playlist, is_shareable,
                                 library_target, main_menu_section, mnemonic_escaped,
                                 move_targets, new_playlist_tracks, now_playing_track,
                                 playlist_song, playlist_track, queue_message, queue_target,
@@ -316,10 +317,23 @@ class MenuTest(unittest.TestCase):
         # Only Apple's own pages: an address elsewhere has nothing to open.
         self.assertIsNone(build_menu(Item(dict(SHOW.raw, url='https://example.invalid/x'))))
 
+    def test_an_artist_is_favourited_by_their_catalog_id(self):
+        self.assertEqual(favourite_target(CATALOG_ARTIST), ('artist', '1000000005'))
+        carried = Item(dict(LIBRARY_ARTIST.raw, catalogId='1000000060'))
+        self.assertEqual(favourite_target(carried), ('artist', '1000000060'))
+        # One the library made up from its songs' names, and what is not an artist: none.
+        for obj in (LIBRARY_ARTIST, BAND, CATALOG_ALBUM, CATALOG_SONG, LIBRARY_TRACK):
+            self.assertIsNone(favourite_target(obj))
+        self.assertIsNone(rating_target(CATALOG_ARTIST))  # not a rating
+        self.assertNotIn('win.item-love', names(build_menu(LIBRARY_ARTIST)))
+        self.assertEqual([name for name in names(build_menu(carried)) if 'love' in name],
+                         ['win.item-love', 'win.item-unlove'])
+
     def test_other_kinds(self):
+        # An artist's favourite (their star), no Suggest Less: not a rating.
         self.assertEqual(names(build_menu(CATALOG_ARTIST)), [
-            'win.item-play', 'win.item-create-station', 'win.item-open-in-browser',
-            'win.item-copy-link'])
+            'win.item-play', 'win.item-create-station', 'win.item-love', 'win.item-unlove',
+            'win.item-open-in-browser', 'win.item-copy-link'])
         self.assertEqual(names(build_menu(STATION)), [
             'win.item-play', 'win.item-love', 'win.item-unlove', 'win.item-suggest-less',
             'win.item-undo-suggest-less', 'win.item-open-in-browser', 'win.item-copy-link'])
@@ -592,6 +606,7 @@ class FakeEngine(GObject.Object):
         self.calls = []
         self.fail = None
         self.ratings = {}
+        self.favourite_artists = set()  # the catalog artists is_favourite_artist() says are
         self.catalog_urls = {}
         self.catalog_artists = {}  # a library artist's name -> catalog_artist()'s answer
         self.items = {}  # (kind, id) -> the Item dict item() answers
@@ -616,6 +631,20 @@ class FakeEngine(GObject.Object):
     async def suggest_less(self, kind, item_id):
         await self._record('suggest_less', kind, item_id)
         self.emit('rated', kind, item_id, -1)
+
+    async def favourite_artist(self, artist_id):
+        await self._record('favourite_artist', artist_id)
+        self.emit('rated', 'artist', artist_id, 1)
+
+    async def unfavourite_artist(self, artist_id):
+        await self._record('unfavourite_artist', artist_id)
+        self.emit('rated', 'artist', artist_id, 0)
+
+    async def is_favourite_artist(self, artist_id):
+        await self._record('is_favourite_artist', artist_id)
+        favourite = artist_id in self.favourite_artists
+        self.emit('rated', 'artist', artist_id, 1 if favourite else 0)
+        return favourite
 
     async def rating(self, kind, item_id):
         await self._record('rating', kind, item_id)
@@ -1276,6 +1305,62 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.window.played, [
             ({'kind': 'album', 'id': 'l.alb1'}, 2), ({'kind': 'album', 'id': 'l.alb1'}, None),
             ({'kind': 'station', 'id': 'ra.unknown'}, None)])
+
+    async def test_favourite_an_artist_from_their_menu(self):
+        # Not a rating: the favourites' own write, and read as the menu opens.
+        self.actions.menu_for(CATALOG_ARTIST)
+        await asyncio.gather(*self.app.tasks)
+        self.app.tasks.clear()
+        self.assertEqual(self.app.engine.calls, [('is_favourite_artist', '1000000005')])
+        self.assertEqual(self.loved_shown(), (True, False))
+        await self.run_action('item-love', 'artist', '1000000005')
+        self.assertEqual(self.app.engine.calls[-1], ('favourite_artist', '1000000005'))
+        self.assertEqual(self.app.toasts, ['Added to Favourites'])
+        self.assertEqual(self.app.player.ensured, 1)
+        self.assertEqual(self.loved_shown(), (False, True))  # the engine said so
+        self.assertEqual(self.actions.known_rating(('artist', '1000000005')), 1)
+        await self.run_action('item-unlove', 'artist', '1000000005')
+        self.assertEqual(self.app.engine.calls[-1], ('unfavourite_artist', '1000000005'))
+        self.assertEqual(self.app.toasts[-1], 'Removed from Favourites')
+        self.assertEqual(self.loved_shown(), (True, False))
+        self.assertNotIn('love', [call[0] for call in self.app.engine.calls])
+
+    async def test_an_artist_read_as_a_favourite_shows_in_the_menu(self):
+        self.app.engine.favourite_artists.add('1000000060')
+        carried = Item(dict(LIBRARY_ARTIST.raw, catalogId='1000000060'))
+        self.actions.menu_for(carried)
+        await asyncio.gather(*self.app.tasks)
+        self.app.tasks.clear()
+        self.assertEqual(self.loved_shown(), (False, True))
+        # A library artist's menu names the library artist; the write takes the catalog's.
+        await self.run_action('item-unlove', 'artist', 'l.art_0123456789ab')
+        self.assertEqual(self.app.engine.calls[-1], ('unfavourite_artist', '1000000060'))
+
+    async def test_an_artist_page_star_and_its_failure(self):
+        # The page's star: quiet, and its task says whether the write was done.
+        task = self.actions.favourite_artist(CATALOG_ARTIST, True, quiet=True)
+        self.assertTrue(await task)
+        self.assertEqual(self.app.toasts, [])
+        self.app.engine.fail = EngineError('api', 'HTTP 403 Forbidden')
+        task = self.actions.favourite_artist(CATALOG_ARTIST, False, quiet=True)
+        self.assertFalse(await task)
+        self.assertEqual(self.app.reported, ['api'])
+        # Nothing the catalog knows: no write.
+        self.assertIsNone(self.actions.favourite_artist(BAND, True))
+        self.assertEqual(self.app.toasts, ['This cannot be a favourite'])
+        self.assertEqual(len([call for call in self.app.engine.calls
+                              if call[0].endswith('favourite_artist')]), 2)
+
+    async def test_the_demo_favourites_an_artist_itself(self):
+        # The demo engine remembers it: no "not available", no engine started.
+        self.app.demo = True
+        self.assertTrue(await self.actions.favourite_artist(CATALOG_ARTIST, True))
+        self.assertEqual(self.app.engine.calls, [('favourite_artist', '1000000005')])
+        self.assertEqual(self.app.toasts, ['Added to Favourites'])
+        self.assertEqual(self.app.player.ensured, 0)
+        # Anything else is still not available.
+        await self.run_action('item-love', 'album', 'l.alb1')
+        self.assertEqual(self.app.toasts[-1], 'Not available with the demo library')
 
     async def test_create_station_plays_it_at_once(self):
         # A library song by its catalog id; an artist by theirs; a target not known to the

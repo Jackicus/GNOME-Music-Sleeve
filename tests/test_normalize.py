@@ -12,7 +12,7 @@ from unittest import mock
 
 from tests import SRC  # noqa: F401  (registers src/ as the applemusic package)
 
-from applemusic.backend import config, normalize
+from applemusic.backend import config, normalize, store
 
 # The sizes these tests were written against (the extension's defaults). The
 # app's own defaults come from config; TestArtSizes covers those.
@@ -1235,6 +1235,15 @@ class TestArtistPage(unittest.TestCase):
     def test_no_banner_without_hero_or_editorial_artwork(self):
         self.assertIsNone(self.page['banner'])  # the fixture has neither: the portrait
 
+    def test_whether_the_artist_is_a_favourite(self):
+        self.assertIsNone(self.page['favourite'])  # the fixture does not say
+        for value in (True, False):
+            self.raw['data'][0]['attributes']['inFavorites'] = value
+            self.assertIs(normalize.artist_page(self.raw, self.tmp_dir)['favourite'], value)
+        self.assertIs(normalize.in_favourites(self.raw), False)
+        for raw in (None, {}, {'data': []}, {'data': [{'attributes': {'inFavorites': 1}}]}):
+            self.assertIsNone(normalize.in_favourites(raw))
+
 
 class TestArtistBanner(unittest.TestCase):
     """artist_banner: an artist's wide header as music.apple.com chooses it, from invented
@@ -1507,6 +1516,22 @@ class TestOtherCaches(unittest.TestCase):
         with open(path, 'w') as f:
             f.write('{not json')
         self.assertIsNone(normalize.read_answer(path, 60))
+
+
+    def test_a_kept_answer_is_patched_as_old_as_it_was(self):
+        path = normalize.artist_cache_path(self.tmp_dir, '1')
+        normalize.patch_answer(path, {'favourite': True}, self.tmp_dir)  # none kept: nothing
+        self.assertFalse(os.path.exists(path))
+        kept = normalize.write_answer(path, {'id': '1', 'favourite': False}, self.tmp_dir)
+        normalize.patch_answer(path, {'favourite': True}, self.tmp_dir)
+        with open(path, encoding='utf-8') as f:
+            self.assertEqual(json.load(f), dict(kept, favourite=True))
+        # The cache cleared since: not written.
+        generation = store.cache_generation()
+        store.bump_cache_generation()
+        normalize.patch_answer(path, {'favourite': False}, self.tmp_dir, generation)
+        with open(path, encoding='utf-8') as f:
+            self.assertIs(json.load(f)['favourite'], True)
 
 
 class TestDatesAndFavourites(unittest.TestCase):

@@ -2629,6 +2629,9 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
             'topSongs': {'key': 'top-songs', 'title': 'Top Songs', 'more': False,
                          'items': [song(track, album) for track, album in top]},
             'shelves': shelves,
+            # The star: the first two of every four artists are favourites (the first over
+            # its banner, the second on the plain header), the next two not.
+            'favourite': index % 4 < 2,
             'cached': generated,
             'demo': True,  # invented: the demo engine answers only these
         }
