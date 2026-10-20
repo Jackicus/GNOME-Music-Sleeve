@@ -66,7 +66,7 @@ src/main.py, src/window.py      the Application, the Window (player_bar, sidebar
 src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
                                 sync, account, cache, background, actions, related, release, session,
                                 discography, suggestions, errors, i18n, lyrics, remote, recent_searches,
-                                timing, shortcuts, keyboard, sidebar, sections; new ones go here)
+                                radio, timing, shortcuts, keyboard, sidebar, sections; new ones go here)
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork

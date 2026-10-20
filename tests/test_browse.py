@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The backend's shaping of the New page (editorial groupings) and Made for You
-(recommendations) into shelves, over invented answers."""
+"""The backend's shaping of the New page and the Radio page (editorial groupings) and Made
+for You (recommendations) into shelves, over invented answers."""
 
 import json
 import os
 import pathlib
 import tempfile
 import unittest
+from datetime import UTC, datetime
 
 from tests import SRC  # noqa: F401  (registers src/ as the applemusic package)
 
@@ -111,6 +112,95 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertEqual(normalize.browse_cache_path('/c'), os.path.join('/c', 'browse.json'))
         self.assertEqual(normalize.made_for_you_cache_path('/c'),
                          os.path.join('/c', 'made-for-you.json'))
+
+
+class RadioShelvesTest(unittest.TestCase):
+    NOW = datetime(2026, 10, 20, 15, 0, tzinfo=UTC)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        with open(FIXTURES / 'editorial_radio.json', encoding='utf-8') as file:
+            self.raw = json.load(file)
+
+    def elements(self):
+        return self.raw['data'][0]['relationships']['tabs']['data'][0]['relationships'][
+            'children']['data']
+
+    def shelves(self):
+        return normalize.radio_shelves(self.raw, self.tmp.name, now=self.NOW)['shelves']
+
+    def test_the_live_stations_come_first_and_the_hero_keeps_the_rest(self):
+        shelves = self.shelves()
+        self.assertEqual([(s['key'], s['title'], [i['id'] for i in s['items']])
+                          for s in shelves], [
+            ('radio-live', 'Invented Live Radio', ['ra.900000701', 'ra.900000702']),
+            ('radio-hero', '', ['ra.900000801']),  # Harbour One is in the live row
+            ('radio-episodes', 'Latest Episodes', ['ra.900000801']),  # the upload left out
+            ('radio-shows', 'Invented Shows', ['900000901', '900000902']),
+            ('radio-genres', 'Genre Stations', ['ra.900000601']),
+        ])  # More to Explore and the genre links are links, not shelves
+        self.assertEqual([s.get('live', False) for s in shelves], [True] + [False] * 4)
+        self.assertTrue(shelves[1]['featured'])
+
+    def test_a_hero_of_only_live_stations_is_left_out(self):
+        hero = self.elements()[0]['relationships']['children']['data']
+        hero.pop()  # the episode
+        self.assertEqual([s['key'] for s in self.shelves()][:2], ['radio-live', 'radio-episodes'])
+
+    def test_live_stations_carry_their_programmes_in_order(self):
+        one, hits = self.shelves()[0]['items']
+        self.assertEqual(one['events'], [
+            {'title': 'Morning Lanterns', 'start': '2026-10-20T14:00:00Z',
+             'end': '2026-10-20T16:00:00Z'},
+            {'title': 'The Late Tide', 'start': '2026-10-20T16:00:00Z',
+             'end': '2026-10-20T18:00:00Z'},
+        ])  # the untitled one left out; the station's own subtitle kept
+        self.assertEqual(one['subtitle'], 'Invented Radio')
+        self.assertEqual(one['play'], {'kind': 'station', 'id': 'ra.900000701'})
+        self.assertEqual(hits['events'], [{'title': 'Evergreen Requests',
+                                           'start': '2026-10-20T14:00:00Z',
+                                           'end': '2026-10-20T16:00:00Z'}])  # in UTC
+        self.assertNotIn('events', self.shelves()[4]['items'][0])  # a genre station
+
+    def test_episodes_are_subtitled_with_their_show_and_shows_with_their_host(self):
+        shelves = self.shelves()
+        for episode in (shelves[1]['items'][0], shelves[2]['items'][0]):
+            self.assertEqual((episode['kind'], episode['subtitle']),
+                             ('station', 'The Lantern Hour'))
+        show, genre = shelves[3]['items']
+        self.assertEqual((show['kind'], show['title'], show['subtitle']),
+                         ('category', 'The Lantern Hour', 'Ada Fenwick'))
+        self.assertNotIn('play', show)  # a show opens its page; it does not play
+        self.assertEqual((genre['kind'], genre['subtitle']), ('category', 'Invented Folk'))
+
+    def test_the_answer_expires_when_a_live_station_runs_out_of_programmes(self):
+        answer = normalize.radio_shelves(self.raw, self.tmp.name, now=self.NOW)
+        self.assertEqual(answer['expires'], '2026-10-20T16:00:00Z')  # Harbour Hits' last
+        late = datetime(2026, 10, 20, 17, 0, tzinfo=UTC)  # every programme known ended
+        self.assertEqual(normalize.radio_shelves(self.raw, self.tmp.name, now=late)['expires'],
+                         '2026-10-20T17:05:00Z')
+        self.assertFalse(normalize.answer_expired(answer, now=self.NOW))
+        self.assertTrue(normalize.answer_expired(
+            answer, now=datetime(2026, 10, 20, 16, 0, tzinfo=UTC)))
+        self.assertFalse(normalize.answer_expired({'cached': '2026-10-20T00:00:00Z'}))
+        self.assertFalse(normalize.answer_expired(None))
+
+    def test_without_programmes_nothing_expires(self):
+        for child in self.elements()[1]['relationships']['children']['data']:
+            child['relationships']['contents']['data'][0].pop('relationships', None)
+        answer = normalize.radio_shelves(self.raw, self.tmp.name)
+        self.assertNotIn('expires', answer)
+        self.assertNotIn('events', answer['shelves'][0]['items'][0])
+
+    def test_nothing(self):
+        self.assertEqual(normalize.radio_shelves(None, self.tmp.name), {'shelves': []})
+        self.assertEqual(normalize.radio_shelves({'data': ['junk', {}]}, self.tmp.name),
+                         {'shelves': []})
+
+    def test_cache_path(self):
+        self.assertEqual(normalize.radio_cache_path('/c'), os.path.join('/c', 'radio.json'))
+        self.assertIn('radio.json', normalize.KEPT_ANSWERS)
 
 
 class MadeForYouShelvesTest(unittest.TestCase):

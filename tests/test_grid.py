@@ -231,7 +231,7 @@ class FirstSyncTest(PageTestCase):
                         for section in sidebar_sections() for destination in section.destinations}
         self.library.syncing = True  # an empty library ('empty'), the first sync running
         shown = {}
-        for key in ('home', 'albums', 'songs', 'radio'):
+        for key in ('home', 'albums', 'songs'):
             page = await self.show_root(pages.create(destinations[key], self.library))
             await self.turn()
             shown[key] = page.stack.get_visible_child_name()
@@ -309,7 +309,7 @@ class SignInOfferTest(PageTestCase):
         destinations = {destination.key: destination
                         for section in sidebar_sections() for destination in section.destinations}
         offered = {}
-        for key in ('home', 'radio', 'albums', 'artists', 'recently-added', 'songs',
+        for key in ('home', 'albums', 'artists', 'recently-added', 'songs',
                     'all-playlists', 'favourite-songs', 'music-videos'):
             page = await self.show_root(pages.create(destinations[key], self.library))
             await self.turn()

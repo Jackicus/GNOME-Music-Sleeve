@@ -26,7 +26,7 @@ class CacheTest(unittest.TestCase):
         self.cache = self.root / 'cache'
         files = {
             'library.json': 100, 'library.lock': 0, 'landing.json': 10, 'browse.json': 10,
-            'made-for-you.json': 10, 'art/l.alb1.jpg': 1000, 'art/.sizes': 20,
+            'made-for-you.json': 10, 'radio.json': 10, 'art/l.alb1.jpg': 1000, 'art/.sizes': 20,
             'thumb/l.alb1.jpg': 300, 'remote-art/abc.jpg': 400, 'items/album-1.json': 50,
             'lyrics/1000000001.json': 30, 'categories/c1.json': 40,
             'artists/1000.json': 25, 'albums/2000.json': 25, 'suggestions/p.pl1.json': 20,
@@ -52,6 +52,7 @@ class CacheTest(unittest.TestCase):
         root = str(self.cache)
         for path in (normalize.landing_cache_path(root), normalize.category_cache_path(root, 'c'),
                      normalize.browse_cache_path(root), normalize.made_for_you_cache_path(root),
+                     normalize.radio_cache_path(root),
                      normalize.artist_cache_path(root, '1'), normalize.album_cache_path(root, '2'),
                      normalize.suggestions_cache_path(root, 'p.1')):
             entry = os.path.relpath(path, root).split(os.sep)[0]

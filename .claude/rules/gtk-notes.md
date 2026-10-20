@@ -47,6 +47,10 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   the layout manager to None and implement both `do_measure` and `do_size_allocate`.
 - A `Gtk.Overlay` gives an overlay child its natural size, and a `Gtk.Picture`'s natural size is
   its image's: give the picture an overlay whose main child is a sized placeholder.
+- A `Gtk.Stack` that holds the focus moves it into the child it switches to at once, before
+  a layout: a `Gtk.ScrolledWindow` there whose lists have no rows yet (they come at the
+  layout) takes the focus itself, where no key reaches a row (`ShelvesPage._focus_shelves`
+  moves it on a frame later).
 - A `Gtk.Stack` will not switch to a child that is not visible. `Gtk.Inscription`'s CSS name is
   `label`.
 - Several `Adw.Breakpoint`s: only the last matching one applies, so the window's narrower one

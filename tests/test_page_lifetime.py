@@ -139,6 +139,7 @@ def _classes():
             self.artist_answer = None  # what artist_page() answers: engine-down while None
             self.album_answer = None  # what album_page() answers, the same way
             self.suggestions = None  # what playlist_suggestions() answers, the same way
+            self.radio_answer = None  # what radio() answers, the same way
 
         async def start(self, visible=None):
             self.calls.append('start')
@@ -173,6 +174,12 @@ def _classes():
             if self.suggestions is None:
                 raise EngineError('engine-down')
             return self.suggestions
+
+        async def radio(self, refresh=False):
+            self.calls.append('radio')
+            if self.radio_answer is None:
+                raise EngineError('engine-down')
+            return self.radio_answer
 
     class LibrarySync(GObject.Object):
         """The app's sync as the dialogs see it: never running."""
@@ -620,6 +627,23 @@ class PageLifetimeTest(WidgetTestCase):
 
         refs = await self.pushed_and_popped(ShelvesPage('Invented Page', fetch, root=False),
                                             Shelf, Tile)
+        await self.assert_freed(*refs)
+
+    async def test_radio_page(self):
+        # A shelves page with an arrange of its own and the library followed.
+        from applemusic.pages import radio
+        from applemusic.sections import Destination
+        from applemusic.widgets.hero_tile import HeroTile
+        from applemusic.widgets.tile import Tile
+
+        self.app.engine.radio_answer = {'shelves': [
+            {'key': key, 'title': key.title(),
+             'items': [dict(_album(n, tracks=0), id=f'{key}{n}') for n in range(6)]}
+            for key in ('live', 'shows')]}
+        self.addCleanup(setattr, self.app.engine, 'radio_answer', None)
+        refs = await self.pushed_and_popped(
+            radio.create(Destination('radio', 'Radio', 'broadcast-symbolic'), self.library),
+            HeroTile, Tile)
         await self.assert_freed(*refs)
 
     async def test_shelf_widget(self):

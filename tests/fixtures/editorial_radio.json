@@ -1,0 +1,175 @@
+{
+  "data": [
+    {
+      "id": "grouping-radio",
+      "type": "groupings",
+      "attributes": {"name": "Radio"},
+      "relationships": {
+        "tabs": {
+          "data": [
+            {
+              "id": "tab-radio",
+              "type": "editorial-elements",
+              "attributes": {"editorialElementKind": "382"},
+              "relationships": {
+                "children": {
+                  "data": [
+                    {
+                      "id": "hero",
+                      "type": "editorial-elements",
+                      "attributes": {"editorialElementKind": "316"},
+                      "relationships": {
+                        "children": {
+                          "data": [
+                            {
+                              "id": "hero-1",
+                              "type": "editorial-elements",
+                              "attributes": {"editorialElementKind": "320", "designBadge": "LIVE"},
+                              "relationships": {"contents": {"data": [
+                                {"id": "ra.900000701", "type": "stations", "attributes": {
+                                  "name": "Harbour One", "isLive": true, "kind": "streaming",
+                                  "stationProviderName": "Invented Radio",
+                                  "artwork": {"url": "https://x/harbour-one/{w}x{h}{c}.{f}", "bgColor": "103050"},
+                                  "playParams": {"id": "ra.900000701", "kind": "radioStation"}}}
+                              ]}}
+                            },
+                            {
+                              "id": "hero-2",
+                              "type": "editorial-elements",
+                              "attributes": {"editorialElementKind": "317", "designBadge": "NEW EPISODE"},
+                              "relationships": {"contents": {"data": [
+                                {"id": "ra.900000801", "type": "stations", "attributes": {
+                                  "name": "The Lantern Hour: Paper Parachutes", "isLive": false,
+                                  "kind": "streaming", "durationInMillis": 3600000,
+                                  "airTime": {"start": "2026-10-19T18:00:00Z", "end": "2026-10-19T19:00:00Z"},
+                                  "artwork": {"url": "https://x/lantern-ep/{w}x{h}{c}.{f}"},
+                                  "playParams": {"id": "ra.900000801", "kind": "radioStation"}},
+                                  "relationships": {"radio-show": {"data": [
+                                    {"id": "900000901", "type": "apple-curators",
+                                     "attributes": {"name": "The Lantern Hour", "kind": "Show"}}
+                                  ]}}}
+                              ]}}
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "id": "live",
+                      "type": "editorial-elements",
+                      "attributes": {"editorialElementKind": "488", "title": "Invented Live Radio"},
+                      "relationships": {
+                        "children": {
+                          "data": [
+                            {
+                              "id": "live-1",
+                              "type": "editorial-elements",
+                              "attributes": {"editorialElementKind": "489",
+                                             "stationGlyph": {"url": "https://x/glyph-1/{w}x{h}{c}.{f}"}},
+                              "relationships": {"contents": {"data": [
+                                {"id": "ra.900000701", "type": "stations", "attributes": {
+                                  "name": "Harbour One", "isLive": true, "kind": "streaming",
+                                  "stationProviderName": "Invented Radio",
+                                  "artwork": {"url": "https://x/harbour-one/{w}x{h}{c}.{f}", "bgColor": "103050"},
+                                  "playParams": {"id": "ra.900000701", "kind": "radioStation"}},
+                                  "relationships": {
+                                    "events": {"data": [
+                                      {"id": "ev-2", "type": "station-events", "attributes": {
+                                        "title": "The Late Tide", "startTime": "2026-10-20T16:00:00.000Z",
+                                        "endTime": "2026-10-20T18:00:00.000Z"}},
+                                      {"id": "ev-1", "type": "station-events", "attributes": {
+                                        "title": "Morning Lanterns", "startTime": "2026-10-20T14:00:00Z",
+                                        "endTime": "2026-10-20T16:00:00Z"}},
+                                      {"id": "ev-x", "type": "station-events", "attributes": {
+                                        "title": "", "startTime": "2026-10-20T18:00:00Z",
+                                        "endTime": "2026-10-20T19:00:00Z"}}
+                                    ]},
+                                    "radio-show": {"data": []}
+                                  }}
+                              ]}}
+                            },
+                            {
+                              "id": "live-2",
+                              "type": "editorial-elements",
+                              "attributes": {"editorialElementKind": "489"},
+                              "relationships": {"contents": {"data": [
+                                {"id": "ra.900000702", "type": "stations", "attributes": {
+                                  "name": "Harbour Hits", "isLive": true, "kind": "streaming",
+                                  "stationProviderName": "Invented Radio",
+                                  "artwork": {"url": "https://x/harbour-hits/{w}x{h}{c}.{f}"},
+                                  "playParams": {"id": "ra.900000702", "kind": "radioStation"}},
+                                  "relationships": {"events": {"data": [
+                                    {"id": "ev-3", "type": "station-events", "attributes": {
+                                      "title": "Evergreen Requests", "startTime": "2026-10-20T15:00:00+01:00",
+                                      "endTime": "2026-10-20T17:00:00+01:00"}}
+                                  ]}}}
+                              ]}}
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "id": "episodes",
+                      "type": "editorial-elements",
+                      "attributes": {"editorialElementKind": "326", "name": "Latest Episodes",
+                                     "displayStyle": "compact"},
+                      "relationships": {"contents": {"data": [
+                        {"id": "ra.900000801", "type": "stations", "attributes": {
+                          "name": "The Lantern Hour: Paper Parachutes", "isLive": false,
+                          "kind": "streaming",
+                          "artwork": {"url": "https://x/lantern-ep/{w}x{h}{c}.{f}"},
+                          "playParams": {"id": "ra.900000801", "kind": "radioStation"}}},
+                        {"id": "upl-1", "type": "uploaded-videos", "attributes": {"name": "A Clip"}}
+                      ]}, "room": {"data": [{"id": "900000951", "type": "rooms"}]}}
+                    },
+                    {
+                      "id": "shows",
+                      "type": "editorial-elements",
+                      "attributes": {"editorialElementKind": "326", "name": "Invented Shows"},
+                      "relationships": {"contents": {"data": [
+                        {"id": "900000901", "type": "apple-curators", "attributes": {
+                          "name": "The Lantern Hour", "shortName": "The Lantern Hour",
+                          "kind": "Show", "showHostName": "Ada Fenwick",
+                          "artwork": {"url": "https://x/lantern-show/{w}x{h}{c}.{f}", "bgColor": "553311"},
+                          "url": "https://music.apple.com/gb/curator/the-lantern-hour/900000901"}},
+                        {"id": "900000902", "type": "apple-curators", "attributes": {
+                          "name": "Invented Folk", "shortName": "Folk", "kind": "Genre",
+                          "showHostName": "Nobody"}}
+                      ]}}
+                    },
+                    {
+                      "id": "genres",
+                      "type": "editorial-elements",
+                      "attributes": {"editorialElementKind": "326", "name": "Genre Stations"},
+                      "relationships": {"contents": {"data": [
+                        {"id": "ra.900000601", "type": "stations", "attributes": {
+                          "name": "Folk Station", "isLive": false, "kind": "editorial",
+                          "stationProviderName": "Invented Radio",
+                          "playParams": {"id": "ra.900000601", "kind": "radioStation"}}}
+                      ]}}
+                    },
+                    {
+                      "id": "more",
+                      "type": "editorial-elements",
+                      "attributes": {"editorialElementKind": "391", "name": "More to Explore",
+                                     "links": [{"label": "Invented Room",
+                                                "url": "https://itunes.apple.com/gb/viewRoom?fcId=900000990"}]}
+                    },
+                    {
+                      "id": "genre-links",
+                      "type": "editorial-elements",
+                      "attributes": {"editorialElementKind": "322",
+                                     "links": [{"label": "Folk",
+                                                "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewGrouping?cc=gb&id=900000991"}]}
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

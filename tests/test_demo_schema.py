@@ -291,6 +291,37 @@ class TestDemoLibrarySchema(unittest.TestCase):
             self.assertEqual([shelf['key'] for shelf in json.load(f)['shelves']],
                              list(normalize.ALBUM_SHELVES))
 
+    def test_radio_page(self):
+        # The Radio page's answer, as the engine keeps it (normalize.radio_shelves' shape):
+        # the live stations first, every shelf something in it, each station and show with
+        # the keys the normaliser gives one, and each show's page beside it.
+        with open(os.path.join(self.out_dir, 'radio.json'), encoding='utf-8') as f:
+            answer = json.load(f)
+        self.assertIs(answer['demo'], True)
+        self.assertEqual(set(answer) - {'demo', 'cached'}, {'shelves'})
+        shelves = answer['shelves']
+        self.assertEqual([shelf.get('live', False) for shelf in shelves],
+                         [True] + [False] * (len(shelves) - 1))
+        station = set(normalize.normalize_station({'id': 'ra.1', 'attributes': {'name': 'S'}}))
+        category = set(normalize.normalize_category({'id': '1', 'attributes': {'name': 'C'}}))
+        kinds = set()
+        for shelf in shelves:
+            self.assertTrue(shelf['key'] and shelf['title'] and shelf['items'])
+            for item in shelf['items']:
+                kinds.add(item['kind'])
+                if item['kind'] == 'station':
+                    self.assertEqual(set(item), station)
+                    self.assertEqual(item['play'], {'kind': 'station', 'id': item['id']})
+                elif item['kind'] == 'category':
+                    self.assertEqual(set(item) - {'thumb'}, category)
+                    path = os.path.join(self.out_dir, 'categories', f"{item['id']}.json")
+                    with open(path, encoding='utf-8') as f:
+                        page = json.load(f)
+                    self.assertIs(page['demo'], True)
+                    self.assertEqual(page['title'], item['title'])
+                    self.assertTrue(page['shelves'][0]['items'])
+        self.assertEqual(kinds, {'station', 'category', 'album', 'video'})
+
     def test_one_favourites_playlist(self):
         # The flag the app looks for (applemusic.library.FAVOURITES) is on one playlist only, and
         # no other item carries attributes.

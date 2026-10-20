@@ -13,7 +13,7 @@ comes through `await fetch_remote(url, size)`: the URL re-sized to `size` px squ
 into <cache>/remote-art/ (named by the sized URL's hash; the sync trims that directory to a
 budget) and answered as its path.
 
-The engine's search, suggest, category, browse and made-for-you answers name a small catalog
+The engine's search, suggest, category, browse, radio and made-for-you answers name a catalog
 URL as an item's `art` when the sync has not fetched its cover (and no `thumb`):
 `remote_item(data)` gives such a dict the paths fetch_remote() would use (`thumb` at
 THUMB_SIZE, `art` at COVER_SIZE, with `thumbUrl` and `artUrl` to fetch them by), so a tile
@@ -90,12 +90,12 @@ def remote_art_path(url, size=config.COVER_SIZE):
 
 
 def remote_item(data):
-    """An Item dict from the engine's search, category, browse or made-for-you answers with
-    its artwork where this app fetches it: when `art` is a catalog URL (the sync has not
-    fetched the cover), a copy naming fetch_remote()'s files instead (`thumb` at THUMB_SIZE
-    unless the dict names one, `art` at COVER_SIZE) and the URLs to fetch them by (`thumbUrl`,
-    `artUrl`, for fetch_thumb() and fetch_cover()). A dict whose artwork is a file, or that
-    has none, is returned as it is."""
+    """An Item dict from the engine's search, category, browse, radio or made-for-you
+    answers with its artwork where this app fetches it: when `art` is a catalog URL (the sync
+    has not fetched the cover), a copy naming fetch_remote()'s files instead (`thumb` at
+    THUMB_SIZE unless the dict names one, `art` at COVER_SIZE) and the URLs to fetch them by
+    (`thumbUrl`, `artUrl`, for fetch_thumb() and fetch_cover()). A dict whose artwork is a
+    file, or that has none, is returned as it is."""
     url = data.get('art') if isinstance(data, dict) else None
     if not is_url(url):
         return data

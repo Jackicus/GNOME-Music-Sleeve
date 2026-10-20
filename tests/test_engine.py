@@ -1668,7 +1668,7 @@ class ArtistTest(EngineFixture):
         apple.write_text(json.dumps({'id': '1724049002', 'shelves': [],
                                      'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
         for coro in (demo.artist_page('1724049002'), demo.artist_page('1724049003'),
-                     demo.browse(),
+                     demo.browse(), demo.radio(),
                      demo.catalog_artist('Paper Parachutes', ['1']),
                      demo.related('song', '1724049201')):
             with self.assertRaises(EngineError) as raised:
@@ -2349,7 +2349,7 @@ class SearchTest(EngineFixture):
         await self.up(authorized=False)
         for coro in (self.engine.search('paper'), self.engine.suggest('pa'),
                      self.engine.landing(), self.engine.category('1'), self.engine.browse(),
-                     self.engine.made_for_you()):
+                     self.engine.made_for_you(), self.engine.radio()):
             with self.assertRaises(EngineError) as raised:
                 await coro
             self.assertEqual(raised.exception.code, 'not-signed-in')
@@ -2480,6 +2480,34 @@ class SearchTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'api')
         self.assertFalse((self.cache / 'browse.json').exists())
 
+    async def test_radio_is_kept_until_its_live_programmes_run_out(self):
+        self.page.storefront = 'gb'
+        await self.up()
+        path = '/v1/editorial/gb/groupings'
+        self.page.api_answers[path] = self.fixture('editorial_radio.json')
+        answer = await self.engine.radio()
+        self.assertEqual(self.page.api_params[-1], {
+            'name': 'radio', 'platform': 'web', 'tabs': 'subscriber',
+            'extend': 'editorialArtwork', 'include[stations]': 'events,radio-show'})
+        self.assertEqual([s['key'] for s in answer['shelves']][:2], ['radio-live', 'radio-hero'])
+        self.assertTrue(answer['shelves'][0]['live'])
+        self.assertIn('expires', answer)  # a few minutes on: the fixture's programmes are over
+        await self.engine.radio()
+        self.assertEqual(self.page.api_calls, [path])  # kept
+        kept_path = self.cache / 'radio.json'
+        kept = json.loads(kept_path.read_text())
+        kept['expires'] = '2020-01-01T00:00:00Z'  # young, but its programmes have ended
+        kept_path.write_text(json.dumps(kept))
+        await self.engine.radio()
+        self.assertEqual(self.page.api_calls, [path, path])  # asked again
+        kept = json.loads(kept_path.read_text())
+        kept['expires'] = '2020-01-01T00:00:00Z'
+        kept_path.write_text(json.dumps(kept))
+        await self.engine.stop()
+        answer = await self.engine.radio()  # Apple cannot be asked: the old one, stale
+        self.assertTrue(answer['stale'])
+        self.assertEqual(answer['shelves'][0]['key'], 'radio-live')
+
     def expire(self, path):
         kept = json.loads(path.read_text())
         kept['cached'] = '2020-01-01T00:00:00Z'
@@ -2492,6 +2520,7 @@ class SearchTest(EngineFixture):
                          self.cache / 'categories' / '900000801.json'),
             'browse': (self.engine.browse, self.cache / 'browse.json'),
             'made_for_you': (self.engine.made_for_you, self.cache / 'made-for-you.json'),
+            'radio': (self.engine.radio, self.cache / 'radio.json'),
         }
         for name, (_command, path) in commands.items():
             normalize.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))

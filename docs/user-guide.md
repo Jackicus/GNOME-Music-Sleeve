@@ -58,6 +58,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Suggestions** on (in the same place), a click plays Apple Music's 30-second preview
   instead, and a second click stops it: the music playing pauses meanwhile, and the play
   button in the bottom bar takes it up again.
+- **Radio** is Apple Music's radio page: the live stations first, as large cards, each with
+  the show on air as you open the page, then the stations you played recently (**Recently
+  Played**), then Apple's shelves of episodes, radio shows, genre stations and more. A
+  station plays when you click it; a radio show opens its page of episodes. The page is
+  kept for a day, or until the shows on air change, and its refresh button asks Apple
+  again.
 - **Artists** lists the artists in your library beside the one you choose: their albums in
   your library, newest first (**Sort By** for titles), with **Play** and **Shuffle** for all
   their songs. A song you added without its album shows as its album. Clicking an artist you
@@ -169,6 +175,11 @@ Other limits:
   day-old copy of them): without them, or for an album Apple Music no longer has, the page
   shows the songs and their count alone. Songs you added without their album, which show as
   an album of their own, have no shelves.
+- Radio's shelves need the engine and your sign-in (or the last copy of them): without them
+  the page shows only the stations you played recently, or says what is missing. Apple's
+  links at the end of its radio page (More to Explore, the genres) are not shown. A live
+  station plays with a song's times and slider, which mean nothing for it, and Pause does
+  not stop it yet.
 - Reordering a playlist's songs happens in Apple's own apps.
 - A playlist moves into a folder, but not yet out of every folder to the top level, and a
   folder does not move into another folder: Apple's service has not been seen to take those

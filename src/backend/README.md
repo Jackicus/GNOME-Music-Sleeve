@@ -156,6 +156,36 @@ The menus follow the web player: Favourite or Remove from Favourites, and Sugges
 beside a favourite) or Undo Suggest Less (`actions.rating_actions()`). An artist's favourite
 is not a rating (below).
 
+### The Radio page
+
+`Engine.radio()` asks `GET /v1/editorial/<sf>/groupings` with `api.RADIO_PARAMS`
+(`name=radio`, `platform=web`, without which it is a 400, `tabs=subscriber`,
+`extend=editorialArtwork`, `include[stations]=events,radio-show`), the web player's request
+for its Radio page less `extend[station-events]=editorialVideo`, checked live on 2026-10-20.
+The answer is the editorial grouping New's is (see "The editorial pages" below for its
+element kinds), shaped by `normalize.radio_shelves()` through New's own
+`_grouping_shelves()`:
+
+- the live stations (kind 488, a `title`, children 489 each holding one station in
+  `contents`) are the first shelf, marked `live`; the hero (316, untitled, children of one
+  item each) follows as the featured shelf, less the stations the live row has, and goes
+  when nothing is left;
+- a live station is `stations` with `isLive: true`, `kind: 'streaming'` and
+  `relationships.events` (`station-events`: `title`, `startTime`, `endTime`, `description`,
+  `artwork`): the shelf item gets `events`, `[{title, start, end}]` by start time, the
+  times UTC stamps; the page picks the one on air as it is shown (`src/radio.py`). The answer's
+  `expires` is when the first live station's last programme known ends (at least five
+  minutes on): from then it is not fresh (`normalize.answer_expired()`), whatever its age;
+- an episode of a show is `stations`, `kind: 'streaming'`, `isLive: false`, with `airTime`,
+  `durationInMillis` and its show in `relationships.radio-show`: subtitled with the show's
+  name; genre stations are `kind: 'editorial'`. All play as `{kind: 'radioStation', id:
+  'ra.<n>'}`, which the app's `{kind: 'station', id}` play is;
+- a radio show is an `apple-curators` of `kind` `Show` (with `showHostName`): a category
+  tile, as every curator on a shelf is, subtitled with its host, whose page is the
+  category page (`bridge.category()`, the curator with its grouping: its episodes);
+- the 391 (More to Explore) and 322 (genre links) elements have no `contents` and are left
+  out, as on New, and so are `uploaded-videos`.
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -228,13 +258,11 @@ relationships: {'credit-artists': {data}}}`, `kind` `performer`, `composer-and-l
 `{id, type, attributes: {name, roleNames: [..], artwork?}}`, its id not an artist's catalog
 id. A library song needs its catalog id.
 
-### The editorial pages: Radio, New, rooms (#336, #370)
+### The editorial pages: New's banners and links, rooms (#370)
 
-`GET /v1/editorial/<sf>/groupings?name=radio` is the Radio page, asked exactly as the New
-page's `name=music` (`platform=web`, `tabs=subscriber`, `extend=editorialArtwork`, and the
-web player adds `include[stations]=events,radio-show` and `extend[station-events]=editorialVideo`).
-Both answer one `groupings` resource whose `tabs` hold one `editorial-elements` (kind 382)
-with `children`, each a shelf by `attributes.editorialElementKind`:
+The Radio page (`groupings?name=radio`, above) and the New page (`name=music`) answer one
+`groupings` resource whose `tabs` hold one `editorial-elements` (kind 382) with `children`,
+each a shelf by `attributes.editorialElementKind`:
 
 | Kind | What it is |
 |---|---|
@@ -256,12 +284,8 @@ The links' URLs and what opens them (the web player's routes):
 | `…/viewTop?genreId=<n>` | a chart page, by genre (not tried) |
 | `https://music.apple.com/concerts` (`target: 'external'`) | a web page |
 
-On the Radio page: the live stations are `stations` with `isLive: true`, `kind: 'streaming'`,
-`relationships.events` (`station-events`: `startTime`, `endTime`, `title`, `description`,
-`artwork`, `heroArtwork`, `editorialVideo` on some: what is on air and next) and an empty
-`radio-show`; an episode of a show is a `stations` with `kind: 'streaming'`, `isLive: false`,
-`airTime: {start, end}`, `durationInMillis` and its show in `radio-show`; genre stations are
-`kind: 'editorial'`. All play as `{kind: 'radioStation', id: 'ra.<n>'}` in `playParams`.
+A live station's events also carry `heroArtwork`, and some an `editorialVideo` (the web
+player's `extend[station-events]=editorialVideo`), which the Radio page does not use.
 
 ### Curators and radio shows (#359, #360)
 
@@ -409,7 +433,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 `normalize.prune_caches()` runs after the library's first load and after every sync; it also
 removes what older versions kept (`items/`) and temporary files over an hour old.

@@ -112,13 +112,14 @@ paths:
   `normalize.prune_caches()` trims what only grows (remote-art/ to 32 MB, the 2,000 lyrics
   played last, kept answers past their day, crash leftovers), once the library has loaded at
   startup and at the end of every sync. The day-long answers (the landing, a category, New,
-  Made for You, an artist's page, an album's page, a playlist's suggested songs) all go through
+  Made for You, Radio, an artist's page, an album's page, a playlist's suggested songs) all go through
   `Engine._kept_answer()`: the file while it is under a day old, else Apple, else (the engine
   down or signed out, Apple failing, but not on a refresh) the older file marked
   `stale: True` (`cache.read_kept(allow_stale=True)`); every answer carries its `cached`
   stamp. An answer asked about something that changes (`basis`: the suggestions' fingerprint
   of the songs the playlist holds, `suggestions.basis()`) is kept with it and is not fresh
-  for another, whatever its age. Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations') or in an older `format` than `lyrics.FORMAT` (bump it when the lines carry something new). `item()`'s artwork
+  for another, whatever its age; nor is one whose `expires` has passed (Radio's, once a live
+  station's programmes run out: `normalize.answer_expired()`). Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations') or in an older `format` than `lyrics.FORMAT` (bump it when the lines carry something new). `item()`'s artwork
   goes to remote-art/ (`place_in_remote_art`): art/ and thumb/ are the library's, pruned
   against library.json after every sync.
 - Cache writes: every file in the cache goes through `backend/store.py` (`atomic_write`, or
