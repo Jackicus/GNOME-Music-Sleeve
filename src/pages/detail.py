@@ -285,13 +285,21 @@ def album_completer(answer, shelf):
 
 def playlist_completer(answer, shelf):
     """See All's coroutine function for a shelf under a catalog playlist Apple has more of:
-    the whole view (Engine.playlist_view), less the playlist, the Items shown kept. None for
-    a shelf Apple sent whole."""
+    the whole view (Engine.playlist_view; for More By the curator's playlists,
+    Engine.curator_playlists), less the playlist, the Items shown kept. None for a shelf
+    Apple sent whole."""
     if not getattr(shelf, 'more', False) or not isinstance(answer, dict):
         return None
     playlist_id = str(answer.get('id') or '')
     if not playlist_id:
         return None
+    if shelf.key == 'more-by-curator':
+        curator = answer.get('curator')
+        curator_id = str(curator.get('id') or '') if isinstance(curator, dict) else ''
+        if not curator_id or curator.get('kind') != 'category':
+            return None
+        return _completer(shelf, playlist_id, playlist_id,
+                          lambda engine: engine.curator_playlists(curator_id))
     return _completer(shelf, playlist_id, playlist_id,
                       lambda engine: engine.playlist_view(playlist_id, shelf.key))
 

@@ -12,6 +12,7 @@ import unittest
 from tests.page_harness import PageTestCase, album
 
 from applemusic import charts as genres_menu
+from applemusic.backend.api import ROOT_GENRE
 from applemusic.backend.errors import EngineError
 from applemusic.library import Item
 
@@ -62,6 +63,14 @@ class ChoicesTest(unittest.TestCase):
         from applemusic.explore import charts_item
 
         self.assertEqual(genres_menu.link_genre(charts_item()), '')
+
+    def test_the_root_genre_is_all_genres(self):
+        # Music, every genre's (New's "Charts" link names it): the charts of every genre.
+        self.assertEqual(genres_menu.link_genre(charts_link(ROOT_GENRE, 'Charts')), '')
+        self.assertEqual(genres_menu.choices(GENRES['genres'], ROOT_GENRE, 'Charts'),
+                         genres_menu.choices(GENRES['genres']))
+        self.assertEqual(genres_menu.position(
+            genres_menu.choices(GENRES['genres'], ROOT_GENRE), ROOT_GENRE), 0)
 
 
 def song(number):
@@ -209,6 +218,21 @@ class ChartsPageTest(PageTestCase):
         self.assertEqual(page.title_label.get_label(), 'Top Charts')
         drop_down = page.genre_menu.drop_down
         self.assertEqual(drop_down.get_selected_item().get_string(), 'Invented Rock')
+
+    async def test_a_link_to_the_root_genres_charts_opens_all_genres(self):
+        from applemusic.pages import charts
+
+        asked = []
+        self.app.engine.answers['charts'] = lambda genre, refresh: (
+            asked.append(genre) or answer())
+        self.app.engine.answers['genres'] = GENRES
+        page = await self.push(charts.create(charts_link(ROOT_GENRE, 'Charts')))
+        await self.settle()
+        self.assertEqual(asked, [None])  # every genre's, with the Daily Top 100
+        model = page.genre_menu.drop_down.get_model()
+        self.assertEqual([model.get_string(n) for n in range(model.get_n_items())],
+                         ['All Genres', 'Invented Rock', 'Invented Folk'])
+        self.assertEqual(page.genre_menu.drop_down.get_selected(), 0)
 
     async def test_a_links_genre_shows_under_its_words_while_the_genres_cannot_be_read(self):
         from applemusic.pages import charts

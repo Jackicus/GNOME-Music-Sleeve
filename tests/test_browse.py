@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 
 from tests import SRC  # noqa: F401  (registers src/ as the applemusic package)
 
-from applemusic.backend import normalize
+from applemusic.backend import api, normalize
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
@@ -168,6 +168,10 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertNotIn('genre', link(store + 'viewTop?cc=gb'))
         self.assertEqual(link(store + 'viewTop?genreId=21&cc=gb')['genre'], '21')
         self.assertNotIn('genre', link(store + 'viewTop?genreId=abc'))  # not a genre's id
+        # Music, the genre every other belongs to, is every genre's charts: All Genres.
+        self.assertEqual(link(store + f'viewTop?genreId={api.ROOT_GENRE}'),
+                         {'title': 'Invented Label', 'kind': 'charts', 'id': 'charts',
+                          'url': None})
         # An in-app route marked external opens in the browser, as Apple's page would.
         self.assertEqual(link(store + 'viewRoom?fcId=1', target='external')['kind'], 'link')
         # An id that is not one (it goes into a path), a route without its id: none.

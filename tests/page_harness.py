@@ -176,6 +176,9 @@ def classes():
         async def playlist_view(self, playlist_id, view):
             return await self._answer('playlist_view', playlist_id, view)
 
+        async def curator_playlists(self, curator_id):
+            return await self._answer('curator_playlists', curator_id)
+
         async def catalog_artist(self, name, song_ids):
             return await self._answer('catalog_artist', name, song_ids)
 

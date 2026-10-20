@@ -1461,6 +1461,24 @@ class TestArtistBanner(unittest.TestCase):
                                                     'vf'))
         self.assertIsNone(normalize.banner_template(None, 'vf'))
 
+    def test_an_effect_coded_template_keeps_apples_effect(self):
+        # A composite Apple made of a source (an Essentials playlist's banner: the artist's
+        # picture placed on a colour, the playlist's word beside it): an `sr` cut of the
+        # source would crop the picture, so the template is kept, query and all, and its
+        # source's shape is the one asked for.
+        url = ('https://example.invalid/image/thumb/aW52ZW50ZWQ/source_cropped.png/'
+               '{w}x{h}SH.FPINV01.jpg?l=en-GB')
+        self.assertEqual(normalize.banner_template(url, 'sr'), url)
+        banner = normalize.wide_artwork({'url': url, 'width': 4320, 'height': 1080,
+                                         'bgColor': '3f4e55'}, 'sr')
+        self.assertEqual(banner, {'url': url, 'crop': 'SH.FPINV01', 'width': 4320,
+                                  'height': 1080, 'color': '#3f4e55'})
+        self.assertEqual(normalize.banner_template(url.replace('?l=en-GB', ''), 'vf'),
+                         url.replace('?l=en-GB', ''))
+        for bad in ('https://example.invalid/a/{w}x{h}SH.FPINV01.jpg/more',
+                    'https://example.invalid/a/600x600SH.FPINV01.jpg'):
+            self.assertIsNone(normalize.banner_template(bad, 'sr'))
+
     def test_the_editorial_background_first(self):
         banner = normalize.artist_banner({'editorialArtwork': self.editorial(),
                                           'hero': self.hero(['vf', 'va'])})
@@ -1574,15 +1592,19 @@ class TestAlbumPage(unittest.TestCase):
 class TestPlaylistPage(unittest.TestCase):
     """playlist_page over an invented catalog playlist (tests/fixtures/
     catalog_playlist_page.json: the playlist as Apple answers api.PLAYLIST_ENDPOINT with its
-    curator and views)."""
+    curator and views, More By the curator titled but empty, as Apple sends it) and its
+    Apple curator's playlists (curator_playlists.json, api.CURATOR_PLAYLISTS_ENDPOINT's)."""
 
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp_dir)
-        with open(os.path.join(os.path.dirname(__file__), 'fixtures',
-                               'catalog_playlist_page.json'), encoding='utf-8') as f:
-            self.raw = json.load(f)
-        self.resource = self.raw['data'][0]
+        fixtures = os.path.join(os.path.dirname(__file__), 'fixtures')
+        with open(os.path.join(fixtures, 'catalog_playlist_page.json'), encoding='utf-8') as f:
+            self.playlist = json.load(f)
+        with open(os.path.join(fixtures, 'curator_playlists.json'), encoding='utf-8') as f:
+            self.curator_playlists = json.load(f)
+        self.raw = {'playlist': self.playlist, 'curatorPlaylists': self.curator_playlists}
+        self.resource = self.playlist['data'][0]
         self.page = normalize.playlist_page(self.raw, self.tmp_dir)
 
     def shelf(self, key):
@@ -1638,21 +1660,59 @@ class TestPlaylistPage(unittest.TestCase):
         self.resource['relationships']['curator']['data'][0]['attributes']['url'] = 'ftp://x'
         self.assertIsNone(normalize.playlist_page(self.raw, self.tmp_dir)['curator'])
 
+    def test_more_by_the_curator_is_its_playlists(self):
+        # Apple's view is empty, its title kept; the curator's own playlists fill it.
+        self.assertEqual(self.resource['views']['more-by-curator']['data'], [])
+        shelf = self.shelf('more-by-curator')
+        self.assertEqual((shelf['title'], shelf['more']), ('More By Apple Music Invented', True))
+        # Without them (the second read failed, a curator not Apple's): none.
+        for raw in ({'playlist': self.playlist},
+                    {'playlist': self.playlist, 'curatorPlaylists': {'data': []}}):
+            with self.subTest(raw=raw):
+                page = normalize.playlist_page(raw, self.tmp_dir)
+                self.assertEqual([shelf['key'] for shelf in page['shelves']],
+                                 ['featured-artists', 'you-might-also-like'])
+        # Should Apple fill its view one day, the view it sent is the shelf.
+        self.resource['views']['more-by-curator']['data'] = [
+            {'id': 'pl.aW52ZW50ZWRwNA', 'type': 'playlists',
+             'attributes': {'name': 'Invented Late Tram',
+                            'playParams': {'id': 'pl.aW52ZW50ZWRwNA', 'kind': 'playlist'}}}]
+        page = normalize.playlist_page(self.raw, self.tmp_dir)
+        shelf = next(shelf for shelf in page['shelves'] if shelf['key'] == 'more-by-curator')
+        self.assertEqual(([item['id'] for item in shelf['items']], shelf['more']),
+                         (['pl.aW52ZW50ZWRwNA'], False))
+
+    def test_a_shared_playlists_curator_is_a_link_to_their_profile(self):
+        self.resource['attributes']['playlistType'] = 'user-shared'
+        self.resource['relationships']['curator']['data'] = [{
+            'id': 'sp.aW52ZW50ZWQ', 'type': 'social-profiles',
+            'attributes': {'name': 'Invented Listener', 'handle': 'inventedlistener',
+                           'isPrivate': False, 'isVerified': False,
+                           'url': 'https://music.apple.com/profile/inventedlistener'}}]
+        curator = normalize.playlist_page({'playlist': self.playlist}, self.tmp_dir)['curator']
+        self.assertEqual((curator['id'], curator['kind'], curator['title'], curator['url']),
+                         ('sp.aW52ZW50ZWQ', 'link', 'Invented Listener',
+                          'https://music.apple.com/profile/inventedlistener'))
+
     def test_no_curator(self):
         for curator in ({}, {'data': []}, {'data': [{'type': 'apple-curators'}]},
-                        {'data': [{'id': '9', 'type': 'social-profiles'}]}, None):
+                        {'data': [{'id': '9', 'type': 'social-profiles'}]},
+                        {'data': [{'id': '9', 'type': 'social-profiles',
+                                   'attributes': {'name': 'Invented', 'url': 'http://x'}}]},
+                        None):
             with self.subTest(curator=curator):
                 self.resource['relationships']['curator'] = curator
                 self.assertIsNone(normalize.playlist_page(self.raw, self.tmp_dir)['curator'])
 
     def test_an_answer_without_a_playlist(self):
-        for raw in ({}, {'data': []}, None, {'data': ['x']}):
+        for raw in ({}, {'playlist': {'data': []}}, None, {'playlist': {'data': ['x']}},
+                    {'playlist': None, 'curatorPlaylists': self.curator_playlists}):
             with self.subTest(raw=raw):
                 self.assertEqual(normalize.playlist_page(raw, self.tmp_dir),
                                  {'id': '', 'curator': None, 'shelves': []})
 
     def test_a_view_whole(self):
-        resources = self.resource['views']['more-by-curator']['data']
+        resources = self.curator_playlists['data']
         self.assertEqual([item['id'] for item in normalize.playlist_view_items(
             resources, 'pl.aW52ZW50ZWRwbA', self.tmp_dir)], ['pl.aW52ZW50ZWRwMg'])
         self.assertEqual(normalize.playlist_view_items(None, 'pl.x', self.tmp_dir), [])

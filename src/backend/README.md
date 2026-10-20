@@ -337,7 +337,12 @@ New's answer (`Engine.browse()`, `normalize.editorial_shelves()`) is `{shelves, 
   wide artwork as `normalize.wide_artwork()` makes one (`{url, crop, width, height,
   color}`, the template cut `sr`, its source's shape): the child's own `editorialArtwork`
   (a 320's), else its content's (a 317's), the first of `subscriptionHero` and
-  `superHeroWide` (`BANNER_ARTWORK_KEYS`); and `tagline`, the content's
+  `superHeroWide` (`BANNER_ARTWORK_KEYS`). A template with an effect code
+  (`…_cropped.png/{w}x{h}SH.FPESS04.jpg?l=en-GB`, 3 banners in 15 live, all Essentials
+  playlists: Apple's composite of the artist's picture on a colour beside the word) is
+  kept as it is, query and all, its `crop` the effect code (`normalize.template_effect()`):
+  an `sr` cut of its source crops the picture, where the composite is made for the
+  4320x1080 shape. And `tagline`, the content's
   `plainEditorialNotes` `tagline`, else `short` (else the child's). The shelf is `form:
   'banners'` when one item has a banner (the page's wide cards), else a plain featured
   shelf (hero cards). Radio's hero gets none of it;
@@ -349,7 +354,7 @@ New's answer (`Engine.browse()`, `normalize.editorial_shelves()`) is `{shelves, 
 | `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>`, `https://music.apple.com/<sf>/room/<id>` | `room` | `Engine.room(id)`: `GET /v1/editorial/<sf>/rooms/<id>` (`api.ROOM_ENDPOINT`), `rooms` with `title`, `sorts`, `contents` (up to 100): `normalize.editorial_room()`'s `{id, title, items}`, a grid |
 | `…/viewGrouping?cc=<sf>&id=<id>` | `grouping` | `Engine.grouping(id)`: `GET /v1/editorial/<sf>/groupings/<id>` with `api.GROUPING_PARAMS` (`platform=web`, without which it is a 400, "A single platform must be supplied"; `extend=editorialArtwork`), the same shape as New: `editorial_grouping()`'s `{id, title, shelves, links}` |
 | `…/viewMultiRoom?cc=<sf>&fcId=<id>` | `multiroom` | `Engine.multiroom(id)`: `GET /v1/editorial/<sf>/multirooms/<id>` with `api.MULTIROOM_PARAMS` (`extend=editorialArtwork,uber,lockupStyle`): `multirooms` with `title`, `uber` (`masterArt`, `name`, `description`, colours) and `children` (404 a header, 345 shelves with `contents` and `room`): `editorial_multiroom()`'s `{id, title, shelves, links}` |
-| `…/viewTop?genreId=<n>`, `https://music.apple.com/<sf>/charts` | `charts` | the Charts page, on the genre `genre` names (an `api.is_genre_id()` id) when the link has one; not tried live |
+| `…/viewTop?genreId=<n>`, `https://music.apple.com/<sf>/charts` | `charts` | the Charts page, on the genre `genre` names (an `api.is_genre_id()` id) when the link has one other than Music's (`api.ROOT_GENRE`, 34, the genre without a parent: New's "Charts" link names it, and its charts are every genre's, All Genres) |
 | any other https URL, or one with `target: 'external'` (`https://music.apple.com/concerts`) | `link` | the browser |
 
 The `music.apple.com/<sf>/room/<id>` and `/charts` forms were not among the links seen live
@@ -793,27 +798,37 @@ views asked as its `basis`, so one kept with other views is asked again.
 
 What a catalog playlist's page shows under its tracks (`Engine.playlist_page()`,
 `normalize.playlist_page()`; #371) is `{id, curator, shelves: [{key, title, items, more}]}`
-from one read, `GET /v1/catalog/<sf>/playlists/<id>` with `api.PLAYLIST_PARAMS`
-(`include=curator`, `views=featured-artists,more-by-curator,you-might-also-like`), kept a
-day in `playlists/<id>.json` with the views as its `basis`. `curator` is the playlist's
-`curator` relationship (`normalize.playlist_curator()`): an `apple-curators` is its
-category tile, titled with its whole name (its page the category page, "Curators and radio
-shows" above; with its id alone, named by the playlist's `curatorName`), a third party's
-`curators` a `link` to its `url` on music.apple.com (none without an https page), anything
-else None. The shelves are the views in that order, titled as Apple titles them (the app
-names an untitled one: Featured Artists, "More By <curator>", You Might Also Like), each
-under the playlist's `views` as the album's are; the curator's and the alike playlists
-leave the playlist itself out; `more` when `Engine.playlist_view()` has more. Only a
+from two reads: `GET /v1/catalog/<sf>/playlists/<id>` with `api.PLAYLIST_PARAMS`
+(`include=curator`, `views=featured-artists,more-by-curator,you-might-also-like`), then,
+for a playlist of an Apple curator's, a page of `api.CURATOR_PLAYLISTS_LIMIT` (10) of the
+curator's playlists, `GET /v1/catalog/<sf>/apple-curators/<id>/playlists` (its failure only
+leaves More By out), kept a day in `playlists/<id>.json` with the views as its `basis`.
+`curator` is the playlist's `curator` relationship (`normalize.playlist_curator()`): an
+`apple-curators` is its category tile, titled with its whole name (its page the category
+page, "Curators and radio shows" above; with its id alone, named by the playlist's
+`curatorName`), a third party's `curators` or a shared playlist's listener's
+`social-profiles` a `link` to its `url` on music.apple.com (a listener's is
+`https://music.apple.com/profile/<handle>`; none without an https page), anything else
+None. The shelves are the views in that order, titled as Apple titles them (the app names
+an untitled one: Featured Artists, "More By <curator>", You Might Also Like), each under
+the playlist's `views` as the album's are; More By is the curator's playlists, under the
+view's title; the curator's and the alike playlists leave the playlist itself out; `more`
+when `Engine.playlist_view()` (`Engine.curator_playlists()` for More By) has more. Only a
 playlist of the catalog's is asked (`release.playlist_target()`: a `pl.` id, its own or the
 catalog id a library playlist of Apple's carries; never the user's, Favourite Songs or a
-`pl.u-` one shared from an account). Not checked live yet, so to confirm: that
-`include=curator` answers the curator's `name`, `kind` and `url` (the documented default is
-its id alone); that Apple titles the two documented views and which words it uses; that a
-playlist has a `you-might-also-like` view (the album's name, asked of a playlist too: Apple
-leaves a view it does not have out of the answer, as the album's `related-albums` was), and
-whether the web player asks for more views (`contributors` was seen in its requests as
-remembered); and that the read answers no 400 for the views (a 400 is asked again with the
-two documented ones alone, `api.PLAYLIST_PLAIN_PARAMS`).
+`pl.u-` one shared from an account).
+
+Checked live on 2026-10-20 (20 catalog playlists, the `gb` storefront): `include=curator`
+answers an Apple curator's `name`, `kind` and `url`, and every shared playlist
+(`playlistType: "user-shared"`) has a `social-profiles` curator (`name`, `handle`, `url`,
+`isPrivate`, `isVerified`); a few editorial ones have no curator relationship at all, only
+`curatorName`. `featured-artists` is never empty, titled "Featured Artists" (or "Featured
+Artist"). `more-by-curator` is always there and always empty (`data: []`, no `next`),
+titled "More By <curator>" on about half; `extend=editorialArtwork` and
+`with=curatorContent` leave it empty, and its `/view/more-by-curator` is a 404, hence the
+curator's own playlists (`api.PLAYLIST_READABLE_VIEWS` leaves it out of See All's views).
+Apple leaves `you-might-also-like` out of a playlist's answer (no 400), so the
+`api.PLAYLIST_PLAIN_PARAMS` retry has never run; `views=contributors` answers an empty view.
 
 A playlist's suggested songs (`Engine.playlist_suggestions()`,
 `normalize.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are
@@ -843,7 +858,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `replay.json`, `replay/`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Replay only in its shape, `normalize.REPLAY_SHAPE`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `replay.json`, `replay/`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Replay only in its shape, `normalize.REPLAY_SHAPE`; Radio's only until its `expires`); not one an older version kept in another shape (`shape`, `normalize.ANSWER_SHAPE`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 | `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
 | `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |

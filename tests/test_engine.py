@@ -26,6 +26,7 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import UTC, datetime
 from unittest import mock
 
 from tests import ROOT, SRC  # noqa: F401  (registers src/ as the applemusic package)
@@ -2065,37 +2066,67 @@ class AlbumPageTest(EngineFixture):
 
 
 class PlaylistPageTest(EngineFixture):
-    """playlist_page and playlist_view: the read they make (the playlist with its curator and
-    views, again with the documented views alone after a 400), the day-long cache, what they
-    refuse, and the demo's own answers."""
+    """playlist_page, playlist_view and curator_playlists: the reads they make (the playlist
+    with its curator and views, again with the documented views alone after a 400, then an
+    Apple curator's playlists), the day-long cache, what they refuse, and the demo's own
+    answers."""
 
     PLAYLIST = '/v1/catalog/us/playlists/pl.aW52ZW50ZWRwbA'
+    CURATOR = '/v1/catalog/us/apple-curators/1724049500/playlists'
 
     async def up(self, authorized=True):
         self.page.authorized = authorized
         await self.engine.start()
 
-    def answer(self):
+    def answer(self, curator_playlists=True):
         with open(FIXTURES / 'catalog_playlist_page.json', encoding='utf-8') as file:
             self.page.api_answers[self.PLAYLIST] = json.load(file)
+        if curator_playlists:
+            with open(FIXTURES / 'curator_playlists.json', encoding='utf-8') as file:
+                self.page.api_answers[self.CURATOR] = json.load(file)
 
-    async def test_one_read_kept_for_a_day(self):
+    async def test_two_reads_kept_for_a_day(self):
         await self.up()
         self.answer()
         answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(self.page.api_calls, [self.PLAYLIST])
+        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.CURATOR])
         self.assertEqual(self.page.api_params[0]['views'].split(','),
                          ['featured-artists', 'more-by-curator', 'you-might-also-like'])
         self.assertEqual(self.page.api_params[0]['include'], 'curator')
+        # More By is the Apple curator's own playlists: Apple's view of it is always empty.
+        self.assertEqual(self.page.api_params[1], {'limit': api.CURATOR_PLAYLISTS_LIMIT})
         self.assertEqual(answer['curator']['id'], '1724049500')
         self.assertEqual([shelf['key'] for shelf in answer['shelves']],
                          ['featured-artists', 'more-by-curator', 'you-might-also-like'])
+        self.assertEqual([item['id'] for item in answer['shelves'][1]['items']],
+                         ['pl.aW52ZW50ZWRwMg'])
         self.assertEqual(answer['basis'], ','.join(api.PLAYLIST_VIEWS))
         self.assertTrue((self.cache / 'playlists' / 'pl.aW52ZW50ZWRwbA.json').is_file())
         await self.engine.stop()
         again = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')  # the file, engine down
         self.assertEqual(again['shelves'], answer['shelves'])
-        self.assertEqual(len(self.page.api_calls), 1)
+        self.assertEqual(len(self.page.api_calls), 2)
+
+    async def test_more_by_left_out_when_its_read_fails(self):
+        await self.up()
+        self.answer(curator_playlists=False)  # the curator's playlists answer 404
+        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
+        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.CURATOR])
+        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
+                         ['featured-artists', 'you-might-also-like'])
+
+    async def test_no_second_read_without_an_apple_curator(self):
+        await self.up()
+        self.answer()
+        resource = self.page.api_answers[self.PLAYLIST]['data'][0]
+        resource['relationships']['curator']['data'] = [{
+            'id': 'sp.aW52ZW50ZWQ', 'type': 'social-profiles',
+            'attributes': {'name': 'Invented Listener',
+                           'url': 'https://music.apple.com/profile/inventedlistener'}}]
+        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
+        self.assertEqual(self.page.api_calls, [self.PLAYLIST])
+        self.assertEqual((answer['curator']['kind'], answer['curator']['url']),
+                         ('link', 'https://music.apple.com/profile/inventedlistener'))
 
     async def test_a_400_is_asked_again_with_the_documented_views(self):
         await self.up()
@@ -2109,8 +2140,8 @@ class PlaylistPageTest(EngineFixture):
 
         self.page.api_answers = Answers()
         answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.PLAYLIST])
-        self.assertEqual([params['views'] for params in self.page.api_params],
+        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.PLAYLIST, self.CURATOR])
+        self.assertEqual([params['views'] for params in self.page.api_params[:2]],
                          [','.join(api.PLAYLIST_VIEWS), 'featured-artists,more-by-curator'])
         self.assertEqual(answer['curator']['id'], '1724049500')
 
@@ -2129,25 +2160,44 @@ class PlaylistPageTest(EngineFixture):
                 await self.engine.playlist_page(playlist_id)
             self.assertEqual(raised.exception.code, 'usage')
         for playlist_id, view in (('pl.aW52ZW50ZWRwbA', 'tracks'), ('p.aW52', 'featured-artists'),
-                                  ('', 'more-by-curator')):
+                                  ('', 'featured-artists'),
+                                  # Apple has no view of it to read (a 404): curator_playlists.
+                                  ('pl.aW52ZW50ZWRwbA', 'more-by-curator')):
             with self.assertRaises(EngineError) as raised:
                 await self.engine.playlist_view(playlist_id, view)
+            self.assertEqual(raised.exception.code, 'usage')
+        for curator_id in ('', None, '../x', 'a/b'):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.curator_playlists(curator_id)
             self.assertEqual(raised.exception.code, 'usage')
         self.assertEqual(self.page.api_calls, [])
 
     async def test_a_view_is_read_whole(self):
         await self.up()
-        path = f'{self.PLAYLIST}/view/more-by-curator'
+        path = f'{self.PLAYLIST}/view/featured-artists'
         self.answer()
-        view = self.page.api_answers[self.PLAYLIST]['data'][0]['views']['more-by-curator']
-        own, other = view['data'][:2]
-        self.page.api_answers[path] = {'data': [own, other], 'next': f'{path}?offset=2'}
-        self.page.api_answers[f'{path}?offset=2'] = {'data': [dict(other, id='pl.aW52ZW50ZWQ4')]}
-        items = await self.engine.playlist_view('pl.aW52ZW50ZWRwbA', 'more-by-curator')
-        self.assertEqual(self.page.api_calls, [path, f'{path}?offset=2'])
+        view = self.page.api_answers[self.PLAYLIST]['data'][0]['views']['featured-artists']
+        first, second = view['data'][:2]
+        self.page.api_answers[path] = {'data': [first], 'next': f'{path}?offset=1'}
+        self.page.api_answers[f'{path}?offset=1'] = {'data': [second]}
+        items = await self.engine.playlist_view('pl.aW52ZW50ZWRwbA', 'featured-artists')
+        self.assertEqual(self.page.api_calls, [path, f'{path}?offset=1'])
         self.assertEqual(self.page.api_params[0], {'limit': 100})
+        self.assertEqual([item['id'] for item in items], [first['id'], second['id']])
+
+    async def test_a_curators_playlists_are_read_whole(self):
+        await self.up()
+        self.answer()
+        own, other = self.page.api_answers[self.CURATOR]['data'][:2]
+        later = f'{self.CURATOR}?offset=10'
+        self.page.api_answers[self.CURATOR] = {'data': [own, other], 'next': later}
+        self.page.api_answers[later] = {'data': [dict(other, id='pl.aW52ZW50ZWQ4')]}
+        items = await self.engine.curator_playlists('1724049500')
+        self.assertEqual(self.page.api_calls, [self.CURATOR, later])
+        self.assertEqual(self.page.api_params[0], {'limit': api.CURATOR_PLAYLISTS_LIMIT})
+        # Every one of them: the page leaves its own playlist out (detail.playlist_completer).
         self.assertEqual([item['id'] for item in items],
-                         ['pl.aW52ZW50ZWRwMg', 'pl.aW52ZW50ZWQ4'])  # the playlist left out
+                         ['pl.aW52ZW50ZWRwbA', 'pl.aW52ZW50ZWRwMg', 'pl.aW52ZW50ZWQ4'])
 
     async def test_signed_out(self):
         await self.up(authorized=False)
@@ -2166,7 +2216,8 @@ class PlaylistPageTest(EngineFixture):
         self.assertEqual(answer['id'], 'pl.demo001')
         self.assertNotIn('stale', answer)
         for coro in (demo.playlist_page('pl.demo002'),
-                     demo.playlist_view('pl.demo001', 'more-by-curator')):
+                     demo.playlist_view('pl.demo001', 'featured-artists'),
+                     demo.curator_playlists('1724049500')):
             with self.assertRaises(EngineError) as raised:
                 await coro
             self.assertEqual(raised.exception.code, 'engine-down')
@@ -3126,6 +3177,30 @@ class SearchTest(EngineFixture):
         await self.engine.browse(refresh=True)
         self.assertEqual(self.page.api_calls, [path, path])
 
+    async def test_an_answer_kept_in_an_older_shape_is_asked_again(self):
+        # New kept that morning by a version whose New had no banners or links: fresh by its
+        # age, but not in the shape this version answers, so Apple is asked again.
+        self.page.storefront = 'gb'
+        path = '/v1/editorial/gb/groupings'
+        self.page.api_answers[path] = self.fixture('editorial_groupings.json')
+        self.cache.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+        older = {'shelves': [{'key': 'old', 'title': 'Invented Old Shelf', 'items': []}],
+                 'cached': stamp}
+        (self.cache / 'browse.json').write_text(json.dumps(older), encoding='utf-8')
+        await self.engine.stop()  # Apple cannot be asked: the older one, stale
+        answer = await self.engine.browse()
+        self.assertEqual((answer['shelves'][0]['key'], answer.get('stale')), ('old', True))
+        await self.up()
+        answer = await self.engine.browse()
+        self.assertEqual(self.page.api_calls, [path])
+        self.assertTrue(answer['shelves'][0]['featured'])
+        self.assertEqual(answer['shape'], normalize.ANSWER_SHAPE)
+        kept = json.loads((self.cache / 'browse.json').read_text(encoding='utf-8'))
+        self.assertEqual(kept['shape'], normalize.ANSWER_SHAPE)
+        await self.engine.browse()
+        self.assertEqual(self.page.api_calls, [path])  # this shape's: kept a day
+
     async def test_more_to_explores_pages_are_asked_by_id_and_kept_a_day(self):
         # #370: a room, a grouping (New's shape: `platform` or a 400) and a multiroom.
         self.page.storefront = 'gb'
@@ -3207,6 +3282,10 @@ class SearchTest(EngineFixture):
         self.assertFalse((self.cache / 'charts.json').exists())  # every genre's is apart
         await self.engine.charts()
         self.assertEqual(self.page.api_calls, [path, path])
+        # Music, every genre's, is the charts of every genre, kept as they are.
+        await self.engine.charts(genre=api.ROOT_GENRE)
+        self.assertEqual(self.page.api_calls, [path, path])  # charts.json's, kept
+        self.assertFalse((self.cache / 'charts' / f'{api.ROOT_GENRE}.json').exists())
         for bad in ('../x', 'abc', '2 1'):
             with self.assertRaises(EngineError) as raised:
                 await self.engine.charts(genre=bad)
@@ -3380,7 +3459,7 @@ class SearchTest(EngineFixture):
         self.assertEqual(self.page.api_calls, [path, path])
         self.assertEqual(self.page.api_params, [{'limit': 10, 'offset': 0},
                                                 {'limit': 10, 'offset': 10}])
-        self.assertEqual(set(answer), {'items', 'cached'})
+        self.assertEqual(set(answer), {'items', 'cached', 'shape'})
         self.assertEqual([item['title'] for item in answer['items']],
                          [f'Invented Played {n}' for n in range(11)])
         self.assertEqual(answer['items'][9]['kind'], 'station')

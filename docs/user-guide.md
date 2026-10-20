@@ -239,7 +239,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   songs stay under **Autoplay**, so a song of Autoplay's cannot be moved up among yours.
   On a touchscreen, dragging scrolls the list: press and hold a song and use **Move Up** or
   **Move Down**. The song playing and the History do not move, and nor does a station's
-  queue.
+  queue. While **Shuffle** is on you can move songs in the shuffled order, but turning
+  Shuffle off brings back the queue's own order, and the songs you moved go back to their
+  places in it.
 - Now Playing's **Lyrics** follow the song when Apple Music has them timed: click a line to
   go to it. When Apple Music times them word by word, each word of the line being sung
   fills in as it is sung (with animation effects turned off in Settings, each word lights
