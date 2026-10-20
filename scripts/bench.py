@@ -13,7 +13,8 @@ build/demo-big, or $APPLE_MUSIC_CACHE when set), with --demo and --debug, the
 settings in a memory backend, animations off and the desktop's icon theme and
 font. Make the library first:
 
-    scripts/demo_library.py --cache build/demo-big --albums 3000 --playlists 300 --tracks 40000
+    scripts/demo_library.py --cache build/demo-big --albums 3000 --playlists 300 --tracks 40000 \
+        --videos 1000 --long-playlist 5000
 
 Each run is a process of its own (this script again, with --child), --runs of them
 (default 3), and a bare Adw.ApplicationWindow is timed the same way for comparison:

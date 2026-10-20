@@ -236,7 +236,8 @@ class ShelfColumnTest(PageTestCase):
         shelves = [model(f's{n}', 2) for n in range(6)]
         column.show(shelves, hero_first=True)
         self.assertEqual(self.shown(), shelves[:3])  # the first few at once
-        self.assertTrue(await self.until(lambda: self.shown() == shelves))
+        # The rest one a frame: three frames, the first of them slow on cold caches.
+        self.assertTrue(await self.until_frames(self.box, lambda: self.shown() == shelves))
         widgets = {shelf: widget for shelf, widget in zip(shelves, column.widgets,
                                                           strict=True)}
         self.assertTrue(widgets[shelves[0]].props.hero)

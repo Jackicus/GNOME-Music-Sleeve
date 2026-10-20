@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""Widget lifetimes: a page pushed and popped, a Shelf removed and a dialog closed are
-freed, with the rows they bound; the handlers connected weakly still run; and connect_weak()
+"""Widget lifetimes: a page pushed and popped, or kept as a root page and dropped (past
+ROOT_LIMIT, at a sign-out), a Shelf removed and a dialog closed are freed, with the rows they
+bound, the context menus and More Options opened on them, a drag begun on them; Up Next's
+rows go as the queue shrinks; the handlers connected weakly still run; and connect_weak()
 itself.
 
 A widget that connects its children's signals to its own bound methods (or declares Blueprint
@@ -264,12 +266,22 @@ def _classes():
 
     class ItemActions:
         """The window's item actions as a playlist's Suggested Songs use them: an add that
-        takes (it holds nothing of what it was given): its task, done, says it succeeded."""
+        takes (it holds nothing of what it was given): its task, done, says it succeeded;
+        and as the context menus and More Options ask them: the menu every page shows
+        (actions.build_menu), with nothing to move to."""
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
             task = asyncio.get_running_loop().create_future()
             task.set_result(True)
             return task
+
+        def menu_for(self, obj, queued=False, queue_entry=None):
+            from applemusic.actions import build_menu
+
+            return build_menu(obj, queued=queued, queue_entry=queue_entry)
+
+        def move_targets(self, _obj):
+            return None
 
     class Window(Adw.Window):
         """The app's window as the pages see it (get_root()): a navigation view whose root
@@ -432,14 +444,22 @@ class WidgetTestCase(unittest.IsolatedAsyncioTestCase):
     async def settle(self):
         """Let every task spawned so far finish (cancelling one still waiting after half a
         second), and drop them (a finished task's exception holds the frames it went
-        through, and their widgets)."""
+        through, and their widgets). GTK's main context runs while they do, as
+        page_harness's settle() runs it: a task waiting for a frame (next_frame()) or a GLib
+        timeout is only woken by it."""
         for _round in range(5):
             pump(10)
             tasks, self.app.tasks = self.app.tasks, []
             if not tasks:
                 await asyncio.sleep(0)
                 continue
-            await asyncio.wait(tasks, timeout=0.5)
+            deadline = time.monotonic() + 0.5
+            while time.monotonic() < deadline:
+                _done, pending = await asyncio.wait(tasks, timeout=0.005)
+                if not pending:
+                    break
+                pump(10)
+            pending = None
             for task in tasks:
                 if not task.done():
                     task.cancel()
@@ -453,6 +473,14 @@ class WidgetTestCase(unittest.IsolatedAsyncioTestCase):
         shown = await self.until(lambda: page.get_mapped() and all(
             _find(page, cls) is not None for cls in row_types))
         self.assertTrue(shown, f'{type(page).__name__} not shown')
+
+    def answer(self, name, value):
+        """The engine's `name` request answers value (for this test)."""
+        async def method(*_args, **_kwargs):
+            return value
+
+        setattr(self.app.engine, name, method)
+        self.addCleanup(lambda: self.app.engine.__dict__.pop(name, None))
 
     async def assert_freed(self, *refs):
         """Assert that the GObject weak references die once the tasks have finished and the
@@ -472,12 +500,34 @@ class WidgetTestCase(unittest.IsolatedAsyncioTestCase):
 class PageLifetimeTest(WidgetTestCase):
     """The widget is made in the call, so that the test holds no reference to it."""
 
-    async def pushed_and_popped(self, page, *row_types):
-        """Push page, wait for a widget of each row_type in it, pop it: GObject weak
-        references to the page and to those rows."""
+    async def pushed_and_popped(self, page, *row_types, during=None):
+        """Push page, wait for a widget of each row_type in it, await during(page) when
+        given (what is done on the page while it shows), pop it: GObject weak references to
+        the page and to those rows, and to whatever during() answers (a list of them)."""
         await self.push(page, *row_types)
         refs = [page.weak_ref()] + [_find(page, cls).weak_ref() for cls in row_types]
+        if during is not None:
+            refs += await during(page) or []
         self.window.navigation_view.pop()
+        self.assertTrue(await self.until(lambda: page.get_parent() is None))
+        return refs
+
+    async def rooted_and_dropped(self, page, *row_types, during=None):
+        """As the window keeps a root page (a sidebar destination's, a playlist's or a
+        folder's) and drops it (_trim_roots past ROOT_LIMIT, forget_account_pages at a
+        sign-out): added to the navigation view, made its root, shown, the root replaced,
+        the page removed. GObject weak references, as pushed_and_popped()'s."""
+        nav = self.window.navigation_view
+        nav.add(page)
+        nav.replace([page])
+        shown = await self.until(lambda: page.get_mapped() and all(
+            _find(page, cls) is not None for cls in row_types))
+        self.assertTrue(shown, f'{type(page).__name__} not shown')
+        refs = [page.weak_ref()] + [_find(page, cls).weak_ref() for cls in row_types]
+        if during is not None:
+            refs += await during(page) or []
+        nav.replace([self.window.root_page])
+        nav.remove(page)
         self.assertTrue(await self.until(lambda: page.get_parent() is None))
         return refs
 
@@ -764,6 +814,356 @@ class PageLifetimeTest(WidgetTestCase):
         refs = await self.added_and_removed(shelf(), Tile)
         await self.assert_freed(*refs)
 
+    async def test_category_page(self):
+        # A search category's, a curator's or a radio show's page, pushed, with its shelves.
+        from applemusic.library import Item
+        from applemusic.pages.shelves import category_page
+        from applemusic.widgets.shelf import Shelf
+        from applemusic.widgets.tile import Tile
+
+        self.answer('category', _shelves('playlists', 'shows', kind='playlist'))
+        item = Item({'id': 'c1', 'kind': 'category', 'title': 'Invented Category', 'art': None,
+                     'thumb': None})
+        refs = await self.pushed_and_popped(category_page(item), Shelf, Tile)
+        del item
+        await self.assert_freed(*refs)
+
+    async def test_new_page(self):
+        # New, with More to Explore's tiles after its shelves; dropped at a sign-out.
+        from applemusic.pages import new
+        from applemusic.sections import Destination
+        from applemusic.widgets.category_tile import CategoryTile
+        from applemusic.widgets.hero_tile import HeroTile
+        from applemusic.widgets.tile import Tile
+
+        self.answer('browse', _shelves('featured', 'albums'))
+        refs = await self.rooted_and_dropped(
+            new.create(Destination('new', 'New', 'starred-symbolic')),
+            HeroTile, Tile, CategoryTile)
+        await self.assert_freed(*refs)
+
+    async def test_made_for_you_page(self):
+        # Dropped at a sign-out.
+        from applemusic.pages import made_for_you
+        from applemusic.sections import Destination
+        from applemusic.widgets.hero_tile import HeroTile
+
+        self.answer('made_for_you', _shelves('mixes', 'stations', kind='playlist'))
+        refs = await self.rooted_and_dropped(
+            made_for_you.create(Destination('made-for-you', 'Made for You',
+                                            'starred-symbolic')), HeroTile)
+        await self.assert_freed(*refs)
+
+    async def test_search_page(self):
+        # The landing (categories, Recently Searched: a store of the app's, which outlives
+        # the page), suggestions, the results' shelves, a kind's paged list, Your Library;
+        # dropped at a sign-out.
+        from applemusic.library import Item
+        from applemusic.pages.search import SearchPage
+        from applemusic.recent_searches import RecentSearches
+        from applemusic.widgets.category_tile import CategoryTile
+        from applemusic.widgets.search_list import ResultRow
+        from applemusic.widgets.shelf import Shelf
+
+        recent = RecentSearches(None, self.app.spawn)
+        recent.items.append(Item(dict(_album(9, tracks=0), id='r9')))
+        self.app.recent_searches = recent
+        self.addCleanup(delattr, self.app, 'recent_searches')
+        self.answer('landing', {'categories': [
+            {'id': f'cat{n}', 'kind': 'category', 'title': f'Category {n}', 'art': None}
+            for n in range(4)]})
+        self.answer('suggest', {'terms': [{'term': 'inv', 'display': 'inv'}], 'items': []})
+
+        async def search(text, limit=None, kind=None, offset=0):
+            if kind:
+                return {'shelves': [{'key': kind, 'items': [
+                    {'id': f'9{n}', 'kind': 'song', 'title': f'Song {n}',
+                     'subtitle': 'Invented Artist', 'art': None} for n in range(5)],
+                    'next': None}]}
+            return _shelves('top', 'albums', 'songs')
+
+        self.app.engine.search = search
+        self.addCleanup(lambda: self.app.engine.__dict__.pop('search', None))
+
+        async def during(page):
+            page.search_entry.set_text('invented')
+            page._search('invented')
+            self.assertTrue(await self.until(
+                lambda: _find(page.results_box, Shelf) is not None))
+            page.set_kind('songs')
+            self.assertTrue(await self.until(
+                lambda: _find(page.kind_list, ResultRow) is not None))
+            refs = [_find(page.results_box, Shelf).weak_ref(),
+                    _find(page.kind_list, ResultRow).weak_ref()]
+            page.set_mode('library')
+            await self.turn()
+            return refs
+
+        refs = await self.rooted_and_dropped(SearchPage(self.library, 'Search'), CategoryTile,
+                                             during=during)
+        await self.assert_freed(*refs)
+
+    async def test_playlist_root_page(self):
+        # A sidebar playlist's page (pages.playlist), dropped past ROOT_LIMIT.
+        from applemusic import pages
+
+        refs = await self.rooted_and_dropped(pages.playlist(self.library, 'p.none', 'Invented'))
+        await self.assert_freed(*refs)
+
+    async def test_folder_pages_and_their_more_options(self):
+        # A folder's page as a sidebar root and pushed from a tile, with New Playlist, New
+        # Folder and More Options (its menu made as it opens: the folder's).
+        from applemusic import pages
+        from applemusic.library import Item
+
+        folder = Item({'id': 'f.invented', 'kind': 'folder', 'title': 'Invented Folder'})
+        self.library._index[('folder', folder.id)] = folder
+        self.addCleanup(self.library._index.pop, ('folder', folder.id))
+
+        async def more_options(page):
+            from gi.repository import Gtk
+
+            button = _find_where(page.header_bar, lambda widget: isinstance(
+                widget, Gtk.MenuButton) and widget.get_icon_name() == 'view-more-symbolic')
+            return await self.opened_and_closed(button)
+
+        refs = await self.rooted_and_dropped(
+            pages.folder(self.library, folder.id, 'Invented Folder'), during=more_options)
+        refs += await self.pushed_and_popped(
+            pages.folder(self.library, folder.id, 'Invented Folder', root=False),
+            during=more_options)
+        await self.assert_freed(*refs)
+
+    async def opened_and_closed(self, button):
+        """A menu button's popover opened (its menu made as it opens) and closed: a GObject
+        weak reference to it, in a list."""
+        button.popup()
+        popover = button.get_popover()
+        self.assertIsNotNone(popover)
+        self.assertIsNotNone(button.get_menu_model())
+        self.assertTrue(await self.until(popover.get_mapped))
+        button.popdown()
+        self.assertTrue(await self.until(lambda: not popover.get_mapped()))
+        # The focus, back on the button, leaves the page: this stand-in window keeps a page
+        # popped with the focus in it alive (the app's window does not: the demo app frees
+        # an album's page popped with the focus on its More Options).
+        self.window.set_focus(None)
+        return [popover.weak_ref()]
+
+    async def menu_opened_and_closed(self, view):
+        """The context menu of the first row or tile of view opened (context_menu.popup())
+        and closed, and unparented: GObject weak references to the row and the popover."""
+        from applemusic.widgets import context_menu
+
+        widget, obj = context_menu._descendant(view)
+        popover = context_menu.popup(widget, obj)
+        self.assertIsNotNone(popover)
+        self.assertTrue(await self.until(popover.get_mapped))
+        popover.popdown()
+        self.assertTrue(await self.until(lambda: popover.get_parent() is None))
+        self.window.set_focus(None)  # see opened_and_closed()
+        return [widget.weak_ref(), popover.weak_ref()]
+
+    async def test_context_menus_and_more_options(self):
+        # A tile's menu on a grid, a track row's and More Options on an album's page: each
+        # opened and closed, then the page popped.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets.tile import Tile
+        from applemusic.widgets.track_row import TrackRow
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item(_album(number)) for number in range(8)])
+
+        async def tile_menu(page):
+            return await self.menu_opened_and_closed(page.grid_view)
+
+        refs = await self.pushed_and_popped(
+            GridPage(self.library, 'Invented Shelf', store, root=False), Tile, during=tile_menu)
+        del store
+
+        async def row_menu_and_more_options(page):
+            return (await self.menu_opened_and_closed(page.list_view)
+                    + await self.opened_and_closed(page.more_button))
+
+        refs += await self.pushed_and_popped(
+            DetailPage(self.library, Item(_album(1, tracks=4))), TrackRow,
+            during=row_menu_and_more_options)
+        await self.assert_freed(*refs)
+
+    async def test_sidebar_row_menus(self):
+        # A sidebar row's menu (a playlist's, a folder's, All Playlists'), opened and closed:
+        # the popovers, parented to the rows of a sidebar that lives as long as the window,
+        # are unparented and freed.
+        from gi.repository import Adw
+
+        from applemusic.sections import ALL_PLAYLISTS
+        from applemusic.sidebar_view import SidebarController
+        from tests.test_sidebar import MenuLibrary, StubWindow, tree
+
+        self.app.settings.set_strv('expanded-folders', ['a'])
+        self.addCleanup(self.app.settings.reset, 'expanded-folders')
+        sidebar = Adw.Sidebar(vexpand=True)
+        self.window.root_box.append(sidebar)
+        controller = SidebarController(StubWindow(), sidebar, MenuLibrary(tree()),
+                                       self.app.settings, self.window.item_actions)
+        keys = ('playlist:p1', 'folder:a', ALL_PLAYLISTS)
+        self.assertTrue(await self.until(lambda: all(
+            controller.row(controller.item_for(key).get_index()).get_mapped()
+            for key in keys)))
+        refs = []
+        for key in keys:
+            popover = controller.popup_menu(key)
+            self.assertIsNotNone(popover, key)
+            self.assertTrue(await self.until(popover.get_mapped))
+            popover.popdown()
+            self.assertTrue(await self.until(lambda popover=popover: popover.get_parent()
+                                             is None))
+            refs.append(popover.weak_ref())
+            popover = None
+        await self.assert_freed(*refs)
+
+    async def test_a_tile_dragged(self):
+        # A tile's drag prepared on a pushed grid (the drag source's icon is a paintable of
+        # the tile), then the page popped.
+        from gi.repository import Gtk
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets import dnd
+        from applemusic.widgets.tile import Tile
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item(_album(number)) for number in range(8)])
+
+        async def drag(page):
+            source = next(controller for controller in _controllers(page.grid_view)
+                          if isinstance(controller, Gtk.DragSource))
+            tile = _find(page.grid_view, Tile)
+            self.assertTrue(await self.until(lambda: tile.get_mapped() and tile.get_width()))
+            ok, point = tile.compute_point(page.grid_view, _point(tile.get_width() / 2, 20))
+            self.assertTrue(ok)
+            self.assertIsNotNone(source.emit('prepare', point.x, point.y))
+            dnd._set_current(None)
+
+        refs = await self.pushed_and_popped(
+            GridPage(self.library, 'Invented Folder', store, root=False), Tile, during=drag)
+        del store
+        await self.assert_freed(*refs)
+
+    async def test_a_playlist_page_mid_reorder(self):
+        # A playlist of the user's with one of its songs dragged over it (the insertion line
+        # on a row, auto-scroll's tick on the scrolled window), popped without a leave.
+        from gi.repository import Gdk, Gtk
+
+        from applemusic.library import Item, ItemRefs
+        from applemusic.pages.detail import DetailPage
+        from applemusic.widgets import dnd
+        from applemusic.widgets.track_row import TrackRow
+
+        async def reorder(page):
+            self.assertTrue(page.can_reorder())
+            track = page.item.groups[0].entries.get_item(1)
+            dnd._set_current(ItemRefs.for_objects([track], ('playlist', page.item.id)),
+                             Gdk.DragAction.MOVE)
+            self.addCleanup(dnd._set_current, None)
+            target = next(controller for controller in _controllers(page.list_view)
+                          if isinstance(controller, Gtk.DropTarget))
+            row = _find(page.list_view, TrackRow)
+            ok, point = row.compute_point(page.list_view, _point(20, 5))
+            self.assertTrue(ok)
+            target.emit('motion', point.x, point.y)
+            page._drop_feedback.motion(page.scrolled_window.get_height() - 2)  # the tick
+            self.assertIsNotNone(page._drop_feedback.marked())
+            await self.turn()
+            dnd._set_current(None)
+
+        item = Item(dict(_album(1, tracks=12), kind='playlist', id='l.playlist1'))
+        refs = await self.pushed_and_popped(DetailPage(self.library, item), TrackRow,
+                                            during=reorder)
+        del item
+        await self.assert_freed(*refs)
+
+    async def test_up_next_and_history_rows(self):
+        # Not a page: the Now Playing sheet's queue lives as long as the window, but its
+        # lists destroy rows as the queue shrinks. Every QueueRow made, Up Next's and
+        # History's, is either bound still or freed.
+        from gi.repository import GLib
+
+        from applemusic.widgets.queue import QueueRow, QueueView
+        from tests.test_player import make_player
+        from tests.test_queue import entries
+
+        made = []
+        init = QueueRow.__init__
+
+        def record(row, *args, **kwargs):
+            init(row, *args, **kwargs)
+            made.append(row.weak_ref())
+
+        patch = mock.patch.object(QueueRow, '__init__', record)
+        patch.start()
+        self.addCleanup(patch.stop)
+        player, _engine, app = make_player()
+        player.apply_queue({'index': 6, 'items': entries(30)})
+        view = QueueView()
+        view.set_player(player, app)
+        view.art._fetch = None
+        view.art._find = lambda urls: {}
+        view.set_vexpand(True)
+        self.window.root_box.append(view)
+        self.assertTrue(await self.until(lambda: len(view._rows) > 5))
+        view.history_button.set_active(True)  # History: the six played
+        self.assertTrue(await self.until(lambda: sum(row.history for row in view._rows) == 6))
+        view.history_button.set_active(False)
+        player.apply_queue({'index': 0, 'items': entries(2)})  # a short queue, none played
+        self.assertTrue(await self.until(lambda: len(view._rows) == 2))
+        view.history_button.set_active(True)
+        await self.turn()
+        view.history_button.set_active(False)
+        self.assertGreater(len(made), 8)
+
+        def freed():
+            gc.collect()
+            return all(ref() is None or ref() in view._rows for ref in made)
+
+        await self.settle()
+        self.assertTrue(await self.until(freed), 'a QueueRow unbound but alive')
+        self.window.root_box.remove(view)
+        if view.art._source:  # no look after the test
+            GLib.source_remove(view.art._source)
+
+
+def _shelves(*keys, n=6, kind='album'):
+    """An answer of shelves, one per key, of n invented items of `kind` each."""
+    return {'shelves': [
+        {'key': key, 'title': key.title(),
+         'items': [dict(_album(number, tracks=0), id=f'{key}{number}', kind=kind)
+                   for number in range(n)]}
+        for key in keys]}
+
+
+def _point(x, y):
+    from gi.repository import Graphene
+
+    point = Graphene.Point()
+    point.x, point.y = x, y
+    return point
+
+
+def _find_where(widget, predicate):
+    """The first widget in widget's tree (widget included) for which predicate() holds."""
+    if predicate(widget):
+        return widget
+    child = widget.get_first_child()
+    while child is not None:
+        found = _find_where(child, predicate)
+        if found is not None:
+            return found
+        child = child.get_next_sibling()
+    return None
+
 
 class DialogLifetimeTest(WidgetTestCase):
     async def presented_and_closed(self, dialog):
@@ -811,6 +1211,64 @@ class DialogLifetimeTest(WidgetTestCase):
         ref = await self.presented_and_closed(dialog)
         del dialog  # the test's own reference
         await self.assert_freed(ref)
+
+    async def closed(self, dialog):
+        """A dialog presented already (by the code under test), closed as Escape would: a
+        GObject weak reference to it."""
+        closed = []
+        dialog.connect('closed', lambda _dialog: closed.append(True))
+        self.assertTrue(await self.until(dialog.get_mapped))
+        await self.turn()
+        dialog.force_close()
+        self.assertTrue(await self.until(lambda: closed))
+        return dialog.weak_ref()
+
+    async def test_confirm_shortcuts_and_about_dialogs(self):
+        # Delete Playlist or Folder and Remove from Library ask with confirm(); Keyboard
+        # Shortcuts and About.
+        from applemusic.dialogs import about, shortcuts
+        from applemusic.dialogs.playlist import confirm
+
+        done = []
+        refs = [await self.closed(confirm(self.window, 'Delete Invented Playlist?',
+                                          'It goes.', '_Delete', lambda: done.append(True))),
+                await self.closed(shortcuts.present(self.window))]
+        self.app.version = '1.0.0'
+        self.addCleanup(delattr, self.app, 'version')
+        refs.append(await self.closed(about.present(self.app, self.window)))
+        await self.assert_freed(*refs)
+        self.assertEqual(done, [])  # closed, not confirmed
+
+    async def test_preferences_shown_as_a_window_of_its_own(self):
+        # Over a window that is not resizable (nor maximized, nor tiled) a dialog is a window
+        # of its own. Preferences lets go of its handlers (strong ones, on the settings, the
+        # engine, the app and the sync) and its timer only in `closed`, which force_close()
+        # does not emit for such a dialog (libadwaita 1.9): the window closes it as it closes
+        # every dialog shown so (Window._close_dialogs, by its window's close()), which does.
+        from gi.repository import Adw, Gtk
+
+        from applemusic.dialogs.preferences import PreferencesDialog
+        from applemusic.window import Window
+
+        parent = Adw.Window(default_width=600, default_height=500, resizable=False)
+        parent.present()
+        self.addCleanup(parent.destroy)
+        self.assertTrue(await self.until(parent.get_mapped))
+        with tempfile.TemporaryDirectory() as cache, \
+                mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+            dialog = PreferencesDialog(self.app)
+            closed = []
+            dialog.connect('closed', lambda _dialog: closed.append(True))
+            dialog.present(parent)
+            self.assertTrue(await self.until(dialog.get_mapped))
+            self.assertIsInstance(dialog.get_root(), Gtk.Window)
+            self.assertIsNot(dialog.get_root(), parent)  # a window of its own
+            await self.turn()
+            Window._close_dialogs(parent)  # what the window does when it hides or quits
+            self.assertTrue(await self.until(lambda: closed))
+            ref = dialog.weak_ref()
+            del dialog
+            await self.assert_freed(ref)
 
 
 class HandlerTest(WidgetTestCase):

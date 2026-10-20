@@ -9,7 +9,8 @@ Target: $ARGUMENTS
 1. Read CLAUDE.md, `.claude/rules/performance.md`, and `.claude/rules/library.md` if the model
    is involved.
 2. Make the big library if build/demo-big is missing:
-   `scripts/demo_library.py --cache build/demo-big --albums 3000 --playlists 300 --tracks 40000`.
+   `scripts/demo_library.py --cache build/demo-big --albums 3000 --playlists 300 --tracks 40000
+   --videos 1000 --long-playlist 5000`.
    Install the current build (`meson install -C build`).
 3. Measure before changing anything, headless (the display's virtual monitor shows the window,
    which a hidden one needs to get frames; compare only headless runs):
@@ -18,7 +19,8 @@ Target: $ARGUMENTS
      opened and closed after a warm-up round: the 5 MB target, and how many stay alive);
      `--profile KEY` for a cProfile of one page's first switch;
    - `APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py --page KEY`
-     (`--page songs --distance 40000`, `--sidebar`, `--speed 20000` for a fling);
+     (`--page songs --distance 40000`, `--page music-videos`, `--open playlist:l.pllong`
+     for the long playlist, `--sidebar`, `--speed 20000` for a fling);
    - `python3 -X importtime` over the startup imports.
    Write down the numbers and the target they miss.
 4. Fix the biggest cost first, one change at a time, measuring after each: work moved off the

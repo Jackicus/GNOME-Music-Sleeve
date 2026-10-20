@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """A made-up Apple Music library for demo and screenshots:
-`demo_library.py [--cache DIR] [--albums N] [--playlists N] [--tracks N]`.
+`demo_library.py [--cache DIR] [--albums N] [--playlists N] [--tracks N] [--videos N]
+[--long-playlist N]`.
 
 Writes library.json in the shape src/backend/README.md describes, the covers
 and thumbnails it names (drawn here, at config's COVER_SIZE and THUMB_SIZE)
@@ -18,7 +19,13 @@ generated albums are sized to reach it). Their song titles are all distinct, as
 a real library's nearly are (a word and a noun, then a tail or a number where
 that pair is taken), so sorting and collating them costs what it would.
 `--playlists N` (N > 13) adds
-generated playlists, each of 22 songs, at the top level of the folders. The
+generated playlists, each of 22 songs, at the top level of the folders.
+`--long-playlist N` adds one playlist of N of the library's songs (as many as it
+has, at most), `l.pllong` ("The Long Playlist", at the top level, before
+Favourite Songs), and `--videos N` (N > 6) generated music videos after the six
+hand-written ones, by any of the artists: the lists a scroll test needs at size
+(scroll_test.py --open playlist:l.pllong, --page music-videos). The other pages
+(an artist's, the Radio, Search and Charts answers) keep the six videos. The
 covers are drawn in parallel. The 40 hand-written albums and 13 playlists stay
 as they are whatever the options: build/demo is byte-identical.
 The last playlist is Favourite Songs, flagged by attributes.isFavourites.
@@ -1562,7 +1569,8 @@ def add_dates_and_favourites(albums, playlists, videos, newest_albums, favourite
             album['added'] = added_text(NEWEST_ADDED - 30 * 24 * 3600
                                         - rnd.randrange(ADDED_SPAN))
     for item in playlists + videos:
-        if not (item.get('attributes') or {}).get('isFavourites'):
+        # Favourite Songs has none; the long playlist has its own, so that nothing else moves.
+        if not (item.get('attributes') or {}).get('isFavourites') and 'added' not in item:
             item['added'] = added_text(NEWEST_ADDED - 20 * 24 * 3600 - rnd.randrange(ADDED_SPAN))
 
     def both(item):
@@ -1790,6 +1798,29 @@ def generated_playlists(count):
     return playlists
 
 
+def generated_videos(count, artists_data):
+    """VIDEOS_DATA's entries, then enough invented ones to make `count` music videos, each by
+    one of artists_data (the generated artists too, when there are any): titles a word and
+    a noun, with a tail or a number where that pair is taken. Seeded."""
+    videos = list(VIDEOS_DATA)
+    rnd = random.Random(29)  # its own: nothing else drawn changes
+    seen = {video['title'] for video in videos}
+    while len(videos) < count:
+        title = f'{rnd.choice(GEN_WORDS)} {rnd.choice(GEN_NOUNS)}'
+        if title in seen:
+            title = f'{title} {rnd.choice(GEN_TAILS)}'
+        if title in seen:
+            title = f'{title} {len(videos) + 1}'
+        seen.add(title)
+        videos.append({'title': title, 'artist_idx': rnd.randrange(len(artists_data)),
+                       'year': rnd.randint(2005, 2026)})
+    return videos
+
+
+# The playlist --long-playlist adds: a fixed ID, so a scroll test can open it.
+LONG_PLAYLIST_ID = 'l.pllong'
+
+
 def _draw_one(job):
     out_path, kwargs, thumb_path, thumb_size = job
     if 'banner' in kwargs:  # an artist's banner: no thumbnail
@@ -1822,15 +1853,25 @@ def draw_covers(covers, thumb_dir, thumb_size):
 # ---------------------------------------------------------------------------
 
 def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.THUMB_SIZE,
-                       album_count=None, playlist_count=None, track_count=None):
+                       album_count=None, playlist_count=None, track_count=None,
+                       video_count=None, long_playlist=None):
     """Generate library.json, cover_size artwork and the thumb_size thumbnails the
     tiles draw, and record both sizes in art/.sizes as a sync does. An album_count
     above the hand-written albums' adds generated ones (generated_albums), sized to
     hold track_count songs in all when given; a playlist_count above the hand-written
-    playlists' (Favourite Songs counted) adds generated ones (generated_playlists)."""
+    playlists' (Favourite Songs counted) adds generated ones (generated_playlists); a
+    long_playlist adds LONG_PLAYLIST_ID, of that many songs; a video_count above the
+    hand-written videos' adds generated ones (generated_videos)."""
     rnd = random.Random(42)
     artists_data, albums_data = generated_albums(album_count or len(ALBUMS_DATA), track_count)
     playlists_data = generated_playlists(playlist_count or len(PLAYLISTS_DATA) + 1)
+    if long_playlist:
+        playlists_data.append({
+            'id': LONG_PLAYLIST_ID, 'songs': long_playlist, 'title': 'The Long Playlist',
+            'subtitle': '', 'genre': ARTISTS_DATA[0]['genre'],
+            'summary': 'An invented playlist of thousands of songs, for scroll tests.',
+        })
+    videos_data = generated_videos(video_count or len(VIDEOS_DATA), artists_data)
 
     art_dir = os.path.join(out_dir, 'art')
     thumb_dir = os.path.join(out_dir, 'thumb')
@@ -2014,7 +2055,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
         by_genre.setdefault(genre, []).append((position, (trk, thumb)))
     playlists = []
     for pl_idx, pl_data in enumerate(playlists_data, 1):
-        playlist_id = f'l.pl{pl_idx:03d}'
+        playlist_id = pl_data.get('id') or f'l.pl{pl_idx:03d}'
         playlist_cat_id = str(catalog_id_base + 2000 + pl_idx)
         playlist_url = ('https://music.apple.com/us/playlist/'
                         f"{slug(pl_data['title'])}/{playlist_cat_id}")
@@ -2034,14 +2075,19 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
             size=cover_size,
         )
 
-        # Pick candidate tracks matching playlist genre or collection
-        matching_tracks = [pair for _position, pair in heapq.merge(
-            *(by_genre.get(genre, []) for genre in dict.fromkeys(pl_data['filter_genres'])))]
-        if len(matching_tracks) < 18:
-            matching_tracks = [(t, thumb) for _, t, thumb in all_tracks_catalog]
+        if 'songs' in pl_data:  # the long playlist: any songs, from a random source of its own
+            selected_raw = random.Random(61).sample(
+                [(t, thumb) for _, t, thumb in all_tracks_catalog],
+                min(len(all_tracks_catalog), pl_data['songs']))
+        else:
+            # Pick candidate tracks matching playlist genre or collection
+            matching_tracks = [pair for _position, pair in heapq.merge(
+                *(by_genre.get(genre, []) for genre in dict.fromkeys(pl_data['filter_genres'])))]
+            if len(matching_tracks) < 18:
+                matching_tracks = [(t, thumb) for _, t, thumb in all_tracks_catalog]
 
-        # Deterministic sample for this playlist
-        selected_raw = rnd.sample(matching_tracks, min(len(matching_tracks), 22))
+            # Deterministic sample for this playlist
+            selected_raw = rnd.sample(matching_tracks, min(len(matching_tracks), 22))
 
         playlist_tracks = []
         # A playlist's rows carry their own cover — the album's, here.
@@ -2092,6 +2138,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                 }
             ],
         }
+        if 'songs' in pl_data:
+            playlist_item['added'] = added_text(NEWEST_ADDED - 20 * 24 * 3600)
         playlists.append(playlist_item)
 
     # The Favourite Songs playlist, after the others so they stay as they were. Its own random
@@ -2198,7 +2246,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     # changes. 16:9 artwork, and the Item shape the sync gives them (normalize_item).
     videos = []
     video_rnd = random.Random(23)
-    for v_idx, v_data in enumerate(VIDEOS_DATA, 1):
+    for v_idx, v_data in enumerate(videos_data, 1):
         video_id = f'i.mv{v_idx:04d}'
         video_cat_id = str(catalog_id_base + 4000 + v_idx)
         artist_info = artists_data[v_data['artist_idx']]
@@ -2318,19 +2366,23 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
 
     # 7. The catalog's page of each hand-written artist and each playlist's suggested songs,
     # after the rest, each with a random source of its own, so nothing above changes.
+    own_videos = videos[:len(VIDEOS_DATA)]  # the pages' videos, whatever --videos adds
     build_artist_pages(out_dir, artists_data[:len(ARTISTS_DATA)], artists, artist_albums_map,
-                       albums, videos, draw_cover, thumb_for, cover_size, library['generated'])
+                       albums, own_videos, draw_cover, thumb_for, cover_size, library['generated'])
     build_suggestions(out_dir, playlists, albums, library['generated'])
     build_album_pages(out_dir, artists_data[:len(ARTISTS_DATA)], artists, artist_albums_map,
-                      albums[:len(ALBUMS_DATA)], videos, playlists, draw_cover, thumb_for,
+                      albums[:len(ALBUMS_DATA)], own_videos, playlists, draw_cover,
+                      thumb_for,
                       cover_size, library['generated'])
-    build_radio_page(out_dir, radio_stations, albums[:len(ALBUMS_DATA)], videos, draw_cover,
+    build_radio_page(out_dir, radio_stations, albums[:len(ALBUMS_DATA)], own_videos,
+                     draw_cover,
                      thumb_for, cover_size, library['generated'])
     build_search_catalog(out_dir, artists[:len(ARTISTS_DATA)], albums[:len(ALBUMS_DATA)],
-                         playlists, videos, radio_stations, draw_cover, thumb_for, cover_size,
+                         playlists, own_videos, radio_stations, draw_cover, thumb_for,
+                         cover_size,
                          library['generated'])
     build_charts_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
-                      videos, draw_cover, thumb_for, cover_size, library['generated'])
+                      own_videos, draw_cover, thumb_for, cover_size, library['generated'])
     build_recently_played(out_dir, recently_played_items, library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
@@ -2941,26 +2993,47 @@ def parse_args():
         help='How many songs in all (default: 8 to 16 an album); the generated albums are '
              'sized to reach it',
     )
+    parser.add_argument(
+        '--videos',
+        type=int,
+        default=len(VIDEOS_DATA),
+        help=f'How many music videos (default and minimum {len(VIDEOS_DATA)}); more are '
+             'generated, for scrolling Music Videos at size',
+    )
+    parser.add_argument(
+        '--long-playlist',
+        type=int,
+        metavar='N',
+        help=f'Add a playlist of N songs ({LONG_PLAYLIST_ID}), for scrolling a playlist at size',
+    )
     args = parser.parse_args()
+    if args.videos < len(VIDEOS_DATA):
+        parser.error(f'--videos must be at least {len(VIDEOS_DATA)}')
+    if args.long_playlist is not None and args.long_playlist < 1:
+        parser.error('--long-playlist must be at least 1')
     if args.albums < len(ALBUMS_DATA):
         parser.error(f'--albums must be at least {len(ALBUMS_DATA)}')
     if args.playlists < len(PLAYLISTS_DATA) + 1:
         parser.error(f'--playlists must be at least {len(PLAYLISTS_DATA) + 1}')
     if args.tracks is not None and args.albums == len(ALBUMS_DATA):
         parser.error('--tracks needs --albums above the hand-written ones')
-    return os.path.abspath(args.cache), args.albums, args.playlists, args.tracks
+    return args
 
 
 def main():
-    out_dir, album_count, playlist_count, track_count = parse_args()
+    args = parse_args()
+    out_dir = os.path.abspath(args.cache)
     try:
-        build_demo_library(out_dir, album_count=album_count, playlist_count=playlist_count,
-                           track_count=track_count)
+        build_demo_library(out_dir, album_count=args.albums, playlist_count=args.playlists,
+                           track_count=args.tracks, video_count=args.videos,
+                           long_playlist=args.long_playlist)
     except ValueError as error:
         sys.exit(f'demo_library: {error}')
     # Last: the record of what made it, which the harness and demo.sh compare (demo_stamp.py).
-    defaults = {'albums': len(ALBUMS_DATA), 'playlists': len(PLAYLISTS_DATA) + 1, 'tracks': None}
-    given = {'albums': album_count, 'playlists': playlist_count, 'tracks': track_count}
+    defaults = {'albums': len(ALBUMS_DATA), 'playlists': len(PLAYLISTS_DATA) + 1, 'tracks': None,
+                'videos': len(VIDEOS_DATA), 'long-playlist': None}
+    given = {'albums': args.albums, 'playlists': args.playlists, 'tracks': args.tracks,
+             'videos': args.videos, 'long-playlist': args.long_playlist}
     demo_stamp.write(out_dir, {key: value for key, value in given.items()
                                if value != defaults[key]})
 
