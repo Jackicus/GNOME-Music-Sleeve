@@ -22,6 +22,10 @@ generated playlists, each of 22 songs, at the top level of the folders. The
 covers are drawn in parallel. The 40 hand-written albums and 13 playlists stay
 as they are whatever the options: build/demo is byte-identical.
 The last playlist is Favourite Songs, flagged by attributes.isFavourites.
+Every album, playlist and music video has an invented `added` (the Recently Added
+shelf's albums the newest), and `favourites` names Favourite Songs' songs, some
+albums, playlists and a video, and one in twenty of the generated albums' songs
+and albums (add_dates_and_favourites).
 Three playlist folders, one inside another, hold some of the playlists; the
 rest are at the top level (`folders`, whose "root" entry lists the top level).
 sections.videos holds six invented music videos with 16:9 artwork, as Apple's
@@ -58,6 +62,7 @@ import os
 import pathlib
 import random
 import sys
+from datetime import UTC, datetime
 
 import cairo
 import gi
@@ -1442,6 +1447,61 @@ VIDEOS_DATA = [
 ]
 
 
+# The newest date added the demo has (its Recently Added shelf's first album), and how far
+# back the rest go: a library built up over some years.
+NEWEST_ADDED = 1790265600  # 2026-09-24T16:00:00Z
+ADDED_SPAN = 7 * 365 * 24 * 3600
+
+
+def added_text(seconds):
+    """An invented `added`, as Apple writes a dateAdded: ISO 8601, to the second, UTC."""
+    return datetime.fromtimestamp(seconds, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def add_dates_and_favourites(albums, playlists, videos, newest_albums, favourite_tracks):
+    """Give every album, playlist (Favourite Songs aside, which Apple makes) and music video an
+    invented `added`, the Recently Added shelf's albums the newest in its order, and return
+    library.json's `favourites`: the Favourite Songs playlist's songs (by catalog id, as the
+    sync records them), one in twenty of the generated albums' songs, some albums, playlists
+    and a video (library id and catalog id). Each from a random source of its own, after
+    everything else is made, so nothing else changes."""
+    rnd = random.Random(53)
+    newest = {album['id']: position for position, album in enumerate(newest_albums)}
+    for album in albums:
+        if album['id'] in newest:
+            album['added'] = added_text(NEWEST_ADDED - newest[album['id']] * 26 * 3600)
+        else:
+            album['added'] = added_text(NEWEST_ADDED - 30 * 24 * 3600
+                                        - rnd.randrange(ADDED_SPAN))
+    for item in playlists + videos:
+        if not (item.get('attributes') or {}).get('isFavourites'):
+            item['added'] = added_text(NEWEST_ADDED - 20 * 24 * 3600 - rnd.randrange(ADDED_SPAN))
+
+    def both(item):
+        return [value for value in (item['id'], item.get('catalogId')) if value]
+
+    picks = random.Random(59)
+    songs = [track['catalogId'] or track['id'] for track in favourite_tracks]
+    generated = albums[len(ALBUMS_DATA):]
+    for album in generated:
+        for group in album['groups']:
+            for entry in group['entries']:
+                if picks.random() < 0.05:
+                    songs.append(entry['catalogId'] or entry['id'])
+    hand_written = albums[:len(ALBUMS_DATA)]
+    liked_albums = picks.sample(hand_written, min(6, len(hand_written)))
+    liked_albums += [album for album in generated if picks.random() < 0.05]
+    own = [item for item in playlists if not (item.get('attributes') or {}).get('isFavourites')]
+    liked_playlists = picks.sample(own[:len(PLAYLISTS_DATA)], min(2, len(own)))
+    liked_videos = videos[:1]
+    return {
+        'songs': list(dict.fromkeys(songs)),
+        'albums': [value for album in liked_albums for value in both(album)],
+        'playlists': [value for item in liked_playlists for value in both(item)],
+        'videos': [value for item in liked_videos for value in both(item)],
+    }
+
+
 def build_folders(playlist_ids):
     """library.json's `folders` from FOLDERS_DATA: the "root" entry first, listing the top
     level, then each folder in FOLDERS_DATA's order. playlist_ids are the playlists' ids in
@@ -2146,8 +2206,11 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
         },
     ]
 
+    favourites = add_dates_and_favourites(albums, playlists, videos, newest_albums,
+                                          favourite_tracks)
+
     library = {
-        'version': 2,  # sync.LIBRARY_VERSION
+        'version': 3,  # sync.LIBRARY_VERSION
         'generated': '2026-09-25T12:00:00Z',
         'storefront': 'us',
         'sections': {
@@ -2159,6 +2222,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
         },
         'shelves': shelves,
         'folders': build_folders([playlist['id'] for playlist in playlists]),
+        'favourites': favourites,
     }
 
     # 7. The catalog's page of each hand-written artist and each playlist's suggested songs,

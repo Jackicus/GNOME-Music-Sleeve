@@ -52,6 +52,30 @@ class TrackLabelTest(unittest.TestCase):
 
 
 
+class FavouriteLabelTest(unittest.TestCase):
+    def test_a_favourite_says_so(self):
+        item = Item({'id': 'l.a1', 'kind': 'album', 'title': 'Invented Album',
+                     'subtitle': 'Invented Artist'})
+        item.favourite = True
+        self.assertEqual(labels.accessible_label(item),
+                         'Invented Album, Invented Artist, favourite')
+        track = Track({'id': 'i.1', 'title': 'Invented Song', 'artist': 'Invented Artist',
+                       'explicit': True})
+        self.assertEqual(labels.track_label(track, show_album=False, favourite=True),
+                         'Invented Song, Invented Artist, explicit, favourite')
+        self.assertEqual(labels.track_label(track, show_album=False),
+                         'Invented Song, Invented Artist, explicit')
+
+    def test_a_bound_label_follows_the_favourite(self):
+        item = Item({'id': 'l.a1', 'kind': 'album', 'title': 'Invented Album'})
+        list_item = _ListItem()
+        labels.bind_label(list_item, item)
+        self.assertEqual(list_item.label, 'Invented Album')
+        item.favourite = True
+        self.assertEqual(list_item.label, 'Invented Album, favourite')
+        labels.unbind_label(list_item)
+
+
 class SongLabelTest(unittest.TestCase):
     """An artist's top song (an Item with its album): its row's name and its caption."""
 

@@ -267,6 +267,7 @@ class Application(Adw.Application):
         self.engine = self._make_engine()
         self.engine.connect('lost', self._on_engine_lost)
         self.engine.connect('notify::widevine', self._on_engine_widevine)
+        self.engine.connect('rated', self._on_rated)
         self.player = Player(self)
         self.player.connect('notify::track', self._on_track_changed)
         self.player.connect('error', self._on_playback_error)
@@ -617,6 +618,12 @@ class Application(Adw.Application):
         if self._quitting is not None or self.signing_in or self.signing_out:
             return
         self.toast(_('The playback engine stopped'), _('Restart'), 'app.start-engine')
+
+    def _on_rated(self, _engine, _kind, item_id, value):
+        """A favourite made or taken back here (love, unlove), or a rating read: the library
+        shows it at once (its hearts, the Favourites Only views), until a sync reads Apple's
+        state again."""
+        self.library.set_favourite(item_id, value == 1)
 
     def _on_engine_widevine(self, engine, _pspec):
         """The browser's page said it cannot decrypt Widevine: a toast as the engine comes

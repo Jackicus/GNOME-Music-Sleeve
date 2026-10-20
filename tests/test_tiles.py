@@ -583,10 +583,10 @@ class TileLabelTest(WidgetTestCase):
         tile.bind(Item({'id': 'l.r1', 'kind': 'artist', 'title': 'Invented Artist Name',
                         'subtitle': '3 albums'}))
         self.assertEqual(tile.title_label.get_text(), 'Invented Artist Name')
-        self.assertFalse(tile.subtitle_label.get_visible())
+        self.assertFalse(tile.subtitle_row.get_visible())  # its line, and so no heart
         self.assertEqual(tile.title_label.get_xalign(), 0.5)  # centred under the portrait
         tile.set_shape('cover')  # and back to an album
-        self.assertTrue(tile.subtitle_label.get_visible())
+        self.assertTrue(tile.subtitle_row.get_visible())
         self.assertEqual(tile.title_label.get_xalign(), 0)
 
     def test_the_year_in_place_of_the_artist(self):
@@ -750,6 +750,91 @@ class PortraitTest(WidgetTestCase):
         self.loader.answer('/a/thumb', shown)
         self.assertIs(page.avatar.get_custom_image(), shown)
 
+
+
+class FavouriteMarkTest(WidgetTestCase):
+    """A favourite's heart in a tile, a track's row and the Songs title cell: shown by its
+    opacity, following the Item, and never changing the widget's size."""
+
+    def sizes(self, widget, *children):
+        widget.queue_allocate()
+        pump()
+        return [(child.get_width(), child.get_height()) for child in (widget, *children)]
+
+    def test_a_tiles_heart_follows_its_item(self):
+        from applemusic.widgets.tile import Tile
+
+        item = Item(dict(ALBUM))
+        tile = self.show(Tile())
+        tile.bind(item)
+        self.assertEqual(tile.favourite_icon.get_opacity(), 0)
+        before = self.sizes(tile, tile.subtitle_label, tile.title_label)
+        item.favourite = True  # a sync, or a heart elsewhere: notify::favourite
+        self.assertEqual(tile.favourite_icon.get_opacity(), 1)
+        self.assertEqual(self.sizes(tile, tile.subtitle_label, tile.title_label), before)
+        tile.unbind()
+        other = Item(dict(ALBUM, id='l.a2'))
+        tile.bind(other)  # recycled for an item that is no favourite
+        self.assertEqual(tile.favourite_icon.get_opacity(), 0)
+        item.favourite = False  # the old item no longer reaches the tile
+        other.favourite = True
+        self.assertEqual(tile.favourite_icon.get_opacity(), 1)
+
+    def test_a_track_rows_heart(self):
+        from applemusic.library import Track
+        from applemusic.widgets.track_row import TrackRow
+
+        track = Track({'id': 'i.1', 'title': 'Invented Song', 'trackNumber': 3,
+                       'durationLabel': '3:00'})
+        row = TrackRow(width_request=400)
+        row.bind(track, album_artist='Invented Artist')
+        self.show(row)
+        self.assertEqual(row.favourite_icon.get_opacity(), 0)
+        before = self.sizes(row, row.duration_label, row.title_label)
+        row.set_favourite(True)
+        self.assertEqual(row.favourite_icon.get_opacity(), 1)
+        self.assertEqual(self.sizes(row, row.duration_label, row.title_label), before)
+        row.bind(track, album_artist='Invented Artist', favourite=False)
+        self.assertEqual(row.favourite_icon.get_opacity(), 0)
+
+    def test_a_tables_header_leaves_room_for_the_hearts(self):
+        from gi.repository import Gtk
+
+        from applemusic.library import Track
+        from applemusic.widgets.track_row import TrackRow, TrackTableHeader
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=560)
+        header = TrackTableHeader()
+        row = TrackRow()
+        row.bind(Track({'id': 'i.1', 'title': 'Invented Song', 'artist': 'Invented Artist',
+                        'album': 'Invented Album', 'durationLabel': '3:00'}), table=True)
+        box.append(header)
+        box.append(row)
+        self.show(box)
+        columns = header.get_first_child().get_next_sibling()
+
+        def bounds(widget):
+            found, rect = widget.compute_bounds(box)
+            self.assertTrue(found)
+            return round(rect.get_x()), round(rect.get_width())
+
+        # Title, Artist and Album over the row's columns, Time over its time.
+        self.assertEqual(bounds(columns), bounds(row.columns))
+        self.assertEqual(bounds(header.get_last_child()), bounds(row.duration_label))
+
+    def test_the_song_title_cells_heart(self):
+        from applemusic.library import Track
+        from applemusic.widgets.song_title import SongTitle
+
+        track = Track({'id': 'i.1', 'title': 'Invented Song', 'thumb': None})
+        cell = SongTitle(width_request=300)
+        cell.bind(track, favourite=True)
+        self.show(cell)
+        self.assertEqual(cell.favourite_icon.get_opacity(), 1)
+        before = self.sizes(cell, cell.label)
+        cell.set_favourite(False)
+        self.assertEqual(cell.favourite_icon.get_opacity(), 0)
+        self.assertEqual(self.sizes(cell, cell.label), before)
 
 if __name__ == '__main__':
     unittest.main()

@@ -41,6 +41,7 @@ template $AppleMusicSongTitle: Box {
 
   Box {
     spacing: 6;
+    hexpand: true;
 
     // A label rather than a Gtk.Inscription, so the badge follows the title's text. One
     // line only: measuring it again at every rebind is cheap, unlike a wrapping label.
@@ -70,5 +71,19 @@ template $AppleMusicSongTitle: Box {
         "explicit-badge",
       ]
     }
+  }
+
+  // A favourite's heart, at the column's end: always there, shown by its opacity
+  // (song_title.py).
+  Image favourite_icon {
+    icon-name: "heart-filled-symbolic";
+    pixel-size: 12;
+    valign: center;
+    opacity: 0;
+    accessible-role: presentation;
+
+    styles [
+      "favourite-mark",
+    ]
   }
 }

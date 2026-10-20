@@ -196,6 +196,99 @@ class GridTest(PageTestCase):
         await self.show_root(again)
         self.assertEqual(again.grid_view.get_model().get_item(0).title, 'Invented Album 005')
 
+    def test_date_added_is_newest_first(self):
+        from gi.repository import Gio, Gtk
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import SORTS, make_sorter
+
+        items = [Item(dict(album(0), title='B', added='2026-01-01T10:00:00Z')),
+                 Item(dict(album(1), title='A', added='2026-01-01T10:00:00Z')),
+                 Item(dict(album(2), title='C', added='2026-03-01T09:00:00Z')),
+                 Item(dict(album(3), title='D'))]
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, items)
+
+        def titles(descending):
+            sorter, backwards = make_sorter('added', descending)
+            model = Gtk.SortListModel(model=store, sorter=sorter)
+            self.assertFalse(backwards)  # a number: its sorter takes the direction
+            return [model.get_item(n).title for n in range(model.get_n_items())]
+
+        self.assertTrue(SORTS['added'][2])
+        # To the second, ties by title A to Z, an unknown date last.
+        self.assertEqual(titles(True), ['C', 'A', 'B', 'D'])
+        self.assertEqual(titles(False), ['D', 'A', 'B', 'C'])
+
+    async def test_favourites_only_filters_and_is_remembered(self):
+        from gi.repository import Gio, GLib
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+
+        items = [Item(album(n)) for n in range(6)]
+        items[1].favourite = items[4].favourite = True
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, items)
+        self.addCleanup(self.app.settings.reset, 'favourites-only')
+
+        def make():
+            page = GridPage(self.library, 'Invented Grid', store, sorts=('title', 'added'),
+                            favourites=('No Favourite Albums', 'Invented words'))
+            page.set_tag('albums')
+            return page
+
+        page = await self.show_root(make())
+        self.assertEqual(page.sort_button.get_tooltip_text(), 'Sort and Filter')
+        model = page.grid_view.get_model()
+        self.assertEqual(model.get_n_items(), 6)
+        page.activate_action('page.favourites-only', None)  # the check item
+        self.assertTrue(page._favourites_action.get_state().get_boolean())
+        self.assertEqual([model.get_item(n).id for n in range(model.get_n_items())],
+                         [items[1].id, items[4].id])
+        self.assertEqual(self.app.settings.get_strv('favourites-only'), ['albums'])
+        # Unfavourited (a sync, a heart): the library says so, and the filter looks again;
+        # none left, the page says so and keeps its button, to turn the filter off.
+        items[1].favourite = items[4].favourite = False
+        self.library.emit('favourites-changed')
+        self.assertEqual(model.get_n_items(), 0)
+        self.assertEqual(page.stack.get_visible_child_name(), 'empty')
+        self.assertEqual(page.empty_page.get_title(), 'No Favourite Albums')
+        self.assertTrue(page.sort_button.get_visible())
+        items[4].favourite = True
+        self.library.emit('favourites-changed')
+        self.assertEqual(model.get_n_items(), 1)
+        # A page made again for the tag shows the favourites only, as it was left.
+        self.window.navigation_view.replace([self.window.root_page])
+        self.window.navigation_view.remove(page)
+        self._roots.remove(page)
+        again = await self.show_root(make())
+        self.assertEqual(again.grid_view.get_model().get_n_items(), 1)
+        again.activate_action('page.favourites-only', None)
+        self.assertEqual(again.grid_view.get_model().get_n_items(), 6)
+        self.assertEqual(self.app.settings.get_strv('favourites-only'), [])
+        again.activate_action('page.sort', GLib.Variant('s', 'title'))
+
+    async def test_date_added_is_offered_only_with_dates(self):
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item({'id': f'i.mv{n}', 'kind': 'video', 'title': f'Video {n}'})
+                            for n in range(3)])
+        page = await self.show_root(GridPage(self.library, 'Invented Videos', store,
+                                             video=True, sorts=('title', 'artist'),
+                                             data_sorts=('added',)))
+        keys = page._keys_menu
+        self.assertEqual(keys.get_n_items(), 2)  # Title, Artist: Apple dated none
+        store.append(Item({'id': 'i.mv9', 'kind': 'video', 'title': 'Video 9',
+                           'added': '2026-01-01T00:00:00Z'}))
+        self.library.emit('changed')  # a sync brought dates
+        self.assertEqual(keys.get_n_items(), 3)
+        self.assertEqual(page._sort_keys, ('title', 'artist', 'added'))
+
     async def test_the_header_shows_the_title_only_while_the_big_one_is_away(self):
         from gi.repository import Gio
 

@@ -57,7 +57,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
         self.assertEqual(stamp.returncode, 0)
 
     def test_top_level_schema(self):
-        self.assertEqual(self.data.get('version'), 2)  # sync.LIBRARY_VERSION
+        self.assertEqual(self.data.get('version'), 3)  # sync.LIBRARY_VERSION
         self.assertEqual(self.data.get('storefront'), 'us')
         self.assertIn('generated', self.data)
         self.assertTrue(isinstance(self.data['generated'], str))
@@ -334,6 +334,34 @@ class TestDemoLibrarySchema(unittest.TestCase):
                   if item is not flagged[0]]
         self.assertFalse([item['id'] for item in others if 'attributes' in item])
 
+    def test_dates_added_and_favourites(self):
+        # Every album, playlist (Favourite Songs aside) and video has an invented `added`,
+        # as Apple writes it; Recently Added's albums are the newest, in the shelf's order.
+        sections = self.data['sections']
+        dated = [item for name in ('albums', 'playlists', 'videos') for item in sections[name]
+                 if not (item.get('attributes') or {}).get('isFavourites')]
+        for item in dated:
+            self.assertRegex(item['added'], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+            self.assertEqual(normalize.date_added({'dateAdded': item['added']}), item['added'])
+        shelf = next(s for s in self.data['shelves'] if s['key'] == 'recently-added')
+        newest = [item['added'] for item in shelf['items']]
+        self.assertEqual(newest, sorted(newest, reverse=True))
+        shelf_ids = {item['id'] for item in shelf['items']}
+        older = [item['added'] for item in dated if item['id'] not in shelf_ids]
+        self.assertLess(max(older), min(newest))
+        # The favourites: Favourite Songs' songs by catalog id, and ids the library has.
+        favourites = self.data['favourites']
+        self.assertEqual(set(favourites), {'songs', 'albums', 'playlists', 'videos'})
+        playlist = next(item for item in sections['playlists']
+                        if (item.get('attributes') or {}).get('isFavourites'))
+        self.assertEqual(favourites['songs'],
+                         [entry['catalogId'] for entry in playlist['groups'][0]['entries']])
+        for name in ('albums', 'playlists', 'videos'):
+            known = {value for item in sections[name]
+                     for value in (item['id'], item.get('catalogId')) if value}
+            self.assertTrue(favourites[name])
+            self.assertLessEqual(set(favourites[name]), known, name)
+
     def test_folders(self):
         # library.json's folders: the "root" entry lists the top level; three folders, one of
         # them inside another; every playlist in exactly one children list.
@@ -393,19 +421,30 @@ class TestDemoLibrarySchema(unittest.TestCase):
         # Each kind of Item has the keys the real sync gives it (normalize), no more, no less,
         # apart from this app's own additions (library.json's `attributes`, `artUrl`, and a
         # playlist's `modified`).
+        added = '2026-01-01T00:00:00Z'  # a library resource's dateAdded: the Item's `added`
         real = {
-            'album': normalize.normalize_album({'id': 'l.a', 'attributes': {'name': 'A'}}),
-            'playlist': normalize.normalize_playlist({'id': 'p.1', 'attributes': {'name': 'P'}}),
+            'album': normalize.normalize_album({'id': 'l.a', 'attributes': {
+                'name': 'A', 'dateAdded': added}}),
+            'playlist': normalize.normalize_playlist({'id': 'p.1', 'attributes': {
+                'name': 'P', 'dateAdded': added}}),
             'artist': normalize.normalize_artist({'id': 'l.r', 'attributes': {'name': 'R'}}),
             'station': normalize.normalize_station({'id': 'ra.1', 'attributes': {'name': 'S'}}),
             'video': normalize.normalize_item({'id': '1', 'type': 'library-music-videos',
-                                               'attributes': {'name': 'V'}}),
+                                               'attributes': {'name': 'V',
+                                                              'dateAdded': added}}),
         }
+        # Favourite Songs is Apple's own: no date of its being added.
+        favourites = next(item for item in self.data['sections']['playlists']
+                          if (item.get('attributes') or {}).get('isFavourites'))
+        self.assertNotIn('added', favourites)
+        favourites = dict(favourites, added=added)
         additions = {'attributes', 'artUrl', 'modified'}
         for name, items in self.data['sections'].items():
             if name == 'songs':
                 continue  # Tracks, not Items
             for item in items:
+                if (item.get('attributes') or {}).get('isFavourites'):
+                    item = favourites
                 with self.subTest(section=name, id=item['id']):
                     self.assertEqual(set(item) - additions, set(real[item['kind']]))
 

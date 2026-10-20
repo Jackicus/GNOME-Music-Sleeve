@@ -1380,5 +1380,63 @@ class TestOtherCaches(unittest.TestCase):
         self.assertIsNone(normalize.read_answer(path, 60))
 
 
+class TestDatesAndFavourites(unittest.TestCase):
+    """The Item's `added` (Apple's dateAdded) and the ids favourite_ids() records."""
+
+    def test_date_added(self):
+        for value in ('2026', '2026-03-01', '2026-03-01T10:20:30Z', '2026-03-01T10:20:30.5Z',
+                      '2026-03-01T10:20:30+01:00', '2026-03-01T10:20'):
+            self.assertEqual(normalize.date_added({'dateAdded': value}), value)
+        for value in (None, '', 'yesterday', 2026, '26-03-01', '2026-03-01 10:20'):
+            self.assertIsNone(normalize.date_added({'dateAdded': value}), value)
+        self.assertIsNone(normalize.date_added(None))
+
+    def test_a_dated_library_resource_has_added_and_others_not(self):
+        added = '2026-03-01T10:20:30Z'
+        album = normalize.normalize_album(
+            {'id': 'l.a', 'type': 'library-albums', 'attributes': {'name': 'A',
+                                                                   'dateAdded': added}})
+        playlist = normalize.normalize_playlist(
+            {'id': 'p.1', 'attributes': {'name': 'P', 'dateAdded': added}})
+        video = normalize.normalize_item(
+            {'id': 'i.v', 'type': 'library-music-videos', 'attributes': {'name': 'V',
+                                                                         'dateAdded': added}})
+        self.assertEqual((album['added'], playlist['added'], video['added']), (added,) * 3)
+        catalog = normalize.normalize_album({'id': '1', 'type': 'albums',
+                                             'attributes': {'name': 'A'}})
+        self.assertNotIn('added', catalog)
+        self.assertNotIn('added', normalize.normalize_album(
+            {'id': 'l.b', 'attributes': {'name': 'B', 'dateAdded': 'not a date'}}))
+
+    def test_favourite_ids(self):
+        songs = [
+            {'id': 'i.1', 'type': 'library-songs',
+             'attributes': {'inFavorites': True, 'playParams': {'catalogId': '9001'}}},
+            {'id': 'i.2', 'type': 'library-songs', 'attributes': {'inFavorites': True}},
+            {'id': 'i.3', 'type': 'library-songs', 'attributes': {'inFavorites': False,
+                                                                  'playParams': {}}},
+            {'id': 'i.1', 'type': 'library-songs',
+             'attributes': {'inFavorites': True, 'playParams': {'catalogId': '9001'}}},
+        ]
+        # A song by its catalog id, else its own: what the app rates a song by.
+        self.assertEqual(normalize.favourite_ids(songs, songs=True), (['9001', 'i.2'], True))
+        albums = [{'id': 'l.a', 'type': 'library-albums',
+                   'attributes': {'inFavorites': True},
+                   'relationships': {'catalog': {'data': [{'id': '7001'}]}}},
+                  {'id': 'l.b', 'type': 'library-albums', 'attributes': {}}]
+        # Anything else by its library id and its catalog id.
+        self.assertEqual(normalize.favourite_ids(albums), (['l.a', '7001'], True))
+        # No inFavorites anywhere: Apple did not answer it.
+        self.assertEqual(normalize.favourite_ids([{'id': 'i.1', 'attributes': {}}, 'junk']),
+                         ([], False))
+
+    def test_included_albums(self):
+        album = {'id': 'l.a', 'type': 'library-albums', 'attributes': {'inFavorites': True}}
+        songs = [{'id': 'i.1', 'relationships': {'albums': {'data': [album]}}},
+                 {'id': 'i.2', 'relationships': {'albums': {'data': [dict(album)]}}},
+                 {'id': 'i.3'}]
+        self.assertEqual(normalize.included_albums(songs), [album])
+
+
 if __name__ == '__main__':
     unittest.main()

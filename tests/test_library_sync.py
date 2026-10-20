@@ -403,7 +403,9 @@ class WhenDueTest(unittest.TestCase):
     def test_library_ok(self):
         library = Library()
         self.assertTrue(app_sync.library_ok(library))  # not read yet
-        for state, version, ok in (('ok', 2, True), ('ok', 3, True), ('ok', 1, False),
+        # 3 since the dates added and the favourites: a version 2 file is synced again.
+        for state, version, ok in (('ok', 3, True), ('ok', 4, True), ('ok', 2, False),
+                                   ('ok', 1, False),
                                    ('ok', 0, False), ('missing', 0, False),
                                    ('unreadable', 0, False)):
             library.props.file_state, library.props.version = state, version

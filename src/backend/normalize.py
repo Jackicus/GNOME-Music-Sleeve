@@ -626,6 +626,79 @@ def _register_artwork(url_template, cache_dir, art_urls):
     return art, thumb
 
 
+# Apple's dateAdded: a year, a date, or a date and time with an optional fraction and zone
+# (the documentation says a library album's is a date; the answers seen carry a time).
+_DATE_ADDED = re.compile(r'\d{4}(-\d{2}(-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?'
+                         r'(Z|[+-]\d{2}:?\d{2})?)?)?)?')
+
+
+def date_added(attrs):
+    """A library resource's `dateAdded` as Apple wrote it, when it is one (a year, a date, or
+    a date and time: _DATE_ADDED), else None: the Item's `added`."""
+    value = attrs.get('dateAdded') if isinstance(attrs, dict) else None
+    if isinstance(value, str) and _DATE_ADDED.fullmatch(value):
+        return value
+    return None
+
+
+def _with_added(item, attrs):
+    """`item` with `added` (date_added()) when the resource carries a date: left out
+    otherwise, so a catalog resource's Item is as it was."""
+    added = date_added(attrs)
+    if added is not None:
+        item['added'] = added
+    return item
+
+
+# The catalog type of a library resource type, for the catalog id favourite_ids() records.
+_CATALOG_TYPES = {'library-songs': 'songs', 'library-albums': 'albums',
+                  'library-playlists': 'playlists', 'library-music-videos': 'music-videos'}
+
+
+def favourite_ids(resources, songs=False):
+    """The ids of the resources (Apple's answers, extended with `inFavorites`) that are the
+    account's favourites, and whether any of them carried `inFavorites` at all: (ids, seen).
+
+    A song is recorded by its catalog id, else its library id: the id the app rates a song
+    by, so a toggle in the app finds it. Anything else (`songs` false: albums, playlists,
+    videos) by its library id and its catalog id when it has one, since the app rates a
+    library item by its own id and a catalog page by the catalog's. Each id once, in the
+    resources' order."""
+    ids = {}
+    seen = False
+    for raw in resources:
+        if not isinstance(raw, dict):
+            continue
+        attrs = raw.get('attributes')
+        if not isinstance(attrs, dict) or 'inFavorites' not in attrs:
+            continue
+        seen = True
+        if attrs.get('inFavorites') is not True:
+            continue
+        item_id = str(raw.get('id') or '')
+        catalog_id = _extract_catalog_id(attrs, raw, _CATALOG_TYPES.get(raw.get('type'), ''))
+        if songs:
+            found = [catalog_id or item_id]
+        else:
+            found = [item_id, catalog_id]
+        for value in found:
+            if value:
+                ids[value] = None
+    return list(ids), seen
+
+
+def included_albums(songs):
+    """The library albums the songs listing (`include=albums`) carries, each once: what the
+    albums' favourites are read from."""
+    albums = {}
+    for raw in songs:
+        related = ((raw.get('relationships') or {}).get('albums') or {}).get('data') or []
+        for album in related:
+            if isinstance(album, dict) and album.get('id'):
+                albums.setdefault(album['id'], album)
+    return list(albums.values())
+
+
 def _extract_catalog_id(attrs, raw_item, resource_type):
     """Extract catalog ID from a catalog or library resource."""
     item_id = str(raw_item.get('id') or '')
@@ -844,7 +917,7 @@ def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):
         or any(t.get('explicit') for t in normalized_tracks)
     )
 
-    return {
+    return _with_added({
         'id': item_id,
         'kind': 'album',
         'title': title,
@@ -862,7 +935,7 @@ def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):
         'url': url,
         'play': {'kind': 'album', 'id': item_id},
         'groups': groups,
-    }
+    }, attrs)
 
 
 def normalize_artist(raw_artist, cache_dir=None, albums=None, art_urls=None):
@@ -1028,7 +1101,7 @@ def normalize_playlist(raw_playlist, cache_dir=None, tracks=None, art_urls=None)
     modified = attrs.get('lastModifiedDate')
     if isinstance(modified, str) and modified:
         item['modified'] = modified
-    return item
+    return _with_added(item, attrs)
 
 
 def normalize_station(raw_station, cache_dir=None, art_urls=None):
@@ -1141,6 +1214,7 @@ def normalize_item(raw_item, cache_dir=None, include_groups=True, art_urls=None)
         item = normalize_song_as_item(raw_item, cache_dir=cache_dir, art_urls=art_urls)
         item['kind'] = 'video'
         item['play'] = {'kind': 'musicVideo', 'id': item['id']}
+        _with_added(item, raw_item.get('attributes'))
     else:
         attrs = raw_item.get('attributes') or {}
         if 'trackCount' in attrs or 'artistName' in attrs:

@@ -190,6 +190,13 @@ button.artist-link:hover > label {
   font-weight: bold;
 }
 
+/* A favourite's heart in a tile's subtitle line and a track's row (widgets/tile.py,
+   track_row.py, song_title.py): in the accent colour, the user's, as the hearts of the player
+   are a control and this one a mark. Shown by the widget's opacity, not by CSS. */
+.favourite-mark {
+  color: var(--accent-color);
+}
+
 /* The row of the track playing (widgets/track_row.py and song_title.py, marked by the album,
    playlist, Songs and Search pages as the Player's item changes): its title bold, as Up
    Next's is, and a play icon in place of its number, or over its thumbnail on libadwaita's

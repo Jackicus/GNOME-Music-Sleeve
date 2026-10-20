@@ -28,12 +28,12 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
         [end]
         MenuButton sort_button {
           icon-name: "view-sort-descending-symbolic";
-          tooltip-text: _("Sort By");
+          tooltip-text: _("Sort and Filter");
           menu-model: sort_menu;
           visible: false;
 
           accessibility {
-            label: _("Sort By");
+            label: _("Sort and Filter");
           }
         }
 
@@ -193,7 +193,9 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
               StackPage {
                 name: "no-results";
 
-                child: Adw.StatusPage {
+                // Or, with Favourites Only and no text to filter by, no favourites
+                // (songs.py sets its words).
+                child: Adw.StatusPage no_results_page {
                   icon-name: "edit-find-symbolic";
                   title: _("No Results Found");
                   description: _("Try a different filter");
@@ -207,8 +209,8 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
   };
 }
 
-// The Sort By menu (songs.py's songs.* actions): the keyboard's way to sort, as the column
-// headers take no focus.
+// The Sort and Filter menu (songs.py's songs.* actions): the keyboard's way to sort, as the
+// column headers take no focus, and Favourites Only.
 menu sort_menu {
   section {
     item {
@@ -247,6 +249,13 @@ menu sort_menu {
       label: _("Descending");
       action: "songs.sort-order";
       target: "descending";
+    }
+  }
+
+  section {
+    item {
+      label: _("Favourites Only");
+      action: "songs.favourites-only";
     }
   }
 }

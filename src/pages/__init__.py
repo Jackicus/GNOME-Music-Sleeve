@@ -159,9 +159,11 @@ def _albums(destination, library):
     from .grid import GridPage
 
     return GridPage(library, destination.title, lambda: library.albums,
-                    sorts=('title', 'artist', 'year'), icon_name=destination.icon_name,
+                    sorts=('title', 'artist', 'year', 'added'), icon_name=destination.icon_name,
                     empty_title=_('No Albums'),
-                    empty_description=_('Albums in your library appear here'))
+                    empty_description=_('Albums in your library appear here'),
+                    favourites=(_('No Favourite Albums'),
+                                _('Albums you mark as favourites appear here')))
 
 
 def _artists(destination, library):
@@ -171,14 +173,12 @@ def _artists(destination, library):
 
 
 def _recently_added(destination, library):
-    # Apple's order, newest first: not sorted here.
+    # The library's albums, playlists and videos, newest added first (library.recently_added:
+    # library.recently_added_order()): not sorted here.
     from .grid import GridPage
 
-    def model():
-        shelf = library.shelf('recently-added')
-        return shelf.items if shelf else None
-
-    return GridPage(library, destination.title, model, icon_name=destination.icon_name,
+    return GridPage(library, destination.title, library.recently_added,
+                    icon_name=destination.icon_name,
                     empty_title=_('Nothing Recently Added'),
                     empty_description=_('Music you add to your library appears here'))
 
@@ -215,10 +215,15 @@ def _favourite_songs(destination, library):
 def _music_videos(destination, library):
     from .grid import GridPage
 
+    # Date Added only when Apple dates them: its documentation gives a library music video
+    # no dateAdded.
     return GridPage(library, destination.title, lambda: library.videos, video=True,
-                    sorts=('title', 'artist', 'year'), icon_name=destination.icon_name,
+                    sorts=('title', 'artist', 'year'), data_sorts=('added',),
+                    icon_name=destination.icon_name,
                     empty_title=_('No Music Videos'),
-                    empty_description=_('Music videos in your library appear here'))
+                    empty_description=_('Music videos in your library appear here'),
+                    favourites=(_('No Favourite Music Videos'),
+                                _('Music videos you mark as favourites appear here')))
 
 
 def playlist(library, playlist_id, title):

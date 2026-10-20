@@ -138,6 +138,15 @@ them before changing either. What matters most:
   the sync first (revoking the session would fail it), then revokes, bumps, stops the engine
   and wipes, and bumps and clears once more at the end for what a page fetched meanwhile.
   Both hold the sync (`LibrarySync.hold()`) so none starts meanwhile.
+- Favourites and dates (#347, library.json version 3): the sync asks its listings for
+  `inFavorites` and keeps `dateAdded` as an Item's `added`; the file's `favourites` is
+  {section: ids}, a song by its catalog id (else its library id), anything else by both.
+  The Library keeps them as one set: `Item.favourite` (notified when a load or
+  `set_favourite()` changes it), `is_favourite(track)` for rows (two set lookups, no
+  property call), `favourites-changed` for pages to mark their bound rows again and
+  refilter. The app's own hearts reach it through the Engine's `rated`
+  (`Application._on_rated`); the file waits for the next sync. `recently_added` is a store
+  of the sections' own Items (`apply_diff`, kept through reloads); `added` is a SORT_KEY.
 - The library.json shape lives in `src/backend/README.md` (with this app's additions) and
   library.py's docstring. A new key or kind touches the sync's writer, `scripts/demo_library.py`,
   tests/test_demo_schema.py and the README together.

@@ -42,7 +42,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   its own in the browser, and goes with the cache (Clear Cache, signing out).
 - On the Songs page, just start typing to filter the songs (or press
   <kbd>Ctrl</kbd>+<kbd>F</kbd>, or click the search button in the header bar);
-  <kbd>Esc</kbd> clears the filter. Click a column title to sort by it, or use **Sort By**.
+  <kbd>Esc</kbd> clears the filter. Click a column title to sort by it, or use **Sort and
+  Filter**.
+- Your favourites (songs, albums, playlists and music videos you marked as a favourite, here
+  or in another Apple Music app) have a small heart: on a song's row before its time, on a
+  tile after its artist. **Favourites Only** in **Sort and Filter**, on Albums, Songs and
+  Music Videos, shows them alone, until you choose it again; each page remembers it.
+- **Recently Added** is everything in your library, newest first: albums and playlists, and
+  music videos when Apple Music dates them. Albums can also be sorted by **Date Added**.
 - In a wide window a playlist's songs are a table, as the Songs page is: click an artist
   or an album there to open its page.
 - A playlist's page names its curator under its title (your name, for your own playlists,
@@ -210,6 +217,12 @@ Other limits:
   comes back up to half a minute earlier in the song. A queue of more than 250 songs comes
   back as the 250 around the song, unless it is still an album or playlist as it was
   started, which comes back whole.
+- The hearts are as the last library refresh found them, and as you change them here. A
+  favourite changed in another app shows here after the next refresh (or when you open its
+  menu); one changed here and then the app restarted before a refresh may show its old
+  state until then.
+- Apple Music gives no date for a single song added to the library, so Songs cannot be
+  sorted by date added, and a song added without its album comes last in Recently Added.
 
 ## Troubleshooting
 

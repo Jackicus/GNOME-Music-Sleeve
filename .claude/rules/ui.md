@@ -156,6 +156,13 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   (`append_color`, then chain up) inside its rounded clip: CSS cannot take a value per item.
   Keep Python snapshots off the grid tiles (the hero card is a class of its own).
 
+- A favourite's heart (`.favourite-mark`, the accent) is always in a tile's subtitle line, a
+  TrackRow before its time and a SongTitle's end, shown by its opacity (`show_favourite()`,
+  `set_favourite()`): tiles follow `notify::favourite`, pages mark their bound rows again on
+  the library's `favourites-changed`. Albums, Music Videos and Songs have Favourites Only
+  in their Sort and Filter menu (`grid.favourites_only()`, the favourites-only setting);
+  a sort the data may lack (a video's Date Added) is a grid's `data_sorts`.
+
 ## HIG, style and icons
 
 - libadwaita widgets and style classes first (`AdwStatusPage`, `AdwSpinner`, `AdwToast`,

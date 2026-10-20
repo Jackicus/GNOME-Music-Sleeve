@@ -871,6 +871,32 @@ async def walkthrough(window):
     check('Space on a tile plays or pauses',
           actions == ['play-pause'] and by(handled, 'key controller'),
           (actions, handled, describe(window.get_focus())))
+    print('-- favourites only')
+    grid.sort_button.grab_focus()  # Sort and Filter
+    await key(window, 'Return', 0.6)
+    popover = grid.sort_button.get_popover()
+    check('Return opens Sort and Filter', popover is not None and popover.get_visible())
+
+    def focused_text():
+        focus = window.get_focus()
+        focus = focus if popover is not None and inside(focus, popover) else None
+        labels = [widget.get_label() for widget in descendants(focus)
+                  if isinstance(widget, Gtk.Label)] if focus is not None else []
+        return labels[0] if labels else ''
+
+    for _press in range(12):
+        if focused_text() == 'Favourites Only':
+            break
+        await key(window, 'Down', 0.15)
+    check('Down reaches Favourites Only', focused_text() == 'Favourites Only', focused_text())
+    await key(window, 'Return', 0.6)
+    shown = grid.grid_view.get_model()
+    shown = [shown.get_item(n) for n in range(shown.get_n_items())]
+    check('Return shows the favourite albums alone',
+          grid._favourites_action.get_state().get_boolean() and shown
+          and all(item.favourite for item in shown), len(shown))
+    grid.activate_action('page.favourites-only', None)  # every album again
+    app.settings.reset('favourites-only')
     print('-- radio')
     window.select_page('radio')
     await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound
