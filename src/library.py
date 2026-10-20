@@ -1548,6 +1548,15 @@ class Library(GObject.Object):
             return False
         return (item.kind, item.id) in self._added or self._find_held(item) is not None
 
+    def held_item(self, item):
+        """The library's own album or playlist Item that `item` is found as, as holds()
+        finds it (itself, for one of the library's), or None: also for one note_added()
+        noted that the library does not list yet. What Remove from Library takes out of a
+        catalog album or playlist the library holds."""
+        if item is None or item.kind not in HELD_KINDS or not item.id:
+            return None
+        return self._find_held(item)
+
     def note_added(self, item):
         """Note that `item`, an album or playlist of the catalog's, was just added to the
         library (Apple took the write): holds() says so at once, ahead of the listing (Apple

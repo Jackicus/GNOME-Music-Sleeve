@@ -42,10 +42,10 @@ and the tracks of the playlists that held what went (`tracks_of`). A `playlists`
 or a folder was made, renamed or deleted: it reads the playlist listing and the folders alone,
 and keeps everything else of last time's file, the playlists' tracks included, but for those
 of the playlists it is given (`tracks_of`: after their songs were added to, taken from or
-reordered), which it reads. Either pass leaves out the `modified` of the playlists whose
-tracks `tracks_of` had read, so the next full pass reads them again: Apple's listing may give
-the date of the change before its tracks read shows the change, and a stamp with tracks
-older than it would keep them for good. A `shelves` pass (sync_library(shelves=True),
+reordered), which it reads. Either pass leaves out the `tracksModified` stamp of the
+playlists whose tracks `tracks_of` had read, so the next full pass reads them again: Apple's
+listing may give the date of the change before its tracks read shows the change, and a stamp
+with tracks older than it would keep them for good. A `shelves` pass (sync_library(shelves=True),
 LibrarySync.start(shelves=True)) is Home's Refresh: it reads the Home shelves alone and
 keeps everything else of last time's file; with no file to keep from, LibrarySync runs a
 full sync instead. A recommendation's reason (normalize.recommendation_reason) is its
@@ -57,13 +57,16 @@ A playlist or folder the account deleted is still listed by Apple for a while (m
 on 2026-10-03), nameless (api.is_deleted): the listings leave it out.
 
 A full pass reads a playlist's tracks again only when its listing says they may have changed.
-Each playlist Item records `modified`, Apple's `lastModifiedDate` as the listing had it when
-the tracks were last read; a playlist listed again with that date, and with no other
-`trackCount` than the tracks kept, keeps them (playlist_unchanged()). One listed without a
-date, one whose tracks last time's file does not hold, and every playlist of a file from
-before the key are read as before. Nothing narrows the songs listing: Apple's library API
-has no changes feed, no since filter and no sort the app could stop at, and MusicKit's
-`music()` hands back the body alone, so an ETag can be neither seen nor sent (docs/notes.md).
+Each playlist Item records `tracksModified` (TRACKS_STAMP), Apple's `lastModifiedDate` as
+the listing had it when the tracks were last read; a playlist listed again with that date,
+and with no other `trackCount` than the tracks kept, keeps them (playlist_unchanged()). One
+listed without a date, one whose tracks last time's file does not hold, and every playlist of
+a file from before the key are read as before. Its `modified` is the listing's date whatever
+was read: the "Updated" its page says (release.hero_caption()), which an edit in the app,
+whose pass leaves the stamp out, does not take away. Nothing narrows the songs listing:
+Apple's library API has no changes feed, no since filter and no sort the app could stop at,
+and MusicKit's `music()` hands back the body alone, so an ETag can be neither seen nor sent
+(docs/notes.md).
 
 What the web player asks for, found by watching its requests (2026-09-28):
 
@@ -85,7 +88,8 @@ What the web player asks for, found by watching its requests (2026-09-28):
 
 The Item dicts written here carry two keys beyond the normalisers' shape (both in the
 README): `artUrl`, the cover's URL at config.COVER_SIZE, which fetch_cover() downloads to the
-item's `art` path; and a playlist's `modified`, the stamp its kept tracks are checked against.
+item's `art` path; and a playlist's `tracksModified`, the stamp its kept tracks are checked
+against.
 
 The account's favourites and the dates added come with the listings, at no request more: the
 songs, playlists and videos are read with `extend=inFavorites` (the songs' included albums
@@ -167,6 +171,11 @@ SHELF_DEFS = (
 # on a version 2 file they had not rebuilt, so a 3 may lack the dates and the favourites. A
 # file of an older version is synced again at once (sync_due's library_ok).
 LIBRARY_VERSION = 4
+
+# A playlist's key for the listing's `lastModifiedDate` its tracks were read under
+# (playlist_unchanged), apart from `modified`, the listing's date the page shows. A file
+# without it has no stamps: each playlist's tracks are read once more, no version needed.
+TRACKS_STAMP = 'tracksModified'
 
 # The sections of library.json's `favourites`, each the ids normalize.favourite_ids() gives.
 FAVOURITE_SECTIONS = ('songs', 'albums', 'playlists', 'videos')
@@ -516,7 +525,7 @@ async def _fetch_playlist_tracks(engine, raw_playlists, report, stamps=None):
 
 def playlist_unchanged(raw, stamp):
     """Whether a playlist as the listing has it (`raw`) can keep the tracks read last time:
-    `stamp` is (modified, trackCount) from last time's file (_Previous.playlist_stamps; None
+    `stamp` is (tracksModified, trackCount) from last time's file (_Previous.playlist_stamps; None
     when the file holds no tracks or no stamp for it), and the listing carries that
     `lastModifiedDate`, and either no `trackCount` or that one. Anything less (no date
     listed, a file from before the stamp, a count that differs) reads the tracks again."""
@@ -694,10 +703,12 @@ def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous, un
     tracks and counts, or, new since, has no groups yet, which its page fetches when it is
     shown: never an empty list that would read as an empty playlist.
 
-    `modified` is the listing's `lastModifiedDate` when the tracks were read now, and stays
-    last time's when they were kept: it says which listing the tracks in hand belong to, so
-    a later pass compares the right dates (playlist_unchanged); a playlist in `unstamped`
-    (a short pass's `tracks_of`) has none, and so is read again by the next full pass."""
+    `modified` is the listing's `lastModifiedDate` (normalize_playlist's), whatever was read:
+    the date the playlist's page says it was updated. `tracksModified` (TRACKS_STAMP) is
+    that date when the tracks were read now, and stays last time's when they were kept: it
+    says which listing the tracks in hand belong to, so a later pass compares the right
+    dates (playlist_unchanged); a playlist in `unstamped` (a short pass's `tracks_of`) has
+    none, and so is read again by the next full pass."""
     playlists = []
     for raw in raw_playlists:
         playlist_id = str(raw.get('id') or '')
@@ -705,15 +716,14 @@ def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous, un
         tracks = playlist_tracks.get(playlist_id)
         item = normalize.normalize_playlist(raw, cache_dir, tracks=tracks or [],
                                             art_urls=art_urls)
-        item.pop('modified', None)  # the listing's date: the tracks' stamp is set below
         flag_favourites(item, raw)
         if tracks is None:
             old = previous.playlist(playlist_id)
             if old is not None and old.get('groups'):
                 item['groups'] = old['groups']
                 counted = old
-                if isinstance(old.get('modified'), str):
-                    item['modified'] = old['modified']
+                if isinstance(old.get(TRACKS_STAMP), str):
+                    item[TRACKS_STAMP] = old[TRACKS_STAMP]
             else:
                 item['groups'] = []
                 counted = {'trackCount': attributes.get('trackCount')}
@@ -724,7 +734,7 @@ def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous, un
                     item.pop(key, None)
         elif (isinstance(attributes.get('lastModifiedDate'), str)
               and playlist_id not in unstamped):
-            item['modified'] = attributes['lastModifiedDate']
+            item[TRACKS_STAMP] = attributes['lastModifiedDate']
         playlists.append(item)
     return playlists
 
@@ -845,12 +855,12 @@ class _Previous:
         return self._playlists.get(playlist_id)
 
     def playlist_stamps(self):
-        """{playlist id: (modified, trackCount)} for every playlist whose tracks the file
-        holds under a stamp: what playlist_unchanged() checks a listing against. Reads the
-        file: call it in a thread."""
-        return {entry.get('id'): (entry['modified'], entry.get('trackCount'))
+        """{playlist id: (tracksModified, trackCount)} for every playlist whose tracks the
+        file holds under a stamp: what playlist_unchanged() checks a listing against. Reads
+        the file: call it in a thread."""
+        return {entry.get('id'): (entry[TRACKS_STAMP], entry.get('trackCount'))
                 for entry in self.section('playlists')
-                if entry.get('groups') and isinstance(entry.get('modified'), str)}
+                if entry.get('groups') and isinstance(entry.get(TRACKS_STAMP), str)}
 
     def forget(self):
         self._data = self._playlists = None

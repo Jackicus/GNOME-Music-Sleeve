@@ -19,6 +19,9 @@ from unittest import mock
 
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
+from gi.repository import GLib
+
+from applemusic import release
 from applemusic import sync as app_sync
 from applemusic.backend import config
 from applemusic.backend import normalize as backend
@@ -548,6 +551,8 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         for playlist in before['sections']['playlists']:
             listed = next(raw for raw in listing if raw['id'] == playlist['id'])
             self.assertEqual(playlist['modified'], listed['attributes']['lastModifiedDate'])
+            self.assertEqual(playlist[app_sync.TRACKS_STAMP],
+                             listed['attributes']['lastModifiedDate'])
         # Listed again as they were: no playlist's tracks are read, the file is the same.
         engine.calls.clear()
         with self.assertLogs('applemusic.sync', 'INFO') as logs:
@@ -567,7 +572,7 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         engine.calls.clear()
         await app_sync.sync_library(engine, self.library)
         self.assertEqual(sorted(self.track_reads(engine)), ['p.pl456', 'p.pl789'])
-        self.assertEqual(self.playlist(self.read_json(), 'p.pl456')['modified'],
+        self.assertEqual(self.playlist(self.read_json(), 'p.pl456')[app_sync.TRACKS_STAMP],
                          '2026-09-30T12:00:00Z')
 
     async def test_a_playlist_listed_without_a_date_is_read_every_time(self):
@@ -575,7 +580,7 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         wired[app_sync.PLAYLISTS_ENDPOINT] = fixture('library_playlists.json')  # no dates
         engine = FakeEngine(wired)
         await app_sync.sync_library(engine, self.library)
-        self.assertTrue(all('modified' not in playlist
+        self.assertTrue(all('modified' not in playlist and app_sync.TRACKS_STAMP not in playlist
                             for playlist in self.read_json()['sections']['playlists']))
         engine.calls.clear()
         await app_sync.sync_library(engine, self.library)
@@ -583,7 +588,8 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_kept_tracks_keep_their_stamp(self):
         """A pass that kept a playlist's tracks (a quick pass, a failed read) leaves the
-        stamp they were read under, so the next full pass still sees the change."""
+        stamp they were read under, so the next full pass still sees the change; the date
+        shown is the listing's all the same."""
         engine = FakeEngine(answers())
         await app_sync.sync_library(engine, self.library)
         playlists = fixture('library_playlists_tags.json')
@@ -591,22 +597,51 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         engine.answers[app_sync.PLAYLISTS_ENDPOINT] = playlists
         # A quick pass reads no tracks and stamps nothing new.
         await app_sync.sync_library(engine, self.library, quick=True)
-        self.assertEqual(self.playlist(self.read_json(), 'p.pl456')['modified'],
-                         '2025-04-11T09:00:00Z')
+        kept = self.playlist(self.read_json(), 'p.pl456')
+        self.assertEqual(kept[app_sync.TRACKS_STAMP], '2025-04-11T09:00:00Z')
+        self.assertEqual(kept['modified'], '2026-09-30T12:00:00Z')
         # A full pass whose read of it fails keeps last time's tracks, and their stamp.
         tracks = engine.answers.pop(f'{app_sync.PLAYLISTS_ENDPOINT}/p.pl456/tracks')
         with self.assertLogs('applemusic.sync', 'WARNING'):
             await app_sync.sync_library(engine, self.library)
         kept = self.playlist(self.read_json(), 'p.pl456')
-        self.assertEqual(kept['modified'], '2025-04-11T09:00:00Z')
+        self.assertEqual(kept[app_sync.TRACKS_STAMP], '2025-04-11T09:00:00Z')
+        self.assertEqual(kept['modified'], '2026-09-30T12:00:00Z')
         self.assertTrue(kept['groups'][0]['entries'])
         # So the next full pass reads it.
         engine.answers[f'{app_sync.PLAYLISTS_ENDPOINT}/p.pl456/tracks'] = tracks
         engine.calls.clear()
         await app_sync.sync_library(engine, self.library)
         self.assertEqual(self.track_reads(engine), ['p.pl456'])
-        self.assertEqual(self.playlist(self.read_json(), 'p.pl456')['modified'],
+        self.assertEqual(self.playlist(self.read_json(), 'p.pl456')[app_sync.TRACKS_STAMP],
                          '2026-09-30T12:00:00Z')
+
+    async def test_an_edit_keeps_the_date_shown(self):
+        """After an edit in the app (a short pass's `tracks_of`), the playlist keeps the
+        listing's date for its header's "Updated", and has no stamp, so the next full pass
+        reads its tracks again."""
+        engine = FakeEngine(answers())
+        await app_sync.sync_library(engine, self.library)
+        playlists = fixture('library_playlists_tags.json')
+        playlists['data'][1]['attributes']['lastModifiedDate'] = '2026-10-19T09:00:00Z'
+        engine.answers[app_sync.PLAYLISTS_ENDPOINT] = playlists
+        for short in ({'playlists': True}, {'quick': True}):
+            with self.subTest(**short):
+                await app_sync.sync_library(engine, self.library, tracks_of=('p.pl456',),
+                                            **short)
+                edited = self.playlist(self.read_json(), 'p.pl456')
+                self.assertEqual(edited['modified'], '2026-10-19T09:00:00Z')
+                self.assertNotIn(app_sync.TRACKS_STAMP, edited)
+                item = self.library.by_id('playlist', 'p.pl456')
+                now = GLib.DateTime.new_utc(2026, 10, 20, 12, 0, 0)
+                updated = release.updated_text('2026-10-19T09:00:00Z', now)
+                self.assertTrue(updated)
+                self.assertIn(updated, release.hero_caption(item, now=now))
+        engine.calls.clear()
+        await app_sync.sync_library(engine, self.library)
+        self.assertEqual(self.track_reads(engine), ['p.pl456'])
+        self.assertEqual(self.playlist(self.read_json(), 'p.pl456')[app_sync.TRACKS_STAMP],
+                         '2026-10-19T09:00:00Z')
 
     async def test_the_quick_pass_after_a_removal(self):
         """After a removal from the library, the quick pass reads the music videos and the
@@ -665,7 +700,7 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         del wired[f'{app_sync.PLAYLISTS_ENDPOINT}/p.pl123/tracks']  # a first read that fails
         with self.assertLogs('applemusic.sync', 'WARNING'):
             await app_sync.sync_library(FakeEngine(wired), self.library)
-        self.assertNotIn('modified', self.playlist(self.read_json(), 'p.pl123'))
+        self.assertNotIn(app_sync.TRACKS_STAMP, self.playlist(self.read_json(), 'p.pl123'))
         engine = FakeEngine(answers())
         await app_sync.sync_library(engine, self.library)
         self.assertEqual(self.track_reads(engine), ['p.pl123'])

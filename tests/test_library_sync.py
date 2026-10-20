@@ -242,11 +242,13 @@ class PlaylistsPassTest(SyncTestCase):
         ids = [entry['id'] for entry in after['p.pl123']['groups'][0]['entries']]
         self.assertEqual(ids, [entry['id'] for entry in reversed(
             before['p.pl123']['groups'][0]['entries'])])
-        self.assertNotIn('modified', after['p.pl123'])
+        self.assertNotIn(app_sync.TRACKS_STAMP, after['p.pl123'])
+        self.assertEqual(after['p.pl123']['modified'], '2026-10-20T09:00:00Z')  # shown
         for playlist_id, entry in after.items():
             if playlist_id != 'p.pl123':
                 self.assertEqual(entry.get('groups'), before[playlist_id].get('groups'))
-                self.assertEqual(entry.get('modified'), before[playlist_id].get('modified'))
+                self.assertEqual(entry.get(app_sync.TRACKS_STAMP),
+                                 before[playlist_id].get(app_sync.TRACKS_STAMP))
         self.assertEqual(self.library.by_id('playlist', 'p.pl123').track_ids(), ids)
 
     async def test_what_the_account_deleted_is_left_out(self):

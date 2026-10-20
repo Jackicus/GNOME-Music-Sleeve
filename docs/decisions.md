@@ -815,7 +815,9 @@ changes, change it here, with the date. The plan they came from is in
   Apple Music's does: its curator under the title (the account's name for one of the
   user's, which carry none), then "Updated" and the day it last changed (today, yesterday,
   a weekday within the week, else the date: Apple's `lastModifiedDate`, the `modified` the
-  sync keeps), then its songs and time; the genre and the year that were there (the year
+  sync writes from every listing, apart from the stamp its tracks were read under,
+  `tracksModified`, so an edit made in the app does not take it away, #436), then its
+  songs and time; the genre and the year that were there (the year
   was the modified date's) are gone. An album's caption is unchanged. An album or playlist
   of the catalog's has **Add** beside Play and Shuffle (an album opened from a shelf, which
   is subtitled with its year, is by its `artistName`: `release.album_artist()`), which becomes **In Library**, a
@@ -827,7 +829,9 @@ changes, change it here, with the date. The plan they came from is in
   catalog id for, by title and artist, confirmed by a song when the page has them. Apple
   lists an addition seconds to a minute after taking it, later than the quick sync that
   follows, so a successful add is noted in the library (`note_added()`) until a reload
-  lists it: In Library does not flip back meanwhile. Add and More Options keep together,
+  lists it: In Library does not flip back meanwhile. Its menu, wherever it shows, asks the
+  same `holds()`: one held has no Add to Library, and its Remove from Library takes out
+  the library's album or playlist it was found as (#446). Add and More Options keep together,
   on the buttons' line or, where it has no room (a phone, a narrow window beside the
   cover), on one of their own under Play and Shuffle (an `AdwWrapBox`), rather than
   ellipsizing the buttons or moving the cover's breakpoint.

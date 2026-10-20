@@ -565,10 +565,12 @@ Item = {
                                                      // (albums, playlists; videos when
                                                      // dated): left out when unknown
   "modified": "2025-05-01T09:00:00Z",                // playlists: Apple's lastModifiedDate as
-                                                     // listed when `groups` was last read; the
-                                                     // sync keeps them while it holds (sync.py);
-                                                     // an item() answer's, its own (the page's
-                                                     // "Updated")
+                                                     // last listed (an item() answer's, its
+                                                     // own): the page's "Updated"
+  "tracksModified": "2025-05-01T09:00:00Z",          // playlists, the sync's: lastModifiedDate
+                                                     // as listed when `groups` was last read,
+                                                     // kept while it holds (sync.py); left out
+                                                     // when a short pass read them (an edit)
   "play": {"kind": "album", "id": "l.…"},            // what the bridge's play() takes
   "groups": [{"name": "Disc 1", "play": {…}, "entries": [Track]}]   // an album's discs, a
                                                      // playlist's "Tracks", an artist's albums

@@ -516,7 +516,8 @@ class TestDemoLibrarySchema(unittest.TestCase):
     def test_the_demo_has_the_normalisers_shapes(self):
         # Each kind of Item has the keys the real sync gives it (normalize), no more, no less,
         # apart from this app's own additions (library.json's `attributes`, `artUrl`, and a
-        # playlist's `modified`).
+        # playlist's `tracksModified`; its `modified` is the normaliser's when the listing
+        # has a date, which the invented answers here do not).
         added = '2026-01-01T00:00:00Z'  # a library resource's dateAdded: the Item's `added`
         real = {
             'album': normalize.normalize_album({'id': 'l.a', 'attributes': {
@@ -534,7 +535,11 @@ class TestDemoLibrarySchema(unittest.TestCase):
                           if (item.get('attributes') or {}).get('isFavourites'))
         self.assertNotIn('added', favourites)
         favourites = dict(favourites, added=added)
-        additions = {'attributes', 'artUrl', 'modified'}
+        additions = {'attributes', 'artUrl', 'modified', 'tracksModified'}  # sync.TRACKS_STAMP
+        for playlist in self.data['sections']['playlists']:
+            with self.subTest(playlist=playlist['id']):  # the date shown, the tracks' stamp
+                self.assertIsInstance(playlist.get('modified'), str)
+                self.assertIsInstance(playlist.get('tracksModified'), str)
         for name, items in self.data['sections'].items():
             if name == 'songs':
                 continue  # Tracks, not Items

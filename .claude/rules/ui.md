@@ -72,8 +72,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `window.item_actions.menu_for(item)` makes as it opens (`set_create_popup_func`); long
   notes show three lines and More (`pages.show_notes()`); an album's artist is a link when
   the library has them (`detail.resolve_artist()`). A catalog album's or playlist's hero
-  has Add, or In Library once `Library.holds()` it (`detail.library_state()`: no request);
-  a playlist's says its curator and when it was updated (`release.curator()`,
+  has Add, or In Library once `Library.holds()` it (`detail.library_state()`: no request),
+  and its menus ask the same (no Add to Library; Remove from Library takes out
+  `Library.held_item()`); a playlist's says its curator and when it was updated (`release.curator()`,
   `release.hero_caption()`). Wherever an album's page means its artist (the line under the
   title, the link, the rows, More By) it is `release.album_artist()`: a shelf's album is
   subtitled with its year, its artist in `artistName`. All Playlists and a folder's page have

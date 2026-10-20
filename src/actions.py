@@ -83,7 +83,8 @@ Remove from Favourites, then Suggest Less or Undo Suggest Less (all four, of whi
 shows those whose actions are enabled: rating_actions(), by the item's rating; as on
 Apple's players, a favourite offers no Suggest Less; an artist whose catalog id is known has
 Favourite or Remove from Favourites alone: favourite_items()), Add to Library (not what the
-library holds already), Add to Playlist (a song's, a video's, an album's or a playlist's: the
+library holds already: a catalog album or playlist by Library.holds(), the test its page's
+In Library makes), Add to Playlist (a song's, a video's, an album's or a playlist's: the
 library's playlists that take songs, each folder's in a section headed by its name, a
 playlist not offered to itself, then New Playlist…), Move to Folder (a playlist's or
 folder's: Top Level, the folders it can go into in one list, then New Folder…:
@@ -94,7 +95,8 @@ the web player's library routes; a library artist's is the catalog artist's page
 the engine finds through their songs); Rename… and Delete Playlist… or Delete Folder… (a
 playlist of the user's, Item.editable; a folder of theirs),
 Remove from Library… (what the library holds: removal_target; a playlist of Apple's, which
-cannot be deleted as the user's own are); a folder's menu starts with New Playlist… and New
+cannot be deleted as the user's own are; a catalog album or playlist held, as the library's
+own it was found as, Library.held_item()); a folder's menu starts with New Playlist… and New
 Folder… (in it); each only where it applies. A category (an Apple curator: a genre's page, a
 radio show) has Open in Browser and Copy Link alone (curator_menu): Apple gives a curator
 nothing to play or favourite.
@@ -455,9 +457,16 @@ def removal_target(obj, library):
     or music video the library holds (a Track, or an Item of the kind; found by its id or its
     catalog id, Library.library_id, so a catalog album's track that is in the library too
     has it), a library album (not one the library made up for loose songs), a playlist of
-    Apple's in the library (is_removable_playlist)."""
+    Apple's in the library (is_removable_playlist). A catalog album or playlist that the
+    library holds is taken out as the library's own it was found as (Library.held_item, the
+    test the page's In Library makes)."""
     if library is None:
         return None
+    if (isinstance(obj, Item) and obj.kind in ('album', 'playlist')
+            and not is_library_id(obj.id or '')):
+        obj = library.held_item(obj)
+        if obj is None or not is_library_id(obj.id or ''):
+            return None
     if isinstance(obj, Track) or (isinstance(obj, Item) and obj.kind in ('song', 'video')):
         kind = 'video' if obj.kind == 'video' else 'song'
         if (isinstance(obj, Track) and kind == 'song' and is_library_id(obj.id or '')
@@ -819,7 +828,7 @@ def main_menu_section():
 
 
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
-               moves=None, removable=None, queue_entry=None, reorder=True):
+               moves=None, removable=None, queue_entry=None, reorder=True, held=False):
     """The menu for obj (an Item or a Track), or None when nothing applies; a category's is
     curator_menu(). It is the one menu of an item wherever it shows: a tile's or row's, a
     page's More Options, a sidebar row's (a folder's, All Playlists' too: New Playlist… and
@@ -833,7 +842,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     obj's removal_target (Remove from Library…, and no Add to Library); `queue_entry`,
     (index, id) of the queue's entry obj is when it may be taken out of Up Next (Remove from
     Up Next); `reorder` false leaves out Move Up and Move Down (the playlist's page shows a
-    filter of its songs)."""
+    filter of its songs); `held`, the library holds obj, a catalog album or playlist
+    (Library.holds(), as its page's In Library says: no Add to Library)."""
     if is_curator(obj):
         return curator_menu(obj, storefront)
     named = describe(obj)
@@ -865,7 +875,7 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
             keep.append_item(item)
     for item in favourite_items(obj):
         keep.append_item(item)
-    if library_target(obj) is not None and removable is None:
+    if library_target(obj) is not None and removable is None and not held:
         keep.append_item(menu_item('item-add-to-library', target))
     if playlist_song(obj) or adds_songs(obj):
         # The playlists that take songs, folders as sections, then New Playlist…, one
@@ -1033,7 +1043,8 @@ class ItemActions:
                           self._storefront(), here=self._shown(), queued=queued,
                           container=self.container(obj), moves=self.move_targets(obj),
                           removable=self.removal_target(obj), queue_entry=queue_entry,
-                          reorder=self._can_reorder(obj))
+                          reorder=self._can_reorder(obj),
+                          held=isinstance(obj, Item) and self.library.holds(obj))
         if menu is None:
             return None
         self._remember(named, obj)
@@ -2016,7 +2027,9 @@ class ItemActions:
             return None
         kind, library_id = target
         hidden, holding, gone = self._removal_refs(obj, kind, library_id)
-        parent = self._parent_of(obj) if kind == 'playlist' else None
+        # A catalog playlist's removal takes out the library's (removal_target): its folder.
+        parent = (self._parent_of(self.library.by_id('playlist', library_id) or obj)
+                  if kind == 'playlist' else None)
         title = obj.title or ''
         message = (_('Removed “{title}” from your library').format(title=title) if title
                    else _('Removed from your library'))

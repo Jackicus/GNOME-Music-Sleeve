@@ -1502,6 +1502,26 @@ class TestHolds(unittest.TestCase):
         load(self.cache, self.library)
         self.assertFalse(self.library.holds(other))
 
+    def test_held_item_is_what_holds_found(self):
+        # The library's own Item a catalog one is found as: what its menu's Remove from
+        # Library takes out.
+        library = self.library
+        own = library.by_id('album', 'l.a1')
+        self.assertIs(library.held_item(own), own)
+        self.assertIs(library.held_item(self.catalog('600', songs=('501',))), own)
+        self.assertIs(library.held_item(self.catalog('700', title='Other Words')),
+                      library.by_id('album', 'l.a2'))
+        self.assertIs(library.held_item(self.catalog('pl.900', kind='playlist')),
+                      library.by_id('playlist', 'p.ap'))
+        for item in (self.catalog('pl.901', kind='playlist'), self.catalog('42', kind='song'),
+                     self.catalog('800', title='Only On A Shelf'), None):
+            self.assertIsNone(library.held_item(item))
+        # One only noted as just added is held, but has no Item of the library's yet.
+        picks = self.catalog('pl.902', kind='playlist')
+        library.note_added(picks)
+        self.assertTrue(library.holds(picks))
+        self.assertIsNone(library.held_item(picks))
+
 
 def playlist_with(playlist_id, track_ids):
     """A playlist's Item dict with these tracks, in this order (a song may be there twice)."""
