@@ -103,7 +103,8 @@ library's Item, so an open page shows the change at once. After an album or a pl
 added to the library, the library notes it (Library.note_added(): its page says In Library at
 once, ahead of Apple's listing) and a quick sync reads it back.
 
-The menus are built in code, per kind (build_menu): Play, Play Next, Play Later, Create
+The menus are built in code, per kind (build_menu): Play, Play Next, Play Later (none for a
+pre-release album's track not out yet: Track.unreleased), Create
 Station (a song's or an artist's whose catalog id is known: station_target), and for an Up
 Next entry Move Up, Move Down (where it can go in its section) and Remove from Up Next; Go to
 Album, Go to Artist (not where the page shown is that album or artist already), View Credits
@@ -113,7 +114,8 @@ are enabled: rating_actions(), by the item's rating; as on Apple's players, a fa
 offers no Suggest Less; an artist whose catalog id is known has Favourite or Remove from
 Favourites alone: favourite_items()), Add to Library (not what the
 library holds already: a catalog album or playlist by Library.holds(), the test its page's
-In Library makes), Add to Playlist (a song's, a video's, an album's or a playlist's: the
+In Library makes; Pre-Add to Library for an album not out yet: pre_adds()), Add to
+Playlist (a song's, a video's, an album's or a playlist's: the
 library's playlists that take songs, each folder's in a section headed by its name, a
 playlist not offered to itself, then New Playlist…), Move to Folder (a playlist's or
 folder's: Top Level, the folders it can go into in one list, then New Folder…:
@@ -256,6 +258,20 @@ def action_labels():
     }
 
 
+def pre_adds(obj):
+    """Whether Add to Library pre-adds obj: an album not out yet (Item.prerelease, Apple's
+    isPrerelease), whose songs come into the library as they come out."""
+    return isinstance(obj, Item) and obj.kind == 'album' and obj.prerelease
+
+
+def pre_add_label():
+    """Add to Library's label for an album it pre-adds (pre_adds()); its mnemonic is Add to
+    Library's."""
+    # Translators: Add to Library for an album not out yet (its songs come as they are
+    # released); keep the mnemonic of "_Add to Library".
+    return _('Pre-_Add to Library')
+
+
 def delete_label(kind):
     """Delete's label for a playlist, or for a folder (kind 'folder')."""
     return _('_Delete Folder…') if kind == 'folder' else action_labels()['item-delete']
@@ -292,7 +308,7 @@ def can_play(obj):
     or station with a play target, or a catalog artist (its top songs; a library artist's
     id is the library's own invention)."""
     if isinstance(obj, Track):
-        return bool(obj.id or obj.catalog_id)
+        return bool(obj.id or obj.catalog_id) and not obj.unreleased
     if not isinstance(obj, Item) or not obj.play.get('kind') or not obj.play.get('id'):
         return False
     if obj.kind == 'artist':
@@ -304,6 +320,8 @@ def queue_target(obj):
     """(kind, id) that Play Next and Play Later queue, or None: a song by its catalog id, a
     music video (an Item, or a Track that is one) by its catalog id as MusicKit's
     'musicVideo', an album or playlist by its play target."""
+    if isinstance(obj, Track) and obj.unreleased:
+        return None  # a pre-release album's track not out yet: nothing to queue
     if isinstance(obj, Track) or (isinstance(obj, Item) and obj.kind in ('song', 'video')):
         song_id = _song_id(obj)
         return (_queue_kind(obj), song_id) if song_id else None
@@ -1046,7 +1064,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     for item in favourite_items(obj):
         keep.append_item(item)
     if library_target(obj) is not None and removable is None and not held:
-        keep.append_item(menu_item('item-add-to-library', target))
+        keep.append_item(menu_item('item-add-to-library', target,
+                                   pre_add_label() if pre_adds(obj) else None))
     if playlist_song(obj) or adds_songs(obj):
         # The playlists that take songs, folders as sections, then New Playlist…, one
         # holding this song (an album's or a playlist's songs).
@@ -1509,8 +1528,12 @@ class ItemActions:
             self.app.toast(_('This is in your library already'))
             return None
         title = obj.title if obj is not None else ''
-        message = (_('Added “{title}” to your library').format(title=title) if title
-                   else _('Added to your library'))
+        if pre_adds(obj):
+            # Translators: a toast once an album not out yet is added to the library.
+            message = _('Pre-added “{title}” to your library').format(title=title)
+        else:
+            message = (_('Added “{title}” to your library').format(title=title) if title
+                       else _('Added to your library'))
 
         async def after():
             if isinstance(obj, Item):

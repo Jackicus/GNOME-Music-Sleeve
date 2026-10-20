@@ -96,7 +96,7 @@ from ..actions import adds_to, is_manageable
 from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
 from ..release import (album_artist, album_shelves, album_target, curator, footer_lines,
-                       hero_caption)
+                       hero_caption, is_prerelease, released_play)
 from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
@@ -385,6 +385,12 @@ class DetailPage(Adw.NavigationPage):
     row's accessible description), every bound row again as the item changes. A click on a
     track plays its group from it, as Enter does (the list's single-click-activate).
 
+    A pre-release album (release.is_prerelease()) says when it comes out in the caption and
+    the footer ("Coming 4 December 2026"); its tracks not out yet are dimmed, described "Not
+    yet released", and play nothing; Play, Shuffle and the other rows play the tracks out
+    already, as one list (release.released_play()), and Play and Shuffle are insensitive
+    while none is. Its Add is Pre-Add.
+
     The hero: under the title, an album's artist or a playlist's curator (release.curator():
     the account's name for one of the user's), then the caption (release.hero_caption(): a
     playlist's "Updated" date and its songs, an album's genre, year and songs). Beside Play
@@ -436,6 +442,7 @@ class DetailPage(Adw.NavigationPage):
     play_button = Gtk.Template.Child()
     shuffle_button = Gtk.Template.Child()
     add_button = Gtk.Template.Child()
+    add_content = Gtk.Template.Child()
     in_library_box = Gtk.Template.Child()
     more_button = Gtk.Template.Child()
     summary_box = Gtk.Template.Child()
@@ -1288,6 +1295,15 @@ class DetailPage(Adw.NavigationPage):
         state = library_state(self._library, self.item)
         if state != 'add' and self.add_button.is_focus():
             self.more_button.grab_focus()
+        if state == 'add':
+            # A pre-release album is pre-added, as Apple Music words it: its songs come into
+            # the library as they come out.
+            prerelease = is_prerelease(self.item)
+            # Translators: a button that adds an album not out yet to the library (its
+            # songs come as they are released); keep it short.
+            self.add_content.set_label(_('Pre-Add') if prerelease else _('Add'))
+            self.add_button.set_tooltip_text(
+                _('Pre-Add to Library') if prerelease else _('Add to Library'))
         self.add_button.set_visible(state == 'add')
         self.in_library_box.set_visible(state == 'held')
 
@@ -1320,11 +1336,14 @@ class DetailPage(Adw.NavigationPage):
 
     def _update_buttons(self):
         """Play and Shuffle: with something to play, and tracks to play (or on their way: the
-        engine plays an item by its id)."""
+        engine plays an item by its id); not for a pre-release album none of whose tracks is
+        out yet (release.released_play())."""
         item = self.item
+        has_tracks = item is not None and any(group.entries.get_n_items()
+                                               for group in item.groups)
         playable = item is not None and bool(item.play) and (
-            any(group.entries.get_n_items() for group in item.groups)
-            or self._engine_status.status == 'loading')
+            (has_tracks and released_play(item) is not None)
+            or (not has_tracks and self._engine_status.status == 'loading'))
         self.play_button.set_sensitive(playable)
         self.shuffle_button.set_sensitive(playable)
 
@@ -1917,8 +1936,12 @@ class DetailPage(Adw.NavigationPage):
     def _on_activate(self, _list_view, position):
         track = self._rows.get_item(position)
         if isinstance(track, Track) and not self.selection_mode.activated(track):
-            self.get_root().play_request(track.play, start_with=track.index,
-                                         start_id=track.id)
+            # A track not out yet plays nothing (its row says so); the others of an album
+            # with such tracks play among the released ones (release.released_play()).
+            target = released_play(self.item, track)
+            if target is not None:
+                play, start_with, start_id = target
+                self.get_root().play_request(play, start_with=start_with, start_id=start_id)
 
     # The hero's links and menus.
 
@@ -1947,7 +1970,13 @@ class DetailPage(Adw.NavigationPage):
             self.more_notes_button.set_visible(cut)
 
     def _on_play_clicked(self, _button):
-        self.get_root().play_request(self.item.play, shuffle=False)
+        self._play(shuffle=False)
 
     def _on_shuffle_clicked(self, _button):
-        self.get_root().play_request(self.item.play, shuffle=True)
+        self._play(shuffle=True)
+
+    def _play(self, shuffle):
+        """Play the item, or (a pre-release album) the tracks of it that are out already."""
+        target = released_play(self.item)
+        if target is not None:
+            self.get_root().play_request(target[0], shuffle=shuffle)

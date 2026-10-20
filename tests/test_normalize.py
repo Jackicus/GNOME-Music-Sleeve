@@ -231,6 +231,66 @@ class TestSync(unittest.TestCase):
         self.assertEqual([entry['index'] for entry in artist['groups'][0]['entries']],
                          list(range(9)))
 
+    def test_a_prerelease_album_and_its_tracks_not_out_yet(self):
+        # Apple's isPrerelease, and a future releaseDate; a track out already (a single) has
+        # playParams, the others none.
+        def track(number, out):
+            attrs = {'name': f'Song {number}', 'trackNumber': number, 'discNumber': 1,
+                     'durationInMillis': 200000}
+            if out:
+                attrs['playParams'] = {'id': f'17240495{number:02d}', 'kind': 'song'}
+            return {'id': f'17240495{number:02d}', 'type': 'songs', 'attributes': attrs}
+
+        raw = {'id': '1724049500', 'type': 'albums',
+               'attributes': {'name': 'Invented Album To Come', 'artistName': 'Invented Band',
+                              'releaseDate': '2026-12-04', 'isPrerelease': True,
+                              'isComplete': False, 'trackCount': 3},
+               'relationships': {'tracks': {'data': [track(1, False), track(2, True),
+                                                     track(3, False)]}}}
+        item = normalize.normalize_album(raw)
+        self.assertIs(item['prerelease'], True)
+        self.assertEqual(item['releaseDate'], '2026-12-04')
+        self.assertEqual(item['year'], 2026)
+        entries = item['groups'][0]['entries']
+        self.assertEqual([entry.get('unreleased') for entry in entries], [True, None, True])
+        # Shaped again (an answer kept, an Item dict normalised once more), it says the same.
+        again = normalize.normalize_album(dict(item, attributes={}), tracks=entries)
+        self.assertIs(again['prerelease'], True)
+        self.assertEqual(again['releaseDate'], '2026-12-04')
+        self.assertEqual([entry.get('unreleased') for entry in again['groups'][0]['entries']],
+                         [True, None, True])
+        # A shelf's album (no tracks) says it is to come too.
+        shelf = normalize.normalize_item(dict(raw, relationships={}), include_groups=False)
+        self.assertIs(shelf['prerelease'], True)
+        self.assertEqual(shelf['releaseDate'], '2026-12-04')
+
+    def test_an_album_out_has_no_release_keys(self):
+        # Out (no isPrerelease, or false): no `prerelease`, `releaseDate` or `unreleased`,
+        # whatever its tracks' playParams (a library album's songs carry their own).
+        for flag in ({}, {'isPrerelease': False}):
+            raw = {'id': '1724049600', 'type': 'albums',
+                   'attributes': dict({'name': 'Invented Album', 'releaseDate': '2020-01-01'},
+                                      **flag)}
+            item = normalize.normalize_album(raw, tracks=[
+                {'id': '1724049601', 'attributes': {'name': 'Song', 'trackNumber': 1}}])
+            self.assertNotIn('prerelease', item)
+            self.assertNotIn('releaseDate', item)
+            self.assertNotIn('unreleased', item['groups'][0]['entries'][0])
+
+    def test_release_helpers(self):
+        self.assertTrue(normalize.is_prerelease({'isPrerelease': True}))
+        self.assertFalse(normalize.is_prerelease({'isPrerelease': 'yes'}))
+        self.assertTrue(normalize.is_prerelease({}, {'prerelease': True}))
+        self.assertFalse(normalize.is_prerelease(None))
+        self.assertEqual(normalize.release_date({'releaseDate': '2026'}), '2026')
+        self.assertEqual(normalize.release_date({'releaseDate': 'soon'},
+                                                {'releaseDate': '2026-12-04'}), '2026-12-04')
+        self.assertIsNone(normalize.release_date({}, None))
+        self.assertTrue(normalize.track_released({'attributes': {'playParams': {'id': '1'}}}))
+        self.assertFalse(normalize.track_released({'attributes': {'name': 'Song'}}))
+        self.assertFalse(normalize.track_released({'title': 'Song', 'unreleased': True}))
+        self.assertTrue(normalize.track_released({'title': 'Song'}))
+
     def test_normalize_playlist(self):
         raw_playlist = {
             'id': 'p.pl123',

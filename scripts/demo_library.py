@@ -172,6 +172,13 @@ SUGGESTIONS = 24  # a playlist's suggested songs: twelve shown at most, and spar
 DEMO_LABELS = ['Lowtide Recordings', 'Paper Lantern Records', 'Driftwood Audio',
                'Quiet Harbour Music', 'Northlight Sound']
 DEMO_EDITIONS = ['{title} (Deluxe)', '{title} (Remastered)']
+# The first artist's album to come (Apple's isPrerelease): its songs, two of them out already
+# as singles (the others have no playParams in Apple's answer: `unreleased`), and its date.
+DEMO_UPCOMING = ('Lanterns Over the Reef', '2026-12-04', [
+    ('First Light on the Breakwater', False), ('Harbour Signal', True),
+    ('The Drowned Orchard', False), ('Lantern Procession', True), ('Saltglass', False),
+    ('Underneath the Pier Lights', False), ('Tidewater Hymn', False),
+    ('Reef at Dusk', False)])
 # The people of the hand-written albums' songs' credits beside their artists (credits/), and
 # the roles they are credited with, by Apple's kinds of credit (normalize.song_credits).
 DEMO_CREDIT_PEOPLE = ['Ada Brightwater', 'Bram Holloway', 'Cleo Ashdown', 'Dario Fenwick',
@@ -2594,6 +2601,37 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
                 'catalogId': track['catalogId'], 'url': None,
                 'play': {'kind': 'song', 'id': track['catalogId']}, 'groups': []}
 
+    def upcoming(index, name, genre):
+        """The artist's invented pre-release album (DEMO_UPCOMING): its tracks out already
+        playable, the others `unreleased`, as normalize.normalize_album() marks them."""
+        title, released, songs = DEMO_UPCOMING
+        item_id = f'demo.upcoming{index:02d}'
+        year = int(released[:4])
+        art = cover(item_id, title, name, index * 5 + 7, badge='SOON')
+        play = {'kind': 'album', 'id': item_id}
+        lengths = random.Random(53)  # its own: the rest of the page draws as before
+        tracks = []
+        for number, (song_title, out) in enumerate(songs, 1):
+            duration = lengths.randint(170000, 330000)
+            track_id = f'17240980{index:02d}{number:02d}'
+            track = {'id': track_id, 'catalogId': track_id, 'title': song_title,
+                     'artist': name, 'album': title, 'trackNumber': number, 'discNumber': 1,
+                     'durationMs': duration, 'durationLabel': format_duration(duration),
+                     'explicit': False, 'index': number - 1, 'thumb': None, 'type': 'songs'}
+            if not out:
+                track['unreleased'] = True
+            tracks.append(track)
+        return {'id': item_id, 'kind': 'album', 'title': title, 'subtitle': name,
+                'artistName': name, 'year': year, 'genre': genre,
+                'summary': (f'{name} return with a record of night harbours and slow-burning '
+                            'crescendos, previewed by two singles.'),
+                'art': art, 'thumb': thumb_for(art),
+                'artColor': PALETTES[(index * 5 + 7) % len(PALETTES)][1],
+                'trackCount': len(tracks), 'durationMs': sum(t['durationMs'] for t in tracks),
+                'explicit': False, 'catalogId': item_id, 'url': None, 'play': play,
+                'prerelease': True, 'releaseDate': released,
+                'groups': [{'name': 'Disc 1', 'play': play, 'entries': tracks}]}
+
     def collection(item_id, kind, title, subtitle, year, entries, palette_index, badge=None):
         """An invented album or playlist of `entries` (library tracks), with its cover."""
         art = cover(item_id, title, subtitle, palette_index, badge=badge)
@@ -2623,8 +2661,13 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
         shelf('featured-albums', 'Essential Albums', [
             brief(album, subtitle=album['summary'].split('. ')[0].rstrip('.') + '.')
             for album in own[:2]])
-        shelf('full-albums', 'Albums', [brief(album, subtitle=str(album['year']))
-                                        for album in own])
+        # The first artist's next album is not out yet: Apple features it as the latest
+        # release and lists it first among the albums, with its tracks (the demo engine
+        # answers no item(), so its page has them from here).
+        coming = upcoming(index, name, genre) if index == 0 else None
+        shelf('full-albums', 'Albums', ([dict(coming, subtitle=str(coming['year']))]
+                                        if coming else [])
+              + [brief(album, subtitle=str(album['year'])) for album in own])
         shelf('music-videos', 'Music Videos', [
             brief(video, subtitle=str(video['year'])) for video in videos
             if video['subtitle'] == name])
@@ -2732,8 +2775,9 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
                             isGroup=group, play={'kind': 'artist', 'id': catalog_id}),
             'banner': banner,
             'latest': {'key': 'latest-release', 'title': 'Latest Release',
-                       'item': brief(newest, subtitle=str(newest['year']),
-                                     releaseDate=released)},
+                       'item': (dict(coming, subtitle=str(coming['year'])) if coming else
+                                brief(newest, subtitle=str(newest['year']),
+                                      releaseDate=released))},
             'topSongs': {'key': 'top-songs', 'title': 'Top Songs', 'more': False,
                          'items': [song(track, album) for track, album in top]},
             'shelves': shelves,
@@ -2745,6 +2789,25 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
         }
         with open(os.path.join(pages_dir, f'{catalog_id}.json'), 'w', encoding='utf-8') as f:
             json.dump(page, f, indent=2)
+        if coming is not None:
+            # What the catalog shows under its tracks (normalize.album_page()'s shape): its
+            # date to come, its label, and More By.
+            label = DEMO_LABELS[index % len(DEMO_LABELS)]
+            album_page = {
+                'id': coming['id'], 'artistId': catalog_id, 'artistName': name,
+                'release': {'releaseDate': coming['releaseDate'],
+                            'copyright': f"℗ {coming['year']} {label}", 'recordLabel': label},
+                'shelves': [{'key': 'more-by-artist', 'title': '', 'more': False,
+                             'items': [brief(album, subtitle=str(album['year']),
+                                             artistName=name) for album in own]}],
+                'cached': generated,
+                'demo': True,  # invented: the demo engine answers only these
+            }
+            albums_dir = os.path.join(out_dir, 'albums')
+            os.makedirs(albums_dir, exist_ok=True)
+            with open(os.path.join(albums_dir, f"{coming['id']}.json"), 'w',
+                      encoding='utf-8') as f:
+                json.dump(album_page, f, indent=2)
 
 
 def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums, videos,

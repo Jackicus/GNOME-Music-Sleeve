@@ -241,7 +241,8 @@ Box hero {
             visible: false;
             tooltip-text: _("Add to Library");
 
-            child: Adw.ButtonContent {
+            // "Pre-Add" for a pre-release album (detail.py).
+            child: Adw.ButtonContent add_content {
               icon-name: "list-add-symbolic";
               label: _("Add");
               can-shrink: true;

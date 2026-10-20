@@ -7,7 +7,11 @@ the release footer, then the catalog's shelves.
 
     album_artist(item)            an album's artist: its artistName, else its subtitle
     curator(item, 'Alex')         an album's artist, a playlist's curator (the user's own: theirs)
-    hero_caption(item)            'Pop · 2001 · 12 songs, 43 min'; 'Updated 3 March · 22 songs…'
+    hero_caption(item)            'Pop · 2001 · 12 songs, 43 min'; 'Updated 3 March · 22 songs…';
+                                  a pre-release album's 'Pop · Coming 4 December 2026 · …'
+    coming_text('4 December 2026')                   'Coming 4 December 2026'
+    is_prerelease(item)           whether an album is not out yet (Apple's isPrerelease)
+    released_play(item, track)    (play, start_with, start_id) of what Play or a row plays
     updated_text('2026-03-03T09:00:00Z')             'Updated 3 March' (or today, yesterday…)
     album_target(item)            (album id, song id) Engine.album_page() is asked by, or None
     footer_lines(item, answer, count, duration_ms)   the footer's lines, in the reader's words
@@ -19,6 +23,12 @@ A playlist's hero names its curator (Apple's playlists, a curator's) or, for one
 user's, the account's name, then says when it was updated (its `modified`, Apple's
 lastModifiedDate: today, yesterday, a weekday within the week, else the date) and its songs
 and their time; an album's says its genre, year, songs and time.
+
+A pre-release album (Apple's isPrerelease, the Item's `prerelease`) says when it comes out
+where the others say their year, and its footer's first line is that date: "Coming 4
+December 2026". Its tracks not out yet (Track.unreleased: Apple gives them no playParams) are
+shown, not played: Play, Shuffle and a row play the ones out already (a pre-release single),
+by id (released_play()), so MusicKit is never asked for a track it cannot play.
 
 The footer is the release date in full, the songs and their total time, and the ℗ or © line
 (else the label): the catalog album's (Engine.album_page()'s `release`) when the page has
@@ -145,15 +155,65 @@ def updated_text(modified, now=None):
     return _('Updated {date}').format(date=day) if day else ''
 
 
+def is_prerelease(item):
+    """Whether `item` is an album not out yet: the Item's `prerelease` (Apple's
+    isPrerelease, as the engine's answer had it)."""
+    return item is not None and item.kind == 'album' and bool(item.prerelease)
+
+
+def coming_text(date_text):
+    """When a pre-release album comes out, in the reader's words: "Coming 4 December 2026"
+    (`date_text` a date as release_date_text() or the artist page give it), "Coming Soon"
+    without one."""
+    if not date_text:
+        # Translators: when a pre-release album (not out yet) comes out, its date unknown.
+        return _('Coming Soon')
+    # Translators: when a pre-release album (not out yet) comes out: {date} is its release
+    # date ("Coming 4 December 2026").
+    return _('Coming {date}').format(date=date_text)
+
+
+def released_play(item, track=None):
+    """What Play (and Shuffle) on `item`'s page plays, or a click on its `track`, as
+    window.play_request() takes it: (play, start_with, start_id). An album with tracks not
+    out yet (Track.unreleased) plays the ones out already by id, as a `songs` list in the
+    album's order, from `track` among them; None when none is out, or `track` is not. Anything
+    else plays its own play target, from the track's place in it."""
+    if item is None:
+        return None
+    tracks = [entry for group in item.groups for entry in group.entries]
+    if not any(entry.unreleased for entry in tracks):
+        if track is None:
+            return item.play, None, None
+        return track.play, track.index, track.id
+    if track is not None and track.unreleased:
+        return None
+    released = [entry for entry in tracks if not entry.unreleased and entry.id]
+    if not released:
+        return None
+    play = {'kind': 'songs', 'id': ','.join(entry.id for entry in released)}
+    if track is None:
+        return play, None, None
+    place = next((place for place, entry in enumerate(released) if entry is track), None)
+    if place is None:
+        return None
+    return play, place, track.id
+
+
 def hero_caption(item, now=None):
-    """The caption under an album's or playlist's title: an album's genre, year, and songs
-    and time (its count-label); a playlist's last change (updated_text()) and count-label,
-    joined by middle dots. '' when there is none of them."""
+    """The caption under an album's or playlist's title: an album's genre, year (when a
+    pre-release album comes out instead: coming_text()), and songs and time (its
+    count-label); a playlist's last change (updated_text()) and count-label, joined by middle
+    dots. '' when there is none of them."""
     if item is None:
         return ''
     if item.kind == 'playlist':
         modified = item.raw.get('modified') if isinstance(item.raw, dict) else None
         details = [updated_text(modified, now), item.count_label]
+    elif is_prerelease(item):
+        raw = item.raw if isinstance(item.raw, dict) else {}
+        details = [item.genre, coming_text(release_date_text(raw.get('releaseDate'))),
+                   item.count_label]
     else:
         details = [item.genre, str(item.year) if item.year else None, item.count_label]
     return ' · '.join(detail for detail in details if detail)
@@ -203,11 +263,14 @@ def length_text(count, duration_ms=None):
 def footer_lines(item, answer, count, duration_ms):
     """The lines of an album's footer: its release date in full, its `count` songs and their
     `duration_ms`, and its copyright (else its label), each only when known: from the
-    answer's `release` (Engine.album_page()), else what the Item carries."""
+    answer's `release` (Engine.album_page()), else what the Item carries. A pre-release
+    album's date says it is to come (coming_text()), and is there without a date too."""
     release = answer.get('release') if isinstance(answer, dict) else None
     release = release if isinstance(release, dict) else {}
     raw = item.raw if item is not None and isinstance(item.raw, dict) else {}
     date = release_date_text(release.get('releaseDate') or raw.get('releaseDate'))
+    if is_prerelease(item):
+        date = coming_text(date)
     lines = [date] if date else []
     if count:
         lines.append(length_text(count, duration_ms))

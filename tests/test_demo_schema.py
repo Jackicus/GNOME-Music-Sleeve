@@ -327,6 +327,37 @@ class TestDemoLibrarySchema(unittest.TestCase):
         self.assertIsNone(banners[1])
         self.assertEqual(sum(banner is not None for banner in banners), 5)
 
+    def test_the_first_artists_album_to_come(self):
+        # The first artist's latest release is an invented pre-release album, listed first
+        # among their albums too, with its tracks: two out already (its singles), the rest
+        # `unreleased`, as normalize.normalize_album() marks Apple's; and its album page.
+        artist = self.data['sections']['artists'][0]
+        with open(os.path.join(self.out_dir, 'artists', f"{artist['catalogId']}.json"),
+                  encoding='utf-8') as f:
+            answer = json.load(f)
+        coming = answer['latest']['item']
+        albums = next(shelf for shelf in answer['shelves'] if shelf['key'] == 'full-albums')
+        self.assertEqual(albums['items'][0], coming)
+        self.assertIs(coming['prerelease'], True)
+        self.assertEqual(coming['releaseDate'], '2026-12-04')
+        self.assertEqual(coming['artistName'], artist['title'])
+        entries = coming['groups'][0]['entries']
+        self.assertEqual(sum(not entry.get('unreleased') for entry in entries), 2)
+        self.assertEqual(coming['trackCount'], len(entries))
+        real = normalize.normalize_album({'id': '1', 'attributes': {
+            'name': 'A', 'isPrerelease': True, 'releaseDate': '2026-12-04'}})
+        self.assertLessEqual(set(real), set(coming))
+        with open(os.path.join(self.out_dir, 'albums', f"{coming['id']}.json"),
+                  encoding='utf-8') as f:
+            page = json.load(f)
+        self.assertEqual(set(page) - {'demo', 'cached'}, set(normalize.album_page({}, None)))
+        self.assertEqual(page['release']['releaseDate'], coming['releaseDate'])
+        # Only that artist's: every other's latest release is out.
+        for other in self.data['sections']['artists'][1:]:
+            with open(os.path.join(self.out_dir, 'artists', f"{other['catalogId']}.json"),
+                      encoding='utf-8') as f:
+                self.assertNotIn('prerelease', json.load(f)['latest']['item'])
+
     def test_album_pages(self):
         # Each album has what the catalog would show under its tracks, as the engine keeps
         # it (normalize.album_page's keys), every shelf in Apple's order, More By untitled.

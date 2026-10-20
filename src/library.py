@@ -411,6 +411,8 @@ class Track(GObject.Object):
     duration_label = raw_property('durationLabel', str, '')
     explicit = raw_property('explicit', bool, False)
     index = raw_property('index', int, 0)
+    # A track of a pre-release album that is not out yet (`unreleased`): shown, not played.
+    unreleased = raw_property('unreleased', bool, False)
     kind = GObject.Property(type=str, default='',
                             getter=lambda self: TRACK_KINDS.get(_text(self.raw.get('type')), ''),
                             flags=GObject.ParamFlags.READABLE)
@@ -671,6 +673,8 @@ class Item(GObject.Object):
     explicit = raw_property('explicit', bool, False, writable=True)
     catalog_id = raw_property('catalogId', str, writable=True)
     url = raw_property('url', str, writable=True)
+    # An album not out yet (Apple's isPrerelease, `prerelease`), out on its `releaseDate`.
+    prerelease = raw_property('prerelease', bool, False, writable=True)
     # Whether the account has it as a favourite: set by the Library from library.json's
     # `favourites` and as the app favourites it (Library.set_favourite), notified as it
     # changes.
@@ -775,7 +779,10 @@ class Item(GObject.Object):
         ('art', 'art', str, None), ('thumb', 'thumb', str, None),
         ('art-color', 'artColor', str, None), ('catalog-id', 'catalogId', str, None),
         ('url', 'url', str, None), ('year', 'year', int, 0),
-        ('explicit', 'explicit', bool, False)))
+        ('explicit', 'explicit', bool, False), ('prerelease', 'prerelease', bool, False)))
+    # The keys an album's dict has only while they hold (normalize.normalize_album): a whole
+    # answer without them (an item() answer, with its groups) takes them out.
+    _RELEASE_KEYS = ('prerelease', 'releaseDate')
 
     def merge(self, data, replace=False):
         """Take a fresh Item dict for this item into this object: the raw dict updated (or
@@ -785,6 +792,10 @@ class Item(GObject.Object):
         (the same groups keep their Group and Track objects). An engine item() answer (the
         same shape, with `groups`) merges; a sync's dict replaces. Returns the names of the
         properties that changed (empty when none did).
+
+        A whole answer (with `groups`) of an album out since takes out the `prerelease` and
+        `releaseDate` the one in hand had (_RELEASE_KEYS), which a dict has only while they
+        hold.
 
         A dict equal to the one in hand changes nothing, and the one in hand is kept; so are
         its groups when the new ones are equal (`data`'s are replaced by them): the Groups and
@@ -800,7 +811,8 @@ class Item(GObject.Object):
                     data['groups'] = old['groups']
             else:
                 groups_changed = True
-        merged = [entry for entry in self._MERGED if replace or entry[1] in data]
+        whole = replace or 'groups' in data
+        merged = [entry for entry in self._MERGED if whole or entry[1] in data]
         before = [read(old.get(key)) for _name, key, read in merged]
         added = old.get('added')
         counts = [old.get(key) for key in self._COUNT_KEYS]
@@ -811,6 +823,10 @@ class Item(GObject.Object):
                 if key in ('id', 'kind'):
                     continue
                 old[key] = value
+            if 'groups' in data:
+                for key in self._RELEASE_KEYS:
+                    if key not in data:
+                        old.pop(key, None)  # out now: an answer of the album as it is
         raw = self.raw
         changed = [name for (name, key, read), value in zip(merged, before, strict=True)
                    if read(raw.get(key)) != value]
