@@ -44,10 +44,11 @@ paths:
     resets the Player as the engine going down does, then reads `now_playing()` again.
 - Its commands are thin coroutines over the engine; the UI runs them through
   `app.player_command(coro, on_error=None)`, which toasts an EngineError. `play()` starts a
-  `down` engine when signed in (`ensure_engine()`) and raises `not-signed-in` otherwise; see
-  engine.md for the `starting` state. Play requests go out one at a time, the newest winning
-  (a request superseded while it waits, for its turn or the engine's start, is dropped), and
-  `pending` is True while one is with the engine (the play buttons show a spinner, and
+  `down` engine when signed in (`ensure_engine()`, which also waits for one `starting`) and
+  raises `not-signed-in` otherwise; see engine.md for the `starting` state. Play requests
+  go out one at a time, the newest winning (a request superseded while it waits, for its
+  turn or the engine's start, is dropped), and `pending` is True while one is with the
+  engine (the play buttons show a spinner, and
   `resting` holds). `play(shuffle=None)` keeps the mode (a track row); a Play button passes
   False, a Shuffle button True.
   `previous()` restarts the item after `PREVIOUS_RESTART` seconds. A `mediaPlaybackError` is
@@ -84,8 +85,9 @@ paths:
   album, playlist or station the queue still is, else its songs' ids; `shuffle=False`, the
   position as `start_time`); play_next/play_later queue it paused first (`paused`). The
   request is what the session shows as it goes out (`_restore_request`, after the engine's
-  start), so a step or an Up Next row taken while it waits is what plays; another
-  restore_session() meanwhile sends nothing (a Play makes a paused one play) and returns
+  start, its own or the autostart's), so a step or an Up Next row taken while it waits is
+  what plays; another restore_session() meanwhile sends nothing (a Play makes a paused one
+  play) and returns
   once it is answered (`_restoring`), so play_next's item goes after it. The request takes
   the session (`_take_restored`, which makes a refresh() answer under way stale) and gives
   it back on a failure, unless MusicKit refused it (`api` with a code:

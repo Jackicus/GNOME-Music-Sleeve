@@ -1119,9 +1119,15 @@ class Player(GObject.Object):
     async def ensure_engine(self):
         """The engine up for a play request (or any command of the account's: the item
         actions use it too): started first when it is down and the account is signed in (a
-        toast meanwhile); EngineError('not-signed-in') when it is not."""
+        toast meanwhile); EngineError('not-signed-in') when it is not. A start under way
+        (the autostart at launch, sign-in's) is joined, its failure raised here: a play
+        request works out what it sends only once the engine is up, so a session restored
+        stays the Player's, and a step taken meanwhile is what plays."""
         if self._app.demo:
             raise EngineError('engine-down', 'no engine with the demo library')
+        if self._engine.state == 'starting':
+            await self._engine.start()  # joins the start under way: no mode asked
+            return
         if self._engine.state != 'down':
             return
         if not self._app.settings.get_boolean(self._app.account_key('signed-in')):

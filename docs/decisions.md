@@ -508,9 +508,9 @@ changes, change it here, with the date. The plan they came from is in
   launch would seek an item MusicKit had not loaded, without its Widevine licence, and would
   run only for those whose engine starts on launch. Until then seek, previous and next move
   through it paused, without the engine; the request plays what the bar shows when it goes
-  out, so a step or an Up Next row taken while the engine starts for it is what plays, and a
-  second Play meanwhile sends nothing (the session stays shown, and kept, if the start
-  fails). Shuffle comes back off, the queue in its order (the same Up Next), since turning
+  out, so a step or an Up Next row taken while the engine starts for it (or the autostart at
+  launch is still under way, #472) is what plays, and a second Play meanwhile sends
+  nothing (the session stays shown, and kept, if the start fails). Shuffle comes back off, the queue in its order (the same Up Next), since turning
   MusicKit's shuffle on reshuffles what follows; repeat comes back. Play Next or Later on it
   first queues it paused (the start waits for the first play in the bridge). No Preferences switch: Apple's apps, GNOME Music and the HIG's "fewer
   preferences" agree, and a paused bar gets in the way of nothing. Signing out and Clear

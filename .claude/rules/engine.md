@@ -63,9 +63,10 @@ paths:
   command that needs the page begins `await self._ready()` (lyrics and the kept answers read
   the cache first): a start in progress is waited for (its failure is the
   command's), `down` is `engine-down`. Commands never start Chrome; `Player.ensure_engine()`
-  starts a `down` engine and returns at once in any other state, so a play during a start
-  waits in `_ready()`. A `start()` while one is under way joins it (no mode, or the same mode):
-  one Chrome, one outcome; cancelling the caller that began it cancels the start.
+  starts a `down` engine, joins a `starting` one (the autostart, sign-in's) and returns at
+  once in any other state, so a play request works out what it sends once the engine is
+  up. A `start()` while one is under way joins it (no mode, or the same mode): one Chrome,
+  one outcome; cancelling the caller that began it cancels the start.
 - `start(visible=None)`: without a mode it keeps an engine running in either mode and starts a
   stopped one headless unless `engine-headless` is off; sign-in is the one caller that asks for
   a window (and sign-out, starting a stopped engine to revoke the session, for headless). A changed browser command applies at the next start. Nothing is reclaimed and no

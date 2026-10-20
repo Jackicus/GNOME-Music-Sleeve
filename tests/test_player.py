@@ -1877,6 +1877,113 @@ class RestoreTest(unittest.TestCase):
             self.assertEqual(self.sent(engine), [('play', 'album', 'l.alb1', 2, False)])
         asyncio.run(go())
 
+    @staticmethod
+    def autostarting(engine, fail=None):
+        """The app's autostart under way at launch: the engine 'starting' already, a start()
+        meanwhile joining it and every command waiting for it (the Engine's _ready()), until
+        the returned event is set; then up, or down with `fail` raised to the joined starts
+        and the commands."""
+        started = asyncio.Event()
+        engine.state = 'starting'
+
+        async def start(visible=None):
+            engine.calls.append(('start', visible))
+            await started.wait()
+            if fail:
+                raise fail
+
+        async def autostart():
+            await started.wait()
+            engine.state = 'down' if fail else 'up'
+            if fail:
+                engine.fail = fail
+        engine.start = start
+        for name in ('play', 'control', 'repeat', 'volume', 'shuffle', 'seek', 'queue_jump'):
+            engine.gates[name] = started
+        return started, asyncio.ensure_future(autostart())
+
+    def test_a_step_during_the_autostart_plays_the_entry_shown(self):
+        async def go():
+            player, engine, app = self.restored(index=1)
+            started, autostart = self.autostarting(engine)
+            first = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            self.assertTrue(player.pending)
+            self.assertTrue(player.restored)  # shown as it is until the play goes out
+            steps = [asyncio.ensure_future(player.next()),
+                     asyncio.ensure_future(player.toggle())]
+            await self.turns()
+            self.assertEqual((player.track.title, player.queue_index, player.position),
+                             ('Harbour Lights', 2, 0.0))
+            started.set()
+            await asyncio.gather(autostart, first, *steps)
+            await app.settle()
+            self.assertEqual(self.sent(engine, 'play', 'control'),
+                             [('play', 'album', 'l.alb1', 2, False)])
+            self.assertEqual(engine.play_options, [{'start_id': 'i.demo0001'}])
+            self.assertFalse(player.restored)
+            self.assertFalse(player.pending)
+        asyncio.run(go())
+
+    def test_a_seek_or_an_up_next_row_during_the_autostart_is_what_plays(self):
+        async def go():
+            player, engine, app = self.restored()
+            started, autostart = self.autostarting(engine)
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            steps = [asyncio.ensure_future(player.seek(0))]
+            await self.turns()
+            steps.append(asyncio.ensure_future(player.previous()))  # the item before
+            await self.turns()
+            steps.append(asyncio.ensure_future(player.seek(30)))
+            await self.turns()
+            self.assertEqual((player.track.title, player.position), ('Pilot Light', 30.0))
+            steps.append(asyncio.ensure_future(player.queue_jump(0)))
+            await self.turns()
+            started.set()
+            await asyncio.gather(autostart, task, *steps)
+            self.assertEqual(self.sent(engine, 'play', 'control', 'seek', 'queue_jump'),
+                             [('play', 'album', 'l.alb1', 0, False)])
+            self.assertEqual(engine.play_options, [{'start_id': 'i.demo0003'}])
+        asyncio.run(go())
+
+    def test_another_play_during_the_autostart_replaces_the_session(self):
+        async def go():
+            player, engine, app = self.restored()
+            started, autostart = self.autostarting(engine)
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            other = asyncio.ensure_future(player.play({'kind': 'playlist', 'id': 'p.pl1'},
+                                                      shuffle=False))
+            await self.turns()
+            started.set()
+            await asyncio.gather(autostart, task, other)
+            self.assertEqual(self.sent(engine), [('play', 'playlist', 'p.pl1', None, False)])
+            self.assertFalse(player.restored)
+        asyncio.run(go())
+
+    def test_a_failed_autostart_keeps_the_session(self):
+        async def go():
+            player, engine, app = self.restored()
+            started, autostart = self.autostarting(
+                engine, EngineError('engine-down', 'no Chrome'))
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            steps = [asyncio.ensure_future(player.next())]  # past the end: the item stays
+            await self.turns()
+            steps.append(asyncio.ensure_future(player.seek(40)))
+            await self.turns()
+            started.set()
+            await autostart
+            with self.assertRaises(EngineError):
+                await task
+            await asyncio.gather(*steps)
+            self.assertTrue(player.restored)
+            self.assertEqual((player.track.id, player.position), ('i.demo0001', 40.0))
+            self.assertEqual(self.sent(engine, 'play', 'control', 'seek'), [])
+            self.assertFalse(player.pending)
+        asyncio.run(go())
+
     def test_a_reloaded_page_gets_the_autoplay_setting_while_restored(self):
         async def go():
             player, engine, app = make_player(state='up')
