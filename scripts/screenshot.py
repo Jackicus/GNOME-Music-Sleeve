@@ -106,6 +106,8 @@ the menu the sidebar fills for it, beside its row (--expand the folder holding i
 --drop-target KEY marks KEY's sidebar row (as --sidebar-menu names one) as where a drop goes,
 as a drag over it that the row takes marks it (SidebarController.show_drop_target, which the
 sidebar's drop-enter calls): the drop highlight, which no headless script can drag to.
+--drop-target player-bar highlights the player bar so (PlayerBar.show_drop_target), with
+--playing.
 --drop-line N draws the insertion line a drag of one of its songs shows on a playlist's page
 (--open playlist:ID, one of the user's), above its song at index N (0: the first; -1: below
 the last), as DetailPage.show_insertion() draws it.
@@ -179,7 +181,7 @@ parser.add_argument('--more-options', action='store_true',
 parser.add_argument('--sidebar-menu', metavar='KEY',
                     help="pop up the sidebar's context menu for KEY")
 parser.add_argument('--drop-target', metavar='KEY',
-                    help="mark KEY's sidebar row as a drop's target")
+                    help="mark KEY's sidebar row as a drop's target (player-bar: the bar)")
 parser.add_argument('--drop-line', metavar='N', type=int,
                     help="the insertion line above the playlist's song N (-1: below the last)")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
@@ -197,6 +199,8 @@ if args.submenu and not (args.context_menu or args.sidebar_menu):
 if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
         and not args.demo:
     parser.error('--now-playing, --playing, --restored and --fullscreen-player need --demo')
+if args.drop_target == 'player-bar' and not args.playing:
+    parser.error('--drop-target player-bar needs --playing')
 if args.autoplay and not args.now_playing:
     parser.error('--autoplay needs --now-playing')
 if args.position is not None and not (args.now_playing or args.playing or args.restored
@@ -506,7 +510,11 @@ def sidebar_key(key):
 
 
 def mark_drop_target(window):
-    """--drop-target: the row marked as where a drop goes, scrolled into view."""
+    """--drop-target: the row marked as where a drop goes, scrolled into view (or the
+    player bar highlighted)."""
+    if args.drop_target == 'player-bar':
+        window.player_bar.show_drop_target()
+        return
     key = sidebar_key(args.drop_target)
     sidebar = window._sidebar
     item = sidebar.item_for(key)

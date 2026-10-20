@@ -106,7 +106,12 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   `dnd.attach_source()`, every drop target's look and auto-scroll through `dnd.DropFeedback`
   (`.drop-highlight`, `.drop-before`/`.drop-after`: inset shadows, never a margin). A
   `Gtk.DragSource` in the capture phase on a container sees the press before its rows'
-  click gestures and cancels them once the drag starts. `Gtk.DragSource`'s `prepare` can be
+  click gestures and cancels them once the drag starts. GDK's drag and drop events carry no
+  modifier state of their own; Shift held makes the drop's action MOVE where the source
+  offers COPY too (GTK chooses so under X11, mutter under Wayland), which
+  `dnd.shift_held()` reads with the keyboard's own state. A target's `enter`/`motion`
+  must answer one of the drop's own actions (`dnd.choose_action()`): a sidebar row's drag
+  offers MOVE alone. `Gtk.DragSource`'s `prepare` can be
   emitted from a test (no event device then). `Gdk.Clipboard.set(text)` works from Python (it
   is `set_value`).
 - A `Gio.MenuItem` with the attribute `hidden-when` = `action-disabled` is shown by a

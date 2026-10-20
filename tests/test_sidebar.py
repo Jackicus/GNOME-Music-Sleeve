@@ -553,6 +553,10 @@ class StubActions:
         self.dropped.append(('folder', folder_id, [ref.id for ref in refs]))
         return True
 
+    def drop_new_playlist(self, refs):
+        self.dropped.append(('new playlist', [ref.id for ref in refs]))
+        return True
+
 
 @requires_gtk
 class DragDropTest(unittest.TestCase):
@@ -605,6 +609,14 @@ class DragDropTest(unittest.TestCase):
         song = ItemRefs([Ref('song', 'i.s1', 'Song')])
         self.assertEqual(action(self.index('playlist:p2'), song), copy)
         self.assertEqual(action(self.index('folder:c'), song), 0)
+        # Songs and music videos on All Playlists: a new playlist of them; nowhere else.
+        songs = ItemRefs([Ref('song', 'i.s1', 'Song'), Ref('video', 'i.v1', 'Clip')])
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), song), copy)
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), songs), copy)
+        self.assertEqual(action(self.index('playlist:p2'), songs), 0)  # one at a time there
+        self.assertEqual(action(self.index(HOME), song), 0)
+        mixed = ItemRefs([Ref('song', 'i.s1', 'Song'), Ref('playlist', 'p1', 'P')])
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), mixed), 0)
         self.assertEqual(action(self.index('folder:c'), None), 0)  # from elsewhere
         # A folder waits for api.MOVE_FOLDERS; then never into itself or what is inside it.
         folder_a = self.refs('folder:a')
@@ -636,6 +648,23 @@ class DragDropTest(unittest.TestCase):
         self.assertFalse(self.controller._on_drop(self.widget, refused,
                                                   self.refs('playlist:p2'), 0))
         self.assertEqual(self.actions.dropped, [('folder', 'c', ['p2'])])
+
+    def test_songs_dropped_on_all_playlists_make_a_new_playlist(self):
+        from applemusic.library import ItemRefs, Ref
+        from tests.gtk import wait_for
+
+        songs = ItemRefs([Ref('song', 'i.s1', 'Song'), Ref('song', 'i.s2', 'Other')])
+        self.dnd._set_current(songs)
+        target = self.index(ALL_PLAYLISTS)
+        self.assertEqual(self.controller._on_drop_enter(self.widget, target),
+                         self.Gdk.DragAction.COPY)
+        row = self.controller.rows()[target]
+        self.assertTrue(row.has_css_class('drop-highlight'))
+        self.assertTrue(self.controller._on_drop(self.widget, target, songs, 0))
+        self.assertFalse(row.has_css_class('drop-highlight'))
+        # The dialog comes once the drop is over.
+        self.assertTrue(wait_for(lambda: self.actions.dropped))
+        self.assertEqual(self.actions.dropped, [('new playlist', ['i.s1', 'i.s2'])])
 
     def test_show_drop_target(self):
         rows = self.controller.rows()

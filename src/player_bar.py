@@ -25,6 +25,12 @@ A right click, a long press or the Menu key on the bar opens the item playing's 
 `context_item`: context_menu on the bar's button), as the Now Playing sheet's More Options
 button does.
 
+The bar takes drops (widgets/dnd.py, library.ItemRefs: drags that start in the app): songs,
+music videos, albums and playlists dragged onto it are queued at the end, as Play Later
+does, or after the item playing with Shift held, as Play Next does
+(ItemActions.queue_drop, actions.queue_targets); the bar is highlighted while a drag it
+takes is over it. A drag carrying anything that cannot be queued (a folder) is refused.
+
 For assistive technology: the bar announces each new item (Gtk.Accessible.announce, "Now
 playing …"); the button Adw.BottomSheet puts around the bar (a click on the bar opens the
 sheet) is named "Now Playing" and described by the item playing, where it would otherwise be
@@ -35,11 +41,12 @@ read their level as a percentage (VolumeControl); the seek slider reads "1:05 of
 
 from gettext import gettext as _
 
-from gi.repository import Adw, GObject, Gtk
+from gi.repository import Adw, Gdk, GObject, Gtk
 
 from . import shortcuts
-from .actions import now_playing_track
-from .widgets import context_menu
+from .actions import now_playing_track, queue_targets
+from .library import ItemRefs
+from .widgets import context_menu, dnd
 from .widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .widgets.transport import (HeartControl, ModeControl, PlayButton, RemoteCover, SeekControl,
                                 TrackTitles, VolumeControl, track_subtitle)
@@ -100,6 +107,17 @@ class PlayerBar(Adw.Bin):
                                (self.queue_button, 'show-queue')):
             button.set_tooltip_text(tooltip_with_keys(button.get_tooltip_text(),
                                                       shortcuts.NOW_PLAYING_TABS[action][0]))
+        # Drops queue what they carry (see the module). The bar lives as long as the window,
+        # so its own methods may handle its controller's signals.
+        self._drop_feedback = dnd.DropFeedback()
+        drop = Gtk.DropTarget.new(ItemRefs.__gtype__,
+                                  Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        drop.connect('accept', self._on_drop_accept)
+        drop.connect('enter', self._on_drop_motion)
+        drop.connect('motion', self._on_drop_motion)
+        drop.connect('leave', self._on_drop_leave)
+        drop.connect('drop', self._on_drop)
+        self.add_controller(drop)
 
     def _get_compact(self):
         return self._compact
@@ -175,6 +193,48 @@ class PlayerBar(Adw.Bin):
         bar's own buttons are off, or the focus was on a control that has gone."""
         button = self._bar_button()
         return button.grab_focus() if button is not None else self.grab_focus()
+
+    # -- drops -----------------------------------------------------------------------------
+
+    @staticmethod
+    def takes(refs):
+        """Whether a drop of `refs` (a library.ItemRefs) is queued here: all it carries can
+        be (actions.queue_targets)."""
+        return queue_targets(refs) is not None
+
+    def show_drop_target(self, shown=True):
+        """Highlight the bar as where a drop goes, as a drag over it that it takes does
+        (False: not highlighted)."""
+        self._drop_feedback.highlight(self if shown else None)
+
+    def _on_drop_accept(self, _target, _drop):
+        return self.takes(dnd.current())
+
+    def _on_drop_motion(self, target, _x, _y):
+        """A drag over the bar: the action a drop would do (COPY, or MOVE when the source
+        offers nothing else, or Shift held makes it one), the bar highlighted when it takes
+        the drag."""
+        drop = target.get_current_drop()
+        action = (dnd.choose_action(drop.get_actions())
+                  if drop is not None and self.takes(dnd.current()) else 0)
+        self.show_drop_target(bool(action))
+        return action
+
+    def _on_drop_leave(self, _target):
+        self._drop_feedback.clear()
+
+    def _on_drop(self, target, value, _x, _y):
+        """What was dropped, queued (ItemActions.queue_drop): after the item playing with
+        Shift held (dnd.shift_held), else at the end."""
+        self._drop_feedback.clear()
+        refs = dnd.current() or value  # the drag's own ItemRefs, with its objects
+        actions = getattr(self.get_root(), 'item_actions', None)
+        if actions is None or not self.takes(refs):
+            return False
+        drop = target.get_current_drop()
+        selected = drop.get_actions() if drop is not None else 0
+        return actions.queue_drop(refs, next_up=dnd.shift_held(selected, dnd.offered(),
+                                                                dnd.modifiers(self)))
 
     # -- following the Player --------------------------------------------------------------
 

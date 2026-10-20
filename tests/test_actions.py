@@ -17,8 +17,9 @@ from tests import ROOT  # noqa: F401  registers src/ as applemusic
 from applemusic.actions import (ItemActions, build_menu, can_play, describe, fill_sidebar_menu,
                                 is_apple_music_url, is_removable_playlist, is_shareable,
                                 library_target, main_menu_section, mnemonic_escaped,
-                                move_targets, now_playing_track, playlist_song, playlist_track,
-                                queue_target, rating_actions, rating_target, removal_target,
+                                move_targets, new_playlist_tracks, now_playing_track,
+                                playlist_song, playlist_track, queue_message, queue_target,
+                                queue_targets, rating_actions, rating_target, removal_target,
                                 removal_words, RATING_ACTIONS,
                                 share_url, station_target, web_url)
 from applemusic.backend import api
@@ -912,6 +913,38 @@ class FakeWindow:
         return self.clipboard
 
 
+class DropTargetsTest(unittest.TestCase):
+    """What the player bar queues and All Playlists makes a playlist of, from a drag's
+    ItemRefs."""
+
+    def test_queue_targets(self):
+        self.assertEqual(queue_targets(ItemRefs.for_objects([LIBRARY_TRACK, VIDEO_TRACK,
+                                                             PLAYLIST, CATALOG_ALBUM])),
+                         [('song', '1000000001'), ('musicVideo', '1000000011'),
+                          ('playlist', 'p.pl1'), ('album', '1000000002')])
+        self.assertEqual(queue_targets(ItemRefs.for_objects([UPLOAD_TRACK])),
+                         [('song', 'i.song2')])  # no catalog id: its own
+        self.assertIsNone(queue_targets(ItemRefs.for_objects([PLAYLIST, FOLDER])))
+        self.assertIsNone(queue_targets(ItemRefs.for_objects([MADE_UP_ALBUM])))
+        self.assertIsNone(queue_targets(ItemRefs([Ref('song', 'i.song1', 'Song')])))  # no objects
+        self.assertIsNone(queue_targets(None))
+
+    def test_queue_message(self):
+        self.assertEqual(queue_message('Shoreline', True), '“Shoreline” will play later')
+        self.assertEqual(queue_message('Shoreline', False), '“Shoreline” will play next')
+        self.assertEqual(queue_message('', True), 'Playing later')
+        self.assertEqual(queue_message('Shoreline', True, 2), '2 items will play later')
+        self.assertEqual(queue_message('Shoreline', False, 4), '4 items will play next')
+
+    def test_new_playlist_tracks(self):
+        self.assertEqual(new_playlist_tracks(ItemRefs.for_objects([LIBRARY_TRACK, CATALOG_SONG,
+                                                                   VIDEO_TRACK])),
+                         [('song', 'i.song1'), ('song', '1000000007'), ('video', 'i.vid1')])
+        self.assertIsNone(new_playlist_tracks(ItemRefs.for_objects([PLAYLIST])))
+        self.assertIsNone(new_playlist_tracks(ItemRefs.for_objects([LIBRARY_TRACK, PLAYLIST])))
+        self.assertIsNone(new_playlist_tracks(None))
+
+
 class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.app = FakeApp()
@@ -1150,6 +1183,37 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             [Ref('song', '1', 'One'), Ref('song', '2', 'Two')])))
         self.assertEqual(len([call for call in self.app.engine.calls
                               if call[0] == 'add_to_playlist']), 2)
+
+    async def test_drops_on_the_player_bar_are_queued(self):
+        def calls():
+            return [call for call in self.app.engine.calls if call[0] in ('play_next',
+                                                                          'play_later')]
+
+        song = ItemRefs.for_objects([LIBRARY_TRACK])
+        self.assertTrue(self.actions.queue_drop(song))
+        await asyncio.gather(*self.app.tasks)
+        self.assertEqual(calls(), [('play_later', 'song', '1000000001')])  # its catalog id
+        self.assertEqual(self.app.toasts, ['“Harbour Lights” will play later'])
+        self.app.engine.calls.clear()
+        # Several, Shift held: each after the item playing, in the order dragged.
+        several = ItemRefs.for_objects([LIBRARY_TRACK, PLAYLIST, CATALOG_ALBUM])
+        self.assertTrue(self.actions.queue_drop(several, next_up=True))
+        await asyncio.gather(*self.app.tasks)
+        self.assertEqual(calls(), [('play_next', 'album', '1000000002'),
+                                   ('play_next', 'playlist', 'p.pl1'),
+                                   ('play_next', 'song', '1000000001')])
+        self.assertEqual(self.app.toasts[-1], '3 items will play next')
+        self.app.engine.calls.clear()
+        # A folder cannot be queued: the drop is refused, nothing of it queued.
+        for refused in (ItemRefs.for_objects([PLAYLIST, FOLDER]),
+                        ItemRefs([Ref('song', 'i.song1', 'Harbour Lights')]), None):
+            self.assertFalse(self.actions.queue_drop(refused))
+        await asyncio.gather(*self.app.tasks)
+        self.assertEqual(calls(), [])
+        self.assertEqual(self.app.player.ensured, 0)  # the Player's commands do that
+        self.app.demo = True
+        self.assertTrue(self.actions.queue_drop(song))
+        self.assertEqual(self.app.toasts[-1], 'Not available with the demo library')
 
     async def test_a_failure_is_reported_not_confirmed(self):
         self.app.engine.fail = EngineError('api', 'HTTP 403 Forbidden')
@@ -1677,6 +1741,37 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
                          ['Added “Harbour Lights” to the new playlist “Harbour Songs”'])
         self.assertIn(('folder_children', 'root'), self.app.engine.calls)
         self.assertEqual(self.window.selected, [])  # the song's page stays
+
+    async def test_songs_dropped_on_all_playlists_make_a_playlist_of_them(self):
+        new = Item({'id': 'p.new', 'kind': 'playlist', 'title': 'Harbour Lights'})
+
+        def start_sync(quick=False, playlists=False, videos=False, tracks_of=()):
+            self.app.library.items[('playlist', 'p.new')] = new  # the pass brought it
+
+        self.app.start_sync = start_sync
+        refs = ItemRefs.for_objects([LIBRARY_TRACK, VIDEO_TRACK])
+        self.assertTrue(self.actions.drop_new_playlist(refs))
+        heading, confirm, name, description, done = self.asked[0]
+        # Named after the first song, which the user may change.
+        self.assertEqual((heading, confirm, name, description),
+                         ('New Playlist', '_Create', 'Harbour Lights', ''))
+        done('Harbour Lights', None)
+        await self.settle()
+        self.assertEqual(self.writes(), [
+            ('create_playlist', 'Harbour Lights', None,
+             (('song', 'i.song1'), ('video', 'i.vid1')), None)])
+        self.assertEqual(self.app.toasts, ['Created “Harbour Lights”'])
+        self.assertEqual(self.window.selected, ['playlist:p.new'])  # then shown
+        # One song: the toast names it.
+        self.assertTrue(self.actions.drop_new_playlist(ItemRefs.for_objects([UPLOAD_TRACK])))
+        self.asked[1][4]('Takes', '')
+        await self.settle()
+        self.assertEqual(self.app.toasts[-1], 'Added “Demo Take” to the new playlist “Takes”')
+        # Playlists dropped there are moved, not made into a playlist: refused here.
+        for refused in (ItemRefs.for_objects([PLAYLIST]),
+                        ItemRefs.for_objects([LIBRARY_TRACK, PLAYLIST]), None):
+            self.assertFalse(self.actions.drop_new_playlist(refused))
+        self.assertEqual(len(self.asked), 2)
 
     async def test_new_playlist_in_a_folder_is_shown(self):
         new = Item({'id': 'p.new', 'kind': 'playlist', 'title': 'Fresh'})

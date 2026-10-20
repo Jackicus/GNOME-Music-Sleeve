@@ -87,6 +87,19 @@ changes, change it here, with the date. The plan they came from is in
   again (the listing's date can come before the tracks show the change); Add and Remove from
   Playlist do the same, so all three survive a restart. Up Next is not touched, as in Apple's
   apps. In the demo a move shows and nothing is written.
+- **Drops that queue and make playlists** (2026-10-20). As on Apple's Mac app, songs, music
+  videos and playlists dropped on the player bar join Up Next: at its end (Play Later, which
+  is what the Mac app's drop does), or after the item playing with Shift held (Play Next),
+  each by the target its menu's Play Later queues (`actions.queue_targets()`: a song by its
+  catalog id, a playlist by its play target); a drag holding anything that cannot be queued
+  (a folder) is refused whole, not queued in part. The bar is the one place: the Now Playing
+  sheet covers the window while open, so no drag source is in sight of its Up Next tab, and
+  the bar shows only while something plays. Songs and music videos dropped on All Playlists
+  make a new playlist of them, through New Playlist's dialog with the first one's title
+  filled in (a name made up without asking would need a rename), and its page is shown once
+  Apple lists it; playlists dropped there still move to the top level (switched off, above).
+  A drag carries its objects as well as their Refs (`ItemRefs.objects`), since a Ref names a
+  song by the id a playlist takes, not the catalog id MusicKit queues it by.
 - **Sidebar sections: titles and dividers** (2026-10-19). Library and Playlists keep their
   titles (Playlists especially, which the library's folders and playlists fill), and a thin
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider

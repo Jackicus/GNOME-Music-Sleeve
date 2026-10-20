@@ -92,6 +92,9 @@ list and the script together.
     lists the folders it can go into by name, nested as the sidebar nests them, then New
     Folder…, a new folder holding it. A move is confirmed by a toast (with Undo), which a
     screen reader hears; dragging a playlist onto a sidebar folder does the same by pointer.
+    The other drops have their keys too: Play Later and Play Next in a menu are what a drop
+    on the player bar does, Add to Playlist › New Playlist… what songs dropped on All
+    Playlists do.
 12. On a playlist of your own, Alt+Down on the focused song moves it one place down and
     Alt+Up one place up; the focus stays on the song, and the move is announced ("“Song”
     moved to position 3 of 12"). Menu on a song lists Move Up and Move Down (Move Up not on

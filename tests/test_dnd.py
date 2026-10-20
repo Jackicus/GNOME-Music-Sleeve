@@ -46,6 +46,43 @@ class PureTest(unittest.TestCase):
 
     def test_no_drag_in_progress(self):
         self.assertIsNone(dnd.current())
+        self.assertEqual(dnd.offered(), 0)
+
+    def test_the_drag_in_progress_and_what_its_source_offers(self):
+        from gi.repository import Gdk
+
+        refs = ItemRefs([Ref('song', 'i.1', 'One')])
+        self.addCleanup(dnd._set_current, None)
+        dnd._set_current(refs, Gdk.DragAction.MOVE)
+        self.assertIs(dnd.current(), refs)
+        self.assertEqual(dnd.offered(), Gdk.DragAction.MOVE)
+        dnd._set_current(None, Gdk.DragAction.MOVE)
+        self.assertEqual(dnd.offered(), 0)
+
+    def test_choose_action(self):
+        from gi.repository import Gdk
+
+        copy, move = Gdk.DragAction.COPY, Gdk.DragAction.MOVE
+        choose = dnd.choose_action
+        self.assertEqual(choose(copy | move), copy)
+        self.assertEqual(choose(move), move)  # a sidebar row's drag offers only MOVE
+        self.assertEqual(choose(copy | move, preferred=move), move)
+        self.assertEqual(choose(copy, preferred=move), copy)
+        self.assertEqual(choose(Gdk.DragAction.LINK), 0)
+        self.assertEqual(choose(0), 0)
+
+    def test_shift_held(self):
+        from gi.repository import Gdk
+
+        copy, move = Gdk.DragAction.COPY, Gdk.DragAction.MOVE
+        shift = Gdk.ModifierType.SHIFT_MASK
+        held = dnd.shift_held
+        self.assertFalse(held(copy, copy | move, 0))
+        self.assertTrue(held(copy, copy | move, shift))  # the keyboard says so
+        self.assertTrue(held(move, copy | move, 0))  # Shift made the drop a move
+        self.assertFalse(held(move, move, 0))  # a source that offers only MOVE
+        self.assertTrue(held(move, move, shift))
+        self.assertFalse(held(copy, copy | move, Gdk.ModifierType.CONTROL_MASK))
 
 
 @requires_gtk

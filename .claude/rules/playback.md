@@ -101,7 +101,11 @@ paths:
   and heart. Its Lyrics and Up Next toggles are `win.show-lyrics` and `win.show-queue`,
   `widgets.now_playing.TabActions` over the sheet's tab seam (`shown-tab`, `show_tab()`):
   stateful (pressed while the tab is in sight), enabled by `can_show_tab()`; the bar hides
-  them below 640sp (`narrow`) and its whole right-hand box below 600sp (`compact`). The sheet's layout follows three of its own properties, set by window.blp's
+  them below 640sp (`narrow`) and its whole right-hand box below 600sp (`compact`). The bar
+  is a drop target (`Gtk.DropTarget` of `library.ItemRefs`, deciding from `dnd.current()`):
+  what `actions.queue_targets()` can queue all of goes through `item_actions.queue_drop()`,
+  Play Later, or Play Next when `dnd.shift_held()`; the sheet is no target (open, it covers
+  every drag source). The sheet's layout follows three of its own properties, set by window.blp's
   breakpoints: `wide` (900sp and up: the item beside the tabs), `compact` (600sp and under:
   a smaller cover) and `short` (a window too low for the cover over the titles: a 96 px
   cover beside them). Only the last matching breakpoint applies, so each width band has a
