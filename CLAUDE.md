@@ -64,9 +64,10 @@ for both builds, the sign-in's keys each build's own (`account_key()`).
 ```
 src/main.py, src/window.py      the Application, the Window (player_bar, sidebar_view, fullscreen)
 src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
-                                sync, account, cache, background, actions, related, release, session,
-                                discography, suggestions, errors, i18n, lyrics, remote, recent_searches,
-                                radio, timing, shortcuts, keyboard, sidebar, sections; new ones go here)
+                                sync, account, cache, background, actions, playlist_order, related,
+                                release, session, discography, suggestions, errors, i18n, lyrics,
+                                remote, recent_searches, radio, timing, shortcuts, keyboard, sidebar,
+                                sections; new ones go here)
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
@@ -126,9 +127,8 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
 - **UI**: widget templates are Blueprint, `Gtk.Template` classes with `__gtype_name__ =
   'AppleMusic<Name>'`. libadwaita widgets and style classes before custom CSS, CSS only in
   `src/style.css`; follow the GNOME HIG. A widget that can be dropped (a pushed page, a shelf, a
-  dialog, a row) connects its children's signals with `widgets.util.connect_weak()`, never to
-  its own bound method, and has no `=> $handler()` in its `.blp`, or it is never freed
-  (tests/test_page_lifetime.py).
+  dialog, a row) connects its children's signals with `widgets.util.connect_weak()`, never to its
+  own bound method, and no `=> $handler()` in its `.blp`, or it leaks (tests/test_page_lifetime.py).
 - **Collections are list models**: `Gtk.GridView`/`ListView`/`ColumnView` over a
   `Gio.ListStore` with a `Gtk.SignalListItemFactory`, not a box of widgets that grows with the
   library. Rows and tiles are recycled, so bind has to be cheap (`.claude/rules/performance.md`).

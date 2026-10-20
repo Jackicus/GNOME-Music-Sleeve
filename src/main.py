@@ -53,6 +53,7 @@ from .discord import Presence  # noqa: E402
 from .errors import error_message  # noqa: E402
 from .library import Library  # noqa: E402
 from .mpris import Mpris  # noqa: E402
+from . import playlist_order  # noqa: E402
 from .player import Player  # noqa: E402
 from .recent_searches import FILE_NAME as RECENT_SEARCHES, RecentSearches  # noqa: E402
 from .search_provider import OBJECT_NAME, SearchProvider  # noqa: E402
@@ -471,8 +472,8 @@ class Application(Adw.Application):
     def start_sync(self, quick=False, playlists=False, videos=False, tracks_of=()):
         """Sync the library (LibrarySync.start()): the task, or None. `quick`: the short pass
         after a library write (with `videos` and the tracks of the playlists `tracks_of`
-        after a removal), `playlists` the shorter one after a playlist write; both leave
-        last-sync alone."""
+        after a removal), `playlists` the shorter one after a playlist write (with the
+        tracks of `tracks_of` after their songs changed); both leave last-sync alone."""
         return self.library_sync.start(quick=quick, playlists=playlists, videos=videos,
                                        tracks_of=tracks_of)
 
@@ -662,8 +663,9 @@ class Application(Adw.Application):
             self._quitting = self.spawn(self._quit())
 
     async def _quit(self):
-        """Everything shown goes at once, and the last session is written as it is
-        (SessionKeeper.save_now); then a start the app asked for is cancelled (it
+        """Everything shown goes at once, a playlist order still to be written is
+        (PlaylistOrder.flush_all(), QUIT_WAIT at most), and the last session is written as it
+        is (SessionKeeper.save_now); then a start the app asked for is cancelled (it
         would hold the engine's stop until Chrome is up), and the sync (its thread included)
         and the engine are stopped, QUIT_TIMEOUT at most; a sign-out under way is given
         SIGN_OUT_WAIT more to finish; then Chrome is killed if it still runs."""
@@ -674,6 +676,17 @@ class Application(Adw.Application):
         for window in self.get_windows():
             if hasattr(window, 'prepare_quit'):  # a dialog's toplevel has none
                 window.prepare_quit()  # remembers its state and hides at once
+        # A playlist's new order not yet written goes to Apple first, with the engine up
+        # (PlaylistOrder.flush_all(): nothing is started), within a bound.
+        orders = [window.item_actions.playlist_order.flush_all(quitting=True)
+                  for window in self.get_windows()
+                  if getattr(getattr(window, 'item_actions', None), 'playlist_order', None)]
+        if orders:
+            try:
+                await asyncio.wait_for(asyncio.gather(*orders), playlist_order.QUIT_WAIT)
+            except TimeoutError:
+                log.warning('a playlist order was not written in %g s',
+                            playlist_order.QUIT_WAIT)
         # The last session as it is now, before the engine's stop empties the Player.
         saving = self.session.save_now() if self.session is not None else None
         # Nothing more starts: a start or a sign-in's finish under way is cancelled, and a

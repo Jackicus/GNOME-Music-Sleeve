@@ -43,6 +43,10 @@ def error_message(code):
         return _('Up Next cannot be changed while a station plays'), None, None
     if code == errors.QUEUE_CHANGED:
         return _('Up Next changed meanwhile; try again'), None, None
+    if code == errors.CONFLICT:
+        # A playlist's order written against a list Apple no longer has (changed on another
+        # device): nothing was written, and the page shows Apple's list again.
+        return _('The playlist changed elsewhere: try again'), None, None
     # A usage error or an unknown code: the bridge or Chrome answered something the app
     # did not expect, so that is what the user is told.
     return _('The playback engine did not answer as expected'), None, None

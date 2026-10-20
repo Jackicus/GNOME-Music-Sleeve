@@ -130,7 +130,12 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `track_links.attach(view)` (the Songs table, a playlist's table).
 - A playlist's page is a table from 720sp (`DetailPage.table`, set by detail.blp's
   breakpoint): TrackRow's table rows under a `TrackTableHeader` (the tracks' section header);
-  an album's tracks stay a numbered list. Under a playlist the user can change
+  an album's tracks stay a numbered list. A playlist of the user's (`DetailPage.can_reorder()`;
+  the page lists it in its own order, and a sort of its view would turn this off) takes a
+  drop of one of its own songs (`dnd.current()`'s origin is the playlist) with an insertion
+  line (`dnd.DropFeedback.insert()` on the row, `drop_place()`), and Alt+Up and Alt+Down on
+  the focused song; both go through `item_actions.move_in_playlist()` (playlist_order.py),
+  and the focus follows the moved song (`scroll_to(…, FOCUS)`). Under a playlist the user can change
   (`detail.wants_suggestions()`) its last section holds the songs Apple suggests adding
   (`Engine.playlist_suggestions`) in a `widgets.suggested_songs.SuggestedSongs` (Add
   buttons, Refresh, a song plays alone), less the songs it holds: six, or twelve with
@@ -209,9 +214,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `NOW_PLAYING_TABS` (keys the window's capture-phase key controller handles: the playback
   actions, and Ctrl+Shift+L and Ctrl+Shift+U, Now Playing on a tab), `MAIN_MENU`,
   `CONTEXT_MENU`, the sidebar's `FOLDER_OPEN` and `FOLDER_CLOSE` (sidebar_view.py binds
-  them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it) and `sections()` (the Keyboard Shortcuts dialog); tests/test_shortcuts.py checks
-  that the dialog lists every key, and that no accelerator is a HIG standard one the app
-  does not implement (Ctrl+N is "New"). `src/keyboard.py` decides which action a key runs
+  them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it), a playlist page's `MOVE_UP`
+  and `MOVE_DOWN` (Alt+Up, Alt+Down on the focused song: `keyboard.move_step()`, asked by the
+  page's own key controller) and `sections()` (the Keyboard Shortcuts dialog);
+  tests/test_shortcuts.py checks that the dialog lists every key, and that no accelerator is
+  a HIG standard one the app does not implement (Ctrl+N is "New"). `src/keyboard.py` decides which action a key runs
   (`playback_action()`, `tab_action()`; tests/test_keyboard.py): Space belongs to a focused
   button, switch, check box or boxed-list row (GTK's own binding presses it), and every key
   to an entry, a popover or a dialog; `context_menu.MENU_KEYS` is built from

@@ -2292,6 +2292,43 @@ class PlaylistWriteTest(EngineFixture):
         self.assertFalse(await self.engine.remove_from_playlist('p.empty', 'i.a', 0))
         self.assertEqual(self.page.bridge_calls, [])
 
+    async def test_a_reorder_puts_every_entry_back_in_the_new_order(self):
+        # Every entry read goes back by its own id and type, one Apple cannot play (no
+        # playParams) and a catalog song among them; of a song held twice, the entry moved.
+        await self.up()
+        self.page.api_answers[('/v1/me/library/playlists/p.1/tracks', 0)] = {'data': [
+            {'id': 'i.a', 'type': 'library-songs', 'attributes': {'playParams': {}}},
+            {'id': 'i.b', 'type': 'library-songs'},
+            {'id': 'i.a', 'type': 'library-songs'},
+            {'id': '1000000001', 'type': 'songs'},
+            {'id': 'i.v', 'type': 'library-music-videos'}]}
+        await self.engine.reorder_playlist('p.1', ['i.a', 'i.b', 'i.a', '1000000001', 'i.v'],
+                                           [1, 2, 4, 3, 0])
+        self.assertEqual(self.page.bridge_calls, [('replacePlaylistTracks', 'p.1', [
+            {'id': 'i.b', 'type': 'library-songs'}, {'id': 'i.a', 'type': 'library-songs'},
+            {'id': 'i.v', 'type': 'library-music-videos'}, {'id': '1000000001', 'type': 'songs'},
+            {'id': 'i.a', 'type': 'library-songs'}])])
+
+    async def test_a_reorder_over_a_list_apple_no_longer_has_writes_nothing(self):
+        await self.up()
+        self.tracks('p.1', 'i.a', 'i.c', 'i.b')  # reordered on another device
+        self.tracks('p.2', 'i.a', 'i.b', 'i.c')  # a song added there
+        self.page.api_answers[('/v1/me/library/playlists/p.3/tracks', 0)] = {'data': [
+            {'id': 'i.a', 'type': 'library-songs'}, {'id': 'i.b'}]}  # an entry without a type
+        for playlist_id, shown, code in (('p.1', ['i.a', 'i.b', 'i.c'], 'conflict'),
+                                         ('p.2', ['i.a', 'i.b'], 'conflict'),
+                                         ('p.empty', ['i.a', 'i.b'], 'conflict'),
+                                         ('p.3', ['i.a', 'i.b'], 'api')):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.reorder_playlist(playlist_id, shown, [1, 0] + [2] * (
+                    len(shown) - 2))
+            self.assertEqual(raised.exception.code, code, playlist_id)
+        for playlist_id, order in (('pl.u-catalog', [0]), ('p.1', [0, 0, 1]), ('p.1', [0, 1])):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.reorder_playlist(playlist_id, ['i.a', 'i.b', 'i.c'], order)
+            self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.bridge_calls, [])
+
     async def test_folder_children_leave_out_what_was_deleted(self):
         await self.up()
         self.page.api_answers[('/v1/me/library/playlist-folders/p.playlistsroot/children',

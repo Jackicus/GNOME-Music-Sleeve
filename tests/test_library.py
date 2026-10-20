@@ -26,8 +26,9 @@ from tests import ROOT
 from applemusic import library as library_module
 from applemusic.library import (PENDING_HOLD, ROOT_FOLDER, SECTIONS, Group, Item, ItemRefs,
                                 Library, PlaylistTree, Ref, SongOrder, Track, TrackRecord,
-                                TreeChange, apply_changes, change_settled, fold, folder_of,
-                                item_ref, parse, paused_gc, track_ref)
+                                TreeChange, apply_changes, change_settled, drop_index, fold,
+                                folder_of, item_ref, moved, order_for, parse, paused_gc,
+                                reorder_entries, track_ref)
 
 
 def load(cache_dir, library=None):
@@ -1500,6 +1501,140 @@ class TestHolds(unittest.TestCase):
         self.library.note_added(other)
         load(self.cache, self.library)
         self.assertFalse(self.library.holds(other))
+
+
+def playlist_with(playlist_id, track_ids):
+    """A playlist's Item dict with these tracks, in this order (a song may be there twice)."""
+    play = {'kind': 'playlist', 'id': playlist_id}
+    return {'id': playlist_id, 'kind': 'playlist', 'title': f'Playlist {playlist_id}',
+            'play': play, 'groups': [{'name': 'Tracks', 'play': play, 'entries': [
+                dict(track(track_id, f'Song {track_id}', index), trackNumber=1)
+                for index, track_id in enumerate(track_ids)]}]}
+
+
+class TestReorder(unittest.TestCase):
+    """A playlist's songs in a new order: the index arithmetic, Item.reorder() in place, and
+    Library.reorder()'s order held through reloads until the file shows it."""
+
+    def test_the_index_arithmetic(self):
+        self.assertEqual(moved(4, 0, 2), [1, 2, 0, 3])
+        self.assertEqual(moved(4, 3, 0), [3, 0, 1, 2])
+        # A drop in a gap: before the song at the gap, or after the last; beside it, nothing.
+        self.assertEqual(drop_index(1, 0), 0)
+        self.assertEqual(drop_index(1, 4), 3)
+        self.assertEqual(drop_index(1, 3), 2)
+        self.assertIsNone(drop_index(1, 1))
+        self.assertIsNone(drop_index(1, 2))
+
+    def test_order_for_takes_a_song_held_twice_in_turn(self):
+        entries = [{'id': 'a'}, {'id': 'b'}, {'id': 'a'}]
+        self.assertEqual(order_for(entries, ['b', 'a', 'a']), [1, 0, 2])
+        self.assertEqual(order_for(entries, ['a', 'a', 'b']), [0, 2, 1])
+        self.assertIsNone(order_for(entries, ['a', 'b']))  # one short
+        self.assertIsNone(order_for(entries, ['a', 'b', 'b']))
+        self.assertIsNone(order_for(entries, ['a', 'b', 'a', 'c']))
+
+    def test_reorder_entries_renumbers_only_what_moved(self):
+        entries = [TrackRecord(track(t, t, i)) for i, t in enumerate('abcd')]
+        arranged = reorder_entries(entries, [0, 2, 1, 3])
+        self.assertEqual([entry['id'] for entry in arranged], ['a', 'c', 'b', 'd'])
+        self.assertEqual([entry['index'] for entry in arranged], [0, 1, 2, 3])
+        self.assertIs(arranged[0], entries[0])
+        self.assertIs(arranged[3], entries[3])
+        self.assertIsInstance(arranged[1], TrackRecord)
+        self.assertEqual(dict(arranged[1]), dict(track('c', 'c', 2), index=1))
+        self.assertEqual(reorder_entries([track('x', 'x', 0)], [0]), [track('x', 'x', 0)])
+
+    def test_item_reorder_keeps_its_objects_and_splices_once(self):
+        item = Item(playlist_with('p.1', ['a', 'b', 'c', 'd', 'e']))
+        group = item.groups[0]
+        store = group.entries
+        tracks = [store.get_item(n) for n in range(5)]
+        splices = []
+        store.connect('items-changed', lambda _s, *change: splices.append(change))
+        told = []
+        item.connect('groups-changed', lambda _item: told.append(True))
+        notified = []
+        tracks[3].connect('notify::index', lambda track, _pspec: notified.append(track.id))
+        self.assertTrue(item.reorder(moved(5, 3, 1)))
+        self.assertEqual(item.track_ids(), ['a', 'd', 'b', 'c', 'e'])
+        self.assertEqual(splices, [(1, 3, 3)])  # the stretch that moved, one change
+        self.assertEqual(told, [])
+        self.assertIs(item.groups[0], group)
+        self.assertIs(store.get_item(1), tracks[3])
+        self.assertEqual([store.get_item(n).index for n in range(5)], [0, 1, 2, 3, 4])
+        self.assertEqual(notified, ['d'])
+        self.assertEqual([entry['id'] for entry in item.raw['groups'][0]['entries']],
+                         ['a', 'd', 'b', 'c', 'e'])
+        # Refused: not a permutation, not a playlist.
+        self.assertFalse(item.reorder([0, 0, 1, 2, 3]))
+        self.assertFalse(item.reorder([0, 1]))
+        album_item = Item(album('l.a', 'A', ['x', 'y']))
+        self.assertFalse(album_item.reorder([1, 0]))
+        self.assertIsNone(album_item.track_ids())
+
+    def test_the_order_held_through_reloads(self):
+        library = Library()
+        with tempfile.TemporaryDirectory() as cache:
+            def reload(track_ids, hold_time=None):
+                write_library(cache, [], playlists=[playlist_with('p.1', track_ids)])
+                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+                    asyncio.run(library.reload())
+
+            write_library(cache, [], playlists=[playlist_with('p.1', ['a', 'b', 'c'])])
+            load(cache, library)
+            item = library.by_id('playlist', 'p.1')
+            store = item.groups[0].entries
+            told = []
+            item.connect('groups-changed', lambda _item: told.append(True))
+            self.assertTrue(library.reorder(item, moved(3, 0, 2)))
+            self.assertEqual(library.held_order('p.1'), ['b', 'c', 'a'])
+
+            # A sync before Apple shows it: the order held, nothing changed on the page.
+            reload(['a', 'b', 'c'])
+            self.assertIs(library.by_id('playlist', 'p.1'), item)
+            self.assertIs(item.groups[0].entries, store)
+            self.assertEqual(item.track_ids(), ['b', 'c', 'a'])
+            self.assertEqual(told, [])
+            # Apple shows it: settled.
+            reload(['b', 'c', 'a'])
+            self.assertIsNone(library.held_order('p.1'))
+            self.assertEqual(told, [])
+            # Another song since (changed elsewhere): the file wins.
+            library.reorder(item, moved(3, 2, 0))
+            reload(['b', 'c', 'a', 'd'])
+            self.assertIsNone(library.held_order('p.1'))
+            self.assertEqual(item.track_ids(), ['b', 'c', 'a', 'd'])
+            # Expired: the file wins; a load forgets every order held.
+            with mock.patch.object(library_module, '_now', return_value=1000.0):
+                library.reorder(item, moved(4, 0, 3))
+            with mock.patch.object(library_module, '_now', return_value=1000.0 + PENDING_HOLD):
+                reload(['b', 'c', 'a', 'd'])
+            self.assertEqual(item.track_ids(), ['b', 'c', 'a', 'd'])
+            library.reorder(library.by_id('playlist', 'p.1'), moved(4, 0, 3))
+            load(cache, library)
+            self.assertIsNone(library.held_order('p.1'))
+            self.assertEqual(library.by_id('playlist', 'p.1').track_ids(), ['b', 'c', 'a', 'd'])
+
+    def test_an_answer_takes_the_order_held(self):
+        library = Library()
+        with tempfile.TemporaryDirectory() as cache:
+            write_library(cache, [], playlists=[playlist_with('p.1', ['a', 'b'])])
+            load(cache, library)
+            item = library.by_id('playlist', 'p.1')
+            library.reorder(item, [1, 0])
+            answer = playlist_with('p.1', ['a', 'b'])
+            held = library.with_held_order(answer)
+            self.assertEqual([entry['id'] for entry in held['groups'][0]['entries']],
+                             ['b', 'a'])
+            self.assertEqual([entry['index'] for entry in held['groups'][0]['entries']],
+                             [0, 1])
+            item.merge(held)
+            self.assertEqual(item.track_ids(), ['b', 'a'])
+            library.release_order('p.1')
+            self.assertIs(library.with_held_order(answer), answer)
+            other = {'kind': 'album', 'id': 'p.1'}
+            self.assertIs(library.with_held_order(other), other)
 
 
 class TestItemRefs(unittest.TestCase):

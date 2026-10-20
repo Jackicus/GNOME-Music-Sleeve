@@ -17,7 +17,7 @@
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
                                     remove-from-library]
                           [--more-options] [--sidebar-menu KEY [--submenu NAME]]
-                          [--drop-target KEY] [--scroll PX]
+                          [--drop-target KEY] [--drop-line N] [--scroll PX]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
 through scripts/headless.sh, so the window opens on a private display and never on
@@ -103,6 +103,9 @@ the menu the sidebar fills for it, beside its row (--expand the folder holding i
 --drop-target KEY marks KEY's sidebar row (as --sidebar-menu names one) as where a drop goes,
 as a drag over it that the row takes marks it (SidebarController.show_drop_target, which the
 sidebar's drop-enter calls): the drop highlight, which no headless script can drag to.
+--drop-line N draws the insertion line a drag of one of its songs shows on a playlist's page
+(--open playlist:ID, one of the user's), above its song at index N (0: the first; -1: below
+the last), as DetailPage.show_insertion() draws it.
 --scroll PX scrolls the page shown down by PX pixels before the shot (its first
 scrolled window that scrolls vertically): the rest of a page taller than the
 virtual monitor, which a --size cannot show.
@@ -174,6 +177,8 @@ parser.add_argument('--sidebar-menu', metavar='KEY',
                     help="pop up the sidebar's context menu for KEY")
 parser.add_argument('--drop-target', metavar='KEY',
                     help="mark KEY's sidebar row as a drop's target")
+parser.add_argument('--drop-line', metavar='N', type=int,
+                    help="the insertion line above the playlist's song N (-1: below the last)")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
 parser.add_argument('--focus', action='store_true',
@@ -246,6 +251,7 @@ menu_opened = False
 banner_shown = False
 scrolled = False
 focused = False
+drop_line_scrolled = False
 failed = False  # a step raised: the app quits and the script exits 1
 preferences = None  # the Preferences dialog, once --preferences has opened it
 dialog = None  # the --dialog dialog, once opened
@@ -490,6 +496,29 @@ def mark_drop_target(window):
         viewport.scroll_to(row, None)
 
 
+def drop_line_place(page):
+    """--drop-line's song index on the page, and whether the line is below it."""
+    count = len(page.item.track_ids() or ()) if getattr(page, 'item', None) else 0
+    return (count - 1, True) if args.drop_line < 0 else (args.drop_line, False)
+
+
+def scroll_to_drop_line(window):
+    """--drop-line, first: the song's row scrolled into view (in a narrow window the hero
+    takes the first screen), so the list has made it."""
+    page = window.navigation_view.get_visible_page()
+    if getattr(page, 'show_insertion', None) is None:
+        sys.exit('screenshot: --drop-line needs a playlist page (--open playlist:ID)')
+    index, _after = drop_line_place(page)
+    page.list_view.scroll_to(1 + index, Gtk.ListScrollFlags.NONE, None)  # after the hero
+
+
+def mark_drop_line(window):
+    """--drop-line, then: the insertion line on the playlist page shown."""
+    page = window.navigation_view.get_visible_page()
+    if not page.show_insertion(*drop_line_place(page)):
+        sys.exit(f'screenshot: no insertion line for song {args.drop_line} on this page')
+
+
 def harness_descendants(widget, kind):
     if isinstance(widget, kind):
         yield widget
@@ -595,7 +624,7 @@ def shoot():
 
 def _shoot():
     global opened, sheet_opened, searched, menu_opened, banner_shown, preferences, dialog
-    global scrolled, focused
+    global scrolled, focused, drop_line_scrolled
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
         return GLib.SOURCE_REMOVE
@@ -640,6 +669,16 @@ def _shoot():
     if args.drop_target and not menu_opened:
         menu_opened = True
         mark_drop_target(window)
+        GLib.timeout_add(400, shoot)
+        return GLib.SOURCE_REMOVE
+    if args.drop_line is not None and not menu_opened:
+        if not drop_line_scrolled:
+            drop_line_scrolled = True
+            scroll_to_drop_line(window)
+            GLib.timeout_add(800, shoot)  # scrolled, the row made and its artwork decoded
+            return GLib.SOURCE_REMOVE
+        menu_opened = True
+        mark_drop_line(window)
         GLib.timeout_add(400, shoot)
         return GLib.SOURCE_REMOVE
     if args.preferences and preferences is None:

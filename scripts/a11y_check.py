@@ -431,6 +431,50 @@ def watch(name, calls):
     return lambda: delattr(app.player, name)
 
 
+async def moving_songs(window):
+    """Step 12: Alt+Down and Alt+Up on a playlist's focused song, announced, the focus
+    staying on it; Move Up and Move Down in its menu."""
+    playlist = first_playlist()
+    window.select_page(f'playlist:{playlist.id}')
+    await asyncio.sleep(0.8)
+    page = window.navigation_view.get_visible_page()
+    await key(window, '<primary>2', 0.6)
+    for _step in range(6):  # Play, Shuffle, More Options, then the first song
+        found = context_menu.find(page.list_view, window.get_focus())
+        if found is not None and found[1] is page.item.groups[0].entries.get_item(0):
+            break
+        await key(window, 'Tab', 0.3)
+    await key(window, 'Down', 0.3)
+    found = context_menu.find(page.list_view, window.get_focus())
+    song = found[1] if found is not None else None
+    check('Tab and Down reach the second song', song is not None and song.index == 1,
+          describe(window.get_focus()))
+    if song is None:
+        return
+    said = []
+    window.announce = lambda text, _priority: said.append(text)
+    await key(window, '<alt>Down', 0.4)
+    found = context_menu.find(page.list_view, window.get_focus())
+    check('Alt+Down moves it one place down, the focus with it',
+          song.index == 2 and found is not None and found[1] is song,
+          (song.index, describe(window.get_focus())))
+    check('and says where it went', said[-1:] == [
+        f'“{song.title}” moved to position 3 of {len(page.item.track_ids())}'], said)
+    await key(window, '<alt>Up', 0.4)
+    found = context_menu.find(page.list_view, window.get_focus())
+    check('Alt+Up moves it back up', song.index == 1 and found is not None and found[1] is song,
+          (song.index, describe(window.get_focus())))
+    del window.announce
+    await key(window, 'Menu', 0.6)
+    shown = [each for each in harness.popovers(page.list_view)
+             if isinstance(each, Gtk.PopoverMenu)]
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check('Menu on it lists Move Up and Move Down', '_Move Up' in labels
+          and 'Move _Down' in labels, labels)
+    await key(window, 'Escape', 0.4)
+    check('Escape closes it', not any(each.get_visible() for each in shown))
+
+
 async def walkthrough(window):
     narrow = window.split_view.get_collapsed()
     print('-- sidebar')
@@ -992,6 +1036,8 @@ async def walkthrough(window):
           bool(labels) and all(labels) and labels[-1] == 'New _Folder…', labels)
     await key(window, 'Escape', 0.4)
     check('Escape closes it', not any(each.get_visible() for each in shown))
+    print("-- a playlist's songs moved")
+    await moving_songs(window)
     print('-- Preferences')
     await key(window, '<primary>comma', 1.0)
     dialog = app._preferences

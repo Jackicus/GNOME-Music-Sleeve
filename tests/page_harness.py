@@ -226,6 +226,7 @@ def classes():
             self.added = []  # (playlist id, song id, title) per add_to_playlist()
             self.add_succeeds = True  # what the write's task answers
             self.library_adds = []  # (Item, its task) per add_to_library(): the test ends it
+            self.moved = []  # (playlist id, from, to, at_once) per move_in_playlist()
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
             self.added.append((playlist_id, song_id, title))
@@ -238,6 +239,13 @@ def classes():
             task = asyncio.get_running_loop().create_future()
             self.library_adds.append((obj, task))
             return task
+
+        def move_in_playlist(self, playlist, from_index, to_index, at_once=False):
+            # The real one's model change (PlaylistOrder.move()), nothing written.
+            from applemusic.library import moved
+
+            self.moved.append((playlist.id, from_index, to_index, at_once))
+            return playlist.reorder(moved(len(playlist.track_ids()), from_index, to_index))
 
         def menu_for(self, obj, queued=False, queue_entry=None):
             self.asked.append(obj)
@@ -268,6 +276,7 @@ def classes():
             self.item_actions.went = []
             self.item_actions.added = []
             self.item_actions.library_adds = []
+            self.item_actions.moved = []
             self.opened = []
             self.artist_pages = []  # open_artist_page()'s, Apple Music's pages of artists
             self.shelves_opened = []

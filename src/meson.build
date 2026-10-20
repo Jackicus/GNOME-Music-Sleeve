@@ -114,6 +114,7 @@ install_data(
   'mpris.py',
   'player.py',
   'player_bar.py',
+  'playlist_order.py',
   'radio.py',
   'recent_searches.py',
   'related.py',

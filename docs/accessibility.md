@@ -92,6 +92,11 @@ list and the script together.
     lists the folders it can go into by name, nested as the sidebar nests them, then New
     Folder…, a new folder holding it. A move is confirmed by a toast (with Undo), which a
     screen reader hears; dragging a playlist onto a sidebar folder does the same by pointer.
+12. On a playlist of your own, Alt+Down on the focused song moves it one place down and
+    Alt+Up one place up; the focus stays on the song, and the move is announced ("“Song”
+    moved to position 3 of 12"). Menu on a song lists Move Up and Move Down (Move Up not on
+    the first song). Dragging a song within the list does the same by pointer. The demo
+    shows the moves and keeps none.
 
 ## The tools
 

@@ -21,6 +21,8 @@ The standard library only; engine.py and actions.py use it.
                                         # lyrics request asks its translations and
                                         # pronunciations in
     can_move_to_folder('playlist', 'p.1')   # whether Apple is known to take that folder move
+    playlist_entries(listed)            # a playlist's tracks as a PUT of them sends them back
+    reordered_entries(listed, shown, order)   # those in a new order, or EngineError('conflict')
 """
 
 from .errors import EngineError
@@ -296,6 +298,43 @@ def library_twin(answer):
             if isinstance(twin_id, str) and is_library_id(twin_id):
                 return twin_id
     return None
+
+
+def playlist_entries(listed):
+    """A library playlist's tracks as Apple listed them (GET …/tracks, every page), as the
+    `{id, type}` a PUT of its tracks takes, each id and type exactly as Apple gave them. The
+    listing includes the entries Apple cannot play (without playParams: four of them across
+    33 playlists, 2026-10-20), and a PUT replaces the whole list, so every entry has to go
+    back: one without its id or type is EngineError('api'), and nothing is written."""
+    entries = []
+    for entry in listed:
+        entry_id = entry.get('id') if isinstance(entry, dict) else None
+        entry_type = entry.get('type') if isinstance(entry, dict) else None
+        if not isinstance(entry_id, str) or not entry_id or not isinstance(entry_type, str) \
+                or not entry_type:
+            raise EngineError('api', 'a playlist entry came without its id or type')
+        entries.append({'id': entry_id, 'type': entry_type})
+    return entries
+
+
+def reordered_entries(listed, shown, order):
+    """The PUT's list for a playlist reordered: the entries Apple lists now
+    (playlist_entries()) in the order `order` gives, a permutation of positions in `shown`,
+    the ids of the tracks the order was chosen over (the list as the app had it), so that a
+    song held twice moves the entry the user moved. EngineError('conflict') when Apple's list
+    is not `shown` any more (changed on another device, or since the app last read it):
+    nothing may be written over a list the user did not see. EngineError('usage') for an
+    order that is not a permutation of `shown`."""
+    shown = [str(track_id) for track_id in shown]
+    order = list(order)
+    if sorted(order) != list(range(len(shown))) or any(
+            isinstance(position, bool) or not isinstance(position, int) for position in order):
+        raise EngineError('usage', 'a playlist order must place every track once')
+    entries = playlist_entries(listed)
+    if [entry['id'] for entry in entries] != shown:
+        raise EngineError('conflict', f'Apple lists {len(entries)} tracks, not the {len(shown)} '
+                                      'the new order was made for, as they were')
+    return [entries[position] for position in order]
 
 
 def page_data(answer):

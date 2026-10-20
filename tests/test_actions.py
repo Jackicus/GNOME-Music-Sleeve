@@ -655,6 +655,13 @@ class FakeEngine(GObject.Object):
         await self._record('remove_from_playlist', playlist_id, track_id, index)
         return True
 
+    async def reorder_playlist(self, playlist_id, shown, order):
+        await self._record('reorder_playlist', playlist_id, tuple(shown), tuple(order))
+
+    async def playlist_track_ids(self, playlist_id):
+        self.calls.append(('playlist_track_ids', playlist_id))
+        return []
+
     async def rename_folder(self, folder_id, name):
         await self._record('rename_folder', folder_id, name)
 
@@ -713,6 +720,7 @@ class FakeLibrary:
         self.placed = 0
         self.released = []
         self.hidden = []  # ('hide' or 'unhide', the refs), in order
+        self.held = {}  # playlist id -> its order held (reorder())
         self.noted = []  # note_added()'s Items
 
     def note_added(self, item):
@@ -775,6 +783,19 @@ class FakeLibrary:
     def favourite_songs(self):
         return next((item for item in self.playlists if item.favourites), None)
 
+    def reorder(self, item, order):
+        # Library.reorder()'s, the order held as it holds it.
+        if not item.reorder(order):
+            return False
+        self.held[item.id] = item.track_ids()
+        return True
+
+    def release_order(self, playlist_id):
+        self.held.pop(playlist_id, None)
+
+    def with_held_order(self, raw):
+        return raw
+
 
 class FakeApp:
     def account_key(self, name):
@@ -793,7 +814,8 @@ class FakeApp:
         self.reported = []
         self.toasts = []
         self.buttons = []  # (label, action, target) of the toasts' buttons
-        self.syncs = []  # (quick,) per start_sync
+        self.syncs = []  # (quick,) per start_sync, ('tracks', ids) for a tracks pass
+        self.library_sync = None
 
     def spawn(self, coro):
         task = asyncio.get_running_loop().create_task(coro)
@@ -810,7 +832,9 @@ class FakeApp:
                                  action_target.unpack() if action_target else None))
 
     def start_sync(self, quick=False, playlists=False, videos=False, tracks_of=()):
-        if videos or tracks_of:
+        if playlists and tracks_of:
+            self.syncs.append(('tracks', tuple(tracks_of)))
+        elif videos or tracks_of:
             self.syncs.append(('quick', videos, tuple(tracks_of)))
         else:
             self.syncs.append('playlists' if playlists else quick)
@@ -905,7 +929,8 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-copy-link', 'item-go-to-album', 'item-go-to-artist', 'item-new-playlist',
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
             'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
-            'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue']))
+            'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue',
+            'item-move-in-playlist', 'item-undo-reorder']))
         self.assertEqual(
             self.window.actions['item-remove-from-queue'].get_parameter_type().dup_string(),
             '(is)')
@@ -1057,6 +1082,7 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.engine.calls[-1], ('item', 'playlist', 'p.pl1'))
         self.assertEqual(changed, [True])
         self.assertEqual(self.app.playlist.raw.get('trackCount'), 1)
+        self.assertEqual(self.app.syncs, [('tracks', ('p.pl1',))])  # into library.json too
 
     async def test_a_refresh_that_fails_is_only_logged(self):
         self.actions.menu_for(LIBRARY_TRACK)
@@ -1415,6 +1441,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         delays = actions_module.SETTLE_DELAYS
         actions_module.SETTLE_DELAYS = (0, 0, 0)
         self.addCleanup(setattr, actions_module, 'SETTLE_DELAYS', delays)
+        self.actions.playlist_order.settle = (0,)
 
 
     async def test_add_to_playlist_nests_the_folders(self):
@@ -1441,6 +1468,11 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         signature = {3: '(sss)'}.get(len(target), '(ss)')
         if name == 'item-remove-from-playlist':
             signature = '(ssi)'
+        elif name == 'item-move-in-playlist':
+            signature = '(ssii)'
+        elif name == 'item-undo-reorder':
+            signature = 's'
+            target = target[0]
         self.window.actions[name].activate(GLib.Variant(signature, target))
         await self.settle()
 
@@ -1452,7 +1484,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
 
     def writes(self):
         return [call for call in self.app.engine.calls
-                if call[0] not in ('folder_children', 'rating')]  # reads
+                if call[0] not in ('folder_children', 'rating', 'playlist_track_ids')]  # reads
 
     async def test_remove_a_track_from_the_playlist_it_is_shown_in(self):
         self.app.engine.items[('playlist', 'p.pl1')] = PLAYLIST_ANSWER
@@ -1465,12 +1497,73 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.writes()[0], ('remove_from_playlist', 'p.pl1', 'i.song1', 2))
         self.assertEqual(self.app.toasts, ['Removed “Harbour Lights” from “Road Trip”'])
         self.assertEqual(self.writes()[-1], ('item', 'playlist', 'p.pl1'))  # its page follows
+        self.assertEqual(self.app.syncs, [('tracks', ('p.pl1',))])  # and library.json
         # Shown in Apple's own playlist, or in Favourite Songs: no such item.
         for playlist_id in ('p.pl2', 'p.fav'):
             elsewhere = Track({'id': 'i.song1', 'title': 'Harbour Lights'},
                               play={'kind': 'playlist', 'id': playlist_id})
             self.assertNotIn('win.item-remove-from-playlist',
                              names(self.actions.menu_for(elsewhere)))
+
+    def songs(self, *track_ids):
+        """The playlist holding these songs, in this order, as the library has it."""
+        play = {'kind': 'playlist', 'id': 'p.pl1'}
+        self.app.playlist.merge({'groups': [{'name': 'Tracks', 'play': play, 'entries': [
+            {'id': track_id, 'title': f'Song {track_id[2:].upper()}', 'type': 'library-songs',
+             'index': index} for index, track_id in enumerate(track_ids)]}]})
+        return [self.app.playlist.groups[0].entries.get_item(n) for n in range(len(track_ids))]
+
+    async def test_move_up_and_move_down_in_the_menu(self):
+        first, second, last = self.songs('i.a', 'i.b', 'i.c')
+        moves = [entry for entry in actions_of(self.actions.menu_for(second))
+                 if entry[0] == 'win.item-move-in-playlist']
+        self.assertEqual(moves, [('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, -1)),
+                                 ('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, 1))])
+        labels = labels_of(self.actions.menu_for(second))
+        self.assertLess(labels.index('_Move Up'), labels.index('Remo_ve from Playlist'))
+        letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label]
+        self.assertEqual(len(letters), len(set(letters)), labels)
+        # Not up from the first, nor down from the last.
+        self.assertEqual([entry[1][3] for entry in actions_of(self.actions.menu_for(first))
+                          if entry[0] == 'win.item-move-in-playlist'], [1])
+        self.assertEqual([entry[1][3] for entry in actions_of(self.actions.menu_for(last))
+                          if entry[0] == 'win.item-move-in-playlist'], [-1])
+        # Nowhere else: Apple's playlist, Favourite Songs, an album, a list of one.
+        for playlist_id in ('p.pl2', 'p.fav'):
+            elsewhere = Track({'id': 'i.b', 'title': 'B', 'index': 0},
+                              play={'kind': 'playlist', 'id': playlist_id})
+            self.assertNotIn('win.item-move-in-playlist',
+                             names(self.actions.menu_for(elsewhere)))
+        self.assertNotIn('win.item-move-in-playlist', names(self.actions.menu_for(LIBRARY_TRACK)))
+        only, = self.songs('i.a')
+        self.assertNotIn('win.item-move-in-playlist', names(self.actions.menu_for(only)))
+
+    async def test_a_move_is_shown_announced_and_written(self):
+        self.songs('i.a', 'i.b', 'i.c')
+        self.actions.playlist_order.delay = 0
+        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.b', 1, 1)
+        self.assertEqual(self.app.playlist.track_ids(), ['i.a', 'i.c', 'i.b'])
+        self.assertEqual(self.window.announced, ['“Song B” moved to position 3 of 3'])
+        self.assertIn(('reorder_playlist', 'p.pl1', ('i.a', 'i.b', 'i.c'), (0, 2, 1)),
+                      self.writes())
+        self.assertEqual(self.app.toasts, ['Moved “Song B”'])
+        # A menu made before the list changed names a song no longer there: nothing.
+        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.b', 1, -1)
+        self.assertEqual(self.app.playlist.track_ids(), ['i.a', 'i.c', 'i.b'])
+        # Undo: the order before, written back.
+        await self.run_action('item-undo-reorder', 'p.pl1')
+        self.assertEqual(self.app.playlist.track_ids(), ['i.a', 'i.b', 'i.c'])
+        self.assertEqual(self.writes()[-1],
+                         ('reorder_playlist', 'p.pl1', ('i.a', 'i.c', 'i.b'), (0, 2, 1)))
+
+    async def test_the_order_pending_goes_before_a_removal(self):
+        self.app.engine.items[('playlist', 'p.pl1')] = PLAYLIST_ANSWER
+        self.songs('i.a', 'i.b', 'i.c')
+        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.c', 2, -1)  # pending
+        self.assertNotIn('reorder_playlist', [call[0] for call in self.writes()])
+        await self.run_action('item-remove-from-playlist', 'p.pl1', 'i.c', 1)
+        self.assertEqual([call[0] for call in self.writes()][:2],
+                         ['reorder_playlist', 'remove_from_playlist'])
 
     async def test_rename_a_playlist_and_its_description(self):
         self.app.engine.listings = [[], [{'kind': 'playlist', 'id': 'p.pl1',
@@ -1563,7 +1656,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
     async def test_new_playlist_in_a_folder_is_shown(self):
         new = Item({'id': 'p.new', 'kind': 'playlist', 'title': 'Fresh'})
 
-        def start_sync(quick=False, playlists=False):
+        def start_sync(quick=False, playlists=False, videos=False, tracks_of=()):
             self.app.library.items[('playlist', 'p.new')] = new  # the pass brought it
 
         self.app.start_sync = start_sync

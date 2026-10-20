@@ -533,6 +533,65 @@ class ItemRefs(GObject.Object):
         return f'ItemRefs({list(self.refs)!r}, origin={self.origin!r})'
 
 
+def moved(count, from_index, to_index):
+    """The order (positions, as reorder_entries() takes it) of a list of `count` tracks with
+    the one at from_index moved to to_index, every other in its order."""
+    order = list(range(count))
+    order.insert(to_index, order.pop(from_index))
+    return order
+
+
+def drop_index(from_index, gap):
+    """Where a track at from_index goes when it is dropped in `gap` (0 before the first
+    track, n after the last of n): its new index, or None for either gap beside it, where it
+    already is."""
+    to_index = gap if gap <= from_index else gap - 1
+    return None if to_index == from_index else to_index
+
+
+def order_for(entries, ids):
+    """The positions in `entries` (track dicts or TrackRecords, or Tracks) that put them in
+    the order of `ids`, a song held twice taking its entries in the order they come; None
+    when `ids` are not those entries' ids, in some order (another list)."""
+    positions = {}
+    for position, entry in enumerate(entries):
+        entry_id = entry.id if isinstance(entry, Track) else entry.get('id')
+        positions.setdefault(entry_id, collections.deque()).append(position)
+    order = []
+    for entry_id in ids:
+        waiting = positions.get(entry_id)
+        if not waiting:
+            return None
+        order.append(waiting.popleft())
+    return order if len(order) == len(entries) else None
+
+
+def reorder_entries(entries, order):
+    """A group's track entries (dicts or TrackRecords) in the order `order` gives
+    (positions in `entries`), each one's `index` its new position, the queue index a row
+    plays from (Track.index): an entry already there is kept as it is, one that moves is
+    made again (a TrackRecord as a TrackRecord)."""
+    arranged = []
+    for position, entry in enumerate(entries[place] for place in order):
+        if entry.get('index') != position:
+            moved_entry = dict(entry)
+            moved_entry['index'] = position
+            entry = TrackRecord(moved_entry) if isinstance(entry, TrackRecord) else moved_entry
+        arranged.append(entry)
+    return arranged
+
+
+class _OrderHold:
+    """A playlist's track order shown ahead of Apple's listing (Library.reorder()): its
+    tracks' ids in that order, until `expires` (_now() seconds)."""
+
+    __slots__ = ('ids', 'expires')
+
+    def __init__(self, ids, hold):
+        self.ids = list(ids)
+        self.expires = _now() + hold
+
+
 class Group(GObject.Object):
     """A disc of an album, a playlist's one list, an album of an artist: {name, play, entries}.
 
@@ -754,6 +813,54 @@ class Item(GObject.Object):
         if groups_changed:
             self.emit('groups-changed')
         return changed
+
+
+    def track_ids(self):
+        """The ids of a playlist's tracks, in the order shown (its one group's), or None for
+        anything else: what Library.reorder() and the engine's reorder take."""
+        groups = self.groups if self.kind == 'playlist' else ()
+        if len(groups) != 1:
+            return None
+        entries = groups[0].entries
+        return [entries.get_item(position).id for position in range(entries.get_n_items())]
+
+    def reorder(self, order):
+        """Put a playlist's tracks in the order `order` gives (positions in the list shown,
+        a permutation of them), in place: the same Group and Track objects, each moved Track
+        given its new entry (its `index` notified), `raw` changed to match, and the group's
+        store changed by one splice over the stretch that moved, so a view keeps its rows,
+        its scroll position and its focus. No `groups-changed`: nothing is new. False, and
+        nothing changed, for anything but a playlist of one group or an order that is not a
+        permutation of its tracks. Library.reorder() also holds the order through reloads."""
+        groups = self.groups if self.kind == 'playlist' else ()
+        if len(groups) != 1:
+            return False
+        group = groups[0]
+        store = group.entries
+        count = store.get_n_items()
+        order = list(order)
+        if sorted(order) != list(range(count)):
+            return False
+        tracks = [store.get_item(position) for position in range(count)]
+        raw_entries = _entries(group.raw.get('entries'))
+        if len(raw_entries) != count:
+            return False
+        entries = reorder_entries(raw_entries, order)
+        new_group = dict(group.raw, entries=entries)
+        self.raw['groups'] = [new_group if raw is group.raw else raw
+                              for raw in self.raw.get('groups') or ()]
+        group.raw = new_group
+        arranged = [tracks[place] for place in order]
+        changed = [position for position, track in enumerate(arranged)
+                   if track is not tracks[position]]
+        for position, track in enumerate(arranged):
+            if track.raw is not entries[position]:
+                track.raw = entries[position]
+                track.notify('index')
+        if changed:
+            first, last = changed[0], changed[-1] + 1
+            store.splice(first, last - first, arranged[first:last])
+        return True
 
 
 class ShelfModel(GObject.Object):
@@ -1227,6 +1334,7 @@ class Library(GObject.Object):
         self._changes = []  # TreeChanges held ahead of Apple's listing (hold())
         self._held = None  # holds()'s dictionaries, made at its first question after a load
         self._added = {}  # (kind, id) -> the Item, for what note_added() noted
+        self._orders = {}  # playlist id -> _OrderHold: orders shown ahead of Apple's (reorder())
         self._generation = 0
         self._paused = 0.0  # when a load or Songs build last paused for a frame (_pause())
         self._syncing = False
@@ -1342,6 +1450,45 @@ class Library(GObject.Object):
     def pending_changes(self):
         """The TreeChanges held ahead of Apple's listing, oldest first."""
         return list(self._changes)
+
+    def reorder(self, item, order, hold=PENDING_HOLD):
+        """Put a playlist's tracks in a new order at once (Item.reorder(): `order`, positions
+        in the list shown), and hold that order ahead of Apple's listing: every reload()
+        whose file lists the same tracks in another order shows this one instead (the merge
+        then finds nothing changed), until the file shows it, lists other tracks (changed
+        elsewhere: the file wins) or `hold` seconds have passed; load() forgets it. False,
+        and nothing changed, where Item.reorder() refuses."""
+        if not isinstance(item, Item) or not item.reorder(order):
+            return False
+        self._orders[item.id] = _OrderHold(item.track_ids(), hold)
+        return True
+
+    def release_order(self, playlist_id):
+        """Stop holding a playlist's order (its write failed, or was put back): the next
+        reload shows the file's."""
+        self._orders.pop(playlist_id, None)
+
+    def held_order(self, playlist_id):
+        """The track ids of a playlist's order held ahead of Apple's listing, or None."""
+        held = self._orders.get(playlist_id)
+        return list(held.ids) if held is not None and held.expires > _now() else None
+
+    def with_held_order(self, raw):
+        """A playlist's Item dict (a reload's, an engine.item() answer) with its tracks in the
+        order held for it (reorder()), when it lists the same tracks in another order; the
+        dict itself otherwise, the hold let go when the dict shows the order, lists other
+        tracks, or the hold has expired."""
+        playlist_id = _text(raw.get('id')) if raw.get('kind') == 'playlist' else None
+        held = self._orders.get(playlist_id) if playlist_id else None
+        if held is None:
+            return raw
+        groups = _dicts(raw.get('groups'))
+        entries = _entries(groups[0].get('entries')) if len(groups) == 1 else None
+        order = order_for(entries, held.ids) if entries is not None else None
+        if held.expires <= _now() or order is None or order == list(range(len(order))):
+            del self._orders[playlist_id]
+            return raw
+        return dict(raw, groups=[dict(groups[0], entries=reorder_entries(entries, order))])
 
     def _pending(self, folders):
         """The changes held that library.json's `folders` does not show yet and that have
@@ -1643,8 +1790,13 @@ class Library(GObject.Object):
         index = {}
         changed = {}  # kept Items whose SORT_KEYS changed, in order (a dict as an ordered set)
 
+        if not keep:
+            self._orders = {}
+
         def wrap(raw):
             key = (_text(raw.get('kind')), _text(raw.get('id')))
+            if key[0] == 'playlist' and self._orders:
+                raw = self.with_held_order(raw)
             item = existing.get(key)
             if item is None:
                 item = Item(raw)

@@ -63,6 +63,30 @@ changes, change it here, with the date. The plan they came from is in
   refuse, and the user guide's Known limitations says so. Drags are the app's own: one type,
   `library.ItemRefs`, and drop targets decide from the drag in progress
   (`widgets.dnd.current()`), so drags from other applications are not taken.
+- **A playlist's songs reordered, at once and safely** (2026-10-20). On a playlist of the
+  user's (`Item.editable`: not Favourite Songs, nor one of Apple's) a song moves by dragging
+  it within the list (an insertion line, the list scrolling near its edges), by Move Up and
+  Move Down in its menu, and by Alt+Up and Alt+Down on the focused song (GNOME Text Editor's
+  keys for moving a line; not accelerators, `keyboard.move_step()`); the move is announced.
+  The whole row drags, as it already did onto a sidebar playlist, with no drag handle: a
+  handle would put a widget in every recycled row, and a click still plays (the drag starts
+  past GTK's threshold and cancels the click). Apple's API has one way to reorder, the web
+  player's: `PUT …/tracks` with the whole list. So the write reads Apple's list first and
+  sends back every entry it read, by its own id and type (the read includes the songs Apple
+  cannot play, which a PUT of what is shown would delete), and refuses, writing nothing, when
+  that list is not the one the move was made on (`conflict`: changed on another device):
+  merging a move into a list the user never saw could put songs anywhere. Library playlists
+  carry no `trackCount` and the ids already say whether the list changed, so neither a count
+  nor `lastModifiedDate` is compared (a rename moves the date too). The move shows at once
+  (`Library.reorder()`: the same rows, one splice, the order held through syncs until
+  library.json shows it, as folder moves are); one write per drop, and Move Up and Move Down a
+  second after the last press, so a burst is one write; one write at a time per playlist;
+  any other write to it goes after the order (`PlaylistOrder.flush()`). A refusal puts back
+  Apple's order; the toast has Undo. Once Apple's read shows the new order, a playlists pass
+  reads that playlist's tracks into library.json, unstamped so the next full pass reads them
+  again (the listing's date can come before the tracks show the change); Add and Remove from
+  Playlist do the same, so all three survive a restart. Up Next is not touched, as in Apple's
+  apps. In the demo a move shows and nothing is written.
 - **Sidebar sections: titles and dividers** (2026-10-19). Library and Playlists keep their
   titles (Playlists especially, which the library's folders and playlists fill), and a thin
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider
@@ -150,9 +174,9 @@ changes, change it here, with the date. The plan they came from is in
   table and Search's songs plays on a single click (`single-click-activate`), as GNOME Music
   plays one: the first click of a double click selected nothing anyone used, and a row that
   wants a second click is a file manager's. Enter plays the focused row as before; the
-  context menu, a drag to a sidebar playlist and a row's artist and album links
-  (`src/widgets/track_links.py`) claim their presses before the row sees them, so they are
-  unchanged. The Songs table keeps no selection any more (a `Gtk.NoSelection`, as the lists
+  context menu, a drag (to a sidebar playlist, or within the user's playlist to reorder it)
+  and a row's artist and album links (`src/widgets/track_links.py`) claim their presses
+  before the row sees them, so they are unchanged. The Songs table keeps no selection any more (a `Gtk.NoSelection`, as the lists
   have): GTK selects the hovered row of a single-click list, which would have followed the
   pointer around. The track playing is marked in every row that shows it, as Up Next marks
   its entry (#241).
@@ -466,7 +490,9 @@ changes, change it here, with the date. The plan they came from is in
   library.json, which gettext cannot reach. The captions are made once per Item, never in a
   list's bind.
 - **Demo mode** (2026-09-27). `--demo` runs the app on a generated, invented library, so UI
-  work, tests and screenshots never need Chrome or a real account.
+  work, tests and screenshots never need Chrome or a real account. Its writes are refused
+  with a toast, but for a playlist's new order, which shows (and is not kept), so the
+  keyboard walkthrough and the screenshots can move songs.
 - **Tests** (2026-09-28). Stdlib `unittest`, nothing to install. Logic lives in classes and
   functions without widgets, tested with stand-ins. Widget tests are allowed through
   `tests/gtk.py`, skipped without a display; CI runs them under Xvfb. The rest of the UI is

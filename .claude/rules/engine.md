@@ -182,6 +182,11 @@ paths:
   writes) through `mk.api.client.createRequest(...).send()`: `music()` cannot read Apple's
   empty 202/204 answers and would pass a 4xx off as success. A read that must see a write
   goes the same way (`libraryHas`): `music()` may answer from its cache.
+- A PUT of a playlist's tracks replaces the whole list, and the tracks read includes the
+  entries Apple cannot play: `reorder_playlist()` and the removal of one of a song's entries
+  read the list first and send back every entry read, by its own id and type
+  (`api.playlist_entries()`; one without either refuses the write), and a reorder over a list
+  other than the one shown is `conflict` (`api.reordered_entries()`), nothing written.
 - MusicKit's `PlaybackStates` names (`none loading playing paused stopped ended seeking waiting
   stalled completed`) are what `playbackStateDidChange` carries; a play walks playing, waiting,
   loading, playing. Signed out, MusicKit plays 30-second catalog previews: enough to exercise
