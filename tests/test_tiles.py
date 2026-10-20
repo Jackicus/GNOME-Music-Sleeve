@@ -610,7 +610,9 @@ class TileLabelTest(WidgetTestCase):
         long.bind(Item(dict(ALBUM, title='The Invented Album of Very Long Titles, Deluxe')))
         short = self.show(Tile())
         short.bind(Item({'id': 'l.a2', 'kind': 'album', 'title': 'Short', 'subtitle': 'Duo'}))
-        self.assertTrue(wait_for(lambda: long.title_label.get_width() > 0))
+        self.assertTrue(wait_for(lambda: long.title_label.get_width() > 0
+                                 and short.title_label.get_width() > 0
+                                 and short.subtitle_label.get_width() > 0))
         self.assertEqual(self.tooltip(long),
                          'The Invented Album of Very Long Titles, Deluxe\nInvented Artist')
         self.assertIsNone(self.tooltip(short))  # all of it shows
@@ -704,6 +706,7 @@ class CategoryTileArtTest(WidgetTestCase):
         paintable = tile.picture.get_paintable()
         self.assertIsNotNone(paintable)
         self.assertEqual(paintable.get_intrinsic_width(), ART_SIZE * self.scale(tile))
+        self.assertTrue(wait_for(lambda: self.loader.requests))  # in an idle after a frame
         self.assertEqual(self.loader.requests, [('/a/category', ART_SIZE * self.scale(tile))])
         shown = texture()
         self.loader.answer('/a/category', shown)
