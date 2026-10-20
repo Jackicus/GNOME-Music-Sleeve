@@ -597,3 +597,16 @@ listview.queue-list > row .current .queue-title {
 .category-tile .category-art {
   border-radius: 6px;
 }
+
+/* Recently Searched tiles (pages/search.py): a cover and two lines on the categories' tint,
+   an artist's portrait round. */
+.recent-tile {
+  padding: 8px;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.recent-tile > .cover.artist > .card,
+.recent-tile > .cover.artist > picture {
+  border-radius: 9999px;
+}

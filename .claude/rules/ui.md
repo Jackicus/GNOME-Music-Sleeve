@@ -46,7 +46,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 ## Pages
 
 - A destination's root page is an `Adw.NavigationPage` with its own `Adw.ToolbarView` and
-  `Adw.HeaderBar` (`show-title: false`; the `title-1` in the content is the title), registered in
+  `Adw.HeaderBar` (`show-title: false`; the `title-1` in the content is the title; Search has
+  none, its centred entry names it), registered in
   `pages.PAGES`. Its module is imported by its factory, never at the top of window.py or main.py
   (startup time). Playlist and folder root pages are kept only for the last few shown
   (`window.ROOT_LIMIT`). Sign-out forgets the pages that show the account's things

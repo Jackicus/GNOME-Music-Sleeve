@@ -26,13 +26,14 @@ from .backend import normalize, store
 log = logging.getLogger(__name__)
 
 # What the cache directory holds, all of it fetched again as needed: the library, its artwork
-# (covers, thumbnails, remote art), lyrics, and the day-long answers (landing, categories, the
-# New page, Made for You, the artists' pages, the playlists' suggested songs). `items` and
+# (covers, thumbnails, remote art), lyrics, the day-long answers (landing, categories, the
+# New page, Made for You, the artists' pages, the playlists' suggested songs) and Recently
+# Searched (recent_searches.py), which goes with the account's other traces. `items` and
 # `library.lock` are what older versions kept there (items' answers, the sync's lock), cleared
 # with the rest.
 CACHE_ENTRIES = ('library.json', 'art', 'thumb', 'remote-art', 'lyrics', 'landing.json',
                  'categories', 'browse.json', 'made-for-you.json', 'artists', 'suggestions',
-                 'items', 'library.lock')
+                 'recent-searches.json', 'items', 'library.lock')
 
 
 def cache_size(path):

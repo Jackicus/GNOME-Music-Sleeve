@@ -30,6 +30,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Discord shows it only while something plays: pausing stops the clock and, five seconds
   later, takes it off until the music plays again, as playback ending or the app quitting
   does.
+- Search shows what you opened from it lately under **Recently Searched**, above the browse
+  categories; **Clear** empties it. The list stays on this computer, as music.apple.com keeps
+  its own in the browser, and goes with the cache (Clear Cache, signing out).
 - On the Songs page, just start typing to filter the songs (or press
   <kbd>Ctrl</kbd>+<kbd>F</kbd>, or click the search button in the header bar);
   <kbd>Esc</kbd> clears the filter. Click a column title to sort by it, or use **Sort By**.

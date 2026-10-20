@@ -7,7 +7,11 @@ Two modes, an Adw.ToggleGroup beside the entry: Apple Music, which searches the 
 through the engine (suggestions as you type, shelves of results on Enter, Apple's browse
 categories before anything is typed), and Your Library, which filters the library's cached
 models as you type (Gtk.FilterListModel over the albums, artists, playlists and songs) and
-works with the engine down.
+works with the engine down. The entry has no title over it: it names the page.
+
+What is opened from the page (a top hit, a result's tile, Your Library's albums, artists and
+playlists, a recent one again) goes to the front of app.recent_searches (recent_searches.py),
+which the landing shows as Recently Searched over the categories, with Clear.
 
 Requests are debounced (DEBOUNCE_MS after the last keystroke) and numbered: an answer that
 arrives after a newer request was made, or after a switch to Your Library, is dropped. The
@@ -21,7 +25,7 @@ import logging
 from gettext import gettext as _
 from gettext import ngettext
 
-from gi.repository import Adw, Gio, GLib, GObject, Gtk
+from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from ..backend.errors import EngineError
 from ..library import Item, Track, fold
@@ -30,7 +34,7 @@ from ..widgets import context_menu
 from ..widgets.category_tile import CategoryTile
 from ..widgets.cover import Cover
 from ..widgets.engine_status import EngineStatus
-from ..widgets.shelf import ShelfColumn  # also registers $AppleMusicShelf for the template
+from ..widgets.shelf import Shelf, ShelfColumn  # Shelf is $AppleMusicShelf in the template
 from ..widgets.labels import accessible_label, flow_child, track_label
 from ..widgets.track_row import PlayingMark, TrackRow
 from ..widgets.util import MappedHandlers, connect_weak, weak_method
@@ -107,7 +111,6 @@ class SearchPage(Adw.NavigationPage):
 
     __gtype_name__ = 'AppleMusicSearchPage'
 
-    title_label = Gtk.Template.Child()
     search_row = Gtk.Template.Child()
     search_entry = Gtk.Template.Child()
     mode_toggle = Gtk.Template.Child()
@@ -115,6 +118,10 @@ class SearchPage(Adw.NavigationPage):
     status_page = Gtk.Template.Child()
     status_button = Gtk.Template.Child()
     status_library_button = Gtk.Template.Child()
+    recent_header = Gtk.Template.Child()
+    recent_clear_button = Gtk.Template.Child()
+    recent_box = Gtk.Template.Child()
+    categories_title_label = Gtk.Template.Child()
     categories_box = Gtk.Template.Child()
     suggestions_list = Gtk.Template.Child()
     results_box = Gtk.Template.Child()
@@ -140,7 +147,13 @@ class SearchPage(Adw.NavigationPage):
         self._categories = Gio.ListStore(item_type=Item)
         self._landing_loaded = False
         self._suggestions = Gio.ListStore(item_type=Suggestion)
-        self._column = ShelfColumn(self.results_box)  # a search's answer, as shelves
+        # A search's answer, as shelves whose tiles are remembered as they are opened.
+        self._column = ShelfColumn(self.results_box,
+                                   make_shelf=weak_method(self._make_result_shelf))
+        # What was opened from Search lately: the app's (a test's stand-in may have none).
+        self._recent = getattr(app(), 'recent_searches', None)
+        self._recent_items = (self._recent.items if self._recent is not None
+                              else Gio.ListStore(item_type=Item))
         self._art_task = None
         # What the page says when the engine cannot answer, and what its button does; its
         # retry asks again for what failed, in Apple Music mode only.
@@ -152,7 +165,6 @@ class SearchPage(Adw.NavigationPage):
         }
         self._engine_status = EngineStatus(app(), self._show_engine_status,
                                            self._retry_request, texts)
-        self.title_label.set_label(title)
 
         # What a child holds calls the page weakly (widgets/util.py): sign-out drops the
         # page, and a bound method would keep it alive.
@@ -163,12 +175,18 @@ class SearchPage(Adw.NavigationPage):
         connect_weak(self.status_button, 'clicked', self._on_status_clicked)
         connect_weak(self.status_library_button, 'clicked', self._on_search_library_clicked)
         connect_weak(self.categories_box, 'child-activated', self._on_category_activated)
+        connect_weak(self.recent_box, 'child-activated', self._on_recent_activated)
+        connect_weak(self.recent_clear_button, 'clicked', self._on_recent_clear_clicked)
+        connect_weak(self._recent_items, 'items-changed', self._on_recent_changed)
         connect_weak(self.suggestions_list, 'row-activated', self._on_suggestion_activated)
         connect_weak(self.songs_list, 'activate', self._on_song_activated)
         connect_weak(self.songs_see_all_button, 'clicked', self._on_songs_see_all_clicked)
         self.categories_box.bind_model(self._categories, weak_method(self._create_category_tile))
         self.suggestions_list.bind_model(self._suggestions,
                                          weak_method(self._create_suggestion_row))
+        self.recent_box.bind_model(self._recent_items, weak_method(self._create_recent_tile))
+        context_menu.attach(self.recent_box)
+        self._update_recent()
 
         # Your Library: the filtered models, bound once; the search text is set on the filters.
         # Each is over its store only while there is a text: with none, a filter matches
@@ -186,6 +204,7 @@ class SearchPage(Adw.NavigationPage):
             connect_weak(model, 'items-changed', self._on_library_results_changed)
             self._library_models.append((model, store))
             widget.bind_shelf(LibraryShelf(key, title, model))
+            connect_weak(widget.list_view, 'activate', self._on_shelf_activated)
         self._song_filter = _song_filter()
         self._songs = Gtk.FilterListModel(model=None, filter=self._song_filter)
         connect_weak(self._songs, 'items-changed', self._on_library_results_changed)
@@ -234,6 +253,8 @@ class SearchPage(Adw.NavigationPage):
 
     def do_map(self):
         Adw.NavigationPage.do_map(self)
+        if self._recent is not None:
+            app().spawn(self._recent.load())  # read once, and again after a Clear Cache
         if self._stale():
             self._refresh()
         self._update_playing()  # the item playing now, changed or not while hidden
@@ -341,8 +362,9 @@ class SearchPage(Adw.NavigationPage):
                       for data in answer.get('categories') or []
                       if isinstance(data, dict) and data.get('id')]
         self._categories.splice(0, self._categories.get_n_items(), categories)
+        self.categories_title_label.set_visible(bool(categories))
         self._landing_loaded = True
-        if categories:
+        if categories or self._recent_items.get_n_items():
             self._show('landing')
         else:
             self._show_status('empty-landing')
@@ -534,6 +556,43 @@ class SearchPage(Adw.NavigationPage):
         if item is not None:
             self.get_root().open_item(item)
 
+    # Recently Searched: what was opened from the page, the landing's first tiles.
+
+    def _remember(self, item):
+        if self._recent is not None and isinstance(item, Item):
+            self._recent.add(item)
+
+    def _make_result_shelf(self, hero):
+        shelf = Shelf(hero=hero, see_all=True)
+        connect_weak(shelf.list_view, 'activate', self._on_shelf_activated)
+        return shelf
+
+    def _on_shelf_activated(self, list_view, position):
+        """A result's tile, or Your Library's (the shelf opens it; its own handler runs
+        first): remembered."""
+        self._remember(list_view.get_model().get_item(position))
+
+    def _on_recent_changed(self, *_args):
+        self._update_recent()
+
+    def _update_recent(self):
+        shown = self._recent_items.get_n_items() > 0
+        self.recent_header.set_visible(shown)
+        self.recent_box.set_visible(shown)
+
+    def _create_recent_tile(self, item):
+        return flow_child(_recent_tile(item), accessible_label(item))
+
+    def _on_recent_activated(self, _flow_box, child):
+        item = self._recent_items.get_item(child.get_index())
+        if item is not None:
+            self.get_root().open_item(item)
+            self._remember(item)  # to the front, once its page is open
+
+    def _on_recent_clear_clicked(self, _button):
+        if self._recent is not None:
+            self._recent.clear()
+
     # The suggestions' rows.
 
     def _create_suggestion_row(self, suggestion):
@@ -563,6 +622,7 @@ class SearchPage(Adw.NavigationPage):
             return
         if suggestion.item is not None:
             self.get_root().open_item(suggestion.item)
+            self._remember(suggestion.item)
             return
         # A term: searched for as if typed and entered (the entry's own change is ignored).
         self._cancel_debounce()
@@ -612,6 +672,33 @@ class SearchPage(Adw.NavigationPage):
 
     def _on_songs_see_all_clicked(self, _button):
         self.get_root().open_songs(self.text)
+
+
+def _recent_tile(item):
+    """A Recently Searched tile: the cover (round for an artist), the title, and what it is
+    with its subtitle ('Album · Artist'), as a top hit's row says it. Made once per item."""
+    cover = Cover(size=40, valign=Gtk.Align.CENTER)
+    cover.add_css_class('small')
+    if item.kind == 'artist':
+        cover.add_css_class('artist')
+    cover.set_paths(item.thumb, item.art)
+    title = Gtk.Label(label=item.title, xalign=0, ellipsize=Pango.EllipsizeMode.END,
+                      css_classes=['heading'])
+    kind = kind_names().get(item.kind, '')
+    subtitle = Gtk.Label(label=' · '.join(part for part in (kind, item.subtitle) if part),
+                         xalign=0, ellipsize=Pango.EllipsizeMode.END,
+                         css_classes=['caption', 'dimmed'])
+    labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, valign=Gtk.Align.CENTER,
+                     hexpand=True)
+    labels.append(title)
+    labels.append(subtitle)
+    tile = Gtk.Box(spacing=12, css_classes=['recent-tile'])
+    tile.append(cover)
+    tile.append(labels)
+    tile.context_item = item  # its context menu (widgets/context_menu.py)
+    if needs_thumb(item):
+        app().spawn(_fetch_row_art(item, cover))
+    return tile
 
 
 async def _fetch_row_art(item, cover):

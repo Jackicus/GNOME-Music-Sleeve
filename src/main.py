@@ -52,6 +52,7 @@ from .errors import error_message  # noqa: E402
 from .library import Library  # noqa: E402
 from .mpris import Mpris  # noqa: E402
 from .player import Player  # noqa: E402
+from .recent_searches import FILE_NAME as RECENT_SEARCHES, RecentSearches  # noqa: E402
 from .search_provider import OBJECT_NAME, SearchProvider  # noqa: E402
 from .shortcuts import ACCELS  # noqa: E402
 from .sync import LibrarySync, install_scaler  # noqa: E402
@@ -109,6 +110,7 @@ class Application(Adw.Application):
         self.demo_dir = demo_dir
         self.demo = False  # True under --demo: an invented library and no engine
         self.library = None  # created in do_startup
+        self.recent_searches = None  # created in do_startup: the Search page's Recently Searched
         self.engine = None  # created in do_startup
         self.player = None  # created in do_startup, after the engine
         self.mpris = None  # created in do_startup, after the player; released in do_shutdown
@@ -238,6 +240,7 @@ class Application(Adw.Application):
         # window is mapped (C, mostly: the parse gets the GIL); do_activate awaits it.
         self.library = Library()
         self._first_load = self.library.load()
+        self.recent_searches = RecentSearches(config.cache_dir() / RECENT_SEARCHES, self.spawn)
         Adw.Application.do_startup(self)
         self.mark('gtk-started')
         # What follows, to the window's present(), is Python, which would share the GIL
