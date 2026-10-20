@@ -45,7 +45,8 @@ PLAYBACK_METHODS = ('signout', 'play', 'playNext', 'playLater', 'control', 'seek
                     'shuffle',
                     'repeat', 'nowPlaying', 'queue', 'queueJump', 'lyrics',
                     'search', 'suggest', 'searchLanding', 'category', 'playlistSuggestions',
-                    'rating', 'addToLibrary', 'addToPlaylist', 'createPlaylist',
+                    'rating', 'addToLibrary', 'removeFromLibrary', 'libraryHas',
+                    'addToPlaylist', 'createPlaylist',
                     'updatePlaylist', 'deletePlaylist', 'removeFromPlaylist',
                     'replacePlaylistTracks', 'updateFolder', 'deleteFolder', 'createFolder',
                     'moveToFolder', 'preview',
@@ -2020,6 +2021,55 @@ class LibraryWriteTest(EngineFixture):
                 await self.engine.add_to_library(kind, item_id)
             self.assertEqual(raised.exception.code, 'usage')
 
+    async def test_remove_from_library_by_the_library_id(self):
+        await self.up()
+        for kind, item_id in (('song', 'i.song1'), ('album', 'l.alb1'), ('video', 'i.vid1'),
+                              ('playlist', 'p.pl2')):
+            self.assertEqual(await self.engine.remove_from_library(kind, item_id), item_id)
+        self.assertEqual(self.page.bridge_calls, [
+            ('removeFromLibrary', 'songs', 'i.song1'), ('removeFromLibrary', 'albums', 'l.alb1'),
+            ('removeFromLibrary', 'music-videos', 'i.vid1'),
+            ('removeFromLibrary', 'playlists', 'p.pl2')])
+        self.assertEqual(self.page.api_calls, [])  # no read before it
+        for kind, item_id in (('artist', 'l.art1'), ('station', 'ra.1'), ('song', ''),
+                              (None, 'i.1')):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.remove_from_library(kind, item_id)
+            self.assertEqual(raised.exception.code, 'usage')
+
+    async def test_a_catalog_id_is_read_for_its_library_twin_first(self):
+        # Apple answers a DELETE by catalog id with a 500: the library id is asked for.
+        await self.up()
+        self.page.api_answers['/v1/catalog/us'] = {'data': [{
+            'id': '1000000001', 'type': 'songs', 'attributes': {'inLibrary': True},
+            'relationships': {'library': {'data': [{'id': 'i.song1',
+                                                    'type': 'library-songs'}]}}}]}
+        self.assertEqual(await self.engine.remove_from_library('song', '1000000001'),
+                         'i.song1')
+        self.assertEqual(self.page.api_params, [{
+            'ids[songs]': '1000000001', 'relate': 'library', 'fields[songs]': 'inLibrary',
+            'omit[resource]': 'autos'}])
+        self.assertEqual(self.page.bridge_calls, [('removeFromLibrary', 'songs', 'i.song1')])
+        # Not in the library: nothing is sent.
+        self.page.api_answers['/v1/catalog/us'] = {'data': [{
+            'id': '1000000002', 'type': 'songs', 'attributes': {'inLibrary': False},
+            'relationships': {'library': {'data': []}}}]}
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.remove_from_library('song', '1000000002')
+        self.assertEqual((raised.exception.code, raised.exception.status), ('api', 404))
+        self.assertEqual(len(self.page.bridge_calls), 1)
+
+    async def test_in_library_reads_through_the_request_builder(self):
+        await self.up()
+        self.assertTrue(await self.engine.in_library('song', 'i.song1'))
+        self.page.bridge_answers['libraryHas'] = {'has': False}
+        self.assertFalse(await self.engine.in_library('album', 'l.alb1'))
+        self.assertEqual(self.page.bridge_calls, [('libraryHas', 'songs', 'i.song1'),
+                                                  ('libraryHas', 'albums', 'l.alb1')])
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.in_library('song', '1000000001')
+        self.assertEqual(raised.exception.code, 'usage')
+
     async def test_add_to_playlist_types_the_song(self):
         await self.up()
         await self.engine.add_to_playlist('p.1', 'i.song1')
@@ -2072,6 +2122,8 @@ class LibraryWriteTest(EngineFixture):
     async def test_writes_need_a_signed_in_engine(self):
         for coro in (self.engine.love('song', '1'), self.engine.rating('song', '1'),
                      self.engine.add_to_library('song', '1'),
+                     self.engine.remove_from_library('song', 'i.1'),
+                     self.engine.in_library('song', 'i.1'),
                      self.engine.add_to_playlist('p.1', '1')):
             with self.assertRaises(EngineError) as raised:
                 await coro
@@ -2079,6 +2131,8 @@ class LibraryWriteTest(EngineFixture):
         await self.up(authorized=False)
         for coro in (self.engine.unlove('song', '1'), self.engine.rating('song', '1'),
                      self.engine.add_to_library('album', '1'),
+                     self.engine.remove_from_library('album', 'l.1'),
+                     self.engine.in_library('album', 'l.1'),
                      self.engine.add_to_playlist('p.1', 'i.1'),
                      self.engine.catalog_url('album', 'l.1')):
             with self.assertRaises(EngineError) as raised:

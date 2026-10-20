@@ -177,9 +177,10 @@ paths:
   or MusicKit playing; its `previewDidChange` events are posted by the bridge itself, not
   from `EVENT_DATA`. It needs no sign-in (previews are anyone's). Only the URL Apple gives
   (`previewUrl`, https) is ever played.
-- bridge.js writes (love, add to library, add to a playlist, the playlist writes) through
-  `mk.api.client.createRequest(...).send()`: `music()` cannot read Apple's empty 202/204 answers
-  and would pass a 4xx off as success.
+- bridge.js writes (love, add to and remove from the library, add to a playlist, the playlist
+  writes) through `mk.api.client.createRequest(...).send()`: `music()` cannot read Apple's
+  empty 202/204 answers and would pass a 4xx off as success. A read that must see a write
+  goes the same way (`libraryHas`): `music()` may answer from its cache.
 - MusicKit's `PlaybackStates` names (`none loading playing paused stopped ended seeking waiting
   stalled completed`) are what `playbackStateDidChange` carries; a play walks playing, waiting,
   loading, playing. Signed out, MusicKit plays 30-second catalog previews: enough to exercise

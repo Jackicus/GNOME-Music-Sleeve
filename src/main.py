@@ -461,11 +461,13 @@ class Application(Adw.Application):
 
     # -- the library and the account --------------------------------------------------------
 
-    def start_sync(self, quick=False, playlists=False):
+    def start_sync(self, quick=False, playlists=False, videos=False, tracks_of=()):
         """Sync the library (LibrarySync.start()): the task, or None. `quick`: the short pass
-        after a library write, `playlists` the shorter one after a playlist write; both
-        leave last-sync alone."""
-        return self.library_sync.start(quick=quick, playlists=playlists)
+        after a library write (with `videos` and the tracks of the playlists `tracks_of`
+        after a removal), `playlists` the shorter one after a playlist write; both leave
+        last-sync alone."""
+        return self.library_sync.start(quick=quick, playlists=playlists, videos=videos,
+                                       tracks_of=tracks_of)
 
     async def clear_cache(self):
         """Clear the cache and sync again (account.clear_cache()); False in demo mode."""

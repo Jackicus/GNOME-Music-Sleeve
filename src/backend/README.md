@@ -60,6 +60,8 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `queueJump(index)` | `{ok: true}` (`mk.changeToMediaAtIndex`) |
 | `rating(kind, id, love)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, songId, type)` | `{ok: true}`, or a throw with Apple's status and message. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
 | `createPlaylist(attributes, tracks, parentId)` | `{id}`, the new playlist's; `attributes` `{name, description?}`, `tracks` `[{id, type}]` |
+| `removeFromLibrary(type, id)` | `{ok: true}`, or a throw as above: `DELETE /v1/me/library/<type>/<id>` (below) |
+| `libraryHas(type, id)` | `{has}`: `GET /v1/me/library/<type>/<id>` through the request builder (a read that must see a removal), `has` false for Apple's 404; a throw for any other failure |
 | `updatePlaylist(id, attributes)`, `deletePlaylist(id)`, `removeFromPlaylist(id, type, trackId)`, `replacePlaylistTracks(id, tracks)`, `updateFolder(id, attributes)`, `deleteFolder(id)` | `{ok: true}`, or a throw as above (the requests below) |
 | `createFolder(attributes, parentId)` | `{id}`, the new folder's; `attributes` `{name}`, `parentId` the folder it goes in (none: the top level) |
 | `moveToFolder(type, id, folderId)` | `{ok: true}`: the playlist (`type` `library-playlists`) or folder (`library-playlist-folders`) into the folder `folderId` (`p.playlistsroot` for the top level), the web player's `requestMoveToFolder` |
@@ -95,6 +97,32 @@ A playlist the user may change lists `canEdit` and `canDelete` true; Favourite S
 false; one of Apple's added to the library `canEdit` false, `canDelete` true. The listing
 carries a playlist's `description` when it has one.
 
+### Removing from the library
+
+The web player's `requestDeleteFromLibrary` (`Engine.remove_from_library()`, the bridge's
+`removeFromLibrary`): `DELETE /v1/me/library/<type>/<id>`, `<type>` the catalog type of the
+kind (`api.LIBRARY_ROUTES`: `songs`, `albums`, `music-videos`, `playlists`), `<id>` the
+item's **library** id (`i.` for a song, `l.` for an album, `p.` for a playlist). When it has
+only the catalog id, it first reads the library id, as the engine does: `GET
+/v1/catalog/<sf>?ids[<type>]=<catalog id>&relate=library&fields[<type>]=inLibrary&omit[resource]=autos`
+(`api.library_twin_params()`), the id in `relationships.library.data[0].id`
+(`api.library_twin()`; `attributes.inLibrary` beside it). Checked against a real account on
+2026-10-20 (MusicKit `playback/AppleMusic-2642.7.0-external`, the `gb` storefront), on a
+song and an album added for the check and removed again:
+
+| Request | Apple's answer |
+|---|---|
+| `POST /v1/me/library?ids[songs]=<catalog id>` (or `ids[albums]`) | 202 (Add to Library). The library id and `inLibrary` show some seconds to a minute later, and the album leads `/v1/me/library/recently-added`; an album brings its tracks (as library songs of their own) |
+| `DELETE /v1/me/library/songs/<library id>`, `.../albums/<library id>` | 204, no body. `GET /v1/me/library/songs/<id>` (the bridge's `libraryHas`, `Engine.in_library()`) is 404 within 2 s, the album within 7 s, and the library listings drop them within 2 to 7 s; the catalog read's `inLibrary` turns false after about 19 s. An album goes with its tracks, and no library artist was left behind |
+| `DELETE /v1/me/library/songs/<catalog id>` | 500, not a 404: a catalog id is never the id to delete by |
+
+Removing a song from the library takes it out of every library playlist that held it (the
+playlist stays, without the entry). Music videos and Apple's playlists added to the library
+were not tried; the web player removes them by the same request (`music-videos`,
+`playlists`, which `deletePlaylist()` sends for the user's own). The app leaves an item
+removed out of its models at once and until a load no longer meets it (`Library.hide`), and
+syncs once `libraryHas` answers false (actions.py).
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -103,27 +131,6 @@ against a real account on 2026-10-20 (MusicKit `playback/AppleMusic-2642.7.0-ext
 write was made on items picked for the check and put back. Reads go through `music()`;
 the writes, and any read that must see a write (MusicKit's `music()` may answer from a
 cache), go through the request builder, as `apiWrite()` does.
-
-### Removing from the library (#331)
-
-The web player's `requestDeleteFromLibrary`: `DELETE /v1/me/library/<type>/<id>`, `<type>`
-the catalog type of the kind (`songs`, `albums`, `music-videos`, `playlists`), `<id>` the
-item's **library** id (`i.` for a song, `l.` for an album, `p.` for a playlist). When it has
-only the catalog id, it first reads the library id: `GET
-/v1/catalog/<sf>?ids[<type>]=<catalog id>&relate=library&fields[<type>]=inLibrary&omit[resource]=autos`,
-the id in `relationships.library.data[0].id` (and `attributes.inLibrary`). The same read
-gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
-`fields[<type>]=inLibrary,personalRating`.
-
-| Request | Apple's answer |
-|---|---|
-| `POST /v1/me/library?ids[songs]=<catalog id>` (or `ids[albums]`) | 202. The library id and `inLibrary` show some seconds to a minute later, and the album leads `/v1/me/library/recently-added`; an album brings its tracks (as library songs of their own) |
-| `DELETE /v1/me/library/songs/<library id>`, `.../albums/<library id>` | 204, no body. `GET /v1/me/library/songs/<id>` is 404 within 2 s, the album within 7 s; the catalog read's `inLibrary` turns false after about 19 s. An album goes with its tracks, and no library artist was left behind |
-| `DELETE /v1/me/library/songs/<catalog id>` | 500, not a 404: a catalog id is never the id to delete by |
-
-Removing a song from the library takes it out of every library playlist that held it (the
-playlist stays, without the entry). Music videos and Apple's playlists added to the library
-were not tried; the web player removes them by the same request (`music-videos`, `playlists`).
 
 ### The queue (#332, #361)
 
@@ -174,6 +181,10 @@ false). The web player's Create Station does not read it: it builds the id and p
 it is (a song first, two entries queued).
 
 ### Favourites and Suggest Less (#357)
+
+The catalog read that finds an item's library twin (`api.library_twin_params()`, above) also
+gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
+`fields[<type>]=inLibrary,personalRating`.
 
 | Request | Apple's answer |
 |---|---|
@@ -306,7 +317,8 @@ Item = {
   "trackCount": 12, "durationMs": 2580000,           // albums, playlists (videos: length)
   "albumCount": 3,                                   // artists
   "catalogId": "…" /* or null */, "url": "https://music.apple.com/…" /* or null */,
-  "attributes": {"isFavourites": true, "canEdit": false},   // playlists, when they apply
+  "attributes": {"isFavourites": true, "canEdit": false, "canDelete": false},   // playlists,
+                                                     // when they apply
   "modified": "2025-05-01T09:00:00Z",                // playlists: Apple's lastModifiedDate as
                                                      // listed when `groups` was last read; the
                                                      // sync keeps them while it holds (sync.py)

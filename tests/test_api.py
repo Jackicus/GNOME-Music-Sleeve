@@ -8,8 +8,9 @@ import unittest
 
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
-from applemusic.backend.api import (api_error, http_status, is_deleted, is_final,
-                                    is_library_id, item_endpoint, lyrics_languages, page_data,
+from applemusic.backend.api import (LIBRARY_ROUTES, api_error, http_status, is_deleted,
+                                    is_final, is_library_id, item_endpoint, library_twin,
+                                    library_twin_params, lyrics_languages, page_data,
                                     resource_type, track_type)
 from applemusic.backend.errors import EngineError
 
@@ -87,6 +88,32 @@ class PlaylistTest(unittest.TestCase):
             self.assertFalse(is_deleted({'id': 'p.3', 'attributes': attributes}), attributes)
         self.assertFalse(is_deleted({'id': 'p.4'}))
         self.assertFalse(is_deleted(None))
+
+
+class LibraryTwinTest(unittest.TestCase):
+    """What a removal from the library sends: the catalog type in the library route, and
+    the read that finds a catalog item's library id."""
+
+    def test_the_routes_are_the_catalog_types(self):
+        self.assertEqual([LIBRARY_ROUTES[kind] for kind in ('song', 'album', 'video',
+                                                            'musicVideo', 'playlist')],
+                         ['songs', 'albums', 'music-videos', 'music-videos', 'playlists'])
+        self.assertNotIn('artist', LIBRARY_ROUTES)
+        self.assertNotIn('station', LIBRARY_ROUTES)
+
+    def test_the_read_and_its_answer(self):
+        self.assertEqual(library_twin_params('video', 1000000009), {
+            'ids[music-videos]': '1000000009', 'relate': 'library',
+            'fields[music-videos]': 'inLibrary', 'omit[resource]': 'autos'})
+        answer = {'data': [{'id': '1000000001', 'type': 'songs',
+                            'relationships': {'library': {'data': [
+                                {'id': 'i.song1', 'type': 'library-songs'}]}}}]}
+        self.assertEqual(library_twin(answer), 'i.song1')
+        for none in ({'data': [{'id': '1', 'relationships': {'library': {'data': []}}}]},
+                     {'data': [{'id': '1'}]}, {'data': [{'relationships': None}]},
+                     {'data': [{'relationships': {'library': {'data': [{'id': '1000'}]}}}]},
+                     {}, None):
+            self.assertIsNone(library_twin(none), none)
 
 
 class PageDataTest(unittest.TestCase):

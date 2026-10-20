@@ -15,10 +15,11 @@ from gi.repository import Gio, GLib, GObject
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
 from applemusic.actions import (ItemActions, build_menu, can_play, fill_sidebar_menu,
-                                is_apple_music_url, is_shareable, library_target,
-                                main_menu_section, mnemonic_escaped, move_targets,
-                                now_playing_track, playlist_song, playlist_track, queue_target,
-                                rating_target, share_url, web_url)
+                                is_apple_music_url, is_removable_playlist, is_shareable,
+                                library_target, main_menu_section, mnemonic_escaped,
+                                move_targets, now_playing_track, playlist_song, playlist_track,
+                                queue_target, rating_target, removal_target, removal_words,
+                                share_url, web_url)
 from applemusic.backend import api
 from applemusic import actions as actions_module
 from applemusic.backend.errors import EngineError
@@ -516,6 +517,7 @@ class FakeEngine(GObject.Object):
         self.related_answers = {}  # (kind, id) -> related()'s answer
         self.listings = []  # folder_children()'s answers, one per call; then none
         self.moving = None  # an asyncio.Event move_to_folder() waits for, when set
+        self.still_listed = []  # in_library()'s answers, one per call; then False
 
     async def _record(self, name, *args):
         self.calls.append((name, *args))
@@ -572,6 +574,14 @@ class FakeEngine(GObject.Object):
 
     async def delete_playlist(self, playlist_id):
         await self._record('delete_playlist', playlist_id)
+
+    async def remove_from_library(self, kind, item_id):
+        await self._record('remove_from_library', kind, item_id)
+        return item_id
+
+    async def in_library(self, kind, library_id):
+        self.calls.append(('in_library', kind, library_id))
+        return bool(self.still_listed and self.still_listed.pop(0))
 
     async def remove_from_playlist(self, playlist_id, track_id, index=None):
         await self._record('remove_from_playlist', playlist_id, track_id, index)
@@ -630,6 +640,7 @@ class FakeLibrary:
             self.items[('folder', node.id)] = node.item
         self.placed = 0
         self.released = []
+        self.hidden = []  # ('hide' or 'unhide', the refs), in order
 
     def hold(self, change):
         self.changes.append(change)
@@ -651,6 +662,33 @@ class FakeLibrary:
 
     def by_id(self, kind, item_id):
         return self.items.get((kind, item_id))
+
+    def library_id(self, kind, item_id, catalog_id=None):
+        """As Library.library_id: a song by the albums' tracks' ids and catalog ids."""
+        if kind == 'song':
+            for album in self.albums:
+                for group in album.raw.get('groups') or []:
+                    for entry in group.get('entries') or []:
+                        if item_id in (entry.get('id'), entry.get('catalogId')) or (
+                                catalog_id and catalog_id == entry.get('catalogId')):
+                            return entry.get('id')
+            return None
+        item = self.items.get((kind, item_id))
+        return item.id if item is not None else None
+
+    def playlists_holding(self, ids):
+        return [playlist.id for playlist in self.playlists
+                if any(entry.get('id') in ids or entry.get('catalogId') in ids
+                       for group in playlist.raw.get('groups') or []
+                       for entry in group.get('entries') or [])]
+
+    def hide(self, refs):
+        self.hidden.append(('hide', set(refs)))
+        return asyncio.sleep(0)  # Library.hide's reload
+
+    def unhide(self, refs):
+        self.hidden.append(('unhide', set(refs)))
+        return asyncio.sleep(0)
 
     def playlist_tree(self):
         return self.tree
@@ -695,8 +733,11 @@ class FakeApp:
             self.buttons.append((button_label, action_name,
                                  action_target.unpack() if action_target else None))
 
-    def start_sync(self, quick=False, playlists=False):
-        self.syncs.append('playlists' if playlists else quick)
+    def start_sync(self, quick=False, playlists=False, videos=False, tracks_of=()):
+        if videos or tracks_of:
+            self.syncs.append(('quick', videos, tuple(tracks_of)))
+        else:
+            self.syncs.append('playlists' if playlists else quick)
         return None
 
     def refuse_in_demo(self):
@@ -777,7 +818,7 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-add-to-library', 'item-add-to-playlist', 'item-open-in-browser',
             'item-copy-link', 'item-go-to-album', 'item-go-to-artist', 'item-new-playlist',
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
-            'item-move-to-folder']))
+            'item-move-to-folder', 'item-remove-from-library']))
         self.assertEqual(
             self.window.actions['item-remove-from-playlist'].get_parameter_type().dup_string(),
             '(ssi)')
@@ -1473,6 +1514,234 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.actions.wait_listed('root', 'p.pl1', 'Night Drive'))
         engine.listings = [EngineError('engine-down')]
         self.assertFalse(await self.actions.wait_listed('root', 'p.pl1', None))
+
+
+# A library album with its tracks, a music video and a playlist of Apple's that may not be
+# removed, for Remove from Library.
+HELD_ALBUM = Item({'id': 'l.alb2', 'kind': 'album', 'title': 'Low Tide',
+                   'play': {'kind': 'album', 'id': 'l.alb2'},
+                   'groups': [{'name': 'Disc 1', 'play': {'kind': 'album', 'id': 'l.alb2'},
+                               'entries': [
+                                   {'id': 'i.song3', 'catalogId': '1000000021',
+                                    'title': 'Undertow', 'type': 'library-songs'},
+                                   {'id': 'i.song4', 'catalogId': '1000000022',
+                                    'title': 'Slack Water', 'type': 'library-songs'}]}]})
+LONE_ALBUM = Item({'id': 'l.alb3', 'kind': 'album', 'title': 'Single File',
+                   'play': {'kind': 'album', 'id': 'l.alb3'},
+                   'groups': [{'name': 'Disc 1', 'play': {'kind': 'album', 'id': 'l.alb3'},
+                               'entries': [{'id': 'i.song5', 'catalogId': '1000000023',
+                                            'title': 'Alone', 'type': 'library-songs'}]}]})
+LIBRARY_VIDEO = Item({'id': 'i.vid2', 'kind': 'video', 'title': 'Undertow (Video)',
+                      'catalogId': '1000000024',
+                      'play': {'kind': 'musicVideo', 'id': '1000000024'}})
+KEPT_PLAYLIST = Item({'id': 'p.pl3', 'kind': 'playlist', 'title': 'Apple Keeps',
+                      'attributes': {'canEdit': False, 'canDelete': False},
+                      'play': {'kind': 'playlist', 'id': 'p.pl3'}})
+# A playlist of the user's holding the album's first song (by its catalog id) and the video.
+HOLDING = Item({'id': 'p.pl4', 'kind': 'playlist', 'title': 'Undertows',
+                'play': {'kind': 'playlist', 'id': 'p.pl4'},
+                'groups': [{'name': 'Tracks', 'play': {'kind': 'playlist', 'id': 'p.pl4'},
+                            'entries': [{'id': 'i.plt1', 'catalogId': '1000000021',
+                                         'title': 'Undertow', 'type': 'library-songs'},
+                                        {'id': 'i.vid2', 'catalogId': '1000000024',
+                                         'title': 'Undertow (Video)',
+                                         'type': 'library-music-videos'}]}]})
+# A catalog album's track that the library holds too (HELD_ALBUM's second).
+CATALOG_HELD = Track({'id': '1000000022', 'catalogId': '1000000022', 'title': 'Slack Water'},
+                     play={'kind': 'album', 'id': '1000000002'})
+
+
+def track_of(item, position):
+    """The Track at `position` of an Item's first group, as its page shows it."""
+    group = item.raw['groups'][0]
+    return Track(group['entries'][position], play=group['play'])
+
+
+class RemovalMenuTest(unittest.TestCase):
+    """Which objects Remove from Library takes out of the library (removal_target), and
+    the menus that offer it."""
+
+    def setUp(self):
+        self.library = FakeLibrary([LIBRARY_ALBUM, HELD_ALBUM, LONE_ALBUM, MADE_UP_ALBUM,
+                                    CATALOG_ALBUM, PLAYLIST, READ_ONLY, FAVOURITES,
+                                    KEPT_PLAYLIST, HOLDING, LIBRARY_VIDEO])
+
+    def test_what_the_library_holds_is_removable(self):
+        library = self.library
+        self.assertEqual(removal_target(LIBRARY_TRACK, library), ('song', 'i.song1'))
+        self.assertEqual(removal_target(track_of(HELD_ALBUM, 1), library), ('song', 'i.song4'))
+        # A playlist's entry, a catalog album's track: the library's song of that catalog id.
+        self.assertEqual(removal_target(track_of(HOLDING, 0), library), ('song', 'i.song3'))
+        self.assertEqual(removal_target(CATALOG_HELD, library), ('song', 'i.song4'))
+        self.assertEqual(removal_target(LIBRARY_ALBUM, library), ('album', 'l.alb1'))
+        self.assertEqual(removal_target(LIBRARY_VIDEO, library), ('video', 'i.vid2'))
+        self.assertEqual(removal_target(track_of(HOLDING, 1), library), ('video', 'i.vid2'))
+        self.assertEqual(removal_target(READ_ONLY, library), ('playlist', 'p.pl2'))
+
+    def test_what_is_not_removed_so(self):
+        library = self.library
+        for obj in (CATALOG_TRACK, CATALOG_SONG, CATALOG_ALBUM, CATALOG_VIDEO, MADE_UP_ALBUM,
+                    STATION, LIBRARY_ARTIST, FOLDER,
+                    PLAYLIST,  # the user's own: Delete Playlist…
+                    FAVOURITES, KEPT_PLAYLIST):  # Apple says it cannot be deleted
+            self.assertIsNone(removal_target(obj, library), obj)
+        self.assertIsNone(removal_target(LIBRARY_TRACK, None))
+        # An album the library no longer has (gone since the page was shown).
+        self.assertIsNone(removal_target(LIBRARY_ALBUM, FakeLibrary([])))
+        self.assertTrue(is_removable_playlist(READ_ONLY))
+        self.assertFalse(is_removable_playlist(KEPT_PLAYLIST))
+
+    def test_the_menu_offers_it_last_and_no_add_beside_it(self):
+        menu = build_menu(LIBRARY_ALBUM, removable=('album', 'l.alb1'))
+        self.assertEqual(actions_of(menu)[-1],
+                         ('win.item-remove-from-library', ('album', 'l.alb1')))
+        self.assertIn('Remove from Li_brary…', labels_of(menu))
+        menu = build_menu(CATALOG_HELD, removable=('song', 'i.song4'))
+        self.assertNotIn('win.item-add-to-library', names(menu))
+        self.assertEqual(actions_of(menu)[-1],
+                         ('win.item-remove-from-library', ('song', '1000000022')))
+        self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_HELD)))
+        self.assertNotIn('win.item-remove-from-library', names(build_menu(LIBRARY_ALBUM)))
+
+    def test_the_mnemonics_stay_distinct(self):
+        labels = labels_of(build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)],
+                                      removable=('song', 'i.song1')))
+        letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label
+                   and label != 'Road Trip']
+        self.assertEqual(len(letters), len(set(letters)), labels)
+
+    def test_the_sidebar_offers_it_for_apples_playlists(self):
+        menu = Gio.Menu()
+        fill_sidebar_menu(menu, READ_ONLY)
+        self.assertEqual(names(menu)[-1], 'win.item-remove-from-library')
+        for item in (PLAYLIST, FAVOURITES, KEPT_PLAYLIST):
+            fill_sidebar_menu(menu, item)
+            self.assertNotIn('win.item-remove-from-library', names(menu))
+
+    def test_the_confirmation_says_what_goes_with_it(self):
+        heading, body = removal_words('song', 'Undertow')
+        self.assertEqual(heading, 'Remove from Library?')
+        self.assertIn('“Undertow”', body)
+        self.assertIn('from your playlists', body)
+        self.assertIn('and its songs', removal_words('album', 'Low Tide')[1])
+        self.assertNotIn('playlists', removal_words('playlist', 'Apple Picks')[1])
+        self.assertNotIn('“', removal_words('song', '')[1])
+
+
+class RemoveFromLibraryTest(unittest.IsolatedAsyncioTestCase):
+    """Remove from Library: the confirmation stood in for, the library's hide and unhide
+    and the engine's writes recorded, the waits for Apple's listing made short."""
+
+    async def asyncSetUp(self):
+        self.app = FakeApp()
+        folders = [{'id': 'root', 'title': '', 'parent': None,
+                    'children': [{'kind': 'folder', 'id': 'p.fd1'}]},
+                   {'id': 'p.fd1', 'title': 'Apple', 'parent': 'root',
+                    'children': [{'kind': 'playlist', 'id': 'p.pl2'}]}]
+        self.app.library = FakeLibrary([LIBRARY_ALBUM, HELD_ALBUM, LONE_ALBUM, READ_ONLY,
+                                        HOLDING, LIBRARY_VIDEO, self.app.playlist], folders)
+        self.window = FakeWindow()
+        self.actions = ItemActions(self.window, self.app)
+        self.confirms = []  # (heading, body, confirm, done) per confirmation
+        self.actions.ask_confirm = lambda *args: self.confirms.append(args)
+        for name, value in (('SETTLE_DELAYS', (0, 0, 0)), ('REMOVAL_DELAYS', (0, 0, 0)),
+                            ('LISTING_LAG', 0)):
+            self.addCleanup(setattr, actions_module, name, getattr(actions_module, name))
+            setattr(actions_module, name, value)
+
+    async def settle(self):
+        while self.app.tasks:
+            tasks = list(self.app.tasks)
+            self.app.tasks.clear()
+            await asyncio.gather(*tasks)
+
+    async def remove(self, obj, confirm=True):
+        """Remove from Library on obj as its menu runs it, the dialog answered."""
+        self.actions.menu_for(obj)
+        self.window.actions['item-remove-from-library'].activate(
+            GLib.Variant('(ss)', actions_module.describe(obj)))
+        await self.settle()
+        if confirm and self.confirms:
+            self.confirms[-1][3]()
+            await self.settle()
+
+    def writes(self):
+        return [call for call in self.app.engine.calls
+                if call[0] not in ('folder_children', 'rating', 'in_library')]
+
+    async def test_a_song_goes_at_once_then_the_library_follows_apple(self):
+        self.app.engine.still_listed = [True, False]  # Apple's read: there, then gone
+        await self.remove(track_of(HELD_ALBUM, 0), confirm=False)
+        heading, body, confirm, done = self.confirms[0]
+        self.assertEqual((heading, confirm), ('Remove from Library?', '_Remove'))
+        self.assertIn('“Undertow”', body)
+        self.assertEqual(self.writes(), [])  # nothing before the confirmation
+        done()
+        await self.settle()
+        # Left out by its library id and its catalog id (a playlist holds it by that).
+        self.assertEqual(self.app.library.hidden,
+                         [('hide', {('song', 'i.song3'), ('song', '1000000021')})])
+        self.assertEqual(self.writes(), [('remove_from_library', 'song', 'i.song3')])
+        self.assertEqual(self.app.toasts, ['Removed “Undertow” from your library'])
+        self.assertEqual(self.app.engine.calls.count(('in_library', 'song', 'i.song3')), 2)
+        # The quick pass reads again the playlist that held it.
+        self.assertEqual(self.app.syncs, [('quick', False, ('p.pl4',))])
+        self.assertEqual(self.window.left, [])  # no page shows the song alone
+
+    async def test_an_albums_last_song_takes_its_page(self):
+        await self.remove(track_of(LONE_ALBUM, 0))
+        self.assertEqual(self.writes(), [('remove_from_library', 'song', 'i.song5')])
+        self.assertEqual(self.window.left, [({('album', 'l.alb3')}, None)])
+
+    async def test_an_album_goes_with_its_songs(self):
+        await self.remove(HELD_ALBUM)
+        self.assertIn('“Low Tide” and its songs', self.confirms[0][1])
+        self.assertEqual(self.app.library.hidden, [('hide', {('album', 'l.alb2')})])
+        self.assertEqual(self.writes(), [('remove_from_library', 'album', 'l.alb2')])
+        self.assertEqual(self.window.left, [({('album', 'l.alb2')}, None)])
+        self.assertEqual(self.app.syncs, [('quick', False, ('p.pl4',))])
+
+    async def test_a_music_video(self):
+        await self.remove(LIBRARY_VIDEO)
+        self.assertEqual(self.app.library.hidden,
+                         [('hide', {('video', 'i.vid2'), ('video', '1000000024')})])
+        self.assertEqual(self.writes(), [('remove_from_library', 'video', 'i.vid2')])
+        self.assertEqual(self.app.syncs, [('quick', True, ('p.pl4',))])
+
+    async def test_a_playlist_of_apples_as_a_deleted_one(self):
+        await self.remove(READ_ONLY)
+        self.assertNotIn('playlists', self.confirms[0][1])
+        self.assertEqual(self.writes(), [('remove_from_library', 'playlist', 'p.pl2')])
+        self.assertEqual(self.window.left, [({('playlist', 'p.pl2')}, 'p.fd1')])
+        self.assertIn(('folder_children', 'p.fd1'), self.app.engine.calls)
+        self.assertEqual(self.app.syncs, ['playlists'])
+
+    async def test_a_failure_brings_it_back(self):
+        self.app.engine.fail = EngineError('api', 'HTTP 500')
+        await self.remove(HELD_ALBUM)
+        self.assertEqual(self.app.library.hidden, [('hide', {('album', 'l.alb2')}),
+                                                   ('unhide', {('album', 'l.alb2')})])
+        self.assertEqual(self.app.reported, ['api'])
+        self.assertEqual((self.window.left, self.app.syncs, self.app.toasts), ([], [], []))
+
+    async def test_the_wait_for_apple_has_an_end(self):
+        self.app.engine.still_listed = [True] * 10
+        self.assertFalse(await self.actions.wait_removed('song', 'i.song3'))
+        self.assertEqual(self.app.engine.calls.count(('in_library', 'song', 'i.song3')), 3)
+
+    async def test_what_the_library_does_not_hold_is_not_sent(self):
+        self.actions.menu_for(CATALOG_ALBUM)
+        self.window.actions['item-remove-from-library'].activate(
+            GLib.Variant('(ss)', ('album', CATALOG_ALBUM.id)))
+        await self.settle()
+        self.assertEqual((self.confirms, self.writes()), ([], []))
+        self.assertEqual(self.app.toasts, ['This is not in your library'])
+
+    async def test_not_in_the_demo(self):
+        self.app.demo = True
+        await self.remove(HELD_ALBUM)
+        self.assertEqual((self.writes(), self.app.library.hidden), ([], []))
+        self.assertEqual(self.app.toasts, ['Not available with the demo library'])
 
 
 if __name__ == '__main__':

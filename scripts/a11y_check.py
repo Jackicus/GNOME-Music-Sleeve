@@ -958,6 +958,23 @@ async def walkthrough(window):
         await until(lambda: dialog_shown(window, NameDialog) is None)
         check('Escape closes it, nothing renamed',
               dialog_shown(window, NameDialog) is None and playlist.title != 'Invented Name')
+    print('-- the confirmation before Remove from Library')
+    album = app.library.albums.get_item(0)
+    window.activate_action('win.item-remove-from-library',
+                           GLib.Variant('(ss)', ('album', album.id)))
+    await asyncio.sleep(0.8)
+    shown = dialog_shown(window, Adw.AlertDialog)
+    check('Remove from Library… asks first', shown is not None)
+    if shown is not None:
+        check('Cancel is the default, Remove destructive',
+              shown.get_default_response() == 'cancel'
+              and shown.get_response_appearance('confirm')
+              == Adw.ResponseAppearance.DESTRUCTIVE)
+        await key(shown.get_root(), 'Escape', 0)
+        await until(lambda: dialog_shown(window, Adw.AlertDialog) is None)
+        check('Escape closes it, nothing removed',
+              dialog_shown(window, Adw.AlertDialog) is None
+              and app.library.by_id('album', album.id) is album)
     print('-- a dialog over the window')
     # A dialog is inside the window only when the window is maximized or tiled (else it is
     # a window of its own, which the window's keys never reach).

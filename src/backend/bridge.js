@@ -51,17 +51,7 @@
     // pre-stringified body would not get. Answers {ok: true}, with `data`, the
     // body Apple sent (a 201 Created's new resource), when there was one.
     async function apiWrite(path, params, options) {
-        const mk = getMusicKit();
-        if (!mk) throw new Error('MusicKit not initialized');
-        const client = mk.api && mk.api.client;
-        if (!client || typeof client.createRequest !== 'function') {
-            throw new Error('MusicKit request client unavailable');
-        }
-        const res = await client.createRequest(path, {
-            params: params || {},
-            method: options.method,
-            body: options.body
-        }).send();
+        const res = await apiRequest(path, params, options);
         if (!res.ok) throw new Error(await describeFailure(res));
         let data = null;
         try {
@@ -71,6 +61,20 @@
             // No body, or not JSON: the status said it worked.
         }
         return data ? { ok: true, data: data } : { ok: true };
+    }
+
+    // One request through MusicKit's request builder (signed as music() signs it, never
+    // answered from a cache), its response as it came.
+    async function apiRequest(path, params, options) {
+        const mk = getMusicKit();
+        if (!mk) throw new Error('MusicKit not initialized');
+        const client = mk.api && mk.api.client;
+        if (!client || typeof client.createRequest !== 'function') {
+            throw new Error('MusicKit request client unavailable');
+        }
+        const request = { params: params || {}, method: options.method };
+        if (typeof options.body !== 'undefined') request.body = options.body;
+        return await client.createRequest(path, request).send();
     }
 
     // The id of the resource a 201 Created answered with ({data: [{id}]}), or null.
@@ -905,6 +909,25 @@
             const query = {};
             query['ids[' + kind + 's]'] = id;
             return await apiWrite('/v1/me/library', query, { method: 'POST' });
+        },
+
+        // An item out of the library, as the web player's requestDeleteFromLibrary
+        // takes it: `type` the catalog type of its kind ('songs', 'albums',
+        // 'music-videos', 'playlists'), `id` its library id (Apple answers a catalog
+        // id with a 500). A song goes from every playlist that held it, an album with
+        // its tracks.
+        removeFromLibrary: async function (type, id) {
+            return await apiWrite('/v1/me/library/' + type + '/' + id, {}, { method: 'DELETE' });
+        },
+
+        // Whether the library holds the item still: its read under /v1/me/library,
+        // through the request builder, since music() may answer from its cache what a
+        // removal has just changed. {has: false} for Apple's 404.
+        libraryHas: async function (type, id) {
+            const res = await apiRequest('/v1/me/library/' + type + '/' + id, {}, { method: 'GET' });
+            if (res.status === 404) return { has: false };
+            if (!res.ok) throw new Error(await describeFailure(res));
+            return { has: true };
         },
 
         // `type` is the song's resource type: 'songs' for a catalog id (the

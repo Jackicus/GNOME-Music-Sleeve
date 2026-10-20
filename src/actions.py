@@ -23,6 +23,8 @@ what it acts on (an Item's kind and id, or 'song' and a Track's id):
     item-love            loved: a song goes into Favourite Songs
     item-unlove          the love taken back
     item-add-to-library  a catalog item added to the library
+    item-remove-from-library   a song, album, music video or playlist of Apple's taken out
+                         of the library, once a dialog confirms
     item-go-to-album     the page of the album a song is on (related.py finds it)
     item-go-to-artist    the page of the artist a song, video or album is by
     item-open-in-browser its music.apple.com page, in the default browser (Gtk.UriLauncher)
@@ -55,16 +57,24 @@ library's Item, so an open page shows the change at once.
 The menus are built in code, per kind (build_menu): Play, Play Next, Play Later; Go to Album,
 Go to Artist (not where the page shown is that album or artist already); Favourite and
 Remove from Favourites (both, of which the menu shows the one whose action is enabled: the
-actions' state says whether the item is loved), Add to Library, Add to Playlist (the
-library's playlists that take songs, each folder a submenu, then New Playlist…), Move to
-Folder (a playlist's or folder's: Top Level, the folders it can go into, a folder holding
-others a submenu headed by itself, then New Folder…: move_targets()), Remove from
-Playlist (a track shown in a playlist of the user's: `container`); Open in Browser, Copy Link
+actions' state says whether the item is loved), Add to Library (not what the library holds
+already), Add to Playlist (the library's playlists that take songs, each folder a submenu,
+then New Playlist…), Move to Folder (a playlist's or folder's: Top Level, the folders it can
+go into, a folder holding others a submenu headed by itself, then New Folder…:
+move_targets()), Remove from Playlist (a track shown in a playlist of the user's:
+`container`); Open in Browser, Copy Link
 (only an address anyone can open: not the web player's library routes; a library artist's is
 the catalog artist's page, which the engine finds through their songs); Rename… and Delete
-Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs);
-a folder's menu starts with New Playlist… and New Folder… (in it); each only where it
-applies.
+Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs),
+Remove from Library… (what the library holds: removal_target; a playlist of Apple's, which
+cannot be deleted as the user's own are); a folder's menu starts with New Playlist… and New
+Folder… (in it); each only where it applies.
+
+Remove from Library takes the item out of the library's models at once (Library.hide), then
+asks Apple; a refusal puts it back and is reported. Apple takes a song out of every playlist
+too, and an album with its songs; its library listings drop them only seconds later, so the
+library keeps leaving them out until a load no longer meets them, and the quick pass of a
+sync that follows starts once Apple's read of the item answers 404 (wait_removed).
 
 After a playlist or folder was made, renamed or deleted, the window leaves the pages of what
 is gone (Window.leave), the sidebar shows a new name at once, and the library follows Apple's
@@ -93,7 +103,8 @@ from . import related
 from .backend import api
 from .backend.errors import EngineError
 from .backend.api import is_library_id
-from .library import ROOT_FOLDER, TRACK_KINDS, Item, ItemRefs, Track, TreeChange, track_ref
+from .library import (REMOVABLE, ROOT_FOLDER, TRACK_KINDS, Item, ItemRefs, Track,
+                      TreeChange, track_ref)
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +116,13 @@ ENTRY_TARGET = GLib.VariantType.new('(ssi)')
 # until it shows the change: a new playlist was listed 4 to 6.5 s after it was made, a
 # rename or a deletion within a second (2026-10-03). Then the library follows regardless.
 SETTLE_DELAYS = (0.5, 1, 1, 1, 2, 2, 3, 3)
+
+# After a removal from the library, how long to wait before each look at Apple's library
+# read of the item, in seconds, until it answers 404: a song's did within 2 s, an album's
+# within 7 (2026-10-20). Then the library's listings, which dropped them within 2 to 7 s,
+# are given LISTING_LAG more before the sync reads them.
+REMOVAL_DELAYS = (1, 1, 1, 2, 2, 3, 3, 4)
+LISTING_LAG = 2
 
 # How many of the objects menus were built for are remembered for their actions.
 REMEMBERED = 64
@@ -154,6 +172,7 @@ def action_labels():
         'item-delete': _('_Delete Playlist…'),
         'item-move-to-folder': _('Mov_e to Folder'),
         'item-new-folder': _('New _Folder…'),
+        'item-remove-from-library': _('Remove from Li_brary…'),
     }
 
 
@@ -240,6 +259,74 @@ def library_target(obj):
             obj.id):
         return obj.kind, obj.id
     return None
+
+
+def is_removable_playlist(obj):
+    """Whether obj is a playlist of Apple's or someone else's in the library, which Remove
+    from Library takes out: a library playlist the user cannot edit (not Item.editable) that
+    is not Favourite Songs and whose attributes do not say canDelete false. The user's own
+    playlists are deleted with Delete Playlist… instead."""
+    if not isinstance(obj, Item) or obj.kind != 'playlist' or not is_library_id(obj.id or ''):
+        return False
+    if obj.favourites or obj.editable or _synthetic(obj.id):
+        return False
+    attributes = obj.raw.get('attributes')
+    return not (isinstance(attributes, dict) and attributes.get(REMOVABLE) is False)
+
+
+def removal_target(obj, library):
+    """(kind, library id) that Remove from Library takes out of the library, or None: a song
+    or music video the library holds (a Track, or an Item of the kind; found by its id or its
+    catalog id, Library.library_id, so a catalog album's track that is in the library too
+    has it), a library album (not one the library made up for loose songs), a playlist of
+    Apple's in the library (is_removable_playlist)."""
+    if library is None:
+        return None
+    if isinstance(obj, Track) or (isinstance(obj, Item) and obj.kind in ('song', 'video')):
+        kind = 'video' if obj.kind == 'video' else 'song'
+        if (isinstance(obj, Track) and kind == 'song' and is_library_id(obj.id or '')
+                and obj.play.get('kind') == 'album'
+                and library.by_id('album', obj.play.get('id')) is not None):
+            return 'song', obj.id  # a track of a library album: a library song
+        library_id = library.library_id(kind, obj.id, obj.catalog_id)
+        return (kind, library_id) if library_id else None
+    if isinstance(obj, Item) and obj.kind == 'album':
+        if not is_library_id(obj.id or '') or _synthetic(obj.id):
+            return None
+        return ('album', obj.id) if library.library_id('album', obj.id) else None
+    if is_removable_playlist(obj) and library.library_id('playlist', obj.id):
+        return 'playlist', obj.id
+    return None
+
+
+def removal_items(obj, removable):
+    """Remove from Library… for obj, when `removable` (its removal_target) says it is in
+    the library."""
+    named = describe(obj)
+    if removable is None or named is None:
+        return []
+    return [menu_item('item-remove-from-library', GLib.Variant('(ss)', named))]
+
+
+def removal_words(kind, title):
+    """(heading, body) of the confirmation before Remove from Library takes out an item of
+    `kind` named `title`: what else goes with it."""
+    heading = _('Remove from Library?')
+    if kind == 'playlist':
+        body = (_('“{title}” will be removed from your library on all your devices.')
+                if title else _('The playlist will be removed from your library on all your '
+                                'devices.'))
+    elif kind == 'album':
+        body = (_('“{title}” and its songs will be removed from your library and from your '
+                  'playlists on all your devices.') if title
+                else _('The album and its songs will be removed from your library and from '
+                       'your playlists on all your devices.'))
+    else:
+        body = (_('“{title}” will be removed from your library and from your playlists on '
+                  'all your devices.') if title
+                else _('It will be removed from your library and from your playlists on all '
+                       'your devices.'))
+    return heading, body.format(title=title)
 
 
 def playlist_track(obj):
@@ -487,7 +574,7 @@ def main_menu_section():
 
 
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
-               moves=None):
+               moves=None, removable=None):
     """The menu for obj (an Item or a Track), or None when nothing applies (the top level
     of the folders, a category). `playlists` are the entries the Add to Playlist submenu
     lists (ItemActions.playlists(): (id, title, children), a folder's children its own
@@ -495,7 +582,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     left out where they would go nowhere: related.shows); `queued`, obj is in the player's
     queue (no Play); `container`, the playlist Item the track obj is shown in (Remove from
     Playlist, when it is one of the user's); `moves`, where a playlist or folder can be
-    moved (move_targets(): Move to Folder; None, not at all)."""
+    moved (move_targets(): Move to Folder; None, not at all); `removable`, obj's
+    removal_target (Remove from Library…, and no Add to Library)."""
     named = describe(obj)
     if named is None or (isinstance(obj, Item) and obj.kind not in MENU_KINDS):
         return None
@@ -517,7 +605,7 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if rating_target(obj) is not None:
         for item in favourite_items(target):
             keep.append_item(item)
-    if library_target(obj) is not None:
+    if library_target(obj) is not None and removable is None:
         keep.append_item(menu_item('item-add-to-library', target))
     if playlist_song(obj):
         # The playlists that take songs, folders as submenus, then New Playlist…, one
@@ -542,6 +630,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         if share_url(obj, storefront) or needs_catalog_url(obj) or needs_catalog_artist(obj):
             share.append_item(menu_item('item-copy-link', target))
     for item in manage_items(obj):
+        manage.append_item(item)
+    for item in removal_items(obj, removable):
         manage.append_item(item)
     menu = Gio.Menu()
     for section in sections:
@@ -579,6 +669,9 @@ def fill_sidebar_menu(menu, item, moves=None):
         keep.append_submenu(action_labels()['item-move-to-folder'], move_submenu(moves, named))
     manage = Gio.Menu()
     for entry in manage_items(item):
+        manage.append_item(entry)
+    for entry in removal_items(item, (item.kind, item.id) if is_removable_playlist(item)
+                               else None):
         manage.append_item(entry)
     for section in (first, keep, manage):
         if section.get_n_items():
@@ -641,6 +734,7 @@ class ItemActions:
             'item-rename': self._on_rename,
             'item-delete': self._on_delete,
             'item-new-folder': self._on_new_folder,
+            'item-remove-from-library': self._on_remove_from_library,
         }
         self.actions = {}
         for name, handler in handlers.items():
@@ -675,7 +769,8 @@ class ItemActions:
             return None
         menu = build_menu(obj, self.playlists() if playlist_song(obj) else (),
                           self._storefront(), here=self._shown(), queued=queued,
-                          container=self.container(obj), moves=self.move_targets(obj))
+                          container=self.container(obj), moves=self.move_targets(obj),
+                          removable=self.removal_target(obj))
         if menu is None:
             return None
         self._remember(named, obj)
@@ -1327,6 +1422,112 @@ class ItemActions:
             if name is not None and found is not None and found['name'] == name:
                 return True
         log.info('Apple does not list the change yet: the library follows its listing')
+        return False
+
+    # -- removing from the library -----------------------------------------------------------
+
+    def removal_target(self, obj):
+        """obj's removal_target() in the app's library, or None."""
+        return removal_target(obj, self.library)
+
+    def _on_remove_from_library(self, _action, parameter):
+        obj = self._unpack(parameter)[0]
+        target = self.removal_target(obj) if obj is not None else None
+        if target is None:
+            self.app.toast(_('This is not in your library'))
+            return None
+        heading, body = removal_words(target[0], obj.title or '')
+        return self.ask_confirm(heading, body, _('_Remove'),
+                                lambda: self.remove_from_library(obj, target))
+
+    def remove_from_library(self, obj, target):
+        """Take obj out of the library (`target`, its removal_target: (kind, library id)).
+        The library leaves it out at once (Library.hide: its stores, its albums and
+        playlists, the pages), before Apple has answered; a failure brings it back
+        (Library.unhide) and is reported. Once Apple has taken it, the window leaves its
+        pages, and the library follows Apple's listings when they no longer hold it
+        (_follow_removal). The task, or None."""
+        if self.app.refuse_in_demo():
+            return None
+        kind, library_id = target
+        hidden, holding, gone = self._removal_refs(obj, kind, library_id)
+        parent = self._parent_of(obj) if kind == 'playlist' else None
+        title = obj.title or ''
+        message = (_('Removed “{title}” from your library').format(title=title) if title
+                   else _('Removed from your library'))
+
+        async def run():
+            self.app.spawn(self.library.hide(hidden))
+            try:
+                await self.app.player.ensure_engine()
+                await self.engine.remove_from_library(kind, library_id)
+            except EngineError as error:
+                self.app.spawn(self.library.unhide(hidden))
+                self.app.report(error)
+                return False
+            self.app.toast(message)
+            if gone:
+                self.window.leave(gone, parent)
+            await self._follow_removal(kind, library_id, parent, holding)
+            return True
+
+        return self.app.spawn(run())
+
+    def _removal_refs(self, obj, kind, library_id):
+        """What a removal of obj takes with it: (the refs Library.hide leaves out, the ids
+        of the playlists holding it, whose tracks the sync reads again, the (kind, id) of the
+        pages to leave)."""
+        if kind == 'playlist':
+            return {('playlist', library_id)}, (), {('playlist', library_id)}
+        if kind == 'album':
+            album = self.library.by_id('album', library_id)
+            ids = set()
+            for group in (album.raw.get('groups') or []) if album is not None else ():
+                for entry in group.get('entries') or []:
+                    ids.update(value for value in (entry.get('id'), entry.get('catalogId'))
+                               if value)
+            return ({('album', library_id)}, self.library.playlists_holding(ids),
+                    {('album', library_id)})
+        catalog_id = getattr(obj, 'catalog_id', None)
+        hidden = {(kind, library_id)} | ({(kind, catalog_id)} if catalog_id else set())
+        gone = {('video', library_id)} if kind == 'video' else set()
+        if isinstance(obj, Track) and obj.play.get('kind') == 'album':
+            album = self.library.by_id('album', obj.play.get('id'))
+            if album is not None and sum(group.entries.get_n_items()
+                                         for group in album.groups) <= 1:
+                gone.add(('album', album.id))  # its one song: the album goes too
+        return (hidden, self.library.playlists_holding({library_id, catalog_id} - {None}),
+                gone)
+
+    async def _follow_removal(self, kind, library_id, parent, holding):
+        """After a removal Apple took: a playlist's, as a deleted playlist's
+        (_follow_listing); anything else's once Apple's library read no longer has it
+        (wait_removed), with the quick pass of a sync, which reads the songs, the music
+        videos and the tracks of the playlists that held it (`holding`). Until a load no
+        longer meets it, the library leaves it out (Library.hide)."""
+        if kind == 'playlist':
+            await self._follow_listing(parent, library_id, None)
+            return
+        if await self.wait_removed(kind, library_id):
+            await asyncio.sleep(LISTING_LAG)
+        task = self.app.start_sync(quick=True, videos=kind == 'video',
+                                   tracks_of=tuple(holding))
+        if task is not None:
+            await asyncio.wait([task])
+
+    async def wait_removed(self, kind, library_id):
+        """Wait until Apple's library read answers that library_id is gone (Engine.
+        in_library), looking after each of REMOVAL_DELAYS. True once it does; False when it
+        never did, or the engine could not say."""
+        for delay in REMOVAL_DELAYS:
+            await asyncio.sleep(delay)
+            try:
+                if not await self.engine.in_library(kind, library_id):
+                    return True
+            except EngineError as error:
+                log.debug('library read after a removal: %s', error)
+                return False
+        log.info('Apple still lists the item removed: the library follows its listing')
         return False
 
     # -- links -------------------------------------------------------------------------------

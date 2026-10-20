@@ -107,8 +107,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   end of **Add to Playlist** (a new playlist holding that song), in a folder's menu, in the
   main menu, and is the **+** button of All Playlists and of a folder's page. A folder's menu
   also has **Rename…** and **Delete Folder…**, which deletes the playlists in it too.
-  Favourite Songs and Apple's playlists in your library cannot be renamed or deleted. A
-  change takes a few seconds to reach the library's listing, as Apple lists it.
+  Favourite Songs and Apple's playlists in your library cannot be renamed or deleted;
+  Apple's playlists can be removed from your library instead (below). A change takes a few
+  seconds to reach the library's listing, as Apple lists it.
 - Playlist folders: **New Folder…** is in the main menu, in a folder's menu (a folder inside
   it) and in All Playlists' menu, and is the folder button beside the **+** of All Playlists
   and of a folder's page. A playlist's menu (in the sidebar, on its tile, or **More Options**
@@ -118,6 +119,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   up when it can take it, a closed folder opens when you hold the drag over it, and the
   sidebar scrolls when you drag near its top or bottom. The playlist moves at once; if Apple
   refuses, it goes back and the app says why. The toast after a move has **Undo**.
+- **Remove from Library…** in the menu of a song, an album or a music video in your library,
+  or of one of Apple's playlists you added, takes it out of your library on all your
+  devices, after asking. A song goes from every playlist that held it too, and an album
+  with its songs. It leaves the app's pages at once; if Apple refuses, it comes back and a
+  message says why. (Your own playlists are deleted with **Delete Playlist…** instead.)
 - The Activities overview's search finds your albums, artists, playlists and songs (songs
   once the running app has listed them: after a visit to Songs, or a library search in
   the app): choosing one opens its page, or plays the song; the Music Sleeve heading above

@@ -24,7 +24,7 @@ from applemusic.backend import config
 from applemusic.backend import normalize as backend
 from applemusic.backend.errors import EngineError
 from applemusic.engine import Engine
-from applemusic.library import EDITABLE, FAVOURITES, ROOT_FOLDER, Library
+from applemusic.library import EDITABLE, FAVOURITES, REMOVABLE, ROOT_FOLDER, Library
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
@@ -157,11 +157,12 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([entry['id'] for entry in stand_in['groups'][0]['entries']],
                          ['i.def456'])
         # Playlists, with Favourite Songs flagged as the demo flags it, from Apple's tag, and
-        # as not editable (canEdit false); the editable ones carry no attributes.
+        # as neither editable (canEdit false) nor removable (canDelete false); the editable
+        # ones carry no attributes.
         flagged = [p['id'] for p in sections['playlists'] if p.get('attributes')]
         self.assertEqual(flagged, ['p.favs0'])
         self.assertEqual(next(p for p in sections['playlists'] if p['id'] == 'p.favs0')
-                         ['attributes'], {FAVOURITES: True, EDITABLE: False})
+                         ['attributes'], {FAVOURITES: True, EDITABLE: False, REMOVABLE: False})
         self.assertTrue(all(p['groups'][0]['entries'] for p in sections['playlists']))
         # Videos are Items of kind video, played as MusicKit's musicVideo.
         self.assertEqual([(v['kind'], v['play']['kind']) for v in sections['videos']],
@@ -461,6 +462,27 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.track_reads(engine), ['p.pl456'])
         self.assertEqual(self.playlist(self.read_json(), 'p.pl456')['modified'],
                          '2026-09-30T12:00:00Z')
+
+    async def test_the_quick_pass_after_a_removal(self):
+        """After a removal from the library, the quick pass reads the music videos and the
+        tracks of the playlists that held what went, as well as the songs and the
+        shelves; the other playlists keep theirs."""
+        engine = FakeEngine(answers())
+        await app_sync.sync_library(engine, self.library)
+        engine.calls.clear()
+        await app_sync.sync_library(engine, self.library, quick=True)
+        paths = [path for path, _params in engine.calls]
+        self.assertEqual(self.track_reads(engine), [])
+        self.assertNotIn(app_sync.VIDEOS_ENDPOINT, paths)
+        engine.calls.clear()
+        await app_sync.sync_library(engine, self.library, quick=True, videos=True,
+                                    tracks_of=('p.pl456', 'p.gone'))
+        paths = [path for path, _params in engine.calls]
+        self.assertEqual(self.track_reads(engine), ['p.pl456'])
+        self.assertIn(app_sync.VIDEOS_ENDPOINT, paths)
+        self.assertIn(app_sync.SONGS_ENDPOINT, paths)
+        self.assertNotIn(app_sync.RADIO_ENDPOINT, paths)
+        self.assertTrue(self.playlist(self.read_json(), 'p.pl123')['groups'])  # kept
 
     async def test_a_playlist_without_tracks_on_file_is_read(self):
         wired = answers()

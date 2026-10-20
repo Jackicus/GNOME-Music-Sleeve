@@ -74,7 +74,8 @@ list and the script together.
    Ctrl+Shift+L, Ctrl+Shift+U and Space leave the page behind it alone.
 9. A playlist's Rename… (and New Playlist…) opens its dialog with the cursor in the name;
    Tab reaches the description and the buttons, Enter renames (or creates), and Escape
-   closes it with nothing changed. Delete Playlist… asks first, with Cancel the default.
+   closes it with nothing changed. Delete Playlist… and Remove from Library… ask first, with
+   Cancel the default (Escape closes the question, nothing removed).
 10. F11 with nothing playing does nothing. With an item playing it shows the full-screen
     player with the focus on its play button (a screen reader hears the "Fullscreen Player"
     group, then the button); Tab goes through its controls and into the lyrics and never out

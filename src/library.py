@@ -21,7 +21,9 @@ albums only). `sections.videos` holds Items of kind 'video'.
 
 load() makes new objects for everything; reload() (after a sync) reads the file again and brings
 the models up to date in place: an Item or Track still in the library keeps its object, so open
-pages and scroll positions survive.
+pages and scroll positions survive. hide() makes every load leave out what was just removed
+from the library (leave_out(), on the parsed file), at once and until Apple's listings, and so
+the file, no longer hold it; unhide() brings it back.
 
 Reading the file starts the moment load() is called, in a thread of its own, so the app calls
 it before GTK has even started (Application.do_startup) and the parse runs while GTK starts and
@@ -82,6 +84,10 @@ FAVOURITES = 'isFavourites'
 # The key in a playlist's raw `attributes` that is false when songs cannot be added to it
 # (Apple's canEdit, which the sync copies there when it is false).
 EDITABLE = 'canEdit'
+
+# The key in a playlist's raw `attributes` that is false when it cannot be removed from the
+# library (Apple's canDelete, which the sync copies there when it is false).
+REMOVABLE = 'canDelete'
 
 # The id of the folders entry that lists the top level: the playlists and folders in no folder.
 ROOT_FOLDER = 'root'
@@ -1153,6 +1159,8 @@ class Library(GObject.Object):
             max_workers=1, thread_name_prefix='library')  # its own: never behind a decode
         self._reading = threading.Event()  # clear: the parse waits (hold_reading())
         self._reading.set()
+        self._hidden = frozenset()  # what every load leaves out (hide())
+        self._song_ids = None  # {id or catalog id: library id} of the songs (library_id())
 
     @property
     def songs(self):
@@ -1297,7 +1305,7 @@ class Library(GObject.Object):
         (paused_gc); closing the coroutine unawaited resumes it too.
         """
         pause = _Pause(freeze=True)  # before the read starts: it collects first
-        return self._load(keep=False, reading=self._read(), pause=pause)
+        return self._load(keep=False, reading=self._read(), pause=pause, hidden=self._hidden)
 
     def reload(self):
         """Read library.json again (after a sync) and bring the models up to date in place.
@@ -1317,7 +1325,59 @@ class Library(GObject.Object):
         otherwise, but for the freeze: nothing is frozen after a reload.
         """
         pause = _Pause(freeze=False)
-        return self._load(keep=True, reading=self._read(), pause=pause)
+        return self._load(keep=True, reading=self._read(), pause=pause, hidden=self._hidden)
+
+    def hide(self, refs):
+        """Leave what `refs` names out of the models from now on, as removed from the library
+        (leave_out(): (kind, id) pairs, 'album', 'playlist' and 'video' Items by id, 'song'
+        entries by their id or catalog id): the coroutine of the reload that takes it out of
+        the stores, the pages and the Songs store at once, ahead of Apple's listings.
+
+        Every later load and reload leaves it out too, while the file it reads still holds
+        it: a ref is let go by the first load that does not meet it (the sync that follows
+        Apple's listing once it has dropped the item), or by unhide()."""
+        self._hidden = self._hidden | frozenset(refs)
+        return self.reload()
+
+    def unhide(self, refs):
+        """Show what hide(refs) left out again (a removal that failed): the coroutine of the
+        reload that brings it back from the file."""
+        self._hidden = self._hidden - frozenset(refs)
+        return self.reload()
+
+    @property
+    def hidden(self):
+        """The refs loads leave out now (hide())."""
+        return self._hidden
+
+    def library_id(self, kind, item_id, catalog_id=None):
+        """The library's own id for the song, music video, album or playlist named by its id
+        or its catalog id, or None when the library does not hold it: a song is one of the
+        albums' tracks (or a loose song), by its id, else by its catalog id; a video one of
+        the music videos; an album or a playlist an Item of the section."""
+        if kind == 'song':
+            if self._song_ids is None:
+                self._song_ids = _song_index(
+                    [entry for album in self.albums for entry in _entries_of(album.raw)]
+                    + self._loose)
+            return self._song_ids.get(item_id) or (
+                self._song_ids.get(catalog_id) if catalog_id else None)
+        if kind == 'video':
+            for video in self.videos:
+                if video.id == item_id or (catalog_id and video.catalog_id == catalog_id):
+                    return video.id
+            return None
+        if kind in ('album', 'playlist'):
+            item = self.by_id(kind, item_id)
+            return item.id if item is not None else None
+        return None
+
+    def playlists_holding(self, ids):
+        """The ids of the playlists with an entry whose id or catalog id is one of `ids`."""
+        ids = set(ids)
+        return [playlist.id for playlist in self.playlists
+                if any(not ids.isdisjoint(_entry_ids(entry))
+                       for entry in _entries_of(playlist.raw))]
 
     def _read(self):
         """Start reading library.json in the library's thread, now: the Future of
@@ -1342,9 +1402,10 @@ class Library(GObject.Object):
         """Let a parse held by hold_reading() go on."""
         self._reading.set()
 
-    async def _load(self, keep, reading, pause):
+    async def _load(self, keep, reading, pause, hidden=frozenset()):
         """load() and reload(): `reading` is the parse's Future, `pause` the _Pause of the
-        collector that the call began, left here as the load ends, however it ends."""
+        collector that the call began, left here as the load ends, however it ends; `hidden`
+        what to leave out (hide()), as it was at the call."""
         self._generation += 1
         generation = self._generation
         started = time.monotonic()
@@ -1352,6 +1413,10 @@ class Library(GObject.Object):
         try:
             data, song_count, file_state = await asyncio.wrap_future(reading)
             reading = None  # the Future holds the parse too
+            found = set()
+            if hidden and data is not None:
+                found, removed = await asyncio.to_thread(leave_out, data, hidden)
+                song_count = max(0, song_count - len(removed))
             self._paused = time.monotonic()
             self._check(generation)
             log.debug('Library parsed in %.0f ms', (time.monotonic() - started) * 1000)
@@ -1360,7 +1425,7 @@ class Library(GObject.Object):
             version = _number(data.get('version')) if data is not None else 0
             if self.version != version:
                 self.version = version
-            found = data is not None
+            loaded = data is not None
             await self._fill(data or {}, generation, keep)
             # What the models did not take goes now, while collections are paused: after the
             # pause, the first collection would have to scan it all.
@@ -1378,7 +1443,9 @@ class Library(GObject.Object):
         finally:
             pause.leave()
         self._song_count = song_count
-        self._set_state('ready' if found else 'empty')
+        # What Apple's listing no longer holds needs leaving out no more.
+        self._hidden = self._hidden - (hidden - found)
+        self._set_state('ready' if loaded else 'empty')
         log.debug('Library %s in %.0f ms: %s, %d shelves, %d songs%s', self.state,
                   (time.monotonic() - started) * 1000,
                   ', '.join(f'{getattr(self, name).get_n_items()} {name}' for name in SECTIONS),
@@ -1430,6 +1497,7 @@ class Library(GObject.Object):
                             existing, self._tree.stores() if keep else None)
         _index_folders(index, tree)
         self._loose = _entries(sections.get('songs'))
+        self._song_ids = None
         if not keep:
             self._loose_tracks = {}
         self.shelves = shelves
@@ -1904,6 +1972,175 @@ def _drop_artist_tracks(sections, albums=None):
             if (isinstance(play, dict) and play.get('kind') == 'album'
                     and play.get('id') in albums and group.get('entries')):
                 group['entries'] = []
+
+
+def leave_out(data, hidden):
+    """Take out of a parsed library.json (`data`, changed in place) what `hidden` names, as
+    Apple takes it out of the library: a set of (kind, id), the kinds 'album', 'playlist' and
+    'video' naming Items by id, and 'song' a song's or music video's entries by their id or
+    catalog id ('video' names those entries too).
+
+    An album goes with its tracks, and each of its tracks' ids and catalog ids is left out
+    wherever else it is; an entry goes from every album, playlist and artist that holds it
+    (their `trackCount` and `durationMs` counted down), and an album or an artist's group
+    left with no entries goes too, and an artist left with no groups, as the library's
+    albums and artists are made from its songs. A playlist's place in the folders goes with
+    it (PlaylistTree leaves out what names nothing). Shelves lose the Items that went.
+    Returns (found, removed): the refs of `hidden` met in `data` (with others), and the ids
+    of the album tracks and loose songs taken out (the Songs page's count)."""
+    sections = data.get('sections') if isinstance(data.get('sections'), dict) else {}
+    found = set()
+    removed = set()
+    gone = {'album': set(), 'playlist': set(), 'video': set()}
+    entries = set()  # entry ids and catalog ids to leave out
+    for kind, item_id in hidden:
+        if kind in gone:
+            gone[kind].add(item_id)
+        if kind in ('song', 'video'):
+            entries.add(item_id)
+
+    def kept_items(name, kind):
+        items = sections.get(name)
+        if not isinstance(items, list):
+            return
+        kept = []
+        for item in items:
+            if isinstance(item, dict) and item.get('id') in gone[kind]:
+                found.add((kind, item.get('id')))
+                if kind == 'album':
+                    for entry in _entries_of(item):
+                        removed.add(entry.get('id'))
+                        entries.update(_entry_ids(entry))
+                continue
+            kept.append(item)
+        sections[name] = kept
+
+    kept_items('albums', 'album')
+    kept_items('playlists', 'playlist')
+    kept_items('videos', 'video')
+
+    def leave(entry, album):
+        """Whether the entry is left out (noted as found, and as removed for an album's)."""
+        ids = _entry_ids(entry)
+        if entries.isdisjoint(ids):
+            return False
+        for entry_id in ids & entries:
+            found.update((('song', entry_id), ('video', entry_id)))
+        if album:
+            removed.add(entry.get('id'))
+        return True
+
+    def without_entries(item, album=False):
+        """Leave the hidden entries out of the Item dict's groups, its counts counted down
+        and the groups emptied by it dropped: whether it held entries and holds none now."""
+        groups = _dicts(item.get('groups'))
+        kept_groups = []
+        held = taken = duration = 0
+        for group in groups:
+            listed = _entries(group.get('entries'))
+            kept = []
+            for entry in listed:
+                if leave(entry, album):
+                    duration += _number(entry.get('durationMs'))
+                else:
+                    kept.append(entry)
+            held += len(listed)
+            taken += len(listed) - len(kept)
+            if len(kept) < len(listed):
+                group['entries'] = kept
+            if kept or not listed:
+                kept_groups.append(group)
+        if not taken:
+            return False
+        item['groups'] = kept_groups
+        for key, less in (('trackCount', taken), ('durationMs', duration)):
+            if _is_count(item.get(key)):
+                item[key] = max(0, item[key] - less)
+        return held == taken
+
+    if entries:
+        albums = sections.get('albums') or []
+        kept = []
+        for album in albums:
+            if isinstance(album, dict) and without_entries(album, album=True):
+                gone['album'].add(album.get('id'))
+            else:
+                kept.append(album)
+        sections['albums'] = kept
+        for playlist in _dicts(sections.get('playlists')):
+            without_entries(playlist)
+        loose = sections.get('songs')
+        if isinstance(loose, list):
+            sections['songs'] = [entry for entry in loose
+                                 if not (isinstance(entry, (dict, TrackRecord))
+                                         and leave(entry, True))]
+    artists = sections.get('artists')
+    if isinstance(artists, list) and (entries or gone['album']):
+        kept_artists = []
+        for artist in artists:
+            if isinstance(artist, dict) and _without_albums(artist, gone['album']):
+                continue  # nothing of theirs is left
+            if isinstance(artist, dict) and entries and without_entries(artist):
+                if not artist.get('groups'):
+                    continue
+            kept_artists.append(artist)
+        sections['artists'] = kept_artists
+    for shelf in _dicts(data.get('shelves')):
+        items = shelf.get('items')
+        if isinstance(items, list):
+            shelf['items'] = [item for item in items if not _left_out(item, gone, entries)]
+    return found, removed
+
+
+def _without_albums(artist, albums):
+    """Drop an artist dict's groups of the albums `albums` (ids), its albumCount counted
+    down: whether it had groups and has none now."""
+    groups = _dicts(artist.get('groups'))
+    kept = [group for group in groups if not (
+        isinstance(group.get('play'), dict) and group['play'].get('kind') == 'album'
+        and group['play'].get('id') in albums)]
+    if len(kept) == len(groups):
+        return False
+    artist['groups'] = kept
+    if _is_count(artist.get('albumCount')):
+        artist['albumCount'] = max(0, artist['albumCount'] - (len(groups) - len(kept)))
+    return not kept
+
+
+def _song_index(entries):
+    """{id or catalog id: the library id} of the track entries, the first of each kept."""
+    ids = {}
+    keep = ids.setdefault
+    for entry in entries:
+        library_id = entry.get('id')
+        if library_id:
+            keep(library_id, library_id)
+            catalog_id = entry.get('catalogId')
+            if catalog_id:
+                keep(catalog_id, library_id)
+    return ids
+
+
+def _entries_of(item):
+    """Every track entry of an Item dict's groups."""
+    return [entry for group in _dicts(item.get('groups'))
+            for entry in _entries(group.get('entries'))]
+
+
+def _entry_ids(entry):
+    """A track entry's id and catalog id, those it has."""
+    return {value for value in (_text(entry.get('id')), _text(entry.get('catalogId')))
+            if value}
+
+
+def _left_out(item, gone, entries):
+    """Whether a shelf's Item dict is one of what leave_out() takes out."""
+    if not isinstance(item, dict):
+        return False
+    kind, item_id = item.get('kind'), item.get('id')
+    if kind in gone and item_id in gone[kind]:
+        return True
+    return kind in ('song', 'video') and not entries.isdisjoint(_entry_ids(item))
 
 
 # The keys of a track dict whose values repeat across a library's tracks: an album's

@@ -8,6 +8,7 @@
     await app.library_sync.cancel()          # stopped, and nothing more of it written
     counts = await sync_library(app.engine, app.library, progress)   # the sync itself
     app.library_sync.start(quick=True)       # the short pass after a library write
+    app.library_sync.start(quick=True, videos=True, tracks_of=ids)   # after a removal
     app.library_sync.start(playlists=True)   # the shorter one after a playlist write
 
 fetches, in this order, the library's songs (with their albums, which is what the Albums and
@@ -32,7 +33,9 @@ library write, where a full pass would re-read everything to find one song: it f
 songs, the playlist listing and the shelves, and keeps last time's playlist tracks, folders,
 videos and stations, none of which adding to the library changes. It writes library.json and
 reloads the models as a full pass does, but stamps no last-sync and says nothing when it ends:
-it is no substitute for the full one the clock waits for. A `playlists` pass
+it is no substitute for the full one the clock waits for. After a removal from the library
+(actions.py), which does change them, the quick pass also reads the music videos (`videos`)
+and the tracks of the playlists that held what went (`tracks_of`). A `playlists` pass
 (sync_library(playlists=True), LibrarySync.start(playlists=True)) is the one after a playlist
 or a folder was made, renamed or deleted: it reads the playlist listing and the folders alone,
 and keeps everything else of last time's file, the playlists' tracks included.
@@ -61,7 +64,8 @@ What the web player asks for, found by watching its requests (2026-09-28):
   `"favorited"` for Favourite Songs (the one the user cannot edit or delete). It becomes
   `attributes: {isFavourites: true}` in the Item (library.FAVOURITES), as the demo has it.
   A playlist whose `attributes.canEdit` is false (Favourite Songs, one of Apple's added to the
-  library) gets `canEdit: false` there too (library.EDITABLE).
+  library) gets `canEdit: false` there too (library.EDITABLE), and one whose `canDelete` is
+  false `canDelete: false` (library.REMOVABLE).
 - Songs: `/v1/me/library/songs?limit=100&offset=N` (the answer carries `meta.total` and
   `next`); Music Videos: `/v1/me/library/music-videos?limit=100&offset=N`; Recently Added:
   `/v1/me/library/recently-added?limit=25`, paged by `next` (no total).
@@ -97,7 +101,7 @@ from gi.repository import GdkPixbuf, GLib, GObject  # noqa: E402
 from .backend import api, config  # noqa: E402
 from .backend import normalize, store  # noqa: E402
 from .backend.errors import EngineError  # noqa: E402
-from .library import EDITABLE, FAVOURITES, ROOT_FOLDER, parse  # noqa: E402
+from .library import EDITABLE, FAVOURITES, REMOVABLE, ROOT_FOLDER, parse  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -237,7 +241,8 @@ def install_scaler():
     normalize.load_art_sizes(str(config.cache_dir()))
 
 
-async def sync_library(engine, library, progress=None, quick=False, playlists=False):
+async def sync_library(engine, library, progress=None, quick=False, playlists=False,
+                       videos=False, tracks_of=()):
     """The whole sync (see the module). Returns the counts: {albums, artists, playlists,
     loose, videos, radio, folders, shelves, art: {wanted, fetched, failed}}.
 
@@ -245,7 +250,9 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     shelves, and leaves the rest of last time's file alone — the playlists' tracks, the
     folders, the videos and the stations, none of which adding to the library changes. A song
     added is then in Songs and in Recently Added without the per-playlist reads a full pass
-    makes. It is not a sync: the caller does not stamp last-sync for it.
+    makes. It is not a sync: the caller does not stamp last-sync for it. After a removal from
+    the library it also reads the music videos (`videos`) and the tracks of the playlists
+    `tracks_of` names (ids), which the removal changed.
 
     `playlists`: the pass after a playlist or a folder was made, renamed or deleted. It reads
     the playlist listing and the folders, nothing else: the songs, albums, artists, shelves,
@@ -289,7 +296,10 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     report('playlists', 0, None)
     raw['playlists'] = await _fetch_playlists(engine)
     if quick:
-        raw['tracks'] = {}
+        wanted = set(tracks_of)
+        raw['tracks'] = await _fetch_playlist_tracks(
+            engine, [raw for raw in raw['playlists'] if raw.get('id') in wanted],
+            report) if wanted else {}
     else:
         stamps = await asyncio.to_thread(previous.playlist_stamps)
         raw['tracks'] = await _fetch_playlist_tracks(engine, raw['playlists'], report, stamps)
@@ -298,7 +308,8 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     # these stops the sync: what fails is None here, and keeps last time's entry — which is
     # also how a quick pass leaves the three a library write cannot have changed.
     if quick:
-        raw['folders'] = raw['videos'] = raw['stations'] = None
+        raw['folders'] = raw['stations'] = None
+        raw['videos'] = await _fetch_videos(engine, report) if videos else None
         raw['shelves'] = await _fetch_shelves(engine, report)
         return await _build(cache_dir, storefront, raw, library, report, generation, previous)
     try:
@@ -306,14 +317,7 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     except EngineError as error:
         _keep_going(error)
         raw['folders'] = None
-    report('videos', 0, None)
-    try:
-        raw['videos'] = await engine.api_pages(
-            VIDEOS_ENDPOINT, page=PAGE, unique=True,
-            progress=lambda done, total: report('videos', done, total))
-    except EngineError as error:
-        _keep_going(error)
-        raw['videos'] = None
+    raw['videos'] = await _fetch_videos(engine, report)
     report('radio', 0, 1)
     try:
         raw['stations'] = (await engine.api(RADIO_ENDPOINT)).get('data') or []
@@ -369,6 +373,18 @@ def _keep_going(error):
     if error.code == 'engine-down':
         raise error
     log.warning('sync: %s', error)
+
+
+async def _fetch_videos(engine, report):
+    """The music videos listing, or None when it could not be read (last time's kept)."""
+    report('videos', 0, None)
+    try:
+        return await engine.api_pages(
+            VIDEOS_ENDPOINT, page=PAGE, unique=True,
+            progress=lambda done, total: report('videos', done, total))
+    except EngineError as error:
+        _keep_going(error)
+        return None
 
 
 async def _fetch_playlists(engine):
@@ -716,7 +732,8 @@ def loose_count(raw_songs):
 def flag_favourites(item, raw):
     """Mark the playlist Item as Favourite Songs when Apple's tags say so, and as one that
     cannot be added to when Apple's canEdit is false (Favourite Songs, a playlist of Apple's
-    or someone else's added to the library): the Add to Playlist menu leaves those out."""
+    or someone else's added to the library): the Add to Playlist menu leaves those out; and
+    as one that cannot be removed from the library when its canDelete is false."""
     attributes = raw.get('attributes') or {}
     flags = {}
     tags = attributes.get('tags')
@@ -724,6 +741,8 @@ def flag_favourites(item, raw):
         flags[FAVOURITES] = True
     if attributes.get('canEdit') is False:
         flags[EDITABLE] = False
+    if attributes.get('canDelete') is False:
+        flags[REMOVABLE] = False
     if flags:
         item['attributes'] = flags
 
@@ -880,13 +899,13 @@ class LibrarySync(GObject.Object):
 
     # -- running one -----------------------------------------------------------------------
 
-    def start(self, retry=False, quick=False, playlists=False):
+    def start(self, retry=False, quick=False, playlists=False, videos=False, tracks_of=()):
         """Sync the library through the engine, starting it if it is down, unless a sync is
         running already or held. Returns the task, or None. Signed out, nothing starts and
         the sign-in is offered (app.report). `retry`: the one retry after thumbnails failed.
         `quick`: the pass after a library write, `playlists` the one after a playlist write
         (sync_library), which neither stamp last-sync nor say they synced, being no
-        substitute for a full one."""
+        substitute for a full one; `videos` and `tracks_of` add to a quick pass (sync_library)."""
         app = self._app
         if app.refuse_in_demo():
             return None
@@ -900,7 +919,7 @@ class LibrarySync(GObject.Object):
             log.debug('a sync is running already')
             return None
         self.running = True
-        task = self._task = app.spawn(self._run(retry, quick, playlists))
+        task = self._task = app.spawn(self._run(retry, quick, playlists, videos, tracks_of))
         task.add_done_callback(self._on_done)
         return task
 
@@ -917,7 +936,8 @@ class LibrarySync(GObject.Object):
             task.cancel()
             await asyncio.wait([task])
 
-    async def _run(self, retry=False, quick=False, playlists=False):
+    async def _run(self, retry=False, quick=False, playlists=False, videos=False,
+                   tracks_of=()):
         app = self._app
         engine = app.engine
         started = time.monotonic()
@@ -937,7 +957,8 @@ class LibrarySync(GObject.Object):
             progress('', 0, None)  # the banner, while Chrome may take seconds to come up
             await engine.start()  # a start under way is joined; a running engine is kept
             counts = await sync_library(engine, app.library, progress, quick=quick,
-                                        playlists=playlists)
+                                        playlists=playlists, videos=videos,
+                                        tracks_of=tracks_of)
         except store.Cancelled as error:
             log.info('sync stopped: %s', error)  # the cache was cleared under it
             return

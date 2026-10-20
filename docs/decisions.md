@@ -393,6 +393,17 @@ changes, change it here, with the date. The plan they came from is in
   into GObjects a section at a time. Thumbnails (320 px) are fetched for every item at sync;
   covers (640 px) on demand. Decoded textures live in an LRU at the size they are drawn: 8 MB at
   a scale factor of 1, the same tiles' 32 MB at 2 (2026-09-29).
+- **Remove from Library: gone at once, back on a refusal** (2026-10-20). Removing a song,
+  album, music video or one of Apple's playlists takes it out of the models before Apple has
+  answered (`Library.hide`, a reload of library.json that leaves it out, with its album or
+  artist when nothing of theirs is left and its entries in every playlist, as Apple takes
+  them), after an `AdwAlertDialog` that says it goes from the playlists too; a refusal shows
+  it again from the file and reports why. Apple's listings drop it 2 to 7 s after its 204,
+  so the sync that follows (a quick pass that also reads the videos and the playlists that
+  held it) waits until Apple's own read of the item is a 404, and every load leaves it out
+  until one no longer meets it: a timed sync in between cannot bring it back. The user's
+  own playlists keep Delete Playlist…, which says what it does to them; Apple's, which
+  cannot be deleted, are removed (the same request, `DELETE /v1/me/library/playlists/<id>`).
 - **Songs sorted in Python** (2026-09-27). Past a few thousand rows that the user re-sorts and
   filters, GTK's sorters read each Python item's properties from C too slowly, and a column
   view's own sorter compares pairs. The Songs page sorts and filters in Python and splices the
