@@ -159,13 +159,13 @@ class GridTest(PageTestCase):
         self.assertEqual(titles('year', descending=True), ['D', 'B', 'E', 'A', 'C'])
         self.assertEqual(titles('year'), ['C', 'A', 'B', 'E', 'D'])
 
-    def test_a_reversed_model_maps_positions_and_changes(self):
+    def test_a_shown_model_maps_positions_and_changes(self):
         from gi.repository import Gtk
 
-        from applemusic.pages.grid import ReversedModel
+        from applemusic.widgets.filter_bar import ShownModel
 
         strings = Gtk.StringList.new(['a', 'b', 'c'])
-        model = ReversedModel(strings)
+        model = ShownModel(strings)
         changes = []
         model.connect('items-changed', lambda _model, *change: changes.append(change))
 
@@ -293,6 +293,135 @@ class GridTest(PageTestCase):
         self.assertEqual(again.grid_view.get_model().get_n_items(), 6)
         self.assertEqual(self.app.settings.get_strv('favourites-only'), [])
         again.activate_action('page.sort', GLib.Variant('s', 'title'))
+
+    async def test_the_filter_bar_filters_by_title_and_artist_with_favourites_only(self):
+        from gi.repository import Gdk, Gio, GLib, Gtk
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+
+        items = [Item(dict(album(n), title=title, subtitle=artist))
+                 for n, (title, artist) in enumerate([
+                     ('Harbour Café', 'Aura Invented'), ('Dawn Lines', 'Zephyr'),
+                     ('Night Harbour', 'Lines Collective'), ('Quiet', 'Ça Invented')])]
+        items[2].favourite = True
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, items)
+        self.addCleanup(self.app.settings.reset, 'favourites-only')
+        said = []
+        self.window.announce = lambda text, _priority: said.append(text)
+        self.addCleanup(delattr, self.window, 'announce')
+        page = GridPage(self.library, 'Invented Grid', store, sorts=('title', 'artist'),
+                        icon_name='media-optical-cd-audio-symbolic',
+                        favourites=('No Favourite Albums', 'Invented words'),
+                        filter_words=('Filter Albums', lambda shown, total: '{shown} of {total}'))
+        page.set_tag('albums')
+        await self.show_root(page)
+        model = page.grid_view.get_model()
+
+        def titles():
+            return [model.get_item(n).title for n in range(model.get_n_items())]
+
+        bar = page.filter_bar
+        self.assertIsNotNone(bar)
+        self.assertTrue(bar.button.get_visible())
+        self.assertIs(bar.get_key_capture_widget(), page)  # typing on the page starts it
+        self.assertTrue(page.focus_filter())  # Ctrl+F
+        self.assertTrue(await self.until_focused(bar.entry))
+        self.assertTrue(bar.get_search_mode())
+        bar.set_text('harbour')  # titles, in the order chosen
+        self.assertEqual(titles(), ['Harbour Café', 'Night Harbour'])
+        self.assertEqual(said[-1], '2 of 4')
+        bar.set_text('lines')  # a title and an artist
+        self.assertEqual(titles(), ['Dawn Lines', 'Night Harbour'])
+        page.activate_action('page.sort-order', GLib.Variant('s', 'descending'))
+        self.assertEqual(titles(), ['Night Harbour', 'Dawn Lines'])  # still filtered
+        page.activate_action('page.sort-order', GLib.Variant('s', 'ascending'))
+        bar.set_text('ca invented')  # accents and case ignored
+        self.assertEqual(titles(), ['Quiet'])
+        # With Favourites Only: both apply.
+        page.activate_action('page.favourites-only', None)
+        self.assertEqual(titles(), [])
+        self.assertEqual(page.stack.get_visible_child_name(), 'empty')
+        self.assertEqual(page.empty_page.get_title(), 'No Results Found')
+        self.assertEqual(page.empty_page.get_icon_name(), 'edit-find-symbolic')
+        self.assertTrue(bar.button.get_visible())  # to change it
+        self.assertTrue(page.sort_button.get_visible())
+        bar.set_text('harbour')
+        self.assertEqual(titles(), ['Night Harbour'])
+        bar.close()  # Escape, the button: the filter goes, Favourites Only stays
+        self.assertTrue(await self.until(lambda: bar.search == ''))
+        self.assertEqual(titles(), ['Night Harbour'])
+        items[2].favourite = False
+        self.library.emit('favourites-changed')
+        self.assertEqual(page.empty_page.get_title(), 'No Favourite Albums')  # not the text
+        self.assertEqual(page.empty_page.get_icon_name(), 'media-optical-cd-audio-symbolic')
+        page.activate_action('page.favourites-only', None)
+        self.assertEqual(len(titles()), 4)
+        # Escape from the grid closes it and returns the focus to the grid.
+        bar.set_text('dawn')
+        escape = next(controller for controller in page.observe_controllers()
+                      if isinstance(controller, Gtk.EventControllerKey))
+        self.assertTrue(escape.emit('key-pressed', Gdk.KEY_Escape, 0, Gdk.ModifierType(0)))
+        self.assertTrue(await self.until(
+            lambda: self.window.get_focus() is not None
+            and self.window.get_focus().is_ancestor(page.grid_view)))
+        self.assertEqual(len(titles()), 4)
+
+    async def test_a_filter_change_recycles_the_tiles(self):
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets import tile
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item(dict(album(n), title=f'{n:03d} {"Even" if n % 2 else "Odd"}'))
+                            for n in range(600)])
+        page = GridPage(self.library, 'Invented Grid', store, sorts=('title',),
+                        filter_words=('Filter Albums', lambda shown, total: ''))
+        await self.show_root(page)
+        await self.turn()
+        made = []
+        init = tile.Tile.__init__
+
+        def counting(self, *args, **kwargs):
+            made.append(True)
+            init(self, *args, **kwargs)
+
+        tile.Tile.__init__ = counting
+        self.addCleanup(setattr, tile.Tile, '__init__', init)
+        page.filter_bar.set_text('even')  # most tiles shown change their album
+        await self.turn()
+        self.assertEqual(page.grid_view.get_model().get_n_items(), 300)
+        self.assertLess(len(made), 6)  # rebound, not built again
+
+    async def test_a_page_without_filter_words_has_none(self):
+        from gi.repository import Gio
+
+        from applemusic import keyboard
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item(album(n)) for n in range(3)])
+        page = await self.show_root(GridPage(self.library, 'Invented Grid', store))
+        self.assertIsNone(page.filter_bar)
+        self.assertFalse(page.focus_filter())
+        self.assertEqual(keyboard.search_target(page), 'search')
+
+    async def test_an_empty_library_offers_no_filter(self):
+        from applemusic import keyboard, pages
+        from applemusic.sections import sidebar_sections
+
+        destinations = {destination.key: destination
+                        for section in sidebar_sections() for destination in section.destinations}
+        for key in ('albums', 'music-videos', 'artists', 'songs'):
+            page = await self.show_root(pages.create(destinations[key], self.library))
+            await self.turn()
+            self.assertFalse(page.filter_bar.button.get_visible(), key)
+            self.assertFalse(page.focus_filter(), key)
+            self.assertEqual(keyboard.search_target(page), 'search', key)
 
     async def test_date_added_is_offered_only_with_dates(self):
         from gi.repository import Gio

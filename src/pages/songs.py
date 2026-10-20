@@ -26,11 +26,11 @@ In all, a click re-sorts the table in 30 to 50 ms and a keystroke refilters it i
 rebinding included.
 
 Clicking a column header, or choosing in the header's Sort By menu (the keyboard's way: the
-headers take no focus), re-sorts. The filter is a Gtk.SearchBar under the header bar, as
-GNOME's apps have one: the header's Filter Songs button, Ctrl+F (focus_filter()) and typing on
-the page (the page is the bar's key-capture widget) show it, Escape or the button closes it,
-which clears its entry and so the filter; typing in it refilters (after the entry's own short
-delay), and the new count is announced. A sync that changes the songs brings the rows up
+headers take no focus), re-sorts. The filter is the library pages' filter bar
+(widgets/filter_bar.py: Filter Songs, Ctrl+F through focus_filter(), typing on the page,
+Escape), matching each song's search_key; typing in it refilters (after the entry's own short
+delay), Favourites Only and the text both apply, and the new count ("36 of 460 songs") is
+announced. A sync that changes the songs brings the rows up
 to date with the fewest splices (library.apply_diff), so the table keeps its scroll position;
 only a new sort or filter starts it again from the top. Activating a row (Enter, a click: the
 view's single-click-activate, docs/decisions.md) asks the window to play it; a right click, a
@@ -50,8 +50,9 @@ from gettext import ngettext
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
-from ..library import SongOrder, Track, apply_diff, fold
+from ..library import SongOrder, Track, apply_diff
 from ..widgets import context_menu, track_links
+from ..widgets.filter_bar import FilterBar
 from ..widgets.labels import track_label
 from ..widgets.song_title import SongTitle
 from ..widgets.track_links import TrackLink
@@ -82,6 +83,13 @@ def resized_fixed_width(width, start_width, share, others):
     return width - left if left <= width else None
 
 
+def narrows(old, new):
+    """Whether everything the folded filter text `new` matches matched `old` too, so that
+    only `old`'s matches need testing again: `old` is part of `new` (a key typed, at the end
+    or anywhere), and was some text (no text matched everything without a test)."""
+    return bool(old) and old in new
+
+
 def songs_state(total, library_state, songs_ready, song_count, syncing=False):
     """What the Songs page shows: 'items' once it has ordered songs (`total`); 'loading' while
     the library loads, before the songs are built, while songs exist that are not ordered yet
@@ -102,10 +110,8 @@ class SongsPage(Adw.NavigationPage):
 
     __gtype_name__ = 'AppleMusicSongsPage'
 
+    toolbar = Gtk.Template.Child()
     header_bar = Gtk.Template.Child()
-    search_button = Gtk.Template.Child()
-    search_bar = Gtk.Template.Child()
-    filter_entry = Gtk.Template.Child()
     sort_button = Gtk.Template.Child()
     stack = Gtk.Template.Child()
     empty_page = Gtk.Template.Child()
@@ -128,6 +134,7 @@ class SongsPage(Adw.NavigationPage):
         self._search = ''  # the filter's text, folded
         self._favourites_only = False  # the menu's Favourites Only
         self._matches = []  # the ordered songs that match it
+        self._filtered_by = None  # (the songs ordered, the text, Favourites Only) _matches are of
         self._shown = []  # what the table's rows hold (the last matches that were any)
         self._follow = False  # the songs changed: the rows follow, keeping their place
         self._prepare_task = None  # the SongOrder being prepared
@@ -139,10 +146,13 @@ class SongsPage(Adw.NavigationPage):
 
         self.title_label.set_label(title)
         self._header_title = HeaderTitle(self.header_bar, self.title_label)  # while loading
-        # The filter bar's entry is its own (Escape in it closes the bar), and a key typed
-        # anywhere on the page (a row, a header button) shows the bar and lands in the entry.
-        self.search_bar.connect_entry(self.filter_entry)
-        self.search_bar.set_key_capture_widget(self)
+        # The filter bar, under the header bar; a key typed anywhere on the page (a row, a
+        # header button) shows it and lands in its entry.
+        self.filter_bar = FilterBar(_('Filter Songs'))
+        self.toolbar.add_top_bar(self.filter_bar)
+        self.header_bar.pack_end(self.filter_bar.button)
+        connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
+        self.filter_bar.set_focus_return(self._focus_table)
         self.empty_page.set_icon_name(icon_name)
         self.empty_page.set_title(_('No Songs'))
         self.empty_page.set_description(_('Songs in your library appear here'))
@@ -347,12 +357,18 @@ class SongsPage(Adw.NavigationPage):
 
     def _filter(self):
         search = self._search
-        matches = self._ordered
-        if self._favourites_only:
-            is_favourite = self._library.is_favourite
-            matches = [track for track in matches if is_favourite(track)]
-        if search:
-            matches = [track for track in matches if search in track.search_key]
+        last, self._filtered_by = self._filtered_by, (self._ordered, search, self._favourites_only)
+        if (last is not None and last[0] is self._ordered and last[2] == self._favourites_only
+                and narrows(last[1], search)):
+            # A longer text (a key typed): only what matched the shorter can match it.
+            matches = [track for track in self._matches if search in track.search_key]
+        else:
+            matches = self._ordered
+            if self._favourites_only:
+                is_favourite = self._library.is_favourite
+                matches = [track for track in matches if is_favourite(track)]
+            if search:  # library.filter_matches(), inline: 40,000 calls fewer
+                matches = [track for track in matches if search in track.search_key]
         self._matches = matches
         # With no matches the rows stay as they were, hidden behind "No Results Found": the
         # next matches can then recycle their widgets rather than build new ones.
@@ -391,13 +407,13 @@ class SongsPage(Adw.NavigationPage):
         name = songs_state(total, library.state, library.songs_ready,
                            library.songs.get_n_items(), library.syncing)
         self.stack.set_visible_child_name(name)
-        self.search_button.set_visible(name == 'items')
+        self.filter_bar.set_available(name == 'items', self)
         self.sort_button.set_visible(name == 'items')
         if name == 'empty':
             # No songs to filter any more (a sign-out): the bar goes with its button. Not
             # while loading, which a filter set before the songs are built (set_filter)
             # waits through.
-            self.search_bar.set_search_mode(False)
+            self.filter_bar.close()
         if name != 'items':
             return
         shown = len(self._matches)
@@ -422,47 +438,30 @@ class SongsPage(Adw.NavigationPage):
         entry's short delay (See All from a search's songs: the whole table must not show
         first), the bar shown with the text in it; closed, and the filter cleared, for no
         text."""
-        self.search_bar.set_search_mode(bool(text))
-        self.filter_entry.set_text(text)
-        self.on_filter_changed(self.filter_entry)
+        self.filter_bar.set_text(text)
 
     def focus_filter(self):
         """Show the filter bar with the cursor in its entry and its text selected (Ctrl+F on
         this page); False when the page has no songs to filter yet."""
-        if not self.search_button.get_visible():
-            return False
-        self.search_bar.set_search_mode(True)
-        self.filter_entry.grab_focus()
-        self.filter_entry.select_region(0, -1)
-        return True
+        return self.filter_bar.focus()
 
-    @Gtk.Template.Callback()
-    def on_filter_changed(self, entry):
-        search = fold(entry.get_text())
-        if search != self._search:
-            self._search = search
-            self._follow = False
-            self._filter()
-            self._announce_count()
+    def _on_filter_changed(self, bar):
+        self._search = bar.search
+        self._follow = False
+        self._filter()
+        self._announce_count()
 
     def _announce_count(self):
         """Say the new count once the typing has paused (the entry's own delay), not at
         every keystroke."""
-        root = self.get_root()
-        if root is not None and self.get_mapped() and self.count_label.get_mapped():
-            root.announce(self.count_label.get_label(), Gtk.AccessibleAnnouncementPriority.LOW)
-
-    @Gtk.Template.Callback()
-    def on_stop_search(self, _entry):
-        """Escape in the entry: the bar closes and clears the entry (Gtk.SearchBar's doing,
-        which brings every row back); the focus goes to the table, from an idle, once it
-        shows again."""
-        GLib.idle_add(self._focus_table)
+        if self.count_label.get_mapped():
+            self.filter_bar.announce(self.count_label.get_label())
 
     def _focus_table(self):
+        """Where Escape puts the focus once the filter bar has closed: the table, when it
+        shows."""
         if self.get_mapped() and self.results_stack.get_visible_child_name() == 'table':
             self.column_view.grab_focus()
-        return GLib.SOURCE_REMOVE
 
     @Gtk.Template.Callback()
     def on_activate(self, _column_view, position):
@@ -558,6 +557,7 @@ class SongsPage(Adw.NavigationPage):
         """The account's favourites changed (a sync, or a heart here): the bound rows show
         them again, and Favourites Only shows the new ones, keeping its place."""
         is_favourite = self._library.is_favourite
+        self._filtered_by = None  # the favourites the matches were of are not these
         for cell in self._title_cells:
             cell.get_child().set_favourite(is_favourite(cell.get_item()))
         for row in self._row_items:

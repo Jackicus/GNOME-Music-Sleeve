@@ -20,6 +20,7 @@ the way out while the account is signed out: SignInOffer puts Sign In… on its 
 """
 
 from gettext import gettext as _
+from gettext import ngettext
 
 from gi.repository import Gio, GLib, GObject, Gtk
 
@@ -163,7 +164,20 @@ def _albums(destination, library):
                     empty_title=_('No Albums'),
                     empty_description=_('Albums in your library appear here'),
                     favourites=(_('No Favourite Albums'),
-                                _('Albums you mark as favourites appear here')))
+                                _('Albums you mark as favourites appear here')),
+                    filter_words=(_('Filter Albums'), _album_count))
+
+
+def _album_count(shown, total):
+    # Translators: said to screen reader users as the Albums filter changes: {shown} of the
+    # library's {total} albums match it ("36 of 460 albums").
+    return ngettext('{shown} of {total} album', '{shown} of {total} albums', total)
+
+
+def _video_count(shown, total):
+    # Translators: said to screen reader users as the Music Videos filter changes: {shown} of
+    # the library's {total} music videos match it ("3 of 12 music videos").
+    return ngettext('{shown} of {total} music video', '{shown} of {total} music videos', total)
 
 
 def _artists(destination, library):
@@ -223,7 +237,8 @@ def _music_videos(destination, library):
                     empty_title=_('No Music Videos'),
                     empty_description=_('Music videos in your library appear here'),
                     favourites=(_('No Favourite Music Videos'),
-                                _('Music videos you mark as favourites appear here')))
+                                _('Music videos you mark as favourites appear here')),
+                    filter_words=(_('Filter Music Videos'), _video_count))
 
 
 def playlist(library, playlist_id, title):

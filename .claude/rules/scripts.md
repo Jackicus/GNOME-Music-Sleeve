@@ -47,7 +47,8 @@ paths:
   `--banner sign-in|expired` and `--sidebar` (the narrow layout's sidebar) show those states;
   `--fullscreen-player [lyrics|localized|syllable|none]` enters the full-screen player on
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;
-  `--help` lists the rest. It shoots once no artwork decode has been in flight for a few polls
+  `--filter TEXT` types into the page's filter bar; `--help` lists the rest. It shoots
+  once no artwork decode has been in flight for a few polls
   (5 s at most), so a new step that shows artwork needs no delay of its own for it.
 - screenshot.py runs without animations, so a word-timed line's pieces show lit whole, and
   the Player's estimate has run on by a second when it shoots (`--position 16.5` shows

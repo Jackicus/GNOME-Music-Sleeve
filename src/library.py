@@ -426,14 +426,13 @@ class Track(GObject.Object):
 
     @property
     def search_key(self):
-        """Title, artist and album folded (fold()) on lines of their own: what the Songs filter
-        looks for a folded search in. A search cannot hold a line break, so no match spans two
-        of them. Made on first use and kept."""
+        """Title, artist and album as search_key() joins them: what the Songs filter and a
+        playlist's look for a folded search in. Made on first use and kept."""
         if self._search_key is None:
             raw = self.raw
-            self._search_key = fold(f"{_text(raw.get('title')) or ''}\n"
-                                    f"{_text(raw.get('artist')) or ''}\n"
-                                    f"{_text(raw.get('album')) or ''}")
+            self._search_key = search_key(_text(raw.get('title')) or '',
+                                          _text(raw.get('artist')) or '',
+                                          _text(raw.get('album')) or '')
         return self._search_key
 
 
@@ -692,6 +691,19 @@ class Item(GObject.Object):
         self._count = None  # count-label's text, made when first read (merge() forgets it)
         self._favourite = False
         self._added = None  # `added` in seconds, worked out when first read
+        self._search_key = None  # (the title and subtitle it was made of, the key)
+
+    @property
+    def search_key(self):
+        """The title and the subtitle (an album's or a video's artist) as search_key() joins
+        them: what a grid's filter and the Artists list's look for a folded search in. Kept
+        while the raw title and subtitle are the ones it was made of, however they changed
+        (a reload's merge(), a rename)."""
+        raw = self.raw
+        texts = (raw.get('title'), raw.get('subtitle'))
+        if self._search_key is None or self._search_key[0] != texts:
+            self._search_key = (texts, search_key(self.title, self.subtitle or ''))
+        return self._search_key[1]
 
     def added_seconds(self):
         """The `added` property, read without a GObject call (sorting thousands)."""
@@ -2197,6 +2209,21 @@ def fold(text):
         text = ''.join(char for char in unicodedata.normalize('NFKD', text)
                        if not unicodedata.combining(char))
     return text.casefold()
+
+
+def search_key(*texts):
+    """texts folded (fold()) on lines of their own: what a filter looks for a folded search
+    in (Track.search_key, Item.search_key). A search cannot hold a line break, so no match
+    spans two of them."""
+    return fold('\n'.join(texts))
+
+
+def filter_matches(search, key):
+    """Whether an object whose search_key is `key` is shown for the filter's text `search`,
+    folded (fold()): the whole of it anywhere in one of the key's texts, as the Songs filter,
+    the grids', the Artists list's and a playlist's match (pages' Gtk.StringFilter over the
+    key does the same in C); everything for no text."""
+    return search in key
 
 
 def collation_key(text):

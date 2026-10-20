@@ -47,6 +47,7 @@ from ..widgets import context_menu
 from ..widgets.category_tile import CategoryTile
 from ..widgets.cover import Cover
 from ..widgets.engine_status import EngineStatus
+from ..widgets.filter_bar import text_filter
 from ..widgets.shelf import Shelf, ShelfColumn  # Shelf is $AppleMusicShelf in the template
 from ..widgets.labels import accessible_label, flow_child, track_label
 from ..widgets.search_list import SearchList  # noqa: F401  $AppleMusicSearchList
@@ -124,12 +125,10 @@ def _item_filter():
 
 def _song_filter():
     """One Gtk.StringFilter over a Track's folded search key (title, artist and album, as the
-    Songs page matches them; the search is folded too, so the filter need not fold): one
-    pass with one Python call per song, rather than three filters over three properties."""
-    expression = Gtk.ClosureExpression.new(GObject.TYPE_STRING,
-                                           lambda track: track.search_key, None)
-    return Gtk.StringFilter(expression=expression,
-                            match_mode=Gtk.StringFilterMatchMode.SUBSTRING, ignore_case=False)
+    Songs page's filter matches them: widgets/filter_bar.text_filter(); the search is folded
+    too, so the filter need not fold): one pass with one Python call per song, rather than
+    three filters over three properties."""
+    return text_filter()
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/search.ui')

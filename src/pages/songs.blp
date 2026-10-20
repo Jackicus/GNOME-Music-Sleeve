@@ -20,7 +20,7 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
       }
     }
 
-    child: Adw.ToolbarView {
+    child: Adw.ToolbarView toolbar {
       [top]
       Adw.HeaderBar header_bar {
         show-title: false;
@@ -37,41 +37,8 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
           }
         }
 
-        // Shows the filter bar below, as the search button of GNOME's apps does.
-        [end]
-        ToggleButton search_button {
-          icon-name: "edit-find-symbolic";
-          tooltip-text: _("Filter Songs");
-          visible: false;
-
-          accessibility {
-            label: _("Filter Songs");
-          }
-        }
-      }
-
-      // The filter, under the header bar: revealed by the button, by Ctrl+F and by typing on
-      // the page (songs.py makes the page its key-capture widget); Escape or the button
-      // closes it, which clears the entry and so the filter.
-      [top]
-      // The entry at a readable width, centred, as GNOME's search bars have it.
-      SearchBar search_bar {
-        search-mode-enabled: bind search_button.active bidirectional;
-
-        child: Adw.Clamp {
-          maximum-size: 400;
-
-          child: SearchEntry filter_entry {
-            placeholder-text: _("Filter Songs");
-            hexpand: true;
-            search-changed => $on_filter_changed();
-            stop-search => $on_stop_search();
-
-            accessibility {
-              label: _("Filter Songs");
-            }
-          };
-        };
+        // The filter bar's button (widgets/filter_bar.py) goes beside it, and the bar under
+        // the header bar: songs.py adds them.
       }
 
       content: Stack stack {

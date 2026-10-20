@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""Scroll a page of the real window from top to bottom and report dropped frames.
+"""Scroll a page of the real window from top to bottom and report dropped frames, or type
+into its filter and report what each key cost.
 
     scripts/scroll_test.py [--page KEY] [--speed PX_PER_S] [--distance PX] [--size WxH]
-                           [--light] [--sidebar]
+                           [--light] [--sidebar] [--open KIND:ID]
+                           [--type TEXT [--key-interval MS]]
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) on the
 demo library, as screenshot.py --demo does (scripts/harness.py), with the desktop's
@@ -26,6 +28,18 @@ scrolled window:
 
 --sidebar scrolls the sidebar instead of the page (a library with many
 playlists makes it long: its rows are not recycled).
+
+--type TEXT types TEXT into the page's filter bar (widgets/filter_bar.py) a key at a
+time, --key-interval ms apart (250 by default: past the entry's 150 ms delay, so every
+key refilters), then deletes it a key at a time, and reports how long each refilter held
+the main loop (from the bar's `changed` to the end of its last handler: the filter, the
+models' and the list's own work) and the frames meanwhile, which is how long typing
+waits at worst:
+
+    APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py \
+        --page songs --type "the night"
+
+--open playlist:ID (or album:ID) pushes the library's item first, for a playlist's filter.
 
 Two things are reported. The app's own work per frame, timed on the main thread
 from the frame clock's before-paint to the end of its paint (tick callbacks and
@@ -51,6 +65,11 @@ parser.add_argument('--distance', type=float, help='pixels to scroll (default: t
 parser.add_argument('--size', default='1100x760')
 parser.add_argument('--light', action='store_true')
 parser.add_argument('--sidebar', action='store_true', help='scroll the sidebar, not the page')
+parser.add_argument('--open', metavar='KIND:ID', help="the library's item pushed first")
+parser.add_argument('--type', metavar='TEXT',
+                    help="type TEXT into the page's filter, then delete it, a key at a time")
+parser.add_argument('--key-interval', type=float, default=250,
+                    help='milliseconds between keys (default 250)')
 args = parser.parse_args()
 width, height = (int(n) for n in args.size.split('x'))
 
@@ -58,7 +77,7 @@ width, height = (int(n) for n in args.size.split('x'))
 app = harness.make_app('ScrollTest', light=args.light, animations=True, stock_look=False,
                        size=(width, height), name='scroll-test')
 
-from gi.repository import GLib, Gtk  # noqa: E402  (after make_app)
+from gi.repository import GLib, GObject, Gtk  # noqa: E402  (after make_app)
 
 from applemusic.widgets import artwork  # noqa: E402
 
@@ -78,6 +97,9 @@ artwork._load = counting_load
 def on_activate(_app):
     app.settings.set_string('last-page', args.page)
     GLib.timeout_add(1000, start)
+
+
+opened = [False]
 
 
 def scrolled_window(widget):
@@ -113,6 +135,12 @@ def start():
         GLib.timeout_add(100, start)
         return GLib.SOURCE_REMOVE
     window = app.get_active_window()
+    if args.open and not opened[0]:
+        opened[0] = True
+        kind, item_id = args.open.split(':', 1)
+        window.open_item(app.library.by_id(kind, item_id))
+        GLib.timeout_add(1500, start)
+        return GLib.SOURCE_REMOVE
     page = window.sidebar if args.sidebar else window.navigation_view.get_visible_page()
     scrolled = list_scroller(page)
     if scrolled is not None and not scrolled.get_mapped():  # a status page shows meanwhile
@@ -128,6 +156,9 @@ def start():
     monitor = window.get_display().get_monitor_at_surface(window.get_surface())
     rate = monitor.get_refresh_rate() if monitor else 0  # millihertz; 0 when unknown
     interval = 1e9 / rate if rate else 1e6 / 60  # microseconds
+    if args.type:
+        type_into(window, page, interval)
+        return GLib.SOURCE_REMOVE
     adjustment = scrolled.get_vadjustment()
     times = []
     work = []  # seconds of main-thread work per frame
@@ -164,6 +195,83 @@ def start():
 
     scrolled.add_tick_callback(tick)
     return GLib.SOURCE_REMOVE
+
+
+def shown_count(page):
+    """The items the page's list shows now."""
+    for name in ('grid_view', 'column_view', 'list_view'):
+        view = getattr(page, name, None)
+        if view is not None and view.get_model() is not None:
+            return view.get_model().get_n_items()
+    return 0
+
+
+def type_into(window, page, interval):
+    """--type: the text typed into the page's filter and deleted, a key at a time; each
+    refilter timed from the bar's `changed` to the end of its handlers, and the frames."""
+    from applemusic.widgets.filter_bar import FilterBar
+
+    bar = getattr(page, 'filter_bar', None)
+    if bar is None or not page.focus_filter():
+        print(f'scroll-test: no filter to type into on the {where()}', flush=True)
+        app.quit()
+        return
+    texts = [args.type[:n] for n in range(1, len(args.type) + 1)]
+    texts += texts[-2::-1] + ['']
+    before = shown_count(page)
+    began = {}
+    refilters = []  # (text, seconds, items shown after)
+
+    def hook(*_args):
+        began['at'] = time.perf_counter()
+        return True
+
+    GObject.add_emission_hook(FilterBar, 'changed', hook)
+    bar.connect_after('changed', lambda bar: refilters.append(
+        (bar.entry.get_text(), time.perf_counter() - began.pop('at', time.perf_counter()),
+         shown_count(page))))
+    work = []
+    frame_began = {}
+    frame_clock = window.get_frame_clock()
+    handlers = [
+        frame_clock.connect('before-paint',
+                            lambda _clock: frame_began.update(at=time.perf_counter())),
+        frame_clock.connect('paint', lambda _clock: 'at' in frame_began and work.append(
+            time.perf_counter() - frame_began.pop('at'))),
+    ]
+
+    def key():
+        # A key's insertion or deletion, as typing makes it: set_text() would empty the
+        # entry first, which refilters at once.
+        if texts:
+            text, typed = texts.pop(0), bar.entry.get_text()
+            if len(text) > len(typed):
+                bar.entry.insert_text(text[-1], len(typed))
+            else:
+                bar.entry.delete_text(len(text), -1)
+            return GLib.SOURCE_CONTINUE
+        for handler in handlers:
+            frame_clock.disconnect(handler)
+        report_typing(before, refilters, sorted(work or [0]), interval)
+        return GLib.SOURCE_REMOVE
+
+    GLib.timeout_add(int(args.key_interval), key)
+
+
+def report_typing(before, refilters, work, interval):
+    budget = interval / 1e6
+    times = sorted(seconds for _text, seconds, _shown in refilters) or [0]
+    print(f"scroll-test: typed {args.type!r} into the {where()}'s filter and deleted it, "
+          f'{args.key_interval:.0f} ms a key, at {window_size()}; {before:n} items shown '
+          f'before', flush=True)
+    for text, seconds, shown in refilters:
+        print(f'  {text!r:24} {1000 * seconds:6.1f} ms, {shown:n} shown', flush=True)
+    print(f'  refilters: {len(refilters)}, median {1000 * statistics.median(times):.1f} ms, '
+          f'longest {1000 * times[-1]:.1f} ms', flush=True)
+    print(f'  work per frame: mean {1000 * statistics.mean(work):.1f} ms, '
+          f'longest {1000 * work[-1]:.1f} ms; over {1000 * budget:.1f} ms: '
+          f'{sum(w > budget for w in work)} of {len(work)}', flush=True)
+    GLib.timeout_add(200, app.quit)
 
 
 def where():

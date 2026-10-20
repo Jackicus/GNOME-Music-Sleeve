@@ -1712,6 +1712,32 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         only, = self.songs('i.a')
         self.assertNotIn('win.item-move-in-playlist', names(self.actions.menu_for(only)))
 
+    async def test_no_move_up_or_down_while_the_playlists_page_filters_it(self):
+        _first, second, _last = self.songs('i.a', 'i.b', 'i.c')
+        playlist = self.app.playlist
+
+        class Page:
+            item = playlist
+            reorder = True
+
+            def can_reorder(self):
+                return self.reorder
+
+        page = Page()
+
+        class View:
+            def get_visible_page(self):
+                return page
+
+        self.window.navigation_view = View()
+        self.assertIn('win.item-move-in-playlist', names(self.actions.menu_for(second)))
+        page.reorder = False  # its filter shows some of its songs
+        menu = self.actions.menu_for(second)
+        self.assertNotIn('win.item-move-in-playlist', names(menu))
+        self.assertIn('win.item-remove-from-playlist', names(menu))  # the rest stays
+        page.item = None  # another page shown: its filter is not this playlist's
+        self.assertIn('win.item-move-in-playlist', names(self.actions.menu_for(second)))
+
     async def test_a_move_is_shown_announced_and_written(self):
         self.songs('i.a', 'i.b', 'i.c')
         self.actions.playlist_order.delay = 0

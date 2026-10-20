@@ -510,6 +510,22 @@ class PageTestCase(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(interval)
         return True
 
+    async def until_focused(self, widget):
+        """Wait for the window's focus to be in widget (an entry), then a tenth of a second
+        more, for the compositor's answer to the text input the process's first focused
+        entry binds: a page torn down before it is read crashes GTK (docs/notes.md). True
+        when the focus came."""
+        def inside():
+            focus = self.window.get_focus()
+            return focus is not None and (focus is widget or focus.is_ancestor(widget))
+
+        focused = await self.until(inside)
+        deadline = time.monotonic() + 0.1
+        while time.monotonic() < deadline:
+            pump(10)
+            await asyncio.sleep(0.005)
+        return focused
+
     async def turn(self, rounds=5):
         """Let what is pending run: GTK's main context, and the tasks up to their next wait."""
         for _round in range(rounds):

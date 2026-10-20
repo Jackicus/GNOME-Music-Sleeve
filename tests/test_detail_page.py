@@ -586,6 +586,93 @@ class DetailPageTest(PageTestCase):
         self.assertTrue(self.window.get_focus().is_ancestor(page.more_button))  # its toggle
 
 
+class PlaylistFilterTest(PageTestCase):
+    """A playlist's songs filtered on its page (widgets/filter_bar.py), its songs not moved
+    meanwhile; an album's tracks have no filter."""
+
+    async def show(self):
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        data = album(1, tracks=4, kind='playlist')
+        for entry, (title, by) in zip(data['groups'][0]['entries'], [
+                ('Harbour Lights', 'Aura Invented'), ('Dawn', 'Zephyr'),
+                ('Night Harbour', 'Lines Collective'), ('Quiet', 'Café Invented')],
+                strict=True):
+            entry['title'], entry['artist'] = title, by
+        self.item = Item(data)
+        return await self.push(DetailPage(self.library, self.item))
+
+    def titles(self, page):
+        from applemusic.library import Track
+
+        rows = page.list_view.get_model()
+        return [rows.get_item(n).title for n in range(rows.get_n_items())
+                if isinstance(rows.get_item(n), Track)]
+
+    async def test_the_songs_shown_are_those_the_filter_matches(self):
+        from gi.repository import Gdk, Gtk
+
+        page = await self.show()
+        bar = page.filter_bar
+        said = []
+        self.window.announce = lambda text, _priority: said.append(text)
+        self.addCleanup(delattr, self.window, 'announce')
+        self.assertTrue(bar.button.get_visible())
+        self.assertIs(bar.get_key_capture_widget(), page)  # typing on the page starts it
+        self.assertTrue(page.can_reorder())
+        self.assertTrue(page.focus_filter())  # Ctrl+F
+        self.assertTrue(await self.until_focused(bar.entry))
+        bar.set_text('harbour')
+        self.assertEqual(self.titles(page), ['Harbour Lights', 'Night Harbour'])
+        self.assertEqual(said[-1], '2 of 4 songs')
+        bar.set_text('cafe')  # an artist, accents ignored
+        self.assertEqual(self.titles(page), ['Quiet'])
+        # A song plays the playlist from itself, as unfiltered.
+        page._on_activate(page.list_view, 1)
+        self.assertEqual(self.window.played[-1][1], 3)
+        # Filtered, the order shown is not the playlist's: nothing moves.
+        self.assertFalse(page.can_reorder())
+        self.assertFalse(page.show_insertion(0))
+        keys = next(controller for controller in _controllers(page.list_view)
+                    if isinstance(controller, Gtk.EventControllerKey))
+        self.assertFalse(keys.emit('key-pressed', Gdk.KEY_Down, 0, Gdk.ModifierType.ALT_MASK))
+        # Nothing matching: said in the status box.
+        bar.set_text('nothing invented')
+        self.assertEqual(self.titles(page), [])
+        self.assertTrue(page.status_box.get_visible())
+        self.assertEqual(page.status_title.get_label(), 'No Results Found')
+        self.assertEqual(page.status_icon.get_icon_name(), 'edit-find-symbolic')
+        # Closed (Escape): every song back, and they can be moved again.
+        bar.close()
+        self.assertTrue(await self.until(lambda: len(self.titles(page)) == 4))
+        self.assertFalse(page.status_box.get_visible())
+        self.assertTrue(page.can_reorder())
+
+    async def test_a_reload_keeps_the_filter(self):
+        page = await self.show()
+        page.filter_bar.set_text('harbour')
+        data = dict(self.item.raw)
+        data['groups'] = [dict(data['groups'][0])]
+        data['groups'][0]['entries'] = data['groups'][0]['entries'][:3]  # one went
+        self.item.merge(data, replace=True)  # groups-changed: shown again
+        self.assertEqual(self.titles(page), ['Harbour Lights', 'Night Harbour'])
+
+    async def test_an_albums_tracks_have_no_filter(self):
+        from applemusic import keyboard
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage, filters_songs
+
+        page = await self.push(DetailPage(self.library, Item(album(2, tracks=3))))
+        self.assertFalse(page.filter_bar.button.get_visible())
+        self.assertIsNone(page.filter_bar.get_key_capture_widget())
+        self.assertFalse(page.focus_filter())
+        self.assertEqual(keyboard.search_target(page), 'search')
+        self.assertFalse(filters_songs(page.item))
+        self.assertTrue(filters_songs(Item(album(3, kind='playlist'))))
+        self.assertFalse(filters_songs(None))
+
+
 class ReorderTest(PageTestCase):
     """A playlist's songs moved on its page: Alt+Up and Alt+Down on the focused song, and a
     drag of one of its own songs, with the insertion line where it would go."""

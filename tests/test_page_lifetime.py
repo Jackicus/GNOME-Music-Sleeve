@@ -582,6 +582,39 @@ class PageLifetimeTest(WidgetTestCase):
                                             TrackLink, TrackTableHeader)
         await self.assert_freed(*refs)
 
+    async def test_playlist_page_filtered(self):
+        # A playlist's page with its filter bar shown, typed into, Escape pressed on the page.
+        from gi.repository import Gdk, Gtk
+
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.widgets.filter_bar import FilterBar
+        from applemusic.widgets.track_row import TrackRow
+
+        item = Item(dict(_album(1, tracks=12), kind='playlist'))
+        page = DetailPage(self.library, item)
+        refs = [page.weak_ref()]
+        self.window.navigation_view.push(page)
+        self.assertTrue(await self.until(lambda: _find(page, TrackRow) is not None))
+        refs += [_find(page, FilterBar).weak_ref(), _find(page, TrackRow).weak_ref()]
+        self.assertTrue(page.focus_filter())
+        entry = page.filter_bar.entry
+        self.assertTrue(await self.until(lambda: self.window.get_focus() is not None
+                                         and self.window.get_focus().is_ancestor(entry)))
+        # The compositor's answer to the first focused entry's text input, before the page
+        # goes (docs/notes.md).
+        await self.until(lambda: False, timeout=0.1)
+        page.filter_bar.set_text('song 1')
+        await self.turn()
+        escape = next(controller for controller in page.observe_controllers()
+                      if isinstance(controller, Gtk.EventControllerKey))
+        escape.emit('key-pressed', Gdk.KEY_Escape, 0, Gdk.ModifierType(0))
+        await self.turn()
+        self.window.navigation_view.pop()
+        self.assertTrue(await self.until(lambda: page.get_parent() is None))
+        page = escape = entry = None
+        await self.assert_freed(*refs)
+
     async def test_playlist_page_with_suggestions(self):
         # A playlist's Suggested Songs: the section, its grid, its rows with their buttons,
         # one of them added (its place filled by a spare, its row bound again).

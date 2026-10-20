@@ -65,24 +65,47 @@ template $AppleMusicArtistsPage: Adw.NavigationPage {
             title: _("Artists");
             tag: "list";
 
+            // The filter bar goes under the header bar, its button in it (artists.py,
+            // widgets/filter_bar.py).
             child: Adw.ToolbarView list_toolbar {
               [top]
-              Adw.HeaderBar {}
+              Adw.HeaderBar list_header {}
 
-              content: ScrolledWindow list_scrolled {
-                hscrollbar-policy: never;
+              content: Stack list_stack {
+                StackPage {
+                  name: "list";
 
-                child: ListView list_view {
-                  tab-behavior: item;
+                  child: ScrolledWindow list_scrolled {
+                    hscrollbar-policy: never;
 
-                  accessibility {
-                    label: _("Artists");
-                  }
+                    child: ListView list_view {
+                      tab-behavior: item;
 
-                  styles [
-                    "navigation-sidebar",
-                  ]
-                };
+                      accessibility {
+                        label: _("Artists");
+                      }
+
+                      styles [
+                        "navigation-sidebar",
+                      ]
+                    };
+                  };
+                }
+
+                // The filter matches no artist.
+                StackPage {
+                  name: "no-results";
+
+                  child: Adw.StatusPage {
+                    icon-name: "edit-find-symbolic";
+                    title: _("No Results Found");
+                    description: _("Try a different filter");
+
+                    styles [
+                      "compact",
+                    ]
+                  };
+                }
               };
             };
           };

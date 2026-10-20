@@ -739,7 +739,7 @@ def main_menu_section():
 
 
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
-               moves=None, removable=None, queue_entry=None):
+               moves=None, removable=None, queue_entry=None, reorder=True):
     """The menu for obj (an Item or a Track), or None when nothing applies (the top level
     of the folders); a category's is curator_menu(). `playlists` are the entries the Add to
     Playlist submenu lists (ItemActions.playlists(): (id, title, children), a folder's
@@ -750,7 +750,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     or folder can be moved (move_targets(): Move to Folder; None, not at all); `removable`,
     obj's removal_target (Remove from Library…, and no Add to Library); `queue_entry`,
     (index, id) of the queue's entry obj is when it may be taken out of Up Next (Remove from
-    Up Next)."""
+    Up Next); `reorder` false leaves out Move Up and Move Down (the playlist's page shows a
+    filter of its songs)."""
     if is_curator(obj):
         return curator_menu(obj, storefront)
     named = describe(obj)
@@ -797,7 +798,7 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         keep.append_submenu(action_labels()['item-add-to-playlist'], submenu)
     if moves is not None:
         keep.append_submenu(action_labels()['item-move-to-folder'], move_submenu(moves, named))
-    for item in move_items(container, obj):
+    for item in move_items(container, obj) if reorder else ():
         keep.append_item(item)
     removed = entry_target(container, obj)
     if removed is not None:
@@ -985,7 +986,8 @@ class ItemActions:
         menu = build_menu(obj, self.playlists() if playlist_song(obj) else (),
                           self._storefront(), here=self._shown(), queued=queued,
                           container=self.container(obj), moves=self.move_targets(obj),
-                          removable=self.removal_target(obj), queue_entry=queue_entry)
+                          removable=self.removal_target(obj), queue_entry=queue_entry,
+                          reorder=self._can_reorder(obj))
         if menu is None:
             return None
         self._remember(named, obj)
@@ -1015,6 +1017,18 @@ class ItemActions:
             return None
         playlist = self.library.by_id('playlist', obj.play.get('id'))
         return playlist if is_manageable(playlist) else None
+
+    def _can_reorder(self, obj):
+        """Whether a menu offers Move Up and Move Down for the Track obj: not while the page
+        shown lists its playlist filtered (DetailPage.can_reorder()), where the order shown
+        is not the playlist's."""
+        view = getattr(self.window, 'navigation_view', None)
+        page = view.get_visible_page() if view is not None else None
+        container = self.container(obj)
+        if container is None or getattr(page, 'item', None) is not container:
+            return True
+        can_reorder = getattr(page, 'can_reorder', None)
+        return can_reorder is None or can_reorder()
 
     def move_targets(self, obj):
         """Where a playlist or folder of the library's can be moved (move_targets()), or
