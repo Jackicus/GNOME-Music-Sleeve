@@ -11,7 +11,8 @@
                           [--fullscreen-player [lyrics|localized|syllable|none]]
                           [--idle] [--position SECONDS] [--playing] [--restored]
                           [--autoplay]
-                          [--search TERM]
+                          [--search TERM [--search-in music|library] [--search-kind KIND]
+                           [--see-all KEY]]
                           [--context-menu [KIND] [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
@@ -78,7 +79,11 @@ player (win.fullscreen-player, F11's). The harness's window is not resizable, so
 headless mutter keeps it at --size while it is full screen: the shot is the player at
 that size. --idle shoots it with the controls and the cursor hidden. With --demo only.
 --search TERM shows the Search page in Your Library mode with TERM typed (the
-results of the offline filter; the engine is never started here).
+results of the offline filter; the engine is never started here). --search-in music
+searches Apple Music instead, as Enter does: with --demo, the demo's invented catalog
+answers (its search of `tide` has every kind, and more songs than a shelf shows);
+--search-kind KIND chooses the filter first (songs, albums, radio-shows… : the list of
+that kind), and --see-all KEY then opens the See All of the shelf KEY (songs…).
 --context-menu pops up the context menu of the page's first tile or row (the
 first shown widget with a context_item; with KIND, the first whose item is of
 that kind, such as category), as a right click on it would, and
@@ -165,6 +170,12 @@ parser.add_argument('--autoplay', action='store_true',
                     help='with --now-playing: entries autoplay added at the end of the queue')
 parser.add_argument('--search', metavar='TERM',
                     help='the Search page in Your Library mode with TERM typed')
+parser.add_argument('--search-in', choices=['music', 'library'], default='library',
+                    help='with --search, the mode searched (Apple Music: Enter pressed)')
+parser.add_argument('--search-kind', metavar='KIND',
+                    help="with --search-in music, the filter's kind (songs, albums…)")
+parser.add_argument('--see-all', metavar='KEY',
+                    help='with --search-in music, open the See All of the shelf KEY')
 parser.add_argument('--context-menu', metavar='KIND', nargs='?', const=True,
                     help="pop up the context menu of the page's first tile or row (of KIND)")
 parser.add_argument('--submenu', metavar='NAME',
@@ -194,6 +205,8 @@ parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[
 args = parser.parse_args()
 if args.search:
     args.page = 'search'
+if (args.search_kind or args.see_all) and not (args.search and args.search_in == 'music'):
+    parser.error('--search-kind and --see-all need --search TERM --search-in music')
 if args.submenu and not (args.context_menu or args.sidebar_menu):
     parser.error('--submenu needs --context-menu or --sidebar-menu')
 if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
@@ -254,6 +267,7 @@ SECTIONS = {'album': 'albums', 'artist': 'artists', 'playlist': 'playlists', 'st
 opened = False
 sheet_opened = False
 searched = False
+seen_all = False
 menu_opened = False
 banner_shown = False
 scrolled = False
@@ -295,10 +309,24 @@ def open_now_playing(window):
 
 
 def search_library(window):
-    """--search: Your Library mode with the term typed into the entry."""
+    """--search: Your Library mode (or --search-in's) with the term typed into the entry;
+    Apple Music's searched as Enter does, with --search-kind's filter."""
     page = window.navigation_view.get_visible_page()
-    page.set_mode('library')
+    page.set_mode(args.search_in)
+    if args.search_kind:
+        page.set_kind(args.search_kind)
     page.search_entry.set_text(args.search)
+    if args.search_in == 'music':
+        page.search_entry.emit('activate')
+
+
+def open_see_all(window):
+    """--see-all: the See All of the search's shelf KEY, as its button opens it."""
+    page = window.navigation_view.get_visible_page()
+    shelf = next((shelf for shelf in page._column.shelves if shelf.key == args.see_all), None)
+    if shelf is None:
+        sys.exit(f'screenshot: no {args.see_all} shelf in the results')
+    window.open_shelf(shelf)
 
 
 def catalog_item(kind, item_id):
@@ -655,6 +683,7 @@ def shoot():
 
 def _shoot():
     global opened, sheet_opened, searched, menu_opened, banner_shown, preferences, dialog
+    global seen_all
     global scrolled, focused, drop_line_scrolled
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
@@ -681,6 +710,11 @@ def _shoot():
         searched = True
         search_library(window)
         GLib.timeout_add(1500, shoot)  # after the debounce, the songs built, artwork decoded
+        return GLib.SOURCE_REMOVE
+    if args.see_all and not seen_all:
+        seen_all = True
+        open_see_all(window)
+        GLib.timeout_add(1500, shoot)  # after the push, the next page in, artwork decoded
         return GLib.SOURCE_REMOVE
     if args.context_menu and not menu_opened:
         menu_opened = True

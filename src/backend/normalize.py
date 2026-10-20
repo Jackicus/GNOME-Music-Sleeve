@@ -23,7 +23,7 @@ import re
 import time
 from datetime import UTC, datetime
 
-from . import config, store
+from . import api, config, store
 
 log = logging.getLogger(__name__)
 
@@ -1153,6 +1153,23 @@ def normalize_station(raw_station, cache_dir=None, art_urls=None):
     }
 
 
+def curator_link(raw):
+    """A third party's curator (type `curators`: a label's, a magazine's editors) as
+    normalize_item answers one: the app has no page for it (category_page reads Apple's
+    curators only), so it is a `link` Item, opened on music.apple.com (its `url`), with
+    nothing to play and its name; kind `unknown` without an https page."""
+    attrs = raw.get('attributes') or {}
+    url = attrs.get('url')
+    artwork = (attrs.get('artwork') or {}).get('url')
+    small = ART_SIZES['thumb']
+    has_page = isinstance(url, str) and url.startswith('https://')
+    return {'id': str(raw.get('id') or ''), 'kind': 'link' if has_page else 'unknown',
+            'title': str(attrs.get('name') or ''), 'subtitle': '', 'year': None,
+            'art': template_artwork_url(artwork, small, small) if artwork else None,
+            'thumb': None, 'artColor': None, 'url': url if has_page else None, 'play': {},
+            'groups': []}
+
+
 def normalize_song_as_item(raw_song, cache_dir=None, art_urls=None):
     """Normalize an Apple Music song into the Item shape (e.g. for search results)."""
     attrs = raw_song.get('attributes') or {}
@@ -1206,6 +1223,8 @@ def normalize_item(raw_item, cache_dir=None, include_groups=True, art_urls=None)
         item = normalize_artist(raw_item, cache_dir=cache_dir, art_urls=art_urls)
     elif raw_type == 'apple-curators':
         item = curator_item(raw_item)
+    elif raw_type == 'curators':
+        item = curator_link(raw_item)
     elif raw_type in ('stations', 'radio-stations') or raw_kind == 'station':
         item = normalize_station(raw_item, cache_dir=cache_dir, art_urls=art_urls)
     elif raw_type in ('songs', 'library-songs') or raw_kind == 'song':
@@ -1238,19 +1257,38 @@ def normalize_item(raw_item, cache_dir=None, include_groups=True, art_urls=None)
 # has it). Each is keyed by its kind without the "library-" (`top` for `topResults`, the
 # catalog's own pick of its best few hits across every kind, asked for `with=topResults`,
 # which Apple Music's own search page puts first) and untitled: the Search page has the
-# words.
+# words. Apple's curators make two shelves, `radio-shows` (those of kind Show) and
+# `curators` (the rest, with the third parties' `curators`): category tiles (curator_item)
+# and, for a third party's, a link (curator_link), each marked with `curatorKind` ('show' or
+# 'curator') for the page's words.
 SEARCH_SHELF_ORDER = [
     'topResults', 'artists', 'library-artists', 'songs', 'library-songs',
     'albums', 'library-albums', 'playlists', 'library-playlists', 'music-videos', 'stations',
+    'apple-curators', 'curators',
 ]
 
 
-def search_results(raw, cache_dir):
+def _search_shelf_key(section, raw_item):
+    """The key of the shelf a hit in an answer's `section` goes on (search_results)."""
+    if section == 'topResults':
+        return 'top'
+    if section == 'apple-curators':
+        kind = (raw_item.get('attributes') or {}).get('kind')
+        return 'radio-shows' if kind == 'Show' else 'curators'
+    return section.removeprefix('library-')
+
+
+def search_results(raw, cache_dir, kind=None):
     """Engine.search()'s answer from MusicKit's: `shelves`, one per kind that
-    answered, each `{key, title: '', items}` (key `top`, `artists`,
-    `albums`, `songs`, `playlists`, `music-videos` or `stations`), in the
-    order Apple's own search page shows them (`meta.results.order`, or
-    SEARCH_SHELF_ORDER without it) with the top results first.
+    answered, each `{key, title: '', items, next}` (key `top`, `artists`,
+    `albums`, `songs`, `playlists`, `music-videos`, `stations`, `radio-shows`
+    or `curators`), in the order Apple's own search page shows them
+    (`meta.results.order`, or SEARCH_SHELF_ORDER without it) with the top
+    results first. `next` is the offset of Apple's next page of the kind
+    (api.next_offset of its section's `next` link), or None when Apple has
+    no more. With `kind` (a search for that kind alone), only its shelf,
+    even with nothing on it (a page of Apple's curators holding no radio show
+    still names the next).
 
     A search never waits on a download, so a hit's `art` is its cached
     cover when the sync has fetched it and a small catalog URL otherwise,
@@ -1262,22 +1300,37 @@ def search_results(raw, cache_dir):
         order = []
     keys = [k for k in order if k in SEARCH_SHELF_ORDER]
     keys += [k for k in SEARCH_SHELF_ORDER if k not in keys]
-    shelves = []
+    shelves = {}  # by key, in the order they are made
+
+    def shelf(key):
+        return shelves.setdefault(key, {'key': key, 'title': '', 'items': [], 'next': None})
+
     for key in keys:
         section = results.get(key)
         if not isinstance(section, dict):
             continue
-        hits = []
+        targets = (('radio-shows', 'curators') if key == 'apple-curators'
+                   else (_search_shelf_key(key, {}),))
+        for target in targets:
+            shelf(target)
         for raw_item in section.get('data') or []:
             if not isinstance(raw_item, dict):
                 continue
             item = normalize_item(raw_item, cache_dir, include_groups=False)
             _settle_search_art(item, raw_item)
-            hits.append(item)
-        if hits:
-            shelf_key = 'top' if key == 'topResults' else key.removeprefix('library-')
-            shelves.append({'key': shelf_key, 'title': '', 'items': hits})
-    return {'shelves': shelves}
+            shelf_key = _search_shelf_key(key, raw_item)
+            if key in ('apple-curators', 'curators'):  # the page words what it is
+                item['curatorKind'] = 'show' if shelf_key == 'radio-shows' else 'curator'
+            shelf(shelf_key)['items'].append(item)
+        following = api.next_offset(section.get('next'))
+        if following is not None:
+            for target in targets:
+                current = shelves[target]['next']
+                shelves[target]['next'] = following if current is None else min(current,
+                                                                                 following)
+    if kind is not None:
+        return {'shelves': [found for found in shelves.values() if found['key'] == kind]}
+    return {'shelves': [found for found in shelves.values() if found['items']]}
 
 
 def search_suggestions(raw, cache_dir):
@@ -2461,6 +2514,12 @@ def _safe_id(value):
 
 def landing_cache_path(cache_dir):
     return os.path.join(cache_dir, 'landing.json')
+
+
+def demo_search_path(cache_dir):
+    """The invented catalog the demo searches (scripts/demo_library.py writes it, marked
+    `demo`; Engine.search answers from it in demo mode only): {shelves: [{key, items}]}."""
+    return os.path.join(cache_dir, 'demo-search.json')
 
 
 def category_cache_path(cache_dir, category_id):

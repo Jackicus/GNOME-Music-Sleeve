@@ -66,7 +66,8 @@ UI awaits.
     await engine.create_folder(name, folder_id)   # the new folder's id ('root': the top level)
     await engine.move_to_folder(kind, id, folder_id)   # a playlist (or folder) into a folder
     await engine.folder_children(folder_id)   # [{kind, id, name}] as Apple lists them now
-    await engine.search(term, limit=20)    # {shelves}: a catalog search
+    await engine.search(term, limit=20)    # {shelves}: a catalog search, each shelf's `next`
+    await engine.search(term, limit=25, kind='songs', offset=20)   # one kind, a later page
     await engine.suggest(term, limit=10)   # {terms: [{term, display}], items}
     await engine.landing()       # {categories}: the search page's Browse Categories
     await engine.category(id)    # {id, title, shelves}: a category's page
@@ -110,7 +111,8 @@ asynchronous CDPClient over Chrome's DevTools pipe (its descriptors 3 and 4: no 
 and the JSON shaping and artwork HTTP of item() run in a thread. In demo mode (`demo=True`)
 start() and stop() do nothing and every command raises EngineError('engine-down') at once, but
 for a kept answer the demo library invented (scripts/demo_library.py writes its artists' and
-albums' pages, marked `demo`), answered from its cache.
+albums' pages, marked `demo`), answered from its cache, and a search or its suggestions, answered
+from the invented catalog it writes (demo-search.json: demo_search()).
 
 The browser command (`browser_command`) and the preferred mode (`prefer_headless`) are read
 when Chrome is spawned, so a change applies at the next start and a running Chrome is left
@@ -349,6 +351,40 @@ async def _read_pages(read, path, params, page, limit, progress, concurrency):
 
 def _made_for_you(raw, cache_dir):
     return {'shelves': normalize.made_for_you_shelves(raw.get('data'), cache_dir)}
+
+
+# The demo's Top Results: the first hit of each of its first kinds, at most this many.
+DEMO_TOP = 4
+
+
+def demo_search(catalog, term, limit, kind=None, offset=0):
+    """A search of the demo's invented catalog (scripts/demo_library.py's demo-search.json,
+    {shelves: [{key, items}]}) shaped as Engine.search() answers Apple's: the items whose
+    title or subtitle holds every word of `term` (case aside), `limit` of each kind, each
+    shelf's `next` the offset of the rest (None: none). Top Results are the first hit of
+    each kind, DEMO_TOP at most. With `kind`, that kind alone from `offset`."""
+    words = term.casefold().split()
+
+    def matches(item):
+        text = f"{item.get('title') or ''} {item.get('subtitle') or ''}".casefold()
+        return all(word in text for word in words)
+
+    shelves = []
+    for shelf in catalog.get('shelves') or []:
+        if not isinstance(shelf, dict) or (kind is not None and shelf.get('key') != kind):
+            continue
+        found = [item for item in shelf.get('items') or []
+                 if isinstance(item, dict) and matches(item)]
+        start = offset if kind is not None else 0
+        page = found[start:start + limit]
+        if page:
+            following = start + limit if start + limit < len(found) else None
+            shelves.append({'key': shelf.get('key'), 'title': '', 'items': page,
+                            'next': following})
+    if kind is None and shelves:
+        top = [shelf['items'][0] for shelf in shelves[:DEMO_TOP]]
+        shelves.insert(0, {'key': 'top', 'title': '', 'items': top, 'next': None})
+    return {'shelves': shelves}
 
 
 def _exit_status(process):
@@ -1875,26 +1911,57 @@ class Engine(GObject.Object):
     # category, browse and made-for-you are kept for normalize.ANSWER_MAX_AGE) is answered
     # without one. The shaping (backend.normalize) runs in a thread: it stats the artwork cache.
 
-    async def search(self, term, limit=SEARCH_LIMIT):
+    async def search(self, term, limit=SEARCH_LIMIT, kind=None, offset=0):
         """A search of the catalog (the Search page's Apple Music mode): {shelves: [{key,
-        title, items: [Item without groups]}]}, the shelves in Apple's order (Top Results
-        first). `limit` is per kind. A hit's `art` is its cached cover or a thumbnail-sized
+        title, items: [Item without groups], next}]}, the shelves in Apple's order (Top
+        Results first, then every kind of api.SEARCH_KIND_TYPES that answered), `next` the
+        offset at which Apple has more of the kind (None: no more). `limit` is per kind.
+        With `kind` (one of those keys: the Search page's filter, a shelf's See All), that
+        kind alone from `offset`, without Top Results: its one shelf, or none (a page may
+        hold nothing but a `next`). A hit's `art` is its cached cover or a thumbnail-sized
         catalog URL (remote.remote_item gives it a place under <cache>/remote-art/);
-        `thumb` is on disk or None."""
+        `thumb` is on disk or None. The demo searches the invented catalog the demo library
+        wrote (demo_search())."""
         term = ' '.join(str(term or '').split())
         if not term:
             raise EngineError('usage', 'search needs a term')
+        if kind is not None and kind not in api.SEARCH_KIND_TYPES:
+            raise EngineError('usage', f'no search of kind {kind}')
+        offset = max(0, int(offset or 0))
+        if self.demo:
+            catalog = await self._demo_catalog()
+            return demo_search(catalog, term, int(limit), kind, offset)
         client = await self._require_signed_in('search')
-        raw = await client.bridge('search', term, int(limit), timeout=SEARCH_TIMEOUT)
+        if kind is None:
+            raw = await client.bridge('search', term, int(limit), api.SEARCH_TYPES, 0, True,
+                                      timeout=SEARCH_TIMEOUT)
+        else:
+            raw = await client.bridge('search', term, int(limit), api.SEARCH_KIND_TYPES[kind],
+                                      offset, False, timeout=SEARCH_TIMEOUT)
         _raise_api_errors(raw, 'search')
-        return await asyncio.to_thread(normalize.search_results, raw, str(self.cache_dir))
+        return await asyncio.to_thread(normalize.search_results, raw, str(self.cache_dir),
+                                       kind)
+
+    async def _demo_catalog(self):
+        """The demo's invented catalog (normalize.demo_search_path(), marked `demo`), or
+        EngineError('engine-down') without one, as for any other command in the demo."""
+        catalog = await asyncio.to_thread(
+            cache.read_kept, normalize.demo_search_path(str(self.cache_dir)), allow_stale=True)
+        if catalog is None or catalog.get('demo') is not True:
+            raise EngineError('engine-down', 'the engine is not running')
+        return catalog
 
     async def suggest(self, term, limit=SUGGEST_LIMIT):
         """Apple's completions of a term half typed: {terms: [{term, display}], items: [Item
-        without groups]}, the items its best few hits for the term as it stands."""
+        without groups]}, the items its best few hits for the term as it stands. The demo
+        answers no terms and the top hits of its invented catalog (demo_search())."""
         term = ' '.join(str(term or '').split())
         if not term:
             raise EngineError('usage', 'suggest needs a term')
+        if self.demo:
+            shelves = demo_search(await self._demo_catalog(), term, int(limit))['shelves']
+            top = shelves[0]['items'] if shelves and shelves[0]['key'] == 'top' else []
+            return {'terms': [], 'items': top}
         client = await self._require_signed_in('search')
         raw = await client.bridge('suggest', term, int(limit), timeout=SEARCH_TIMEOUT)
         _raise_api_errors(raw, 'suggestions')

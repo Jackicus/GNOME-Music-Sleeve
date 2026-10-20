@@ -466,7 +466,9 @@ class Window(Adw.ApplicationWindow):
         puts on it; any other (a search's results, a category's) is shown as it is, and one
         that knows where the rest of it is (an artist's: `complete`, a coroutine function)
         fetches it, the grid following as it arrives. An artist page's In Your Library
-        (`library_artist`, the library's artist) opens the library's page of the artist.
+        (`library_artist`, the library's artist) opens the library's page of the artist. A
+        shelf with a page of its own (`make_page(shelf)`: a search's shelf of one kind,
+        pages/search_all.py) pushes that page instead.
         """
         artist = getattr(shelf, 'library_artist', None)
         if artist is not None:  # an artist page's In Your Library: the library's view of them
@@ -475,6 +477,12 @@ class Window(Adw.ApplicationWindow):
         visible = self.navigation_view.get_visible_page()
         if getattr(visible, 'shelf', None) is shelf:
             return  # a double activation
+        make_page = getattr(shelf, 'make_page', None)
+        if make_page is not None:  # a page of its own: a search's kind, as Apple pages it
+            page = make_page(shelf)
+            page.shelf = shelf
+            self.navigation_view.push(page)
+            return
         if shelf in self._library.shelves:
             key = shelf.key
 

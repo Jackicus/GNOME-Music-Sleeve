@@ -44,7 +44,9 @@ from, and each playlist the songs Apple would suggest adding to it
 twenty-four of the demo's own songs it does not hold), and the Radio page's answer
 (radio.json, normalize.radio_shelves()'s shape: invented live stations, shows, episodes
 and genre stations beside the demo's own albums and videos, each show's page in
-categories/). Last it writes .demo-stamp, the
+categories/), and the catalog the demo's search answers from (demo-search.json: its
+artists, albums, songs, playlists, videos and stations, the Radio page's shows, and
+invented curators with their pages in categories/). Last it writes .demo-stamp, the
 record of what made it (demo_stamp.py), by which the harness and demo.sh know an out-of-date
 build/demo and write it again. The other keys the app's sync adds
 (sections.songs, artUrl) are optional and left out: the demo has no loose
@@ -166,6 +168,11 @@ DEMO_RADIO_SHOWS = [('The Morning Tide', 'Mara Quinn'), ('Evergreen Requests', '
 DEMO_GENRE_STATIONS = [('Coastal Indie', 'Indie & Alternative'), ('Night Jazz', 'Jazz'),
                        ('Harbour Folk', 'Folk'), ('Deep Focus', 'Ambient'),
                        ('Northern Soul Kitchen', 'R&B/Soul'), ('Tape Hiss Classics', 'Rock')]
+# The search's curators: Apple-like editors, whose tile opens a page of their playlists, and
+# a third party's (a label's), which has no page in the app (music.apple.com's, in the demo
+# refused). None plays.
+DEMO_SEARCH_CURATORS = [('Apple Music Chill', 'apple'), ('Apple Music Jazz', 'apple'),
+                        ('Night Tide Editors', 'apple'), ('Paper Lantern Records', 'label')]
 
 MOTIFS = [
     'sun_horizon',
@@ -2311,6 +2318,9 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                       cover_size, library['generated'])
     build_radio_page(out_dir, radio_stations, albums[:len(ALBUMS_DATA)], videos, draw_cover,
                      thumb_for, cover_size, library['generated'])
+    build_search_catalog(out_dir, artists[:len(ARTISTS_DATA)], albums[:len(ALBUMS_DATA)],
+                         playlists, videos, radio_stations, draw_cover, thumb_for, cover_size,
+                         library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
 
@@ -2323,6 +2333,83 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
         f'{len(playlists)} playlists, {len(radio_stations)} radio stations, '
         f'{len(videos)} music videos in {out_dir}'
     )
+
+
+def build_search_catalog(out_dir, artists, albums, playlists, videos, stations, draw_cover,
+                         thumb_for, cover_size, generated):
+    """Write demo-search.json (normalize.demo_search_path()): the invented catalog the demo
+    engine searches (Engine.search, engine.demo_search()), {shelves: [{key, items}]} by search
+    kind: the hand-written artists, their albums and songs, the playlists, music videos and
+    stations, the Radio page's shows (radio.json, written first: their pages are there) and
+    invented curators drawn here, each Apple-like one with its page (categories/<id>.json:
+    playlists of the demo's). Albums, artists and playlists keep their library ids, so their
+    pages are the library's. Shows and curators carry `curatorKind`, as a search's do."""
+    art_dir = os.path.join(out_dir, 'art')
+
+    def brief(item, **changes):
+        return dict(item, groups=[], **changes)
+
+    def curator(number, title, kind, palette_index):
+        item_id = f'demo.curator{number:02d}'
+        path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
+        palette = PALETTES[palette_index % len(PALETTES)]
+        draw_cover(out_path=path, title=title, subtitle=None, badge=None, palette=palette,
+                   motif=MOTIFS[palette_index % len(MOTIFS)], is_artist=False,
+                   size=cover_size)
+        url = f'https://music.apple.com/us/curator/{slug(title)}/{item_id}'
+        if kind == 'label':  # a third party's: normalize.curator_link's shape
+            return {'id': item_id, 'kind': 'link', 'title': title, 'subtitle': '',
+                    'year': None, 'art': path, 'thumb': thumb_for(path), 'artColor': None,
+                    'url': url, 'play': {}, 'groups': [], 'curatorKind': 'curator'}
+        page = {'id': item_id, 'title': title,
+                'shelves': [{'key': f'cat-{item_id}-playlists', 'title': 'Playlists',
+                             'items': [brief(playlist) for playlist in
+                                       playlists[number % 3::3][:4]]}],
+                'cached': generated,
+                'demo': True}  # invented: the demo engine answers only these
+        with open(os.path.join(out_dir, 'categories', f'{item_id}.json'), 'w',
+                  encoding='utf-8') as f:
+            json.dump(page, f, indent=2)
+        return {'id': item_id, 'kind': 'category', 'title': title, 'subtitle': None,
+                'art': path, 'thumb': thumb_for(path), 'artColor': palette[1], 'url': url,
+                'play': {}, 'groups': [], 'curatorKind': 'curator'}
+
+    songs = []
+    for album in albums:
+        for group in album['groups']:
+            for track in group['entries']:
+                songs.append({'id': track['catalogId'], 'kind': 'song', 'title': track['title'],
+                              'subtitle': track['artist'], 'album': album['title'],
+                              'year': album['year'], 'genre': album['genre'], 'summary': None,
+                              'art': album['art'], 'thumb': album['thumb'],
+                              'artColor': album['artColor'], 'explicit': track['explicit'],
+                              'durationMs': track['durationMs'],
+                              'catalogId': track['catalogId'], 'url': None,
+                              'play': {'kind': 'song', 'id': track['catalogId']},
+                              'groups': []})
+    with open(os.path.join(out_dir, 'radio.json'), encoding='utf-8') as f:
+        radio = json.load(f)
+    shows = [dict(show, curatorKind='show') for shelf in radio['shelves']
+             if shelf['key'] == 'radio-shows' for show in shelf['items']]
+    os.makedirs(os.path.join(out_dir, 'categories'), exist_ok=True)
+    curators = [curator(number, title, kind, number * 5 + 1)
+                for number, (title, kind) in enumerate(DEMO_SEARCH_CURATORS)]
+    catalog = {
+        'shelves': [
+            {'key': 'artists', 'items': [brief(artist) for artist in artists]},
+            {'key': 'songs', 'items': songs},
+            {'key': 'albums', 'items': [brief(album) for album in albums]},
+            {'key': 'playlists', 'items': [brief(playlist) for playlist in playlists]},
+            {'key': 'music-videos', 'items': [brief(video) for video in videos]},
+            {'key': 'stations', 'items': [brief(station) for station in stations]},
+            {'key': 'radio-shows', 'items': shows},
+            {'key': 'curators', 'items': curators},
+        ],
+        'cached': generated,
+        'demo': True,  # invented: the demo engine answers only this
+    }
+    with open(os.path.join(out_dir, 'demo-search.json'), 'w', encoding='utf-8') as f:
+        json.dump(catalog, f, indent=2)
 
 
 def build_suggestions(out_dir, playlists, albums, generated):

@@ -673,6 +673,20 @@ changes, change it here, with the date. The plan they came from is in
   compilation, a feature) are that album's artist's, the library's artists being its albums'
   artists (#268).
 
+- **A search's kind pages on as it is scrolled** (2026-10-20, #345). Apple's search answers
+  at most 25 of a kind a request, with a `next` offset. The shelves of every kind ask for 20
+  each (and Top Results); a kind of its own (the filter, a shelf's See All) is a list of
+  rows, not a grid of tiles, as Apple Music's own search lists them, fed by a
+  `search_pager.SearchPager` that asks for the next 25 when less than a screen is left below
+  the view, and ends with what it found ("35 songs"), or Try Again when a page fails. A list
+  of rows takes a footer, which a `Gtk.GridView` cannot (it has no sections). The filter is a
+  `Gtk.DropDown` beside the entry, not a toggle group: nine kinds do not fit in 360 px, and
+  the drop-down is reached by one Tab from the entry. Radio shows and curators are asked for
+  with every search and shown as category tiles, as everywhere else (their page is the
+  category page); a third party's curator, whose page the app cannot read, opens
+  music.apple.com's. The demo answers a search from an invented catalog
+  (`demo-search.json`), so the filter and See All show in its screenshots.
+
 ## Open
 
 - Nothing. The questions that were open here are settled above; what is left is in

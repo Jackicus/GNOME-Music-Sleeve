@@ -88,8 +88,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `widgets.engine_status.EngineStatus` (no widget; tests/test_engine_status.py): the spinner
   while it starts, Sign In when signed out, Start Engine (through `app.start_engine()`, whose
   failure the app reports), Try Again, and "Not Available in the Demo" with no button (the
-  demo engine answers `engine-down`, but for the artist and album pages scripts/demo_library.py
-  invents).
+  demo engine answers `engine-down`, but for the artist and album pages and the search that
+  scripts/demo_library.py invents).
   A state the page shows is not toasted too. A library page's empty state offers Sign In… while
   signed out (outside the demo) through one `pages.SignInOffer(status_page)`.
 - A page of shelves is a vertical `Gtk.Box` of a handful of `AppleMusicShelf`, each a horizontal
@@ -99,8 +99,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   tiles; See All (the whole shelf, as a grid) and the paging arrows show only when the row does
   not show everything, the arrows only on a shelf wider than `ARROWS_MIN_WIDTH` (400sp, which
   the shelf measures itself: shelves are made at run time, out of a page breakpoint's reach),
-  so the title has their room at 360 px. Anything unbounded gets a page of its own (See All), since a
-  `Gtk.GridView` cannot sit under a shelf in the same scrolled window.
+  so the title has their room at 360 px. Anything unbounded gets a page of its own (See All),
+  since a `Gtk.GridView` cannot sit under a shelf in the same scrolled window. A search's shelf
+  of one kind opens a page of its own instead of the grid (`make_page`, pages/search_all.py),
+  a `widgets.search_list.SearchList` that pages on as it is scrolled (`search_pager.py`), as
+  the Search page's filter by kind shows it.
 - The artist page (pages/artist.py) is Apple's artist page over `Engine.artist_page`: the
   hero over the answer's banner when it has one (`widgets.banner.ArtistBanner`, an overlay's
   main child, the name and buttons a measured overlay in white on its scrim), else the round

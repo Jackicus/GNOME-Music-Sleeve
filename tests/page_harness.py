@@ -79,6 +79,7 @@ def classes():
             self.calls = []
             self.answers = {}
             self.suggestion_requests = []
+            self.search_requests = []
             self.start_error = None  # an EngineError a start raises
 
         async def _answer(self, name, *args):
@@ -107,8 +108,11 @@ def classes():
         async def suggest(self, text):
             return await self._answer('suggest', text)
 
-        async def search(self, text):
-            return await self._answer('search', text)
+        async def search(self, text, limit=None, kind=None, offset=0):
+            # Each search's arguments, beside the answer's name in `calls`.
+            self.search_requests.append({'text': text, 'limit': limit, 'kind': kind,
+                                         'offset': offset})
+            return await self._answer('search', text, kind, offset)
 
         async def landing(self, refresh=False):
             return await self._answer('landing')

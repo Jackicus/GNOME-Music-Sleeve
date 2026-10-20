@@ -327,11 +327,15 @@ class ShelfTest(RemoteTestCase):
 
     def test_an_unknown_key_keeps_apples_title(self):
         shelves = remote.remote_shelves([
-            {'key': 'top', 'title': 'Top Results', 'items': [{'id': '1', 'kind': 'song'}]},
+            {'key': 'top', 'title': '', 'items': [{'id': '1', 'kind': 'song'}]},
             {'key': 'new-best', 'title': 'Best New Songs',
              'items': [{'id': '2', 'kind': 'song'}]},
+            # A search's key on a shelf Apple titled (Radio's): Apple's words stay.
+            {'key': 'radio-shows', 'title': 'Shows We Love',
+             'items': [{'id': '3', 'kind': 'category'}]},
         ])
-        self.assertEqual([shelf.title for shelf in shelves], ['<Top Results>', 'Best New Songs'])
+        self.assertEqual([shelf.title for shelf in shelves],
+                         ['<Top Results>', 'Best New Songs', 'Shows We Love'])
 
     def test_an_artist_is_subtitled_by_its_kind(self):
         shelves = remote.remote_shelves([{'key': 'top', 'title': '', 'items': [
@@ -339,6 +343,30 @@ class ShelfTest(RemoteTestCase):
             {'id': '2', 'kind': 'album', 'title': 'Invented Album', 'subtitle': 'Someone'},
         ]}])
         self.assertEqual([item.subtitle for item in shelves[0].items], ['<Artist>', 'Someone'])
+
+    def test_a_curator_is_subtitled_by_its_kind_unless_a_host_is_named(self):
+        items = remote.remote_items([
+            {'id': '1', 'kind': 'category', 'curatorKind': 'show', 'title': 'Show',
+             'subtitle': 'Ada Merrow'},
+            {'id': '2', 'kind': 'category', 'curatorKind': 'show', 'title': 'Hostless'},
+            {'id': '3', 'kind': 'category', 'curatorKind': 'curator', 'title': 'Editors'},
+            {'id': '4', 'kind': 'link', 'curatorKind': 'curator', 'title': 'A label'},
+            {'id': '5', 'kind': 'category', 'title': 'A browse category'},  # not a search's
+            {'kind': 'category', 'title': 'no id'},
+        ])
+        self.assertEqual([item.subtitle for item in items],
+                         ['Ada Merrow', '<Radio Show>', '<Curator>', '<Curator>', ''])
+
+    def test_a_search_shelf_with_more_offers_see_all(self):
+        shelves = remote.remote_shelves([
+            {'key': 'songs', 'title': '', 'next': 20, 'items': [{'id': '1', 'kind': 'song'}]},
+            {'key': 'albums', 'title': '', 'next': None, 'items': [{'id': '2', 'kind': 'album'}]},
+            {'key': 'radio-shows', 'title': '', 'items': [{'id': '3', 'kind': 'category'}]},
+        ])
+        self.assertEqual([(shelf.title, shelf.next, getattr(shelf, 'more', False))
+                          for shelf in shelves],
+                         [('<Songs>', 20, True), ('<Albums>', None, False),
+                          ('<Radio Shows>', None, False)])
 
     def test_shelf_art_is_fetched_for_the_items_that_name_it(self):
         shelves = remote.remote_shelves([{'key': 'albums', 'title': '', 'items': [

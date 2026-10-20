@@ -884,6 +884,20 @@ class BridgeTest(unittest.TestCase):
               'extend': 'editorialArtwork', 'platform': 'web'}]])
 
     @scenario("""
+        mk.apiAnswers['/v1/catalog/gb/search'] = {results: {}};
+        await bridge.search('harbour', 20, 'albums,apple-curators,curators', 0, true);
+        await bridge.search('harbour', 25, 'apple-curators', 50, false);
+        return mk.calls;
+    """)
+    def test_a_search_names_its_types_and_pages_on(self, calls):
+        self.assertEqual(calls, [
+            ['api.music', '/v1/catalog/gb/search',
+             {'term': 'harbour', 'types': 'albums,apple-curators,curators', 'limit': 20,
+              'with': 'topResults'}],
+            ['api.music', '/v1/catalog/gb/search',
+             {'term': 'harbour', 'types': 'apple-curators', 'limit': 25, 'offset': 50}]])
+
+    @scenario("""
         mk.writeStatus = 200;
         mk.writeBody = JSON.stringify({results: {suggested: [{id: '1000000101', type: 'songs'}]}});
         const answer = await bridge.playlistSuggestions('p.pl1');

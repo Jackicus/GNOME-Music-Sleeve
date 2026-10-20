@@ -22,6 +22,7 @@
     <file preprocess="xml-stripblanks">now_playing.ui</file>
     <file preprocess="xml-stripblanks">fullscreen_player.ui</file>
     <file preprocess="xml-stripblanks">search.ui</file>
+    <file preprocess="xml-stripblanks">search_all.ui</file>
     <file preprocess="xml-stripblanks">shelves.ui</file>
     <file preprocess="xml-stripblanks">category_tile.ui</file>
     <file>style.css</file>

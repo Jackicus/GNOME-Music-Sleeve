@@ -2437,7 +2437,8 @@ class SearchTest(EngineFixture):
         await self.up()
         self.page.bridge_answers['search'] = self.fixture('search_results.json')
         answer = await self.engine.search('  paper   parachutes ')
-        self.assertEqual(self.page.bridge_calls[-1], ('search', 'paper parachutes', 20))
+        self.assertEqual(self.page.bridge_calls[-1],
+                         ('search', 'paper parachutes', 20, api.SEARCH_TYPES, 0, True))
         self.assertEqual([shelf['key'] for shelf in answer['shelves']],
                          ['artists', 'songs', 'albums', 'playlists'])
         self.assertEqual(answer['shelves'][2]['key'], 'albums')
@@ -2449,7 +2450,55 @@ class SearchTest(EngineFixture):
         self.assertIsNone(album['thumb'])
         # With a limit (per kind).
         await self.engine.search('paper', limit=5)
-        self.assertEqual(self.page.bridge_calls[-1], ('search', 'paper', 5))
+        self.assertEqual(self.page.bridge_calls[-1],
+                         ('search', 'paper', 5, api.SEARCH_TYPES, 0, True))
+
+    async def test_a_search_of_one_kind_pages_on(self):
+        await self.up()
+        self.page.bridge_answers['search'] = {'results': {'apple-curators': {
+            'next': '/v1/catalog/gb/search?offset=50&term=tide&types=apple-curators',
+            'data': [{'id': '900000001', 'type': 'apple-curators', 'attributes': {
+                'name': 'Invented Tide Show', 'kind': 'Show', 'showHostName': 'Ada Merrow',
+                'url': 'https://music.apple.com/gb/curator/x/900000001'}},
+                {'id': '900000002', 'type': 'apple-curators', 'attributes': {
+                    'name': 'Invented Editors', 'kind': 'Curator'}}]}}}
+        answer = await self.engine.search('tide', limit=25, kind='radio-shows', offset=25)
+        self.assertEqual(self.page.bridge_calls[-1],
+                         ('search', 'tide', 25, 'apple-curators', 25, False))
+        self.assertEqual([(shelf['key'], shelf['next']) for shelf in answer['shelves']],
+                         [('radio-shows', 50)])
+        show = answer['shelves'][0]['items'][0]
+        self.assertEqual((show['kind'], show['curatorKind'], show['subtitle'], show['play']),
+                         ('category', 'show', 'Ada Merrow', {}))
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.search('tide', kind='podcasts')
+        self.assertEqual(raised.exception.code, 'usage')
+
+    async def test_the_demo_searches_its_invented_catalog(self):
+        demo = engine_module.Engine(demo=True)
+        with self.assertRaises(EngineError) as raised:  # no catalog written: no search
+            await demo.search('tide')
+        self.assertEqual(raised.exception.code, 'engine-down')
+        songs = [{'id': f'17240{n:05d}', 'kind': 'song', 'title': f'Tide Song {n}',
+                  'subtitle': 'Invented Artist'} for n in range(30)]
+        path = pathlib.Path(normalize.demo_search_path(str(self.cache)))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'demo': True, 'cached': '2020-01-01T00:00:00Z',
+                                    'shelves': [
+            {'key': 'artists', 'items': [{'id': 'l.art1', 'kind': 'artist',
+                                          'title': 'Invented Artist'}]},
+            {'key': 'songs', 'items': songs}]}), encoding='utf-8')
+        answer = await demo.search('TIDE  song')
+        self.assertEqual([(shelf['key'], len(shelf['items']), shelf['next'])
+                          for shelf in answer['shelves']],
+                         [('top', 1, None), ('songs', 20, 20)])
+        page = await demo.search('tide', limit=25, kind='songs', offset=20)
+        self.assertEqual([(shelf['key'], len(shelf['items']), shelf['next'])
+                          for shelf in page['shelves']], [('songs', 10, None)])
+        self.assertEqual((await demo.search('nothing like it'))['shelves'], [])
+        suggested = await demo.suggest('invented')
+        self.assertEqual((suggested['terms'], [item['id'] for item in suggested['items']]),
+                         ([], ['l.art1', '1724000000']))
 
     async def test_search_errors(self):
         await self.up()

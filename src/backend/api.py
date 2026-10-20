@@ -15,6 +15,8 @@ The standard library only; engine.py and actions.py use it.
     is_deleted(resource)                # a deleted playlist or folder Apple still lists
     first_related_id(answer, 'artists') # an answer's first resource's first artist's id
     page_data(answer)                   # the page's resources: its `data` list's dicts
+    next_offset('/v1/…/search?offset=25&…')   # 25: the offset a `next` link asks for
+    SEARCH_KIND_TYPES['radio-shows']    # 'apple-curators': what a search of one kind asks
     api_error(answer, 'search')         # EngineError('api', 'search: 404 Not Found: …',
                                         # status=404) for Apple's {errors: [...]}, else None
     lyrics_languages('ja_JP.UTF-8')     # {'lyrics': 'ja-JP', 'script': 'ja-Kana'}: what a
@@ -24,6 +26,8 @@ The standard library only; engine.py and actions.py use it.
     playlist_entries(listed)            # a playlist's tracks as a PUT of them sends them back
     reordered_entries(listed, shown, order)   # those in a new order, or EngineError('conflict')
 """
+
+import urllib.parse
 
 from .errors import EngineError
 
@@ -135,6 +139,24 @@ RELATED_PARAMS = {
     'video': {'include': 'albums,artists'},
     'album': {'include': 'artists'},
 }
+
+# A catalog search (the bridge's search()): every kind at once, with Apple's Top Results, or
+# one kind alone, by its shelf's key (normalize.search_results), a page of up to
+# SEARCH_PAGE_LIMIT (the most Apple answers a search with) from an offset. Curators come only
+# when asked for: `apple-curators` are Apple's own (its radio shows, genres and editors),
+# `curators` third parties; a radio show is an Apple curator of kind Show.
+SEARCH_TYPES = 'albums,apple-curators,artists,curators,music-videos,playlists,songs,stations'
+SEARCH_KIND_TYPES = {
+    'artists': 'artists',
+    'albums': 'albums',
+    'songs': 'songs',
+    'playlists': 'playlists',
+    'music-videos': 'music-videos',
+    'stations': 'stations',
+    'radio-shows': 'apple-curators',
+    'curators': 'apple-curators,curators',
+}
+SEARCH_PAGE_LIMIT = 25
 
 # The script a lyric line's pronunciation (Apple's transliteration) is asked in, by the
 # language of the app: music.apple.com's lyrics choose it so (`l[script]`), and Latin for a
@@ -335,6 +357,19 @@ def reordered_entries(listed, shown, order):
         raise EngineError('conflict', f'Apple lists {len(entries)} tracks, not the {len(shown)} '
                                       'the new order was made for, as they were')
     return [entries[position] for position in order]
+
+
+def next_offset(link):
+    """The offset Apple's `next` link asks for (a search section's
+    '/v1/catalog/gb/search?offset=25&term=…'), or None: no link, or one without an offset."""
+    if not isinstance(link, str) or not link:
+        return None
+    values = urllib.parse.parse_qs(urllib.parse.urlsplit(link).query).get('offset') or []
+    try:
+        offset = int(values[0])
+    except (IndexError, ValueError):
+        return None
+    return offset if offset > 0 else None
 
 
 def page_data(answer):

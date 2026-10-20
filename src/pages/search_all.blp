@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-FileCopyrightText: 2026 Jack Tully
+
+using Gtk 4.0;
+using Adw 1;
+
+// A search shelf's See All: its kind's hits as a list that loads more as it is scrolled.
+// The header bar names the page and what was searched for (the list has no title of its
+// own). The page's handlers are connected in search_all.py (weakly: the page is dropped).
+template $AppleMusicSearchAllPage: Adw.NavigationPage {
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: Adw.WindowTitle window_title {};
+    }
+
+    content: $AppleMusicSearchList results_list {
+      styles [
+        "view",
+      ]
+    };
+  };
+}

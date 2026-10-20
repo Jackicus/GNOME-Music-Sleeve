@@ -99,7 +99,8 @@ paths:
   (`app.start-engine`), except while it quits or signs in or out. `bridgeReset`
   is re-emitted on `event`, and the engine reads `status()` again.
 - Under `--demo` the Engine has `demo=True`: start and stop do nothing and every command raises
-  `engine-down`.
+  `engine-down`, but for the kept answers the demo library wrote (marked `demo`) and a search
+  or its suggestions, which `demo_search()` answers from the invented `demo-search.json`.
 - Paths (`backend/config.py`): `Application.__init__` calls `config.set_build_profile()`. The
   release build uses `$XDG_DATA_HOME/apple-music/chrome` and `$XDG_CACHE_HOME/apple-music`; the
   .Devel build `chrome-devel` and `apple-music-devel`. `APPLE_MUSIC_PROFILE` and

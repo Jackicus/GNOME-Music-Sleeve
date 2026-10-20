@@ -1200,21 +1200,26 @@
             return ttml ? parseTtmlLyrics(ttml) : { synced: false, lines: [] };
         },
 
-        // A catalog search (the Search page's Apple Music mode). `limit` is
-        // per type. The catalog is also asked for its own pick of the best
-        // few hits across every type (`with=topResults`, answered as
+        // A catalog search (the Search page's Apple Music mode): `types`
+        // (api.SEARCH_TYPES, every kind the page shows, or the few of one
+        // kind), `limit` per type, from `offset` (a later page: each type's
+        // section of the answer names the next in its `next` link). With
+        // `top`, the catalog is also asked for its own pick of the best few
+        // hits across every type (`with=topResults`, answered as
         // `results.topResults`), which is the "Top Results" shelf at the
         // head of Apple Music's own search page.
-        search: async function (term, limit) {
+        search: async function (term, limit, types, offset, top) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
             const sf = mk.storefrontId || 'us';
-            return await apiCall(`/v1/catalog/${sf}/search`, {
+            const params = {
                 term: term,
-                types: 'albums,artists,music-videos,playlists,songs,stations',
-                limit: limit || 20,
-                with: 'topResults'
-            });
+                types: types || 'albums,artists,music-videos,playlists,songs,stations',
+                limit: limit || 20
+            };
+            if (offset) params.offset = offset;
+            if (top || !types) params.with = 'topResults';
+            return await apiCall(`/v1/catalog/${sf}/search`, params);
         },
 
         // Apple's own autocomplete for a term half typed: the few searches
