@@ -63,6 +63,15 @@ changes, change it here, with the date. The plan they came from is in
   refuse, and the user guide's Known limitations says so. Drags are the app's own: one type,
   `library.ItemRefs`, and drop targets decide from the drag in progress
   (`widgets.dnd.current()`), so drags from other applications are not taken.
+- **Drags carry links outward** (2026-10-20). Every drag source also offers its objects'
+  music.apple.com pages (`actions.drag_links()`: what Copy Link copies, one a line, and a
+  library album's catalog page by its catalog id, since a drag cannot wait for the engine)
+  as `text/uri-list` and `text/plain`, after the ItemRefs in one `Gdk.ContentProvider`
+  union (`dnd.provider()`), so a drop on a browser, an editor or a chat gives the link, as
+  Apple's own clients do. The app's targets ask for the ItemRefs type alone and are
+  unchanged; a text field of the app's (Search's entry) takes the link as any other text
+  drop. A drag of nothing anyone else can open (an upload, a playlist of the user's, a
+  folder) offers the ItemRefs alone, never the owner's library route.
 - **A playlist's songs reordered, at once and safely** (2026-10-20). On a playlist of the
   user's (`Item.editable`: not Favourite Songs, nor one of Apple's) a song moves by dragging
   it within the list (an insertion line, the list scrolling near its edges), by Move Up and

@@ -24,7 +24,8 @@ from applemusic.actions import (ItemActions, build_menu, can_play, describe,
                                 playlist_song, playlist_track, queue_message, queue_target,
                                 queue_targets, rating_actions, rating_target, removal_target,
                                 removal_words, RATING_ACTIONS,
-                                credits_target, share_url, station_target, web_url)
+                                credits_target, drag_link, drag_links, share_url,
+                                station_target, web_url)
 from applemusic.backend import api
 from applemusic import actions as actions_module
 from applemusic.backend.errors import EngineError
@@ -757,6 +758,32 @@ class MenuTest(unittest.TestCase):
         self.assertFalse(is_shareable(None))
         self.assertFalse(is_shareable('https://music.apple.com/library/albums/l.alb1'))
         self.assertTrue(is_shareable('https://music.apple.com/gb/album/x/1000000010'))
+
+    def test_drag_links(self):
+        # What a drag offers other applications: the addresses anyone can open.
+        self.assertEqual(drag_link(CATALOG_ALBUM), CATALOG_ALBUM.url)
+        self.assertEqual(drag_link(STATION), STATION.url)
+        self.assertEqual(drag_link(LIBRARY_TRACK, 'gb'),
+                         'https://music.apple.com/gb/song/1000000001')
+        self.assertEqual(drag_link(VIDEO_TRACK, 'gb'),
+                         'https://music.apple.com/gb/music-video/1000000011')
+        # A library album by its catalog id, which Copy Link would ask the engine for.
+        catalogued = Item({'id': 'l.alb2', 'kind': 'album', 'title': 'Tidewater',
+                           'catalogId': '1000000020'})
+        self.assertEqual(drag_link(catalogued, 'gb'),
+                         'https://music.apple.com/gb/album/1000000020')
+        self.assertEqual(drag_link(catalogued), 'https://music.apple.com/us/album/1000000020')
+        for obj in (LIBRARY_ALBUM, MADE_UP_ALBUM, PLAYLIST, UPLOAD_TRACK, LIBRARY_ARTIST,
+                    FOLDER, None):
+            with self.subTest(obj=obj):
+                self.assertIsNone(drag_link(obj))
+        # Several: in order, each once, those without an address left out.
+        self.assertEqual(drag_links([LIBRARY_TRACK, UPLOAD_TRACK, CATALOG_TRACK, LIBRARY_TRACK],
+                                    'gb'),
+                         ['https://music.apple.com/gb/song/1000000001',
+                          'https://music.apple.com/gb/song/1000000009'])
+        self.assertEqual(drag_links([UPLOAD_TRACK, PLAYLIST]), [])
+        self.assertEqual(drag_links([]), [])
 
     def test_track_ref(self):
         self.assertEqual(track_ref(LIBRARY_TRACK), Ref('song', 'i.song1', 'Harbour Lights', 2))

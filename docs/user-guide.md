@@ -308,6 +308,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   filled in, and once Apple lists the new playlist, its page opens. The menus do the same
   from the keyboard: **Play Later**, **Play Next**, and **Add to Playlist › New
   Playlist…**.
+- Drag a song, a music video, an album, a playlist or a station out of the window into
+  another app to give it the item's music.apple.com link: dropped in a browser it opens the page,
+  in a text editor or a chat it pastes the link, as **Copy Link** would copy it. A
+  selection's songs give one link a line. Something with no page anyone else can open (a
+  song you uploaded, a playlist of your own, a folder) gives no link.
 - To act on several songs at once, select them: on Songs, an album's page or a playlist's
   page (Favourite Songs too), click the **Select** button in the header bar, or
   <kbd>Ctrl</kbd>+click or <kbd>Shift</kbd>+click a song. Each song gets a check box: a

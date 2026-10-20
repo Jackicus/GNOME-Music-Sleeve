@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""widgets/dnd.py: the auto-scroll's speed and a reorder's insertion point as pure functions,
-and, with GTK, the marks a DropFeedback puts on widgets, its auto-scroll, and a drag
-source's prepare."""
+"""widgets/dnd.py: the auto-scroll's speed, a reorder's insertion point and a drag's links as
+pure functions, and, with GTK, the marks a DropFeedback puts on widgets, its auto-scroll, a
+drag source's prepare and the formats and values its content offers."""
 
 import unittest
 
@@ -16,8 +16,20 @@ gi.require_version('Graphene', '1.0')
 from tests import ROOT  # noqa: E402,F401  registers src/ as applemusic
 from tests.gtk import pump, requires_gtk, wait_for  # noqa: E402
 
-from applemusic.library import ItemRefs, Ref  # noqa: E402
+from applemusic.library import Item, ItemRefs, Ref, Track  # noqa: E402
 from applemusic.widgets import dnd  # noqa: E402
+
+# Invented: a catalog album with its own page, two songs with catalog ids, an upload.
+ALBUM = Item({'id': '1000000002', 'kind': 'album', 'title': 'Harbour Suite',
+              'url': 'https://music.apple.com/gb/album/harbour-suite/1000000002'})
+SONG = Track({'id': 'i.song1', 'catalogId': '1000000001', 'title': 'Harbour Lights',
+              'type': 'library-songs', 'index': 0}, play={'kind': 'album', 'id': 'l.alb1'})
+OTHER_SONG = Track({'id': '1000000009', 'catalogId': '1000000009', 'title': 'Shoreline',
+                    'index': 1}, play={'kind': 'album', 'id': 'l.alb1'})
+UPLOAD = Track({'id': 'i.song2', 'title': 'Demo Take', 'index': 2},
+               play={'kind': 'album', 'id': 'l.alb1'})
+SONG_URL = 'https://music.apple.com/gb/song/1000000001'
+OTHER_URL = 'https://music.apple.com/gb/song/1000000009'
 
 
 class PureTest(unittest.TestCase):
@@ -43,6 +55,12 @@ class PureTest(unittest.TestCase):
         self.assertEqual(point(tops, heights, 500), (2, True))  # below the last
         self.assertEqual(point(tops, heights, -5), (0, False))  # above the first
         self.assertEqual(point([], [], 10), (-1, False))
+
+    def test_links_as_text(self):
+        self.assertEqual(dnd.uri_list([SONG_URL, OTHER_URL]), f'{SONG_URL}\r\n{OTHER_URL}\r\n')
+        self.assertEqual(dnd.plain_text([SONG_URL, OTHER_URL]), f'{SONG_URL}\n{OTHER_URL}')
+        self.assertEqual(dnd.plain_text([SONG_URL]), SONG_URL)
+        self.assertEqual(dnd.uri_list([]), '')
 
     def test_no_drag_in_progress(self):
         self.assertIsNone(dnd.current())
@@ -172,6 +190,64 @@ class FeedbackTest(unittest.TestCase):
         self.assertIsNone(source.emit('prepare', 20.0, 3.0))
         self.assertEqual(asked, [(2.0, 3.0), (20.0, 3.0)])
         self.assertIsNone(dnd.current())  # only a drag that began sets it
+
+
+
+@requires_gtk
+class ContentTest(unittest.TestCase):
+    """What a drag offers: the ItemRefs first, for the app's own targets, and the links."""
+
+    def read(self, content, mime):
+        from gi.repository import Gio
+
+        out = Gio.MemoryOutputStream.new_resizable()
+        done = []
+        content.write_mime_type_async(mime, out, 0, None,
+                                      lambda source, result: done.append(
+                                          source.write_mime_type_finish(result)))
+        self.assertTrue(wait_for(lambda: done))
+        out.close()
+        return bytes(out.steal_as_bytes().get_data()).decode()
+
+    def test_songs_offer_their_links_one_a_line(self):
+        refs = ItemRefs.for_objects([SONG, UPLOAD, OTHER_SONG])
+        content = dnd.provider(refs, 'gb')
+        formats = content.ref_formats()
+        self.assertEqual(formats.get_gtypes()[0], ItemRefs.__gtype__)
+        for mime in (dnd.URI_LIST, *dnd.PLAIN_TEXT):
+            self.assertTrue(formats.contain_mime_type(mime), mime)
+        self.assertEqual(self.read(content, dnd.URI_LIST), f'{SONG_URL}\r\n{OTHER_URL}\r\n')
+        for mime in dnd.PLAIN_TEXT:
+            self.assertEqual(self.read(content, mime), f'{SONG_URL}\n{OTHER_URL}')
+
+    def test_the_apps_own_targets_still_take_the_item_refs(self):
+        from gi.repository import Gdk
+
+        content = dnd.provider(ItemRefs.for_objects([ALBUM]))
+        wanted = Gdk.ContentFormats.new_for_gtype(ItemRefs.__gtype__)
+        self.assertEqual(wanted.match_gtype(content.ref_formats()), ItemRefs.__gtype__)
+        self.assertEqual(self.read(content, 'text/plain'), ALBUM.url)
+
+    def test_nothing_public_offers_the_item_refs_alone(self):
+        for refs in (ItemRefs.for_objects([UPLOAD]),
+                     ItemRefs([Ref('playlist', 'p.1', 'One')]),
+                     ItemRefs.for_objects([Item({'id': 'p.pl1', 'kind': 'playlist',
+                                                 'title': 'Road Trip'})])):
+            formats = dnd.provider(refs).ref_formats()
+            self.assertEqual(list(formats.get_gtypes()), [ItemRefs.__gtype__])
+            self.assertEqual(list(formats.get_mime_types()), [])
+
+    def test_a_source_offers_the_links_too(self):
+        from gi.repository import Gtk
+
+        box = Gtk.Box()
+        refs = ItemRefs.for_objects([SONG])
+        source = dnd.attach_source(box, lambda x, y: (refs, box))
+        content = source.emit('prepare', 2.0, 3.0)
+        self.assertTrue(content.ref_formats().contain_mime_type(dnd.URI_LIST))
+        # No application here, so no storefront: the address is made in 'us'.
+        self.assertEqual(self.read(content, 'text/plain'),
+                         'https://music.apple.com/us/song/1000000001')
 
 
 if __name__ == '__main__':

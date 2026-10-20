@@ -5,7 +5,9 @@
 drop target shows while a drag is over it. Every drag source and drop target of the app
 goes through here, so they look and behave alike.
 
-    provider(refs)            # a Gdk.ContentProvider of a library.ItemRefs
+    provider(refs, storefront=None)   # a Gdk.ContentProvider of a library.ItemRefs, and
+                                      # its music.apple.com links for other applications
+    uri_list(urls); plain_text(urls)  # the links as text/uri-list and as text/plain
     current()                 # the ItemRefs of the in-app drag in progress, or None
     offered()                 # the Gdk.DragAction its source offers, or 0
     attach_source(widget, find, actions=Gdk.DragAction.COPY,
@@ -33,6 +35,13 @@ current(), the ItemRefs its source made, and not from the drop's value, which GT
 asynchronously (and AdwSidebar's `drop-enter` is told nothing but the item hovered). A drag
 from another application carries no ItemRefs, so no target here accepts it.
 
+Outward, a drag also offers its objects' links (actions.drag_links(): the music.apple.com
+pages anyone can open, one a line) as `text/uri-list` and `text/plain`, so a drop on a
+browser, a text editor or a chat pastes them. The ItemRefs comes first in the union, and
+every target here asks for the ItemRefs type alone, so in the app nothing changes. A drag of
+nothing with a public page (an upload, a playlist of the user's, a folder) offers the
+ItemRefs alone.
+
 The look is style.css's: `.drop-highlight` (an inset accent ring and a tint, as libadwaita
 marks a drop target, a little stronger) on what takes the drop, `.drop-before` and
 `.drop-after` (a 2 px accent line inside the row's top or bottom edge) for where a reorder
@@ -42,8 +51,9 @@ tick callback holds it weakly, so a page that can be dropped may own one; clear(
 the tick.
 """
 
-from gi.repository import Gdk, Graphene, Gtk
+from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
+from ..actions import drag_links
 from .util import weak_method
 
 # How near a scrolled view's top or bottom edge a drag starts scrolling it, in pixels, and
@@ -56,13 +66,44 @@ BEFORE = 'drop-before'
 AFTER = 'drop-after'
 MARKS = (HIGHLIGHT, BEFORE, AFTER)
 
+# The formats a drag's links are offered in, to other applications.
+URI_LIST = 'text/uri-list'
+PLAIN_TEXT = ('text/plain;charset=utf-8', 'text/plain')
+
 _current = None  # the ItemRefs of the drag that started in the app, while it lasts
 _offered = 0  # the actions its source offers
 
 
-def provider(refs):
-    """The Gdk.ContentProvider a drag of `refs` (a library.ItemRefs) offers."""
-    return Gdk.ContentProvider.new_for_value(refs)
+def provider(refs, storefront=None):
+    """The Gdk.ContentProvider a drag of `refs` (a library.ItemRefs) offers: the ItemRefs,
+    and, when its objects have pages anyone can open (actions.drag_links(), in `storefront`),
+    those addresses as text/uri-list and text/plain for other applications."""
+    own = Gdk.ContentProvider.new_for_value(refs)
+    urls = drag_links(refs.objects, storefront)
+    if not urls:
+        return own
+    text = GLib.Bytes.new(plain_text(urls).encode())
+    return Gdk.ContentProvider.new_union(
+        [own, Gdk.ContentProvider.new_for_bytes(URI_LIST, GLib.Bytes.new(uri_list(urls).encode()))]
+        + [Gdk.ContentProvider.new_for_bytes(mime, text) for mime in PLAIN_TEXT])
+
+
+def uri_list(urls):
+    """urls as text/uri-list says (RFC 2483): one a line, each line ended by CRLF."""
+    return ''.join(f'{url}\r\n' for url in urls)
+
+
+def plain_text(urls):
+    """urls as plain text: one a line, no line ending after the last (pasted, a single link
+    is just the link)."""
+    return '\n'.join(urls)
+
+
+def _storefront():
+    """The library's storefront, which a link without its own address is made in; None
+    without an application (a test), and share_url() takes 'us'."""
+    library = getattr(Gio.Application.get_default(), 'library', None)
+    return getattr(library, 'storefront', None) or None
 
 
 def current():
@@ -109,15 +150,15 @@ def modifiers(widget):
 
 def attach_source(widget, find, actions=Gdk.DragAction.COPY,
                   phase=Gtk.PropagationPhase.BUBBLE):
-    """Make widget a drag source of library.ItemRefs. When a drag starts, find(x, y) (the
-    pointer in widget's coordinates) answers (refs, icon_widget), or None when nothing there
-    can be dragged; the icon is icon_widget as it looks, held at the pointer. It may answer
-    (refs, icon_widget, label) instead: the icon is then a pill of that text ("3 Songs", a
-    selection's drag: `.drag-count`). Not from a
-    touchscreen, where a drag scrolls (a long press opens the menu instead). While the drag
-    lasts, current() is its refs. `phase` CAPTURE lets the source see the press before the
-    widget's children's gestures (a row's click), which it cancels once the drag starts. The
-    Gtk.DragSource.
+    """Make widget a drag source of library.ItemRefs, and of their links for other
+    applications (provider(), in the library's storefront). When a drag starts, find(x, y)
+    (the pointer in widget's coordinates) answers (refs, icon_widget), or None when nothing
+    there can be dragged; the icon is icon_widget as it looks, held at the pointer. It may
+    answer (refs, icon_widget, label) instead: the icon is then a pill of that text ("3
+    Songs", a selection's drag: `.drag-count`). Not from a touchscreen, where a drag scrolls
+    (a long press opens the menu instead). While the drag lasts, current() is its refs.
+    `phase` CAPTURE lets the source see the press before the widget's children's gestures (a
+    row's click), which it cancels once the drag starts. The Gtk.DragSource.
 
     The source holds `find`: for a widget that can be dropped, pass a function that does not
     hold the widget (weak_method(), or one that finds it through a GObject weak reference).
@@ -150,7 +191,7 @@ def attach_source(widget, find, actions=Gdk.DragAction.COPY,
                 hot_x, hot_y = int(local.x), int(local.y)
             source.set_icon(Gtk.WidgetPaintable.new(icon_widget), hot_x, hot_y)
         prepared[0] = refs
-        return provider(refs)
+        return provider(refs, _storefront())
 
     def on_begin(source, drag):
         _set_current(prepared[0], source.get_actions())
