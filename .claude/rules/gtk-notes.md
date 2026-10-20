@@ -49,7 +49,9 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   they move, never with a range past the items) passes its model's items through untouched.
   Two slices of one store in a `Gtk.FlattenListModel` give sections too, but moving their
   bound moves items between the parts: their rows are built again and the list's focus item
-  can land on the last row (`widgets.queue.QueueSections`, docs/notes.md).
+  can land on the last row (`widgets.queue.QueueSections`, docs/notes.md). The list binds a
+  header again only when its section's start or end moves, not on `sections_changed()` alone:
+  a header that depends on anything else is titled again by its view (`QueueView._headers`).
 
 ## Layout and widgets
 

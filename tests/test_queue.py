@@ -404,6 +404,54 @@ class QueueViewTest(unittest.TestCase):
         self.assertEqual(self.view.model.get_section(1), (1, 4))
         self.assertTrue(wait_for(lambda: self.rows()[-1:] == ['Later']), self.rows())
 
+    def test_a_queue_of_one_has_no_header(self):
+        """A live station's queue (one entry) on an empty Up Next: the Player splices it in
+        before it sets the index, so the header is bound while nothing plays; it is named
+        again once the entry plays (#420)."""
+        self.player.apply_queue(None)
+        self.assertEqual(self.player.queue_index, -1)
+        station = dict(TRACK, id='ra.invented', catalogId='ra.invented', title='Station',
+                       isLive=True)
+        self.player.apply_queue({'index': 0, 'items': [station], 'editable': False})
+        self.assertEqual(self.player.queue_index, 0)
+        self.assertEqual(self.view.model.get_section(0), (0, 1))
+        self.assertTrue(wait_for(lambda: self.rows() == ['Station']), self.rows())
+        self.assertTrue(wait_for(lambda: self.headers() == ['']), self.headers())
+        pump()
+        self.assertEqual(self.headers(), [''])
+        # The same entry, playing no more: the queue from its top is Playing Next.
+        self.player._set_queue_index(-1)
+        self.assertTrue(wait_for(lambda: self.headers() == ['Playing Next']), self.headers())
+        self.player._set_queue_index(0)
+        self.assertTrue(wait_for(lambda: self.headers() == ['']), self.headers())
+
+    def test_the_last_entry_playing_has_no_header(self):
+        self.player.apply_queue({'index': 4, 'items': entries(5)})
+        self.assertTrue(wait_for(lambda: self.rows() == ['Entry 4']), self.rows())
+        self.assertTrue(wait_for(lambda: self.headers() == ['']), self.headers())
+        # From a queue that was empty, too.
+        self.player.apply_queue(None)
+        self.player.apply_queue({'index': 1, 'items': entries(2)})
+        self.assertTrue(wait_for(lambda: self.rows() == ['Entry 1']), self.rows())
+        self.assertTrue(wait_for(lambda: self.headers() == ['']), self.headers())
+
+    def test_only_autoplay_after_the_entry_playing_has_no_playing_next(self):
+        self.player.apply_queue(None)
+        self.player.apply_queue({'index': 0, 'items': entries(3, autoplay=(1, 2))})
+        self.assertEqual(self.view.model.get_section(1), (1, 3))
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 3), self.rows())
+        self.assertTrue(wait_for(lambda: self.headers() == ['', 'Autoplay']), self.headers())
+        # The next entry plays (autoplay's own): Autoplay still, with no Playing Next.
+        self.player.apply_queue({'index': 1, 'items': entries(3, autoplay=(1, 2))})
+        self.assertTrue(wait_for(lambda: self.rows() == ['Entry 1', 'Entry 2']), self.rows())
+        self.assertTrue(wait_for(lambda: self.headers() == ['', 'Autoplay']), self.headers())
+
+    def test_history_has_no_headers(self):
+        self.view.history_button.set_active(True)
+        self.assertIsNone(self.view.history_view.get_header_factory())
+        self.assertTrue(wait_for(lambda: self.history_rows() == ['Entry 1', 'Entry 0']),
+                        self.history_rows())
+
     def headers(self):
         """The texts of the section headers shown, top to bottom ('' for a hidden one)."""
         from gi.repository import Gtk

@@ -12,8 +12,11 @@ GtkSectionModel): the entry playing; what the user queued after it, under a "Pla
 header; and, from the first entry autoplay added (NowPlaying.autoplay), the rest of the queue
 under an "Autoplay" header (the header-factory titles them); the bounds (section_bounds())
 are found again with every change of the queue or of the entry playing, the rows left as
-they are. Each row shows the entry's cover (EntryArt finds it), its title (with the explicit
-badge), its artist and its duration; the entry playing has a play symbol over its cover and
+they are, and the headers bound are titled again then: whether the first section is the
+entry playing's changes with the entry playing alone (a queue of one, spliced in before its
+index is set), and the list binds a header again only when its section moves. Each row
+shows the entry's cover (EntryArt finds it), its title (with the explicit badge), its
+artist and its duration; the entry playing has a play symbol over its cover and
 a bold title. Activating a row (a double click, or Enter) plays that entry
 (player.queue_jump). A right click, a long press or the Menu key opens a row's menu
 (widgets/context_menu.py: the entry's, without Play, with Remove from Up Next on an entry after
@@ -445,6 +448,7 @@ class QueueView(Gtk.Stack):
         self._app = None
         self._active = False
         self._rows = set()  # the QueueRows bound, Up Next's and History's
+        self._headers = set()  # the Gtk.ListHeaders bound
         self._slice = None  # the queue from the entry playing on
         self.model = None  # the slice in its sections (QueueSections)
         self.history_model = HistoryModel()
@@ -497,6 +501,7 @@ class QueueView(Gtk.Stack):
         headers = Gtk.SignalListItemFactory()
         headers.connect('setup', self._on_header_setup)
         headers.connect('bind', self._on_header_bind)
+        headers.connect('unbind', self._on_header_unbind)
         # Tab leaves the list after the entry with the focus; the arrows move between them.
         self.list_view = Gtk.ListView(factory=factory, header_factory=headers,
                                       model=Gtk.NoSelection(),
@@ -602,6 +607,8 @@ class QueueView(Gtk.Stack):
                                               self._player.queue_index)
         _set_slice(self._slice, offset, slice_size(offset))
         self.model.set_bounds(first - offset, split - offset)
+        for header in self._headers:
+            self._title_header(header)
 
     def _update_page(self):
         self.set_visible_child_name('list' if self._player.queue.get_n_items() else 'empty')
@@ -747,6 +754,13 @@ class QueueView(Gtk.Stack):
         header.set_child(label)
 
     def _on_header_bind(self, _factory, header):
+        self._headers.add(header)
+        self._title_header(header)
+
+    def _on_header_unbind(self, _factory, header):
+        self._headers.discard(header)
+
+    def _title_header(self, header):
         """Playing Next's and Autoplay's sections are named by their headers; the entry
         playing's shows nothing."""
         entry = header.get_item()
