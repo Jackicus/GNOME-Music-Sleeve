@@ -697,10 +697,13 @@ class Application(Adw.Application):
 
     def _on_engine_lost(self, _engine, reason):
         """The engine went down on its own (Chrome crashed or was killed, the page crashed or
-        stopped answering): a toast offering to start it again. Not while quitting or while
-        the account changes, whose restarts are theirs."""
+        stopped answering): the Player keeps what played, paused (Player.engine_lost), and
+        a toast offers to start it again. Not while quitting or while the account changes,
+        whose restarts are theirs: the engine's going down resets the Player then."""
         if self._quitting is not None or self.signing_in or self.signing_out:
             return
+        if self.player is not None:
+            self.player.engine_lost()
         self.toast(_('The playback engine stopped'), _('Restart'), 'app.start-engine')
 
     def _on_rated(self, _engine, kind, item_id, value):

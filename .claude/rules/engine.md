@@ -97,7 +97,8 @@ paths:
   `am:bridgeReset`, or gives the connection up. `lost(reason)` (`client.lost_reason`) is
   emitted before the engine goes down, only when nobody asked: never for stop, restart,
   sign-in's restarts, quitting or `kill()`. The app answers it with a toast offering Restart
-  (`app.start-engine`), except while it quits or signs in or out. `bridgeReset`
+  (`app.start-engine`) and `Player.engine_lost()` (the bar keeps the item, paused:
+  playback.md), except while it quits or signs in or out. `bridgeReset`
   is re-emitted on `event`, and the engine reads `status()` again.
 - Under `--demo` the Engine has `demo=True`: start and stop do nothing and every command raises
   `engine-down`, but for the kept answers the demo library wrote (marked `demo`), a search

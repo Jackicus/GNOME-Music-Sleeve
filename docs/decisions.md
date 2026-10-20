@@ -627,6 +627,18 @@ changes, change it here, with the date. The plan they came from is in
   autoplay's songs restored by id came back as songs the user queued, with ten more of
   autoplay's after them. MusicKit's autoplay (when on) adds its own again after the queue
   once it plays.
+  Since #379 the engine lost mid-song (Chrome crashed or killed, the page crashed, closed or
+  silent: the engine's `lost`, which no stop the app asks for emits) falls back to the same
+  state rather than an empty bar: `Player.engine_lost()`, called by the app with its
+  Restart toast, keeps the item paused where it was, the user's queue, its source (none
+  under a play request, or once the queue was edited away from it), repeat and shuffle as
+  they were (a pause changes no mode; Play turns MusicKit's shuffle on after the queue), a
+  live station stopped without a position, and Play starts the engine and resumes it
+  through the restore path, its retries and waits included. Up Next's edits still out to
+  MusicKit (and a Clear's Undo) end with the page that would have answered them. A stop
+  the app asks for (quit, sign-in's restarts, sign-out, the engine's Stop in Preferences)
+  has no `lost`, and resets the bar as before: the user ended it. A page that reloads (the
+  bridge's `bridgeReset`) still resets: the engine is not lost then.
 - **A list of songs MusicKit cannot all find plays without the missing ones** (#508). Every
   play of song ids (Songs' Play and Shuffle, a library artist's Play, a shelf of songs, a
   selection's Play Next and Play Later, the session restored) goes through the Player's
