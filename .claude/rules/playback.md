@@ -46,9 +46,10 @@ paths:
   `app.player_command(coro, on_error=None)`, which toasts an EngineError. `play()` starts a
   `down` engine when signed in (`ensure_engine()`) and raises `not-signed-in` otherwise; see
   engine.md for the `starting` state. Play requests go out one at a time, the newest winning
-  (a request superseded while it waits is dropped), and `pending` is True while one is with
-  the engine (the play buttons show a spinner, and `resting` holds). `play(shuffle=None)`
-  keeps the mode (a track row); a Play button passes False, a Shuffle button True.
+  (a request superseded while it waits, for its turn or the engine's start, is dropped), and
+  `pending` is True while one is with the engine (the play buttons show a spinner, and
+  `resting` holds). `play(shuffle=None)` keeps the mode (a track row); a Play button passes
+  False, a Shuffle button True.
   `previous()` restarts the item after `PREVIOUS_RESTART` seconds. A `mediaPlaybackError` is
   emitted as `error(sentence)`, the sentence `playback_error_text(code)` gives MusicKit's
   code; the app toasts it as it is.
@@ -72,13 +73,18 @@ paths:
   a good file. At launch, after the library's load, `Player.restore()` shows it as the
   Player's own state with `restored` True: MusicKit holding nothing (its empty refresh()
   answer, null items, states, times, bridgeReset, the engine going down) changes nothing
-  meanwhile; MusicKit holding an item or a queue of its own ends it. Seek, next, previous,
-  stop, shuffle, repeat (and the volume with the engine down) are local and paused; Play and
-  an Up Next row hand it to MusicKit as one play request (`restore_session()`: `source`, the
+  meanwhile (a bridgeReset still sets autoplay, and autoplayEnabledDidChange is taken);
+  MusicKit holding an item or a queue of its own ends it. Seek, next, previous, stop,
+  shuffle, repeat (and the volume with the engine down) are local and paused; Play and an Up
+  Next row hand it to MusicKit as one play request (`restore_session()`: `source`, the
   album, playlist or station the queue still is, else its songs' ids; `shuffle=False`, the
   position as `start_time`); play_next/play_later queue it paused first (`paused`). The
-  request takes the session (`_take_restored`, which makes a refresh() answer under way
-  stale) and gives it back on a failure, unless MusicKit refused it (`api` with a code:
+  request is what the session shows as it goes out (`_restore_request`, after the engine's
+  start), so a step or an Up Next row taken while it waits is what plays; another
+  restore_session() meanwhile sends nothing (a Play makes a paused one play) and returns
+  once it is answered (`_restoring`), so play_next's item goes after it. The request takes
+  the session (`_take_restored`, which makes a refresh() answer under way stale) and gives
+  it back on a failure, unless MusicKit refused it (`api` with a code:
   dropped, `session-dropped` deletes the file, `error` toasts why). A refresh() answer while
   a play request is pending sets only the modes. Discord publishes nothing while restored.
   tests/test_session.py and test_player.py's RestoreTest; `scripts/screenshot.py --demo
