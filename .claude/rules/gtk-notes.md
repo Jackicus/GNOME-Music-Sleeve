@@ -77,6 +77,12 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   a layout: a `Gtk.ScrolledWindow` there whose lists have no rows yet (they come at the
   layout) takes the focus itself, where no key reaches a row (`ShelvesPage._focus_shelves`
   moves it on a frame later).
+- Tab goes through a container's children by where they are laid out, not by their order:
+  `Gtk.Box.reorder_child_after()` moves a widget's Tab place with it (the compact player
+  bar). In a horizontal `Gtk.Box` it is left to right in a right-to-left locale too (GTK
+  sorts a box layout's children by x, whatever the direction); only a container with
+  another layout sorts right to left there. A widget's text direction NONE is the default
+  direction (`Gtk.Widget.set_default_direction()`, as a locale sets it), not its parent's.
 - A `Gtk.Stack` will not switch to a child that is not visible. `Gtk.Inscription`'s CSS name is
   `label`.
 - Several `Adw.Breakpoint`s: only the last matching one applies, so the window's narrower one

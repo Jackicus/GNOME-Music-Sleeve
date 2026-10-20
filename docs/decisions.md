@@ -181,6 +181,15 @@ changes, change it here, with the date. The plan they came from is in
   text field, which an accelerator would take from the Search entry. Below 640sp the bar
   drops them first (the title keeps its room), and below 600sp the whole right-hand box;
   the sheet the bar opens has the tabs.
+- **A phone's bar below 600sp** (2026-10-20, #369). The compact bar is laid out as Apple
+  Music's mini player is on a phone: the artwork and the titles first,
+  then Play (Stop for live radio) and Next at the end, with no Previous and no seek slider
+  (a live station keeps its LIVE badge under the title). At 360 px three transport buttons
+  before the artwork and a slider squeezed under the title left a dozen letters of it; the
+  Now Playing sheet the bar opens has Previous, the slider and everything else. The wide
+  bar is unchanged. The transport box is moved, not duplicated, so the buttons keep their
+  focus, actions and names; right to left the row mirrors as GTK lays it out, and Tab
+  follows GTK's order for a horizontal box (gtk-notes.md).
 - **Music videos play as audio** (2026-09-28). The engine is headless, so a video tile plays
   the video's sound, as the context menu's Play does, rather than refusing or opening a
   browser. Easy to change to a toast with Open in Browser.

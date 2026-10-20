@@ -140,7 +140,9 @@ paths:
   and heart. Its Lyrics and Up Next toggles are `win.show-lyrics` and `win.show-queue`,
   `widgets.now_playing.TabActions` over the sheet's tab seam (`shown-tab`, `show_tab()`):
   stateful (pressed while the tab is in sight), enabled by `can_show_tab()`; the bar hides
-  them below 640sp (`narrow`) and its whole right-hand box below 600sp (`compact`). The bar
+  them below 640sp (`narrow`) and its whole right-hand box below 600sp (`compact`), where
+  it is a phone's bar: `transport_box` moved after `item_box` (the item, then Play and
+  Next), no Previous, and the seek row only for a live station's LIVE badge. The bar
   is a drop target (`Gtk.DropTarget` of `library.ItemRefs`, deciding from `dnd.current()`):
   what `actions.queue_targets()` can queue all of goes through `item_actions.queue_drop()`,
   Play Later, or Play Next when `dnd.shift_held()`; the sheet is no target (open, it covers

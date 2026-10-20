@@ -10,10 +10,11 @@ using Adw 1;
 // slider under it in the middle; the heart, shuffle, repeat, the volume, Lyrics and Up Next
 // on the right. With nothing playing (the bar on its way out) the seek slider and the heart
 // are hidden and "Not Playing" centres beside the cover. The window's breakpoints set
-// `narrow` below 640sp, which hides Lyrics and Up Next, and `compact` below 600sp, which
-// hides the whole right-hand box (the Now Playing sheet the bar opens has shuffle, repeat
-// and the two tabs) and the times around the slider, and shrinks the cover, so the title
-// has the room at 360 px.
+// `narrow` below 640sp, which hides Lyrics and Up Next, and `compact` below 600sp: a phone's
+// bar, the artwork and titles first and Play (Stop for live radio) and Next at the end
+// (player_bar.py moves transport_box after item_box), with no Previous, no seek slider (a
+// live station's LIVE badge stays) and no right-hand box. The Now Playing sheet the bar
+// opens has all of them.
 template $AppleMusicPlayerBar: Adw.Bin {
   child: Box {
     spacing: 12;
@@ -26,11 +27,12 @@ template $AppleMusicPlayerBar: Adw.Bin {
       "player-bar",
     ]
 
-    Box {
+    // First, or after item_box in `compact` (player_bar.py).
+    Box transport_box {
       spacing: 6;
       valign: center;
 
-      Button {
+      Button previous_button {
         icon-name: "media-skip-backward-symbolic";
         tooltip-text: _("Previous");
         action-name: "app.previous";
@@ -55,7 +57,7 @@ template $AppleMusicPlayerBar: Adw.Bin {
         ]
       }
 
-      Button {
+      Button next_button {
         icon-name: "media-skip-forward-symbolic";
         tooltip-text: _("Next");
         action-name: "app.next";
@@ -68,7 +70,7 @@ template $AppleMusicPlayerBar: Adw.Bin {
       }
     }
 
-    Box {
+    Box item_box {
       spacing: 12;
       hexpand: true;
 
@@ -130,6 +132,7 @@ template $AppleMusicPlayerBar: Adw.Bin {
           ]
         }
 
+        // Shown only with an item, and in `compact` only for a live station's LIVE badge.
         Box seek_box {
           spacing: 6;
           sensitive: false;

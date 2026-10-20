@@ -948,6 +948,22 @@ async def walkthrough(window):
     await key(window, '<primary>3')
     check('Ctrl+3 puts the focus on the play button',
           window.get_focus() is window.player_bar.play_button)
+    bar = window.player_bar
+    if bar.props.compact:  # a phone's bar: the item, then Play and Next, no Previous
+        await key(window, 'Tab')
+        after = window.get_focus()
+        await key(window, '<shift>Tab')
+        check('the compact bar: Tab from Play goes to Next, Shift+Tab back; no Previous',
+              after is bar.next_button and window.get_focus() is bar.play_button
+              and not bar.previous_button.get_mapped(), (describe(after),
+                                                         describe(window.get_focus())))
+    else:
+        await key(window, '<shift>Tab')
+        before = window.get_focus()
+        await key(window, 'Tab')
+        check('Shift+Tab from Play goes to Previous, Tab back',
+              before is bar.previous_button and window.get_focus() is bar.play_button,
+              (describe(before), describe(window.get_focus())))
     # Watched at the actions: Space presses the focused button, whose own activation runs
     # its action (never the window's key handler); the window handles Ctrl+Right and Ctrl+Left.
     actions = []
@@ -974,7 +990,6 @@ async def walkthrough(window):
     print('-- Go to Current Song, the volume keys')
     await playing_keys(window)
     print('-- a live station')
-    bar = window.player_bar
     said = []
     window.announce = lambda text, _priority: said.append(text)
     app.player.apply(harness.invented_live_state(app))
