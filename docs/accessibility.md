@@ -167,7 +167,8 @@ list and the script together.
 16. On a playlist's song (Songs and an album's songs alike), Ctrl+A selects every song: the
     selection mode, its count in the header bar ("12 Selected", announced) with Cancel, and a
     bar of actions under the list (Play Next, Play Later, Add to Playlist, Remove from
-    Playlist, Remove from Library…, each named; in a narrow window some in its More menu).
+    Playlist, or Remove from Favourites on Favourite Songs, Remove from Library…, each
+    named; in a narrow window some in its More menu).
     Ctrl+Shift+A selects none; Space selects or unselects the focused song and Shift+Space
     selects from the last one to it, each change announced, and the row's description starts
     "Selected" or "Not Selected". Space on a button stays the button's. Escape leaves the

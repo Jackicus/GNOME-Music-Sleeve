@@ -79,7 +79,7 @@ touches widgets.
   (`widgets/selection_mode.py` over `selection.py`'s `Selection`, a set of the Track objects
   the lists' binds read; the lists themselves select nothing), whose bar runs the item
   actions on them all (`queue_objects()`, `add_items_to_playlist()`, `remove_entries()`,
-  `ask_remove_from_library()`). Home shows the library's shelves and Recently Played (`Engine.recently_played()`,
+  Favourite Songs' `remove_favourites()`, `ask_remove_from_library()`). Home shows the library's shelves and Recently Played (`Engine.recently_played()`,
   through `home.py`'s pure parts: the kept answer at once, Apple's again once it is a minute
   old, `Throttle`; one shelf brought up to date in place, `RecentlyPlayed`, placed after the
   first shelf by `arrange()`; an update that would move the page or take the focus kept

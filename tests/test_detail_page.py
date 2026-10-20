@@ -1183,6 +1183,33 @@ class SelectionTest(PageTestCase):
         self.assertEqual((shown, [action for action, _label in more]),
                          ([], ['selection.play-later', 'selection.remove-from-library']))
 
+    async def test_favourite_songs_offers_remove_from_favourites(self):
+        page = await self.show(isFavourites=True)
+        mode = page.selection_mode
+        shown, more = mode._layout()
+        self.assertEqual([action for action, _label in shown],
+                         ['selection.play-later', 'selection.remove-from-favourites'])
+        self.assertEqual([action for action, _label in more], ['selection.remove-from-library'])
+        self.assertTrue(mode._remove_favourites.get_visible())
+        self.assertFalse(mode._remove_playlist.get_visible())
+        mode.key('select-all')
+        self.assertFalse(mode.actions.get_action_enabled('remove-from-playlist'))
+        self.assertTrue(mode.actions.get_action_enabled('remove-from-favourites'))
+        mode.actions.activate_action('remove-from-favourites', None)
+        self.assertEqual(self.window.item_actions.batches[-1],
+                         ('remove-from-favourites', self.songs()))
+        self.assertFalse(mode.active)
+        mode.set_narrow(True)
+        self.assertEqual([action for action, _label in mode._layout()[1]],
+                         ['selection.play-later', 'selection.remove-from-favourites',
+                          'selection.remove-from-library'])
+        # Not on another playlist, nor an album.
+        other = await self.show()
+        self.assertFalse(other.selection_mode._remove_favourites.get_visible())
+        other.selection_mode.key('select-all')
+        self.assertFalse(other.selection_mode.actions.get_action_enabled(
+            'remove-from-favourites'))
+
     async def test_the_filter_narrows_the_selection_and_hiding_ends_it(self):
         page = await self.show()
         mode = page.selection_mode

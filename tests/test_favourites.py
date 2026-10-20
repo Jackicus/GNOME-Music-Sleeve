@@ -202,6 +202,30 @@ class TestLibraryFavourites(FavouritesCase):
         self.assertEqual(changes, [True, True])
         self.assertFalse(self.library.set_favourite('', True))
 
+    def test_set_favourites_changes_several_with_one_signal(self):
+        albums = [dict(album('l.a1'), catalogId='7001'),
+                  album('l.a2', track_ids=['i.1', 'i.2'])]
+        entries = albums[1]['groups'][0]['entries']
+        entries[0]['catalogId'], entries[1]['catalogId'] = '9001', '9002'
+        self.write(albums, favourites={'songs': ['9001', '9002'], 'albums': ['l.a1', '7001']})
+        self.load()
+        one, two = list(self.library.by_id('album', 'l.a2').groups[0].entries)
+        a1 = self.library.by_id('album', 'l.a1')
+        changes = self.changes()
+        # A selection's Remove from Favourites, ahead of its writes: the songs, and the
+        # album by its catalog id (its library id goes too).
+        self.assertTrue(self.library.set_favourites(['9001', '9002', '7001'], False))
+        self.assertEqual(changes, [True])
+        self.assertEqual((self.library.is_favourite(one), self.library.is_favourite(two),
+                          a1.favourite), (False, False, False))
+        # Put back for the one whose write failed.
+        self.assertTrue(self.library.set_favourites(['9002'], True))
+        self.assertEqual(changes, [True, True])
+        self.assertTrue(self.library.is_favourite(two))
+        self.assertFalse(self.library.set_favourites(['9002'], True))  # nothing new
+        self.assertFalse(self.library.set_favourites(['', None], False))
+        self.assertEqual(changes, [True, True])
+
     def test_a_track_is_found_by_either_id(self):
         self.write([album('l.a1', track_ids=['i.1', 'i.2'])], favourites={'songs': ['i.2']})
         self.load()

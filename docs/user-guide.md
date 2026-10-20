@@ -317,8 +317,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> none (also in the menu of the header bar's
   "3 Selected"). The bar at the bottom then has **Play Next**, **Play Later**, **Add to
   Playlist** (or a **New Playlist…** of them), **Remove from Playlist** on one of your
-  playlists (one change, with **Undo** in the message that follows) and **Remove from
-  Library…** (asking once for them all); in a narrow window some are under its **⋮** menu.
+  playlists (one change, with **Undo** in the message that follows), **Remove from
+  Favourites** on Favourite Songs in its place (the songs leave the playlist and lose their
+  hearts at once, with **Undo** in the message that follows; any that Apple Music refuses
+  come back) and **Remove from Library…** (asking once for them all); in a narrow window
+  some are under its **⋮** menu.
   Drag a selected song to drag them all, onto a playlist in the sidebar or the player bar.
   A filter keeps only the selected songs it still shows. **Cancel**, <kbd>Esc</kbd> or any of
   the bar's actions ends selecting. Without selecting, a click on a song still plays it.

@@ -23,8 +23,9 @@ Since version 3 an Item may carry `added` (Apple's dateAdded: Item.added, in sec
 file `favourites`, {section: ids} (favourite_set()): the account's favourites, a song by its
 catalog id (else its library id), anything else by its library and catalog ids. Each Item's
 `favourite` is set from them, and Library.is_favourite() answers for a Track (the rows ask
-as they bind); Library.set_favourite() follows the app's own changes (the Engine's `rated`)
-and `favourites-changed` says the set changed. `recently_added` is the library's albums,
+as they bind); Library.set_favourite() follows the app's own changes (the Engine's `rated`;
+set_favourites() several at once, a selection's ahead of its writes) and
+`favourites-changed` says the set changed. `recently_added` is the library's albums,
 playlists and dated videos, newest added first (recently_added_order()), or, from a file
 without dates, Apple's own recently-added shelf.
 
@@ -588,6 +589,29 @@ def reorder_entries(entries, order):
             entry = TrackRecord(moved_entry) if isinstance(entry, TrackRecord) else moved_entry
         arranged.append(entry)
     return arranged
+
+
+def entries_without(raw, positions):
+    """What Item.merge() takes to show the playlist Item dict `raw` without the entries at
+    `positions` (places in its one group's list): {'groups': the group with the rest, each
+    one's `index` its new place (reorder_entries())}, with `trackCount` and `durationMs`
+    counted down where `raw` has them. With none of its positions it is `raw`'s own groups
+    and counts as they are (put back). None for an Item dict without exactly one group."""
+    groups = _dicts(raw.get('groups'))
+    if len(groups) != 1:
+        return None
+    entries = _entries(groups[0].get('entries'))
+    gone = {position for position in positions if 0 <= position < len(entries)}
+    if gone:
+        kept = [position for position in range(len(entries)) if position not in gone]
+        update = {'groups': [dict(groups[0], entries=reorder_entries(entries, kept))]}
+    else:
+        update = {'groups': raw['groups']}
+    duration = sum(_number(entries[position].get('durationMs')) for position in gone)
+    for key, less in (('trackCount', len(gone)), ('durationMs', duration)):
+        if _is_count(raw.get(key)):
+            update[key] = max(0, raw[key] - less)
+    return update
 
 
 class _OrderHold:
@@ -1646,17 +1670,23 @@ class Library(GObject.Object):
         it notify `favourite`, and `favourites-changed` says rows should look again.
         Returns whether anything changed. Kept until the next load: library.json is the
         sync's to write."""
-        item_id = str(item_id or '')
-        if not item_id:
+        return self.set_favourites((item_id,), favourite)
+
+    def set_favourites(self, item_ids, favourite):
+        """set_favourite() for several ids at once, with one `favourites-changed`: a
+        selection's Remove from Favourites shown ahead of its writes, and put back for those
+        that failed."""
+        wanted = {str(item_id) for item_id in item_ids if item_id}
+        if not wanted:
             return False
         ids = set(self._favourite_ids)
         if favourite:
-            ids.add(item_id)
+            ids |= wanted
         else:
-            ids.discard(item_id)
+            ids -= wanted
             for item in self._index.values():
                 raw = item.raw
-                if raw.get('id') == item_id or raw.get('catalogId') == item_id:
+                if raw.get('id') in wanted or raw.get('catalogId') in wanted:
                     ids.discard(raw.get('id'))
                     ids.discard(raw.get('catalogId'))
         if ids == self._favourite_ids:

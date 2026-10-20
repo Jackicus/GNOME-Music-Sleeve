@@ -345,8 +345,12 @@ changes, change it here, with the date. The plan they came from is in
   on its toast, as Up Next's Clear has, rather than a dialog) and Remove from Library… (one
   confirmation, a removal each, one sync after). A drag of a selected song carries the whole
   selection, its icon its count. While selecting, a playlist's songs do not move. Batch
-  Favourite is left out: one rating write per song, and ambiguous over a mixed selection
-  (#491 for Favourite Songs' Remove from Favourites).
+  Favourite is left out: one rating write per song, and ambiguous over a mixed selection.
+  Favourite Songs is not ambiguous, every song there a favourite: its bar has Remove from
+  Favourites in place of Remove from Playlist (#491), one unlove a song (Apple has no batch
+  rating write; four under way at once, the rest not tried after a failure), shown at once
+  (the hearts and the playlist's rows, put back for a song whose write did not go), one
+  toast with Undo, which loves them again.
 - **Delete removes a playlist's song; Sort By is the view's; Add Songs… is a dialog**
   (2026-10-20, #372, #374). Delete on the focused song of a playlist of the user's is Remove
   from Playlist, as Files' Delete acts on what is focused and Up Next's Delete takes out its

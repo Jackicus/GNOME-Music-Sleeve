@@ -1662,12 +1662,14 @@ class DetailPage(Adw.NavigationPage):
 
     def _update_selection(self, item):
         """Offer the mode while tracks show; which batch actions apply (Remove from Playlist
-        on a playlist of the user's, Remove from Library… on the library's album or
-        playlist); what is no longer shown leaves the selection."""
+        on a playlist of the user's, Remove from Favourites on Favourite Songs, Remove from
+        Library… on the library's album or playlist); what is no longer shown leaves the
+        selection."""
         mode = self.selection_mode
         mode.set_available(bool(self._track_models))
         playlist = item if item.kind == 'playlist' and is_manageable(item) else None
-        mode.set_context(playlist, library=is_library_id(item.id or ''))
+        mode.set_context(playlist, library=is_library_id(item.id or ''),
+                         favourites=item.kind == 'playlist' and item.favourites)
         mode.prune()
 
     def _on_selection_changed(self, selection):

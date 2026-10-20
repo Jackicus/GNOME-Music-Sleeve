@@ -978,6 +978,17 @@ class FakeLibrary:
         self.held = {}  # playlist id -> its order held (reorder())
         self.noted = []  # note_added()'s Items
         self.twins = {}  # (kind, catalog id): the library's album or playlist found for it
+        self.favourite_ids = set()  # what set_favourites() made favourites
+        self.favourites_set = []  # (favourite, the ids) per set_favourites()
+
+    def set_favourites(self, item_ids, favourite):
+        ids = set(item_ids)
+        self.favourites_set.append((favourite, ids))
+        if favourite:
+            self.favourite_ids |= ids
+        else:
+            self.favourite_ids -= ids
+        return bool(ids)
 
     def note_added(self, item):
         self.noted.append(item)
@@ -1233,7 +1244,8 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
             'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue',
             'item-move-in-queue', 'item-move-in-playlist', 'item-undo-reorder',
-            'item-view-credits', 'item-undo-remove', 'item-duplicate', 'item-add-songs']))
+            'item-view-credits', 'item-undo-remove', 'item-duplicate', 'item-add-songs',
+            'item-undo-unfavourite']))
         self.assertEqual(
             self.window.actions['item-move-in-queue'].get_parameter_type().dup_string(),
             '(iis)')
@@ -2998,6 +3010,176 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
                                             ('selection.add-to-playlist', 'p.pl6')])
         menu = actions_module.playlist_submenu(entries, None, action='selection.add-to-playlist')
         self.assertEqual(len(actions_of(menu)), 3)
+
+
+def favourite_songs(count=4):
+    """An invented Favourite Songs of `count` library songs, each with a catalog id, its
+    tracks in hand."""
+    play = {'kind': 'playlist', 'id': 'p.fav'}
+    return Item({'id': 'p.fav', 'kind': 'playlist', 'title': 'Favourite Songs',
+                 'attributes': {'isFavourites': True}, 'play': play,
+                 'trackCount': count, 'durationMs': 1000 * count,
+                 'groups': [{'name': 'Tracks', 'play': play,
+                             'entries': [{'id': f'i.f{n}', 'catalogId': f'{1000000100 + n}',
+                                          'title': f'Favourite {n}', 'index': n,
+                                          'durationMs': 1000, 'type': 'library-songs'}
+                                         for n in range(count)]}]})
+
+
+class RemoveFromFavouritesTest(unittest.IsolatedAsyncioTestCase):
+    """Favourite Songs' Remove from Favourites (a selection's): one unlove a song, the hearts
+    and the rows changed at once and put back where a write fails, one toast with Undo,
+    which loves them again."""
+
+    async def asyncSetUp(self):
+        self.app = FakeApp()
+        self.favourites = favourite_songs()
+        self.app.library = FakeLibrary([self.favourites, HELD_ALBUM])
+        self.window = FakeWindow()
+        self.actions = ItemActions(self.window, self.app)
+
+    async def settle(self):
+        while self.app.tasks:
+            tasks = list(self.app.tasks)
+            self.app.tasks.clear()
+            await asyncio.gather(*tasks)
+
+    def tracks(self):
+        entries = self.favourites.groups[0].entries
+        return [entries.get_item(position) for position in range(entries.get_n_items())]
+
+    def calls(self, *names):
+        return [call for call in self.app.engine.calls if call[0] in names]
+
+    def answer_without(self, *places):
+        """Apple's read of Favourite Songs once the songs at `places` have gone."""
+        raw = self.favourites.raw
+        entries = [dict(entry) for entry in raw['groups'][0]['entries']
+                   if entry['index'] not in places]
+        for position, entry in enumerate(entries):
+            entry['index'] = position
+        self.app.engine.items[('playlist', 'p.fav')] = dict(
+            raw, groups=[dict(raw['groups'][0], entries=entries)])
+
+    def test_what_is_written_and_where_it_shows(self):
+        tracks = self.tracks()
+        ids = self.favourites.track_ids()
+        targets, places = actions_module.favourite_places(
+            [tracks[2], tracks[0], tracks[2], CATALOG_TRACK], self.favourites, ids)
+        # Each song once, by its catalog id; its place only where Favourite Songs shows it.
+        self.assertEqual(targets, [('song', '1000000102'), ('song', '1000000100'),
+                                   ('song', '1000000009')])
+        self.assertEqual(places, {('song', '1000000102'): [2, 2], ('song', '1000000100'): [0],
+                                  ('song', '1000000009'): []})
+        self.assertEqual(actions_module.favourite_places(tracks[:1], None, []),
+                         ([('song', '1000000100')], {('song', '1000000100'): []}))
+
+    async def test_each_song_is_unloved_with_one_toast_and_undo(self):
+        tracks = self.tracks()
+        self.answer_without(1, 3)
+        task = self.actions.remove_favourites([tracks[1], tracks[3]])
+        # At once, before any write: the hearts go, and the rows, counts counted down.
+        self.assertEqual(self.app.library.favourites_set,
+                         [(False, {'1000000101', '1000000103'})])
+        self.assertEqual(self.favourites.track_ids(), ['i.f0', 'i.f2'])
+        self.assertEqual(self.favourites.raw['trackCount'], 2)
+        self.assertEqual([track.index for track in self.tracks()], [0, 1])
+        await self.settle()
+        self.assertTrue(task.result())
+        self.assertEqual(self.calls('unlove'), [('unlove', 'song', '1000000101'),
+                                                ('unlove', 'song', '1000000103')])
+        self.assertEqual(self.app.toasts, ['Removed 2 songs from Favourite Songs'])
+        self.assertEqual(self.app.buttons, [('Undo', 'win.item-undo-unfavourite', '1')])
+        self.assertEqual(self.calls('item'), [('item', 'playlist', 'p.fav')])  # read again
+        self.assertEqual(self.favourites.track_ids(), ['i.f0', 'i.f2'])
+
+        # Undo: the songs loved again, their hearts and rows back at once.
+        del self.app.engine.items[('playlist', 'p.fav')]
+        self.window.actions['item-undo-unfavourite'].activate(GLib.Variant('s', '1'))
+        self.assertEqual(self.app.library.favourites_set[-1],
+                         (True, {'1000000101', '1000000103'}))
+        self.assertEqual(self.favourites.track_ids(), ['i.f0', 'i.f1', 'i.f2', 'i.f3'])
+        self.assertEqual(self.favourites.raw['trackCount'], 4)
+        await self.settle()
+        self.assertEqual(self.calls('love'), [('love', 'song', '1000000101'),
+                                              ('love', 'song', '1000000103')])
+        self.assertEqual(self.app.toasts[-1], 'Put back 2 songs in Favourite Songs')
+        # Once: a second Undo has nothing to put back.
+        self.window.actions['item-undo-unfavourite'].activate(GLib.Variant('s', '1'))
+        await self.settle()
+        self.assertEqual(len(self.calls('love')), 2)
+
+    async def test_a_failure_puts_back_the_songs_not_written(self):
+        engine = self.app.engine
+        unloved = []
+
+        async def unlove(kind, item_id):
+            if unloved:
+                raise EngineError('api', 'HTTP 500')
+            unloved.append(item_id)
+
+        engine.unlove = unlove
+        self.addCleanup(setattr, actions_module, 'RATING_WRITES', actions_module.RATING_WRITES)
+        actions_module.RATING_WRITES = 1  # one after the other: the third is never tried
+        tracks = self.tracks()
+        task = self.actions.remove_favourites(tracks[:3])
+        self.assertEqual(self.favourites.track_ids(), ['i.f3'])
+        await self.settle()
+        self.assertFalse(task.result())
+        self.assertEqual(unloved, ['1000000100'])
+        self.assertEqual(self.app.library.favourites_set[-1],
+                         (True, {'1000000101', '1000000102'}))
+        self.assertEqual(self.app.library.favourite_ids, {'1000000101', '1000000102'})
+        self.assertEqual(self.favourites.track_ids(), ['i.f1', 'i.f2', 'i.f3'])
+        self.assertEqual(self.app.reported, ['api'])
+        self.assertEqual(self.app.toasts, ['Removed 1 song from Favourite Songs'])
+
+    async def test_nothing_goes_when_the_engine_cannot_start(self):
+        async def ensure_engine():
+            raise EngineError('not-signed-in', 'not signed in')
+
+        self.app.player.ensure_engine = ensure_engine
+        task = self.actions.remove_favourites(self.tracks()[:2])
+        await self.settle()
+        self.assertFalse(task.result())
+        self.assertEqual(self.favourites.track_ids(), ['i.f0', 'i.f1', 'i.f2', 'i.f3'])
+        self.assertEqual(self.favourites.raw['trackCount'], 4)
+        self.assertEqual(self.app.library.favourites_set[-1],
+                         (True, {'1000000100', '1000000101'}))
+        self.assertEqual((self.app.reported, self.app.toasts, self.calls('unlove')),
+                         (['not-signed-in'], [], []))
+
+    async def test_a_few_writes_at_once(self):
+        running, most = [0], [0]
+
+        async def unlove(kind, item_id):
+            running[0] += 1
+            most[0] = max(most[0], running[0])
+            await asyncio.sleep(0)
+            running[0] -= 1
+
+        self.app.engine.unlove = unlove
+        self.favourites.merge(dict(favourite_songs(10).raw))
+        self.actions.remove_favourites(self.tracks())
+        await self.settle()
+        self.assertEqual(most[0], actions_module.RATING_WRITES)
+        self.assertEqual(self.app.toasts, ['Removed 10 songs from Favourite Songs'])
+
+    async def test_not_in_the_demo(self):
+        self.app.demo = True
+        self.assertIsNone(self.actions.remove_favourites(self.tracks()))
+        self.assertEqual(self.favourites.track_ids(), ['i.f0', 'i.f1', 'i.f2', 'i.f3'])
+        self.assertEqual(self.app.library.favourites_set, [])
+        self.assertEqual(self.app.toasts, ['Not available with the demo library'])
+
+    async def test_a_change_made_meanwhile_is_not_undone(self):
+        self.app.engine.fail = EngineError('api', 'HTTP 500')
+        self.actions.remove_favourites(self.tracks()[:1])
+        # A sync brings another song in before the write fails: left as it is.
+        self.favourites.merge(dict(favourite_songs(5).raw))
+        await self.settle()
+        self.assertEqual(len(self.favourites.track_ids()), 5)
+        self.assertEqual(self.app.reported, ['api'])
 
 
 if __name__ == '__main__':
