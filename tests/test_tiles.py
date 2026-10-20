@@ -33,6 +33,11 @@ def texture(size=4):
     return Gdk.MemoryTexture.new(size, size, Gdk.MemoryFormat.R8G8B8A8, data, size * 4)
 
 
+def text(tile):
+    """A tile's (title, subtitle) as shown."""
+    return tile.title_label.get_text(), tile.subtitle_label.get_text()
+
+
 @requires_gtk
 class WidgetTestCase(unittest.TestCase):
     """A presented window with a box to show widgets in, and a FakeLoader as the loader."""
@@ -321,7 +326,7 @@ class TileArtTest(WidgetTestCase):
     def test_an_artist_tile_shows_its_portrait(self):
         from applemusic.widgets.tile import Tile
 
-        tile = self.show(Tile(artist=True))
+        tile = self.show(Tile(shape='artist'))
         tile.bind(Item({'id': 'l.r1', 'kind': 'artist', 'title': 'Invented Artist',
                         'thumb': '/a/portrait'}))
         pump()
@@ -365,9 +370,9 @@ class FollowTest(WidgetTestCase):
         tile = self.show(Tile())
         tile.bind(item)
         item.merge(dict(ALBUM, title='New Title', subtitle='New Artist'), replace=True)
-        self.assertEqual(tile.label.get_text(), 'New Title\nNew Artist')
+        self.assertEqual(text(tile), ('New Title', 'New Artist'))
         item.merge(dict(ALBUM, title='Newer', subtitle=''), replace=True)
-        self.assertEqual(tile.label.get_text(), 'Newer')
+        self.assertEqual(text(tile), ('Newer', ''))
         # A new thumbnail path is shown (the old file is pruned by the sync).
         pump()
         item.merge(dict(ALBUM, title='Newer', subtitle='', thumb='/cache/thumb/new.jpg'),
@@ -377,7 +382,7 @@ class FollowTest(WidgetTestCase):
 
         tile.unbind()
         item.merge(dict(ALBUM, title='After Unbind'), replace=True)
-        self.assertEqual(tile.label.get_text(), 'Newer')
+        self.assertEqual(text(tile), ('Newer', ''))
 
     def test_a_tile_looks_again_when_its_thumbnail_arrives(self):
         from applemusic.widgets.tile import Tile
@@ -404,7 +409,7 @@ class FollowTest(WidgetTestCase):
         tile.unbind()
         tile.bind(second)
         first.merge(dict(ALBUM, title='Not Shown'), replace=True)
-        self.assertTrue(tile.label.get_text().startswith('Second'))
+        self.assertEqual(text(tile)[0], 'Second')
 
     def test_a_freed_tile_is_let_go_of(self):
         from applemusic.widgets.tile import Tile
@@ -538,53 +543,138 @@ class HeroCoverTest(WidgetTestCase):
 
 
 class TileLabelTest(WidgetTestCase):
-    """The title and subtitle, one Gtk.Inscription: markup for a subtitle, text without."""
+    """The title and the subtitle: one line each, however long, so a row's tiles line up;
+    the whole of both in the tooltip when a line is cut short."""
 
-    def attributes(self, tile):
-        attributes = tile.label.get_attributes()
-        return [] if attributes is None else attributes.get_attributes()
+    def test_a_long_title_keeps_to_one_line(self):
+        from gi.repository import Gtk
 
-    def test_a_plain_title_after_a_subtitled_one_has_no_attributes(self):
         from applemusic.widgets.tile import Tile
 
-        tile = Tile()
-        tile.bind(Item({'id': 'l.p1', 'kind': 'playlist', 'title': 'Mix',
-                        'subtitle': 'Invented Curator'}))
-        self.assertNotEqual(self.attributes(tile), [])  # the subtitle's size and dimming
-        tile.unbind()
-        tile.bind(Item({'id': 'l.f1', 'kind': 'folder', 'title': 'Weekend Roadtrip Folder'}))
-        self.assertEqual(self.attributes(tile), [])
-        self.assertEqual(tile.label.get_text(), 'Weekend Roadtrip Folder')
+        short, long = Tile(), Tile()
+        short.bind(Item(dict(ALBUM)))
+        long.bind(Item(dict(ALBUM, title='The Invented Album of Very Long Titles, Deluxe',
+                            subtitle='The Invented Orchestra of Long Artist Names')))
+        for tile in (short, long):
+            self.assertEqual(tile.title_label.get_min_lines(), 1)
+            self.assertEqual(tile.subtitle_label.get_min_lines(), 1)
+        self.assertEqual(short.measure(Gtk.Orientation.VERTICAL, 160)[0],
+                         long.measure(Gtk.Orientation.VERTICAL, 160)[0])
 
-    def test_an_artist_after_a_subtitled_tile_has_no_attributes(self):
+    def test_no_subtitle_keeps_its_line(self):
+        from gi.repository import Gtk
+
+        from applemusic.widgets.tile import Tile
+
+        album, folder = Tile(), Tile()
+        album.bind(Item(dict(ALBUM)))
+        folder.bind(Item({'id': 'l.f1', 'kind': 'folder', 'title': 'Weekend Roadtrip Folder'}))
+        self.assertEqual(text(folder), ('Weekend Roadtrip Folder', ''))
+        self.assertEqual(album.measure(Gtk.Orientation.VERTICAL, 160)[0],
+                         folder.measure(Gtk.Orientation.VERTICAL, 160)[0])
+
+    def test_an_artist_has_a_centred_name_and_no_subtitle(self):
         from applemusic.widgets.tile import Tile
 
         tile = Tile()
         tile.bind(Item(dict(ALBUM)))
         tile.unbind()
-        tile.set_artist(True)
+        tile.set_shape('artist')  # a shelf's tile rebound to an artist
         tile.bind(Item({'id': 'l.r1', 'kind': 'artist', 'title': 'Invented Artist Name',
                         'subtitle': '3 albums'}))
-        self.assertEqual(self.attributes(tile), [])
-        self.assertEqual(tile.label.get_text(), 'Invented Artist Name')
+        self.assertEqual(tile.title_label.get_text(), 'Invented Artist Name')
+        self.assertFalse(tile.subtitle_label.get_visible())
+        self.assertEqual(tile.title_label.get_xalign(), 0.5)  # centred under the portrait
+        tile.set_shape('cover')  # and back to an album
+        self.assertTrue(tile.subtitle_label.get_visible())
+        self.assertEqual(tile.title_label.get_xalign(), 0)
 
-    def test_an_artist_name_wraps_to_two_lines_as_a_title_does(self):
-        from gi.repository import Gtk
-
+    def test_the_year_in_place_of_the_artist(self):
         from applemusic.widgets.tile import Tile
 
-        album = Tile()
-        album.bind(Item(dict(ALBUM)))
-        artist = Tile(artist=True)
-        artist.bind(Item({'id': 'l.r1', 'kind': 'artist',
-                          'title': 'The Invented Orchestra of Long Artist Names'}))
-        line = album.label.measure(Gtk.Orientation.VERTICAL, -1)[0] / 3  # three lines
-        self.assertGreater(line, 0)
-        self.assertAlmostEqual(artist.label.measure(Gtk.Orientation.VERTICAL, -1)[0],
-                               2 * line, delta=1)
-        self.assertEqual(artist.label.get_xalign(), 0.5)  # centred under the portrait
-        artist.set_artist(False)  # a shelf's tile rebound to an album
-        self.assertEqual(artist.label.get_min_lines(), 3)
+        tile = Tile(year=True)
+        tile.bind(Item(dict(ALBUM, year=2024)))
+        self.assertEqual(text(tile), ('Invented Album', '2024'))
+
+    def tooltip(self, tile):
+        from gi.repository import Gtk
+
+        tooltip = mock.Mock(spec=Gtk.Tooltip)
+        shown = tile._on_query_tooltip(tile, 10, 10, False, tooltip)
+        return tooltip.set_text.call_args[0][0] if shown else None
+
+    def test_the_tooltip_shows_a_title_cut_short(self):
+        from applemusic.widgets.tile import Tile
+
+        long = self.show(Tile())
+        long.bind(Item(dict(ALBUM, title='The Invented Album of Very Long Titles, Deluxe')))
+        short = self.show(Tile())
+        short.bind(Item({'id': 'l.a2', 'kind': 'album', 'title': 'Short', 'subtitle': 'Duo'}))
+        self.assertTrue(wait_for(lambda: long.title_label.get_width() > 0))
+        self.assertEqual(self.tooltip(long),
+                         'The Invented Album of Very Long Titles, Deluxe\nInvented Artist')
+        self.assertIsNone(self.tooltip(short))  # all of it shows
+        long.unbind()
+        self.assertIsNone(self.tooltip(long))
+
+
+class TileShapeTest(WidgetTestCase):
+    """A music video's tile: a 16:9 frame as tall as a cover, a play symbol over it."""
+
+    def test_shape_for(self):
+        from applemusic.widgets.tile import shape_for
+
+        self.assertEqual(shape_for(Item(dict(ALBUM))), 'cover')
+        self.assertEqual(shape_for(Item({'id': 'r', 'kind': 'artist', 'title': 'A'})), 'artist')
+        self.assertEqual(shape_for(Item({'id': 'v', 'kind': 'video', 'title': 'V'})), 'video')
+        self.assertEqual(shape_for(Item({'id': 'p', 'kind': 'playlist', 'title': 'P'})),
+                         'cover')
+
+    def test_a_video_tile_is_16_9_and_as_tall_as_a_cover(self):
+        from applemusic.widgets.tile import ART_SIZE, VIDEO_WIDTH, Tile
+
+        cover = self.show(Tile())
+        cover.bind(Item(dict(ALBUM)))
+        video = self.show(Tile(shape='video'))
+        video.bind(Item({'id': 'i.mv1', 'kind': 'video', 'title': 'Invented Video',
+                         'subtitle': 'Invented Artist', 'thumb': '/cache/thumb/mv1.jpg'}))
+        self.assertTrue(wait_for(lambda: video.get_width() > 0))
+        self.assertEqual((video.cover.get_width(), video.cover.get_height()),
+                         (VIDEO_WIDTH, ART_SIZE))
+        self.assertAlmostEqual(VIDEO_WIDTH / ART_SIZE, 16 / 9, delta=0.01)
+        self.assertEqual(video.get_height(), cover.get_height())
+        self.assertEqual(video.get_width(), VIDEO_WIDTH)
+        self.assertTrue(video.play_symbol.get_visible())
+        self.assertIsNone(cover.play_symbol)  # made only for videos
+        pump()
+        # The frame decoded by its shorter edge, the height: as big as a cover's.
+        self.assertEqual(self.loader.requests[-1],
+                         ('/cache/thumb/mv1.jpg', ART_SIZE * self.scale(video)))
+
+    def test_a_video_grid_tile_is_smaller(self):
+        from applemusic.widgets.tile import GRID_VIDEO_SIZE, Tile
+
+        tile = self.show(Tile(shape='video', video_size=GRID_VIDEO_SIZE))
+        tile.bind(Item({'id': 'i.mv1', 'kind': 'video', 'title': 'Invented Video',
+                        'thumb': '/cache/thumb/mv1.jpg'}))
+        self.assertTrue(wait_for(lambda: tile.cover.get_width() > 0))
+        self.assertEqual((tile.cover.get_width(), tile.cover.get_height()), GRID_VIDEO_SIZE)
+        pump()
+        # Decoded at the frame's height, its shorter edge.
+        self.assertEqual(self.loader.requests[-1],
+                         ('/cache/thumb/mv1.jpg', GRID_VIDEO_SIZE[1] * self.scale(tile)))
+
+    def test_a_shelf_tile_switches_shape(self):
+        from applemusic.widgets.tile import ART_SIZE, Tile
+
+        tile = self.show(Tile())
+        tile.set_shape('video')
+        tile.set_shape('cover')
+        self.assertFalse(tile.play_symbol.get_visible())
+        self.assertEqual(tile.art_box.get_size_request(), (ART_SIZE, ART_SIZE))
+        tile.set_shape('artist')
+        self.assertFalse(tile.cover.get_visible())
+        self.assertTrue(tile.avatar.get_visible())
 
 
 class CategoryTileArtTest(WidgetTestCase):

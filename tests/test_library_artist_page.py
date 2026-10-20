@@ -51,8 +51,9 @@ class LibraryArtistPageTest(PageTestCase):
         self.assertEqual(page.shown_albums(), [second, third, first])
         self.assertEqual(page.stack.get_visible_child_name(), 'items')
         self.assertTrue(await self.until(lambda: len(find_all(page.grid_view, Tile)) == 3))
-        labels = {tile.label.get_text() for tile in find_all(page.grid_view, Tile)}
-        self.assertEqual(labels, {f'{item.title}\n{item.year}'
+        labels = {(tile.title_label.get_text(), tile.subtitle_label.get_text())
+                  for tile in find_all(page.grid_view, Tile)}
+        self.assertEqual(labels, {(item.title, str(item.year))
                                   for item in (first, second, third)})
         # The page is not Go to Artist's page of them: it has no `item`.
         self.assertFalse(hasattr(page, 'item'))

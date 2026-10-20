@@ -37,7 +37,8 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   bind must be cheap: text in `Gtk.Inscription` (a wrapping `Gtk.Label` is measured again at
   every rebind; SongTitle's, QueueRow's and TrackLink's single-line labels are deliberate), no
   `_()` in bind (look strings up once; the model's `count-label` is made once), no costly
-  children in widgets made by the hundred (a tile makes an `Adw.Avatar` only for an artist),
+  children in widgets made by the hundred (a tile makes an `Adw.Avatar` only for an artist,
+  its play symbol only for a music video; its tooltip is worked out on `query-tooltip`),
   and fixed column widths (`fixed-width` plus `expand`) in tables.
 - Nothing in a recycled row may change size when its artwork arrives or goes: a `Gtk.Picture`
   whose paintable changes intrinsic size relayouts the whole list, and so does a child shown or
@@ -57,7 +58,8 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   A sync's change to what a list shows goes through `library.apply_diff` instead (the fewest
   splices), so the list keeps its scroll position.
 - A `Gtk.GridView` keeps about 30 rows of `max-columns` tiles alive however few it shows: set
-  `max-columns` to what fits (`grid.columns_for()`; `COLUMN_WIDTH` is a tile plus Adwaita's
+  `max-columns` to what fits (`grid.columns_for()`; `COLUMN_WIDTH` and `VIDEO_COLUMN_WIDTH`
+  are a tile, `tile.ART_SIZE` or a video grid's `tile.GRID_VIDEO_SIZE`, plus Adwaita's
   padding, so change them together).
 
 ## Sorting and filtering

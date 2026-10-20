@@ -215,7 +215,7 @@ def _favourite_songs(destination, library):
 def _music_videos(destination, library):
     from .grid import GridPage
 
-    return GridPage(library, destination.title, lambda: library.videos,
+    return GridPage(library, destination.title, lambda: library.videos, video=True,
                     sorts=('title', 'artist', 'year'), icon_name=destination.icon_name,
                     empty_title=_('No Music Videos'),
                     empty_description=_('Music videos in your library appear here'))

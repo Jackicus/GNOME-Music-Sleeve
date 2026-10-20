@@ -36,6 +36,48 @@ class GridTest(PageTestCase):
         self.assertEqual(columns_for(1920), 11)
         self.assertEqual(columns_for(200), 2)  # never fewer
 
+    def test_video_columns_fit_their_tile(self):
+        from applemusic.pages.grid import COLUMN_WIDTH, VIDEO_COLUMN_WIDTH, columns_for
+        from applemusic.widgets.tile import ART_SIZE, GRID_VIDEO_SIZE
+
+        # A tile and the 3 px a side Adwaita pads a grid view's child with.
+        self.assertEqual(COLUMN_WIDTH, ART_SIZE + 6)
+        self.assertEqual(VIDEO_COLUMN_WIDTH, GRID_VIDEO_SIZE[0] + 6)
+        self.assertAlmostEqual(GRID_VIDEO_SIZE[0] / GRID_VIDEO_SIZE[1], 16 / 9, delta=0.01)
+        # Inside the grid's margins: the default window's content pane (820 px less 42), a
+        # middle width, a maximized 1920 px one's.
+        self.assertEqual(778 // VIDEO_COLUMN_WIDTH, 3)
+        self.assertEqual(600 // VIDEO_COLUMN_WIDTH, 2)
+        self.assertEqual(1598 // VIDEO_COLUMN_WIDTH, 6)
+        self.assertEqual(332 // VIDEO_COLUMN_WIDTH, 1)  # 360 px, its 14 px margins
+        self.assertEqual(columns_for(360, VIDEO_COLUMN_WIDTH), 2)  # never fewer
+
+    async def test_a_grid_of_videos_shows_16_9_tiles(self):
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets.tile import GRID_VIDEO_SIZE, Tile
+        from tests.page_harness import find_all
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item({'id': f'i.mv{n}', 'kind': 'video', 'title': f'Video {n}',
+                                  'subtitle': 'Invented Artist'}) for n in range(6)])
+        page = await self.show_root(GridPage(self.library, 'Invented Videos', store,
+                                             video=True))
+
+        def tiles():
+            return [tile for tile in find_all(page.grid_view, Tile)
+                    if tile.context_item is not None]
+
+        self.assertTrue(await self.until(lambda: tiles() and tiles()[0].cover.get_width()))
+        self.assertTrue(all(tile.shape == 'video' for tile in tiles()))
+        self.assertEqual(page.grid_view.get_min_columns(), 1)  # one fits a 360 px window
+        cover = tiles()[0].cover
+        self.assertEqual((cover.get_width(), cover.get_height()), GRID_VIDEO_SIZE)
+        # 1000 px: four columns of 246 at most (three fit inside the margins).
+        self.assertTrue(await self.until(lambda: page.grid_view.get_max_columns() == 4))
+
     async def test_the_title_and_the_first_cover_sit_on_the_margin(self):
         from gi.repository import Gio
 

@@ -122,6 +122,19 @@ changes, change it here, with the date. The plan they came from is in
   centred in theirs and drifted (28 px wide, 13 at 360); under 400sp the margins shrink to
   the 14 px that still fit two tiles, Radio's the same, the grid never centred (a centred
   scrollable has GTK measure its width for its height, which warns) (#243).
+- **A tile's title and subtitle keep to one line each; music videos are 16:9** (2026-10-20),
+  as Apple Music's grids have them. A title or subtitle too long for its tile ends in an
+  ellipsis, so every tile in a row is as tall as the next and the subtitles line up; the
+  whole of both is in the tooltip (only when a line is cut short, worked out as the pointer
+  rests, so binding a tile costs nothing for it) and in the tile's accessible name. Two
+  lines of title, as before, showed more of a long one, but a row's subtitles then sat at
+  two heights. A music video's tile is a 284×160 frame, as tall as a cover, so a shelf that
+  mixes videos with albums keeps one height and its titles one line. A grid of them (Music
+  Videos, a videos shelf's See All) has smaller 240×135 frames, so three columns fit beside
+  the sidebar at the default window width (two of 284 left about 100 px empty after each),
+  two at middle widths and one in a 360 px window. Its
+  play symbol shows under the pointer and with the keyboard focus, not always, as on Apple
+  Music's tiles (#354).
 - **Show Translations and Show Pronunciations stay independent** (2026-10-19), as Apple's
   web player has them: two separate menu items, and with both on a line shows its
   pronunciation, then its translation. Checked against Apple's lyrics component (#309).

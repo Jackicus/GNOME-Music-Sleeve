@@ -178,7 +178,7 @@ def draw_cover(out_path, title, subtitle, badge, palette, motif, is_artist=False
     """Draw a size x size square artwork with Cairo and save as JPEG via GdkPixbuf.
     The drawing is laid out on a 512-unit square and scaled to `size`. `wide` draws a
     music video's 16:9 frame instead (size wide, on a 512 x 288 canvas): the motif in its
-    middle square, which is what a square tile shows of it, under a play symbol."""
+    middle square, over the gradient, as a still from the video."""
     dark_rgb = hex_to_rgb(palette[0])
     mid_rgb = hex_to_rgb(palette[1])
     light_rgb = hex_to_rgb(palette[2])
@@ -362,17 +362,8 @@ def draw_cover(out_path, title, subtitle, badge, palette, motif, is_artist=False
         ctx.fill()
 
     if wide:
+        # A frame with no play symbol of its own: a video's tile draws one (widgets/tile.py).
         ctx.restore()
-        # A play symbol over the middle: a video, not a cover. The tiles label it.
-        ctx.arc(256, 144, 46, 0, 2 * math.pi)
-        ctx.set_source_rgba(0, 0, 0, 0.45)
-        ctx.fill()
-        ctx.move_to(242, 120)
-        ctx.line_to(242, 168)
-        ctx.line_to(282, 144)
-        ctx.close_path()
-        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.92)
-        ctx.fill()
 
     # 3. Readability scrim + 4. Typography: skipped for artist portraits. That
     # text (title near the bottom-left corner, the badge near the top-right

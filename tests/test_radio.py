@@ -53,8 +53,7 @@ class RadioPageTest(PageTestCase):
                     if card.context_item.id == 'ra.0')
 
     def tile_title(self, page):
-        label = page.flow_box.get_child_at_index(0).get_child().label.get_text()
-        return label.split('\n')[0]  # the title, over the subtitle
+        return page.flow_box.get_child_at_index(0).get_child().title_label.get_text()
 
     async def test_a_reload_that_renames_stations_reaches_the_cards_and_the_tiles(self):
         page = await self.radio_page(['S0', 'S1', 'S2', 'S3', 'S4'])

@@ -18,7 +18,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 from ..library import Item
 from ..widgets import context_menu
 from ..widgets.labels import bind_label, unbind_label
-from ..widgets.tile import Tile
+from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
 from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak
 from . import SignInOffer, app, mark_bound
 
@@ -43,18 +43,20 @@ def _chain(*sorters):
 # The width of a grid column: a tile (tile.blp, 160 px) and the padding Adwaita gives a grid
 # view's child (3 px a side). Gtk.GridView divides its width by it, and a tile sits at the
 # start of its column, so the first column's cover is on the grid's margin (grid.blp: 21 px,
-# the page's 24 less the child's padding) whatever the width.
+# the page's 24 less the child's padding) whatever the width. A grid of music videos has
+# columns of its 16:9 tiles (tile.GRID_VIDEO_SIZE, 240 px wide) instead.
 COLUMN_WIDTH = 166
+VIDEO_COLUMN_WIDTH = 246
 
 
-def columns_for(width):
+def columns_for(width, column_width=COLUMN_WIDTH):
     """The columns a grid of tiles in a page `width` px wide shows, or one more when the
     grid's margins (left out here) tip it: never fewer, so a grid told this many as
     max-columns lays out as it would with no limit."""
-    return max(2, width // COLUMN_WIDTH)
+    return max(2, width // column_width)
 
 
-def estimate_columns():
+def estimate_columns(column_width=COLUMN_WIDTH):
     """How many columns the content pane fits (columns_for), from its width
     (Window.content_width(), an estimate before the window has laid it out: the page restored
     at startup), or None without a window.
@@ -67,7 +69,7 @@ def estimate_columns():
     window = application.get_active_window() if application is not None else None
     content_width = getattr(window, 'content_width', None)
     width = content_width() if content_width is not None else 0
-    return columns_for(width) if width and width > 0 else None
+    return columns_for(width, column_width) if width and width > 0 else None
 
 
 # The sort orders a page can offer: key -> (label, the Item properties compared in turn,
@@ -152,7 +154,8 @@ class GridPage(Adw.NavigationPage):
     Descending (page.sort-order): a key chosen comes its own way round (Year newest first,
     the rest A to Z) and the direction turns it; the key is remembered per root page in the
     grid-sort setting, the direction for the page's life. No keys keeps the model's own
-    order. `artist` makes round portrait tiles. `root` is false for a page pushed over
+    order. `artist` makes round portrait tiles, `video` music videos' 16:9 ones (wider
+    columns). `root` is false for a page pushed over
     another. Root or pushed, the header bar shows the title while the big one is out of view
     (HeaderTitle). The in-content title follows the page's `title`, on the page's margin,
     where the first column's cover is. The loading and empty states follow the library's
@@ -172,13 +175,15 @@ class GridPage(Adw.NavigationPage):
     grid_view = Gtk.Template.Child()
     title_label = Gtk.Template.Child()
 
-    def __init__(self, library, title, model, sorts=(), artist=False, root=True, icon_name=None,
-                 empty_title=None, empty_description=None, missing_title=None,
+    def __init__(self, library, title, model, sorts=(), artist=False, video=False, root=True,
+                 icon_name=None, empty_title=None, empty_description=None, missing_title=None,
                  missing_description=None):
         super().__init__(title=title)
         self._library = library
         self._get_model = model if callable(model) else lambda: model
         self._artist = artist
+        self._shape = ARTIST if artist else VIDEO if video else COVER
+        self._column_width = VIDEO_COLUMN_WIDTH if video else COLUMN_WIDTH
         self._title_offset = 0
         self._bound = False  # a tile has been bound (the startup timing's mark)
         self._nothing = Gio.ListStore(item_type=Item)  # shown while `model` returns None
@@ -212,7 +217,9 @@ class GridPage(Adw.NavigationPage):
         # Before the model: the grid makes tiles for max-columns columns until it has a
         # width of its own (estimate_columns); _on_title_position keeps it fitting after.
         self._columns_idle = None
-        self._set_columns(estimate_columns())
+        if video:
+            self.grid_view.set_min_columns(1)  # two of them are wider than a 360 px window
+        self._set_columns(estimate_columns(self._column_width))
         self.grid_view.set_model(Gtk.NoSelection(model=self._shown))
         context_menu.attach(self.grid_view)
 
@@ -333,7 +340,7 @@ class GridPage(Adw.NavigationPage):
     # The tiles.
 
     def _on_setup(self, _factory, list_item):
-        list_item.set_child(Tile(artist=self._artist))
+        list_item.set_child(Tile(shape=self._shape, video_size=GRID_VIDEO_SIZE))
 
     def _on_bind(self, _factory, list_item):
         item = list_item.get_item()
@@ -373,7 +380,7 @@ class GridPage(Adw.NavigationPage):
         rather than for twelve: more at once (a window that grew paints them in this frame),
         fewer after the layout, in an idle."""
         width = overlay.get_width()
-        columns = columns_for(width)
+        columns = columns_for(width, self._column_width)
         current = self.grid_view.get_max_columns()
         if columns > current:
             self.grid_view.set_max_columns(columns)

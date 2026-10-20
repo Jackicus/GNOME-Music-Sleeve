@@ -88,6 +88,8 @@ the menu the sidebar fills for it, beside its row (--expand the folder holding i
 --scroll PX scrolls the page shown down by PX pixels before the shot (its first
 scrolled window that scrolls vertically): the rest of a page taller than the
 virtual monitor, which a --size cannot show.
+--focus gives the keyboard focus to the page's first tile or row (its grid cell or list row,
+as Tab would), with the focus ring shown: a music video's play symbol shows with it.
 --rtl lays the window out right to left, as a right-to-left language would
 (Gtk.Widget.set_default_direction), its strings still the source's.
 """
@@ -149,6 +151,8 @@ parser.add_argument('--sidebar-menu', metavar='KEY',
                     help="pop up the sidebar's context menu for KEY")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
+parser.add_argument('--focus', action='store_true',
+                    help="give the keyboard focus to the page's first tile or row")
 parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[],
                     help='set a setting first (VALUE in GVariant text: true, 3, "text"), in '
                          'the memory backend only; repeatable')
@@ -212,6 +216,7 @@ searched = False
 menu_opened = False
 banner_shown = False
 scrolled = False
+focused = False
 failed = False  # a step raised: the app quits and the script exits 1
 preferences = None  # the Preferences dialog, once --preferences has opened it
 dialog = None  # the --dialog dialog, once opened
@@ -297,6 +302,17 @@ def open_context_menu(window):
         sys.exit('screenshot: the first item has no menu')
     if args.submenu:
         popover.set_property('visible-submenu', args.submenu)
+
+
+def focus_first(window):
+    """--focus: the first tile's or row's cell focused, as Tab would, its focus ring shown."""
+    widget = first_context_widget(window.navigation_view.get_visible_page())
+    if widget is None:
+        sys.exit('screenshot: nothing on the page takes the focus')
+    cell = widget.get_parent()  # the grid cell or the list row, which a tile sits in
+    if not cell.grab_focus():
+        sys.exit('screenshot: the first tile or row did not take the focus')
+    window.set_focus_visible(True)
 
 
 def find_widget(widget, kind):
@@ -481,7 +497,7 @@ def shoot():
 
 def _shoot():
     global opened, sheet_opened, searched, menu_opened, banner_shown, preferences, dialog
-    global scrolled
+    global scrolled, focused
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
         return GLib.SOURCE_REMOVE
@@ -549,6 +565,11 @@ def _shoot():
         scrolled = True
         scroll_page(window)
         GLib.timeout_add(1200, shoot)  # what scrolled into view bound, its artwork decoded
+        return GLib.SOURCE_REMOVE
+    if args.focus and not focused:
+        focused = True
+        focus_first(window)
+        GLib.timeout_add(600, shoot)  # the focus ring and what follows it drawn
         return GLib.SOURCE_REMOVE
     if not artwork_settled():
         GLib.timeout_add(ARTWORK_POLL, shoot)

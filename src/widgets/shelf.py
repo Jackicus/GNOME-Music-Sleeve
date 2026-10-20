@@ -10,7 +10,7 @@ from gi.repository import Adw, Gio, GObject, Gtk
 from . import context_menu
 from .hero_tile import HeroTile
 from .labels import bind_label, unbind_label
-from .tile import Tile
+from .tile import Tile, shape_for
 from .util import connect_weak, next_frame
 
 # The tiles a shelf's row shows at most: See All opens the whole shelf. A horizontal
@@ -116,8 +116,9 @@ class Shelf(PagedRow, Gtk.Box):
     The row is a horizontal Gtk.ListView of the first ROW_LIMIT items, the scrolled window's
     own child. It builds a tile for each of them, but only the tiles on screen are mapped and
     ask for their artwork. With `hero`, the tiles are 260 px AppleMusicHeroTiles, the cover
-    over a band in its colour; otherwise 160 px AppleMusicTiles, round for artists. The shelf
-    follows its ShelfModel's title and its items as they change.
+    over a band in its colour; otherwise 160 px AppleMusicTiles, round for artists and 16:9
+    for music videos (as tall as the rest). The shelf follows its ShelfModel's title and its
+    items as they change.
 
     Scrolling: the row's scrolled window scrolls only horizontally, and GtkScrolledWindow
     handles a scroll event only along an axis it can scroll, so a vertical wheel over the row
@@ -239,7 +240,7 @@ class Shelf(PagedRow, Gtk.Box):
         item = list_item.get_item()
         tile = list_item.get_child()
         if not self._hero:
-            tile.set_artist(item.kind == 'artist')
+            tile.set_shape(shape_for(item))
         tile.bind(item)
         bind_label(list_item, item)
 
