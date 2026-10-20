@@ -52,6 +52,53 @@ class GridTest(PageTestCase):
         self.assertEqual(332 // VIDEO_COLUMN_WIDTH, 1)  # 360 px, its 14 px margins
         self.assertEqual(columns_for(360, VIDEO_COLUMN_WIDTH), 2)  # never fewer
 
+    def test_first_tiles(self):
+        from applemusic.pages.grid import first_tiles
+
+        # The rows a 700 px pane shows (four of 220, the last in part) and one more.
+        self.assertEqual(first_tiles(4, 700), 20)
+        self.assertEqual(first_tiles(6, 220), 12)
+        self.assertIsNone(first_tiles(None, 700))  # no window: every item at once
+        self.assertIsNone(first_tiles(4, 0))
+
+    def _limited_page(self, count, **options):
+        """A GridPage of `count` albums made while the window says its content pane fits four
+        columns and is 300 px tall: it shows two rows and one more at first."""
+        from unittest import mock
+
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages import grid
+        from applemusic.pages.grid import GridPage
+
+        for name, value in (('estimate_columns', 4), ('estimate_height', 300)):
+            patcher = mock.patch.object(grid, name, lambda *_args, value=value: value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item(album(n, year=1990 + n % 30)) for n in range(count)])
+        return GridPage(self.library, 'Invented Grid', store, **options)
+
+    async def test_the_first_frame_makes_the_rows_in_view_and_the_rest_come_after(self):
+        page = self._limited_page(200)
+        model = page.grid_view.get_model()
+        self.assertEqual(model.get_n_items(), 12)
+        await self.show_root(page)
+        # 16 more a frame from the frame after the first tiles' (GROW_TILES).
+        self.assertTrue(await self.until_frames(page.grid_view,
+                                                lambda: model.get_n_items() == 200, frames=30))
+        self.assertEqual(model.get_item(199).title, page._shown.get_item(199).title)
+
+    async def test_a_filter_shows_every_match_at_once(self):
+        # Hidden, the grid gets no frames to grow in: the filter lets every match in itself,
+        # as the grid's rows recycled for the matches need them (ShownModel.replacing).
+        page = self._limited_page(200, filter_words=('Filter Albums', lambda shown, total: ''))
+        model = page.grid_view.get_model()
+        self.assertEqual(model.get_n_items(), 12)
+        page.filter_bar.set_text('Invented')
+        self.assertTrue(await self.until(lambda: model.get_n_items() == 200))
+
     async def test_a_grid_of_albums_decodes_covers_at_the_size_drawn(self):
         # Every grid tile is made with GRID_VIDEO_SIZE; an album's square cover is still
         # asked for at ART_SIZE times the scale factor, not the frame's height (#399).

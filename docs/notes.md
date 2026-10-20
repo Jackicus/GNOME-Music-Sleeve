@@ -18,7 +18,32 @@ its "Performance pass" section.
   loading the desktop's icon theme takes about 200 ms of GTK's start, and `present()` waits about
   330 ms for the compositor's first configure. Its RSS is about 158 MB, 105 MB of it
   file-backed (the NVIDIA driver maps about 50 MB). No change to the app removes this floor;
-  the startup target of content within a second is measured against it.
+  the startup target is the app's own share over it (performance.md: content painted within
+  250 ms of the bare window's first frame, `scripts/bench.py` pairing each run with a bare
+  window's).
+- Startup on build/demo-big, headless, 2026-10-20 (issue 476), `bench.py --runs 5`, the
+  base (main) and the branch benched in turns three times each, medians: a bare window's
+  first frame 805-842 ms, run by run 790-860 (the first start after a while is cold,
+  1.7-1.9 s: bench.py now starts one untimed first). The bare window: its imports 120 ms,
+  `Adw.Application` started at 400, mapped at 750 (`present()` waits about 350 ms for the
+  compositor), painted 18 ms later. The app before:
+  imports to 177 ms, GTK started 479, activate 515, window built 552, mapped 935, content
+  painted 1083-1107 ms, the app's own share 259-298 ms. From the map to the first paint
+  (150-170 ms), the Albums page restored at startup made 129 tiles for the 12 in view: the
+  albums' splice took 33 ms (sorting 3,000 Items by title, 18 ms of it, through the title's
+  Python getter; the tiles), and the frame's layout 50-62 ms and paint 15. Made for the rows
+  that fit (`grid.first_tiles()`: 20 tiles at 1100x760) and the rest 16 a frame after the
+  first paint, content was painted at 995-1047 ms, the app's own share 182-219 ms; the
+  frame's layout 33-38 ms. What is left of the app's share: about 60 ms more imports than the
+  bare window's, 35 ms from GTK's start to activate (the engine, player, sync and MPRIS
+  objects), 40 ms building the window, about 40 ms more for the compositor to map the larger
+  window, then 95 ms from the map to the paint (the albums' 30 ms splice, the window's first
+  layout and paint). The first visits of Recently Added and All Playlists went from 86-90 ms
+  to 26-31 ms, their tiles' growth showing as a 15 ms frame after; the Albums page shown again
+  after the tour's first pages took 20 ms instead of 12. On the skill's library as it is now
+  (`--videos 1000 --long-playlist 5000` too), two benches each: content 1062-1115 ms to
+  1004-1064, the app's own share 253-268 ms to 172-220; Music Videos' first visit 88-91 ms to
+  34-35.
 - Timings vary by 100 ms or more between runs with the usual desktop load: `bench.py --runs 5`
   and medians.
 - The monitor runs at 240 Hz, and an unfocused window may get 60 frames a second, so
@@ -223,6 +248,19 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   unchanged dict, not two, 30 MB less after a sync; the texture cache sized by the scale factor
   (8 MB at 1x, not 32), anonymous memory after scrolling all of Albums 156 MB to 137; pages,
   shelves and dialogs freed once dropped (weak connections).
+- Measured headless, 2026-10-20 (issue 478, the skill's library with `--playlists 300`):
+  233-235 MB after every page browsed twice, before and after the startup change above, 15 MB
+  under the target; 0.13.0 had 213-215. With the 1,000 music videos the skill's library has
+  since (`--videos 1000 --long-playlist 5000`), 243-247 MB: 3-7 MB under it. A tile (tile.blp, not bound to artwork) costs 42-47 KB:
+  a grid page's 129 tiles about 5.5 MB, which Recently Added has made since it shows the whole
+  library rather than Apple's hundred (0.13.0 made 8). The bench charged each page's first
+  visit with the RSS added from its paint to the next page's: Radio's work after its paint
+  (about 10 MB) was counted as Recently Added's, which is why it read 15 MB; measured once a
+  page's frames are over, Recently Added's first visit adds 6.6-7.5 MB, All Playlists' 5.6-6.6.
+  The rest is the library's (anonymous memory at library ready, 132-137 MB, was about 6 MB
+  over 0.13.0's in the issue's measurement: the favourites and dates the model holds since
+  library.json version 3). Explained, not reduced: the headroom is small, and the lazy Songs
+  model below is the largest saving known.
 - Not done, about 21 MB more: a lazy Songs model, a `Gio.ListModel` over the track records
   that wraps a `Track` only for the rows GTK asks for, instead of 40,000 Tracks and three
   stores. It changes the type of `library.songs` and moves Search's library song filter into

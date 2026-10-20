@@ -1889,6 +1889,10 @@ class Library(GObject.Object):
         candidates = [item for item in self.albums]
         candidates += [item for item in self.playlists if not item.favourites]
         candidates += [item for item in self.videos if item.added_seconds()]
+        # About 8 ms on 3,300 items (4 for a reload, the dates read already): a frame of its
+        # own when the load's budget is spent.
+        if time.monotonic() - self._paused > FRAME_BUDGET:
+            await self._pause(generation)
         apply_diff(self.recently_added, recently_added_order(
             candidates, list(recent.items) if recent is not None else []))
         for item in tree.changed:
@@ -2287,16 +2291,34 @@ def recently_added_order(items, recent):
     the Home shelf's), then by title; those without a date (a loose song's stand-in album)
     last, by title. With no dates at all (a library.json from before them) Apple's list as
     it is."""
-    dated = [item for item in items if item.added_seconds()]
+    dated, undated = [], []
+    for item in items:
+        (dated if item.added_seconds() else undated).append(item)
     if not dated:
         return list(recent)
     rank = {id(item): position for position, item in enumerate(recent)}
     last = len(rank)
-    dated.sort(key=lambda item: (-item.added_seconds(), rank.get(id(item), last),
-                                 title_key(item.title)))
-    undated = sorted((item for item in items if not item.added_seconds()),
-                     key=lambda item: title_key(item.title))
+    # Titles only part ties: a title_key() for every item was most of the sort's time.
+    keyed = sorted(((-item.added_seconds(), rank.get(id(item), last), item) for item in dated),
+                   key=_without_item)
+    dated = []
+    start = 0
+    while start < len(keyed):
+        end = start + 1
+        while end < len(keyed) and keyed[end][:2] == keyed[start][:2]:
+            end += 1
+        if end - start == 1:
+            dated.append(keyed[start][2])
+        else:
+            dated += sorted((entry[2] for entry in keyed[start:end]),
+                            key=lambda item: title_key(item.title))
+        start = end
+    undated.sort(key=lambda item: title_key(item.title))
     return dated + undated
+
+
+def _without_item(entry):
+    return entry[:2]
 
 
 def place_key(item):
