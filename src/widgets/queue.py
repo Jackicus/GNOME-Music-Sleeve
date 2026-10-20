@@ -25,7 +25,8 @@ the one playing while the queue may be edited: its context_queue_entry); Delete
 that took its place (or the one before, at the end). Above the list, History (a toggle) at
 the start, and at the end Autoplay (a toggle of the `autoplay` setting; insensitive while
 MusicKit allows none, or repeat is on, when it would not start) and Clear (everything after
-the entry playing, with an Undo toast: app.undo-clear-up-next). An empty queue shows a compact
+the entry playing, with an Undo toast: app.undo-clear-up-next; the focus on it goes to the
+entry playing as it goes insensitive). An empty queue shows a compact
 status page. The list is named "Up Next" for assistive technology, each row by
 labels.track_label, described as playing or as autoplay's.
 
@@ -635,7 +636,10 @@ class QueueView(Gtk.Stack):
 
     def _update_tools(self):
         player = self._player
-        self.clear_button.set_sensitive(player.can_clear())
+        can_clear = player.can_clear()
+        if not can_clear and self.clear_button.is_focus():
+            self._focus_from_clear()
+        self.clear_button.set_sensitive(can_clear)
         if not player.can_autoplay:
             tooltip = _('Autoplay Is Not Available Here')
         elif player.repeat != 'none':
@@ -644,6 +648,21 @@ class QueueView(Gtk.Stack):
             tooltip = self._autoplay_title
         self.autoplay_button.set_sensitive(player.can_autoplay and player.repeat == 'none')
         self.autoplay_button.set_tooltip_text(tooltip)
+
+    def _focus_from_clear(self):
+        """Clear is about to go insensitive with the focus on it (it has just cleared, from
+        the keyboard), and GTK would drop the focus to the window: the focus goes to the
+        entry playing, the list's first row, which a screen reader then reads; or to the
+        Autoplay toggle, or History's, when the list has none."""
+        if self.model is not None and self.model.get_n_items():
+            # scroll_to() moves the list's focus item there; the grab focuses its row.
+            self.list_view.scroll_to(0, Gtk.ListScrollFlags.FOCUS, None)
+            self.list_view.grab_focus()
+            if self.list_view.get_focus_child() is not None:
+                return
+        if self.autoplay_button.get_sensitive() and self.autoplay_button.grab_focus():
+            return
+        self.history_button.grab_focus()
 
     def _on_items_changed(self):
         """The queue changed: the slice and its sections, the page, the tools, History, and

@@ -171,6 +171,16 @@ class SongsPageTest(PageTestCase):
             lambda: window.get_focus() is not None
             and window.get_focus().is_ancestor(page.column_view)))
 
+    async def test_escape_from_the_filter_puts_the_focus_back_on_the_row_it_was_on(self):
+        # The table's own focus would be a recycled row out of view, bound to another song.
+        page = await self.songs_page(120)
+        view = page.column_view
+        songs = [page._rows.get_item(n) for n in range(120)]
+        self.assertTrue(await self.escape_from_filter(page, view, songs[100], 'song 000'),
+                        self.window.get_focus())
+        self.assertTrue(await self.escape_from_filter(page, view, songs[90], 'nothing'),
+                        self.window.get_focus())
+
     async def test_no_songs_means_no_filter(self):
         page = await self.songs_page(0)
         self.assertTrue(await self.until(

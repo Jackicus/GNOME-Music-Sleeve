@@ -638,6 +638,26 @@ class QueueViewTest(unittest.TestCase):
         self.assertEqual(self.model.get_n_items(), 1)
         self.assertFalse(self.view.clear_button.get_sensitive())  # nothing after the entry
 
+    def test_clear_from_the_keyboard_leaves_the_focus_on_the_entry_playing(self):
+        # Clear goes insensitive under the focus, which GTK would drop to the window.
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 3))
+        self.view.clear_button.grab_focus()
+        self.assertTrue(wait_for(lambda: self.window.get_focus() is self.view.clear_button))
+        self.view.clear_button.emit('clicked')  # Space or Enter on it
+        self.assertTrue(wait_for(lambda: self.app.toasts == ['Up Next cleared']),
+                        self.app.toasts)
+        self.assertFalse(self.view.clear_button.get_sensitive())
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 2'),
+                        self.window.get_focus())
+        self.assertTrue(wait_for(lambda: self.window.get_focus().get_mapped()))
+        # Clicked with the focus elsewhere, Clear leaves it there.
+        self.player.apply_queue({'index': 2, 'items': entries(5)})
+        self.assertTrue(self.view.clear_button.get_sensitive())
+        self.view.history_button.grab_focus()
+        self.view.clear_button.emit('clicked')
+        self.assertTrue(wait_for(lambda: len(self.app.toasts) == 2))
+        self.assertIs(self.window.get_focus(), self.view.history_button)
+
     def test_the_tools_follow_what_musickit_allows(self):
         view, player = self.view, self.player
         self.assertTrue(view.autoplay_button.get_active())  # the setting's

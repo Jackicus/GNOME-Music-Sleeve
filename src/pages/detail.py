@@ -93,7 +93,8 @@ from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
 from ..widgets.labels import track_label
 from ..widgets.suggested_songs import SuggestedSongs
 from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader, is_playing
-from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, next_frame, weak_method
+from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
+                            next_frame, weak_method)
 from . import SignInOffer, app, show_notes
 
 log = logging.getLogger(__name__)
@@ -747,10 +748,19 @@ class DetailPage(Adw.NavigationPage):
         songs to filter (an album's)."""
         return self.filter_bar.focus()
 
-    def _focus_tracks(self):
-        """Where Escape puts the focus once the filter bar has closed: the list."""
-        if self.stack.get_visible_child_name() == 'item':
-            self.list_view.grab_focus()
+    def _focus_tracks(self, track):
+        """Where Escape puts the focus once the filter bar has closed: the track's row (the
+        one the focus was on), else the first song's; False while no songs show."""
+        if self.stack.get_visible_child_name() != 'item' or not self._shown_tracks():
+            return False
+        position = None
+        for start, model in zip(self._starts, self._track_models, strict=True):
+            index = model.find(track) if isinstance(model, ShownModel) else None
+            if index is not None:
+                position = start + index
+                break
+        focus_position(self.list_view, self._starts[0] if position is None else position)
+        return True
 
     # What the catalog shows under an album's tracks: the footer and the shelves.
 

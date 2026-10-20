@@ -57,7 +57,7 @@ from ..widgets.labels import track_label
 from ..widgets.song_title import SongTitle
 from ..widgets.track_links import TrackLink
 from ..widgets.track_row import PlayingMark
-from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak
+from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, focus_position
 from . import SignInOffer, app, mark_bound
 
 # The columns' names in the Sort By menu's targets and SongOrder's keys.
@@ -457,11 +457,15 @@ class SongsPage(Adw.NavigationPage):
         if self.count_label.get_mapped():
             self.filter_bar.announce(self.count_label.get_label())
 
-    def _focus_table(self):
-        """Where Escape puts the focus once the filter bar has closed: the table, when it
-        shows."""
-        if self.get_mapped() and self.results_stack.get_visible_child_name() == 'table':
-            self.column_view.grab_focus()
+    def _focus_table(self, track):
+        """Where Escape puts the focus once the filter bar has closed: the track's row (the
+        one the focus was on), else the first; False while the table does not show."""
+        if (not self.get_mapped() or self.results_stack.get_visible_child_name() != 'table'
+                or not self._rows.get_n_items()):
+            return False
+        found, position = self._rows.find(track) if track is not None else (False, 0)
+        focus_position(self.column_view, position if found else 0)
+        return True
 
     @Gtk.Template.Callback()
     def on_activate(self, _column_view, position):

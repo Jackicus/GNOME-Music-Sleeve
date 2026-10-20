@@ -526,6 +526,40 @@ class PageTestCase(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.005)
         return focused
 
+    def focused_in(self, view):
+        """What the row or tile of view (a grid, a list, a table) with the window's focus
+        shows, when that widget is on screen (mapped; a recycled one scrolled away is not):
+        else None."""
+        from applemusic.widgets import context_menu
+
+        focus = self.window.get_focus()
+        if focus is None or not focus.is_ancestor(view) or not focus.get_mapped():
+            return None
+        found = context_menu.find(view, focus)
+        return found[1] if found is not None else None
+
+    async def escape_from_filter(self, page, view, focused, text):
+        """With the focus on `focused` (an item of view's model, far down it), Ctrl+F, the
+        filter set to `text`, then Escape in its entry: True once the focus is on
+        `focused` again, on screen (FilterBar.set_focus_return())."""
+        from gi.repository import Gtk
+
+        model = view.get_model()
+        position = next(n for n in range(model.get_n_items()) if model.get_item(n) is focused)
+        view.grab_focus()
+        if isinstance(view, Gtk.ColumnView):
+            view.scroll_to(position, None, Gtk.ListScrollFlags.FOCUS, None)
+        else:
+            view.scroll_to(position, Gtk.ListScrollFlags.FOCUS, None)
+        self.assertTrue(await self.until(lambda: self.focused_in(view) is focused),
+                        self.window.get_focus())
+        self.assertTrue(page.focus_filter())  # Ctrl+F
+        self.assertTrue(await self.until_focused(page.filter_bar.entry))
+        page.filter_bar.set_text(text)
+        await self.turn()
+        page.filter_bar.entry.emit('stop-search')  # Escape
+        return await self.until(lambda: self.focused_in(view) is focused)
+
     async def turn(self, rounds=5):
         """Let what is pending run: GTK's main context, and the tasks up to their next wait."""
         for _round in range(rounds):

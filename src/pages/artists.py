@@ -13,7 +13,8 @@ from ..widgets import context_menu
 from ..widgets.artist_row import ArtistRow
 from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
 from ..widgets.labels import bind_label, unbind_label
-from ..widgets.util import MappedHandlers, connect_weak, first_descendant, next_frame
+from ..widgets.util import (MappedHandlers, connect_weak, first_descendant, focus_position,
+                            next_frame)
 from . import SignInOffer, app, mark_bound
 from .grid import make_sorter
 from .library_artist import LibraryArtistPage
@@ -213,21 +214,23 @@ class ArtistsPage(Adw.NavigationPage):
             GLib.idle_add(lambda: self.filter_bar.focus() and False)
         return self.filter_bar.focus()
 
-    def _focus_list(self):
-        """Where Escape puts the focus once the filter bar has closed: the selected artist."""
-        position = self._selection.get_selected()
-        if position != Gtk.INVALID_LIST_POSITION:
-            self._focus_row(position)
+    def _focus_list(self, artist):
+        """Where Escape puts the focus once the filter bar has closed: the artist the focus
+        was on before the filter (which chose another meanwhile), selected again, else the
+        selected one, else the first; False with no list."""
+        if self.list_stack.get_visible_child_name() != 'list' or not self._slice.get_n_items():
+            return False
+        position = self._shown.find(artist) if artist is not None else None
+        if position is not None and position < self._slice.get_n_items():
+            self._selection.set_selected(position)
+        else:
+            position = self._selection.get_selected()
+        self._focus_row(0 if position == Gtk.INVALID_LIST_POSITION else position)
+        return True
 
     def _focus_row(self, position):
-        """The focus on the list's row at position. Gtk.ListView.scroll_to() focuses the row
-        only when the focus is in the list already (from a header bar, the filter or the
-        sidebar it only moves the list's own focus to it), so the list's grab follows."""
-        self.list_view.scroll_to(position, Gtk.ListScrollFlags.FOCUS, None)
-        root = self.get_root()
-        focus = root.get_focus() if root is not None else None
-        if focus is None or not (focus is self.list_view or focus.is_ancestor(self.list_view)):
-            self.list_view.grab_focus()
+        """The focus on the list's row at position (widgets.util.focus_position())."""
+        focus_position(self.list_view, position)
 
     # The list.
 

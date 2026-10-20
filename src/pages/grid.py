@@ -24,7 +24,7 @@ from ..widgets import context_menu
 from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
-from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak
+from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, focus_position
 from . import SignInOffer, app, mark_bound
 
 
@@ -397,10 +397,14 @@ class GridPage(Adw.NavigationPage):
         filter, or nothing to filter yet."""
         return self.filter_bar is not None and self.filter_bar.focus()
 
-    def _focus_grid(self):
-        """Where Escape puts the focus once the filter bar has closed: the grid."""
-        if self.stack.get_visible_child_name() == 'items':
-            self.grid_view.grab_focus()
+    def _focus_grid(self, obj):
+        """Where Escape puts the focus once the filter bar has closed: obj's tile (the one
+        the focus was on), else the first; False while the grid does not show."""
+        if self.stack.get_visible_child_name() != 'items' or not self._shown.get_n_items():
+            return False
+        position = self._shown.find(obj) if obj is not None else None
+        focus_position(self.grid_view, position or 0)
+        return True
 
     def _update_state(self, *_args):
         library = self._library

@@ -120,6 +120,20 @@ class ArtistsPageTest(PageTestCase):
         self.assertIs(page.list_view.get_model().get_selected_item(), zed)
         del page.detail.set_artist
 
+    async def test_escape_from_the_filter_goes_back_to_the_artist_it_was_on(self):
+        # The filter selects its first match meanwhile; Escape selects the artist again.
+        self.library.state = 'ready'
+        bands = [self.add_artist(f'l.art{n}', f'Invented Artist {n:03d}', n)[0]
+                 for n in range(60)]
+        page = await self.page()
+        self.assertTrue(await self.until(lambda: len(self.listed(page)) == 60))
+        view = page.list_view
+        view.get_model().set_selected(50)
+        self.assertTrue(await self.escape_from_filter(page, view, bands[50], 'artist 00'),
+                        self.window.get_focus())
+        self.assertIs(view.get_model().get_selected_item(), bands[50])
+        self.assertIs(page.detail.artist, bands[50])
+
     async def test_ctrl_f_in_the_collapsed_layout_goes_back_to_the_list(self):
         self.library.state = 'ready'
         self.add_artist('l.art1', 'Aura Invented', 1)

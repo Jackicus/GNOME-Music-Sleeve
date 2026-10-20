@@ -649,6 +649,20 @@ class PlaylistFilterTest(PageTestCase):
         self.assertFalse(page.status_box.get_visible())
         self.assertTrue(page.can_reorder())
 
+    async def test_escape_from_the_filter_puts_the_focus_back_on_the_song_it_was_on(self):
+        # The list's own focus would be a recycled row out of view, bound to another song.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        item = Item(album(2, tracks=60, kind='playlist'))
+        page = await self.push(DetailPage(self.library, item))
+        view = page.list_view
+        songs = list(item.groups[0].entries)
+        self.assertTrue(await self.escape_from_filter(page, view, songs[50], 'song 1'),
+                        self.window.get_focus())
+        self.assertTrue(await self.escape_from_filter(page, view, songs[40], 'nothing'),
+                        self.window.get_focus())
+
     async def test_a_reload_keeps_the_filter(self):
         page = await self.show()
         page.filter_bar.set_text('harbour')

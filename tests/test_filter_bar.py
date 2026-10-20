@@ -143,17 +143,20 @@ class FilterBarTest(PageTestCase):
         changes = []
         self._list = list_view
 
-        def back():
-            returned.append(True)
-            list_view.grab_focus()
+        def back(obj):
+            returned.append(obj)
+            if self._list.get_visible():
+                list_view.grab_focus()
+                return True
+            return False  # no list shown: the bar's button takes the focus
 
         self._back = back  # held: the bar holds it weakly
         bar.set_focus_return(self._back_method)
         bar.connect('changed', lambda bar: changes.append(bar.search))
         return page, bar, returned, changes
 
-    def _back_method(self):
-        self._back()
+    def _back_method(self, obj):
+        return self._back(obj)
 
     async def test_offered_shown_by_focus_and_closed_by_escape(self):
         from gi.repository import Gdk, Gtk
@@ -187,6 +190,8 @@ class FilterBarTest(PageTestCase):
         self.assertFalse(bar.button.get_active())
         self.assertTrue(await self.until(lambda: bar.search == '' and returned))
         self.assertEqual(changes[-1], '')
+        self.assertEqual(returned, [None])  # the focus was on no item of the page's
+        self.assertTrue(await self.until(lambda: self.window.get_focus() is self._list))
         # Escape on the page while it shows closes it too; not while it is closed.
         escape = next(controller for controller in page.observe_controllers()
                       if isinstance(controller, Gtk.EventControllerKey))
@@ -204,6 +209,18 @@ class FilterBarTest(PageTestCase):
         self.assertIsNone(bar.get_key_capture_widget())
         self.assertFalse(any(isinstance(controller, Gtk.EventControllerKey)
                              for controller in page.observe_controllers()))
+
+    async def test_with_no_list_to_go_back_to_the_focus_goes_to_the_button(self):
+        page, bar, returned, _changes = await self.bar()
+        page.prepend(bar.button)  # in the page's header bar
+        bar.set_available(True, page)
+        self.assertTrue(bar.focus())
+        self.assertTrue(await self.until_focused(bar.entry))
+        self._list.set_visible(False)  # a status page in its place
+        bar.entry.emit('stop-search')
+        self.assertTrue(await self.until(lambda: self.window.get_focus() is bar.button),
+                        self.window.get_focus())
+        self.assertEqual(returned, [None])
 
     async def test_the_count_is_announced_through_the_window(self):
         from gi.repository import Gtk

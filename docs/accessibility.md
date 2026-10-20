@@ -61,8 +61,9 @@ list and the script together.
    into the page. The walkthrough does step 13 here.
 5. Ctrl+Shift+N opens Now Playing with the focus on its play button; Tab goes through the controls,
    the Lyrics and Up Next toggle (Left and Right move between the two, Space or Enter
-   switches), on Up Next its History toggle, Autoplay toggle and Clear, and into the list
-   (arrows move, Enter seeks to a line or plays an entry, Menu opens an entry's menu, with
+   switches), on Up Next its History toggle, Autoplay toggle and Clear (Space clears what
+   follows the entry playing, with an Undo toast, and the focus moves to the entry playing as
+   Clear goes insensitive), and into the list (arrows move, Enter seeks to a line or plays an entry, Menu opens an entry's menu, with
    Remove from Up Next after the entry playing; Delete removes the focused entry, and the
    focus moves to the one that took its place). Space on History shows the entries played
    before, most recent first, in place of Up Next (Autoplay and Clear go): Tab reaches them,
@@ -83,7 +84,10 @@ list and the script together.
    its entry; typing on the page (in the list, or on the header bar's buttons) shows it too,
    with what was typed; the new count is read out once the typing pauses ("2 of 40
    albums"); Escape, in the entry or on the list, closes it, clears the filter and puts the
-   focus back in the list, and on a playlist opened from a grid a second Escape goes back.
+   focus back on the item it was on, scrolled into view however far down the list it was and
+   whatever the filter left (the first item when the focus was elsewhere, the filter's
+   button when no list shows), so the next arrow key moves on from it; on a playlist opened
+   from a grid a second Escape goes back.
 7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
    it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
    Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
