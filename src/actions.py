@@ -677,12 +677,12 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     Playlist submenu lists (ItemActions.playlists(): (id, title, children), a folder's
     children its own entries, a submenu); `here` is the Item of the page shown (Go to Album
     and Go to Artist are left out where they would go nowhere: related.shows); `queued`, obj
-    is in the player's
-    queue (no Play); `container`, the playlist Item the track obj is shown in (Remove from
-    Playlist, when it is one of the user's); `moves`, where a playlist or folder can be
-    moved (move_targets(): Move to Folder; None, not at all); `removable`, obj's
-    removal_target (Remove from Library…, and no Add to Library); `queue_entry`, (index, id)
-    of the queue's entry obj is when it may be taken out of Up Next (Remove from Up Next)."""
+    is in the player's queue (no Play); `container`, the playlist Item the track obj is
+    shown in (Remove from Playlist, when it is one of the user's); `moves`, where a playlist
+    or folder can be moved (move_targets(): Move to Folder; None, not at all); `removable`,
+    obj's removal_target (Remove from Library…, and no Add to Library); `queue_entry`,
+    (index, id) of the queue's entry obj is when it may be taken out of Up Next (Remove from
+    Up Next)."""
     if is_curator(obj):
         return curator_menu(obj, storefront)
     named = describe(obj)
