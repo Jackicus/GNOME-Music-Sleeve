@@ -92,6 +92,52 @@ class LibraryArtistPageTest(PageTestCase):
         self.assertIs(self.window.item_actions.asked[-1], band)
         page.more_button.popdown()
 
+    async def heading_edges(self, band, width, rtl=False):
+        """The page of `band` in a window `width` px wide: whether its heading is stacked,
+        and the start edges, in px from the page's start side, of the name's text, Play and
+        the first cover."""
+        from gi.repository import Gtk
+
+        from applemusic.pages.library_artist import LibraryArtistPage
+        from applemusic.widgets.tile import Tile
+
+        def start(widget):
+            bounds = widget.compute_bounds(page)[1]
+            return round(page.get_width() - bounds.get_x() - bounds.get_width() if rtl
+                         else bounds.get_x())
+
+        def covers():
+            return [start(tile.cover) for tile in find_all(page.grid_view, Tile)
+                    if tile.context_item is not None]
+
+        # Widgets follow the default direction (theirs is unset) for as long as it is set.
+        if rtl:
+            Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)
+        try:
+            page = await self.show_at(LibraryArtistPage(self.library, band), width)
+            self.assertTrue(await self.until(covers, 2))
+            await self.turn()  # the breakpoint's layout
+            stacked = page.heading_box.get_orientation() == Gtk.Orientation.VERTICAL
+            return stacked, (start(page.name_label), start(page.play_button), min(covers()))
+        finally:
+            Gtk.Widget.set_default_direction(Gtk.TextDirection.LTR)
+
+    async def test_the_heading_lines_up_with_the_first_cover_in_every_layout(self):
+        """The name's text, Play (stacked under the name below 720sp) and the first cover
+        start on one edge, left to right and right to left: the name button's padding is its
+        own, not the buttons'. Side by side, the buttons keep to the end."""
+        band, _albums = self.library_with((1, 2005), (2, 2019), (3, 2011))
+        for width, rtl, stacked in ((700, False, True), (360, False, True), (700, True, True),
+                                    (1200, False, False)):
+            with self.subTest(width=width, rtl=rtl):
+                shown, (name, play, cover) = await self.heading_edges(band, width, rtl)
+                self.assertEqual(shown, stacked)
+                self.assertLessEqual(abs(name - cover), 1, (name, play, cover))
+                if stacked:
+                    self.assertLessEqual(abs(play - cover), 1, (name, play, cover))
+                else:
+                    self.assertGreater(play, width / 2, (name, play, cover))
+
     async def test_another_artist_in_place_and_a_reload_followed(self):
         from applemusic.library import Item
 

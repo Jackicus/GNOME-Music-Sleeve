@@ -10,8 +10,6 @@ page shown (window.open_item for an artist of the library's: a tile, a link, the
 In Your Library See All).
 """
 
-from gettext import gettext as _
-
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import discography
@@ -22,7 +20,7 @@ from ..widgets.tile import Tile
 from ..widgets.util import MappedHandlers, connect_weak, weak_method
 from . import app
 from ..widgets.filter_bar import ShownModel
-from .grid import SORTS, columns_for, estimate_columns, make_sorter
+from .grid import SORTS, columns_for, estimate_columns, make_sorter, sort_labels
 
 # The orders the Sort By menu offers: newest first, as Apple Music's library has an artist's
 # albums, or by title.
@@ -127,9 +125,10 @@ class LibraryArtistPage(Adw.NavigationPage):
         for key in ORDERS:
             keys.append(SORTS[key][0](), f'page.sort::{key}')
         menu.append_section(None, keys)
+        labels = sort_labels()
         directions = Gio.Menu()
-        directions.append(_('Ascending'), 'page.sort-order::ascending')
-        directions.append(_('Descending'), 'page.sort-order::descending')
+        directions.append(labels['ascending'], 'page.sort-order::ascending')
+        directions.append(labels['descending'], 'page.sort-order::descending')
         menu.append_section(None, directions)
         self.sort_button.set_menu_model(menu)
 

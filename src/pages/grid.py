@@ -79,15 +79,23 @@ def estimate_columns(column_width=COLUMN_WIDTH):
 
 # The sort orders a page can offer: key -> (label, the Item properties compared in turn,
 # whether the key's own direction is descending). Labels are looked up when a page is built,
-# after the launcher has set up gettext. An Item's subtitle is its artist; Year is newest
+# after the launcher has set up gettext; their mnemonics differ from one another's and from
+# sort_labels()'s, as they share a menu. An Item's subtitle is its artist; Year is newest
 # first unless asked the other way.
 SORTS = {
-    'title': (lambda: _('Title'), ('title',), False),
-    'artist': (lambda: _('Artist'), ('subtitle', 'year', 'title'), False),
-    'year': (lambda: _('Year'), ('year', 'title'), True),
+    'title': (lambda: _('_Title'), ('title',), False),
+    'artist': (lambda: _('_Artist'), ('subtitle', 'year', 'title'), False),
+    'year': (lambda: _('_Year'), ('year', 'title'), True),
     # Newest first: Apple's dateAdded (Item.added), to the second.
-    'added': (lambda: _('Date Added'), ('added', 'title'), True),
+    'added': (lambda: _('Date A_dded'), ('added', 'title'), True),
 }
+
+
+def sort_labels():
+    """The Sort By menu's other items, with mnemonics of their own beside SORTS' (and the
+    Songs page's, songs.blp): Ascending and Descending, and Favourites Only."""
+    return {'ascending': _('Asc_ending'), 'descending': _('Desce_nding'),
+            'favourites-only': _('_Favourites Only')}
 # The properties compared as numbers; the rest are text.
 NUMBERS = frozenset({'year', 'added'})
 
@@ -274,13 +282,14 @@ class GridPage(Adw.NavigationPage):
         menu = Gio.Menu()
         self._keys_menu = Gio.Menu()
         menu.append_section(None, self._keys_menu)
+        labels = sort_labels()
         directions = Gio.Menu()
-        directions.append(_('Ascending'), 'page.sort-order::ascending')
-        directions.append(_('Descending'), 'page.sort-order::descending')
+        directions.append(labels['ascending'], 'page.sort-order::ascending')
+        directions.append(labels['descending'], 'page.sort-order::descending')
         menu.append_section(None, directions)
         if favourites is not None:
             filters = Gio.Menu()
-            filters.append(_('Favourites Only'), 'page.favourites-only')
+            filters.append(labels['favourites-only'], 'page.favourites-only')
             menu.append_section(None, filters)
             self.sort_button.set_tooltip_text(_('Sort and Filter'))
             self.sort_button.update_property([Gtk.AccessibleProperty.LABEL],

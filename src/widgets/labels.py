@@ -9,13 +9,14 @@ looked up once (a list binds its rows by the thousand, and gettext is slow when 
     list_item.set_accessible_label(track_label(track, show_artist=True, show_album=True))
     child = flow_child(tile, accessible_label(item))   # a Gtk.FlowBox's create function
     caption.set_text(song_caption(item))   # a song row's album and year, its second line
+    row.set_factory(named_list_factory(row, popup=False))   # a combo row's or drop-down's
 
 No template here, so the unit tests import it without a display.
 """
 
 from gettext import gettext as _
 
-from gi.repository import Gtk
+from gi.repository import Gtk, Pango
 
 _formats = {}
 
@@ -150,3 +151,62 @@ def unbind_label(list_item):
         item, handler = followed
         item.disconnect(handler)
         list_item.label_handler = None
+
+
+def named_list_factory(view, popup, drop_down=False):
+    """A factory for the list items of a value chooser (an Adw.ComboRow, a Gtk.DropDown) over
+    a Gtk.StringList, as the toolkit's own (a label; in the popup, a check mark on the item
+    selected) but naming each item for assistive technology: the defaults leave them unnamed,
+    in the popup and in the chooser's own display of the value, which is a list of one item
+    too (the chooser itself is named by its title or label). Laid out as AdwComboRow's (the
+    label shortens to fit), or with `drop_down` as GtkDropDown's (the label as wide as its
+    text, 10 px before the check mark). The view is held weakly: the factory is the view's
+    own, and a closure holding the view would keep a closed dialog or a dropped page alive."""
+    view_ref = view.weak_ref()
+
+    def setup(_factory, item):
+        if drop_down:
+            box = Gtk.Box(spacing=10)
+            label = Gtk.Label(xalign=0, valign=Gtk.Align.CENTER)
+        else:
+            box = Gtk.Box()
+            label = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=20,
+                              width_chars=1, valign=Gtk.Align.CENTER)
+        box.append(label)
+        if popup:
+            box.append(Gtk.Image(icon_name='object-select-symbolic',
+                                 accessible_role=Gtk.AccessibleRole.PRESENTATION))
+        item.set_child(box)
+
+    def bind(_factory, item):
+        view = view_ref()
+        if view is None:
+            return
+        text = item.get_item().get_string()
+        box = item.get_child()
+        box.get_first_child().set_label(text)
+        item.set_accessible_label(text)
+        if not popup:
+            return
+        check = box.get_last_child()
+
+        def follow(*_args):
+            current = view_ref()
+            selected = current.get_selected_item() if current is not None else None
+            check.set_opacity(1.0 if selected == item.get_item() else 0.0)
+
+        item.follow_handler = view.connect('notify::selected-item', follow)
+        follow()
+
+    def unbind(_factory, item):
+        view = view_ref()
+        handler = getattr(item, 'follow_handler', None)
+        if view is not None and handler is not None:
+            view.disconnect(handler)
+        item.follow_handler = None
+
+    factory = Gtk.SignalListItemFactory()
+    factory.connect('setup', setup)
+    factory.connect('bind', bind)
+    factory.connect('unbind', unbind)
+    return factory

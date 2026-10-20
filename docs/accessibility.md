@@ -100,7 +100,9 @@ list and the script together.
 7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
    it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
    Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
-   buttons, Escape closes it. Ctrl+? lists every shortcut.
+   buttons, Escape closes it. Ctrl+? lists every shortcut. A page's Sort By or Sort and
+   Filter menu (Enter on its button) has a mnemonic of its own on every item: on Albums, F
+   shows the favourites alone.
 8. With a dialog open over the window, Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N,
    Ctrl+Shift+L, Ctrl+Shift+U, Space, Ctrl+N, Ctrl+L and Ctrl+Up leave the page behind it
    alone (and open no other dialog).
@@ -171,7 +173,7 @@ list and the script together.
   from /usr/share/defaults/at-spi2 or /etc/at-spi2, on an abstract socket, and
   `at-spi2-registryd` from /usr/libexec, /usr/lib or /usr/lib/at-spi2-core), stops both when it
   exits, and lists each page's focusable controls that have no accessible name, as libatspi
-  (and so Orca) reads them. GTK and libatspi both follow `AT_SPI_BUS_ADDRESS`.
+  (and so Orca) reads them, Search's Show Results Of open among them. GTK and libatspi both follow `AT_SPI_BUS_ADDRESS`.
 - An `Atspi.EventListener` sees events only when registered before the app starts, and after
   `Atspi.init()`. `Gtk.Accessible.announce()` from a widget that no client has asked about is
   dropped; from the window it is always sent (`object:announcement`), which is why the app
@@ -183,7 +185,8 @@ list and the script together.
   and does not expose a folder's state or level (`sidebar_view.py` sets them);
   `AdwShortcutsDialog`'s rows are unnamed (dialogs/shortcuts.py names them); `AdwComboRow`'s
   default factories leave its list items unnamed, in the popup and in the row's own display
-  of the value (dialogs/preferences.py gives the row factories that name them); an open
+  of the value, and so do `GtkDropDown`'s (`widgets.labels.named_list_factory()` names them,
+  for Preferences' combo row and Search's Show Results Of); an open
   `Adw.BottomSheet` leaves the content behind it "showing".
 - Not checked by machine: input methods, Orca itself, the high-contrast switch live, and
   right-to-left layouts. Nor is CI: its container has no mutter, so the keyboard walkthrough is

@@ -7,7 +7,7 @@ title in the header bar, and a folder that is gone."""
 import unittest
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
-from tests.page_harness import PageTestCase, album
+from tests.page_harness import PageTestCase, album, artist
 
 from applemusic.pages import estimate_width
 
@@ -598,6 +598,48 @@ class SignInOfferTest(PageTestCase):
             self.assertEqual(page.stack.get_visible_child_name(), 'empty', key)
             offered[key] = (offer(page).get_visible(), page.empty_page.get_description())
         self.assertEqual(offered, dict.fromkeys(offered, (True, SIGNED_OUT)))
+
+
+class SortMenuTest(PageTestCase):
+    async def test_every_sort_menu_item_has_a_mnemonic_of_its_own(self):
+        """Sort By and Sort and Filter, on every page that has one: each item has a
+        mnemonic, none two in one menu (F is Favourites Only)."""
+        from gi.repository import Gio
+
+        from applemusic import pages
+        from applemusic.library import Item
+        from applemusic.pages.library_artist import LibraryArtistPage
+        from applemusic.sections import sidebar_sections
+
+        def labels(menu):
+            found = []
+            for position in range(menu.get_n_items()):
+                section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+                if section is not None:
+                    found.extend(labels(section))
+                else:
+                    found.append(menu.get_item_attribute_value(
+                        position, Gio.MENU_ATTRIBUTE_LABEL).unpack())
+            return found
+
+        destinations = {destination.key: destination
+                        for section in sidebar_sections() for destination in section.destinations}
+        menus = {key: pages.create(destinations[key], self.library).sort_button.get_menu_model()
+                 for key in ('albums', 'songs', 'music-videos', 'recently-added',
+                             'all-playlists')}
+        band = Item(artist([album(1)]))
+        menus['library-artist'] = LibraryArtistPage(self.library, band).sort_button \
+            .get_menu_model()
+        for key, menu in menus.items():
+            with self.subTest(page=key):
+                found = labels(menu)
+                self.assertTrue(all('_' in label for label in found), found)
+                letters = [label[label.index('_') + 1].lower() for label in found]
+                self.assertEqual(len(letters), len(set(letters)), found)
+        self.assertIn('_Favourites Only', labels(menus['albums']))
+        self.assertIn('Date A_dded', labels(menus['albums']))
+        self.assertIn('_Favourites Only', labels(menus['songs']))
+        self.assertEqual(labels(menus['recently-added']), ['Asc_ending', 'Desce_nding'])
 
 
 if __name__ == '__main__':

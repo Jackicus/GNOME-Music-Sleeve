@@ -601,3 +601,16 @@ class PageTestCase(unittest.IsolatedAsyncioTestCase):
         self.window.navigation_view.replace([page])
         self.assertTrue(await self.until(page.get_mapped), f'{type(page).__name__} not shown')
         return page
+
+    async def show_at(self, page, width, height=640):
+        """Show page as the root of a stand-in window of its own, `width` by `height` (the
+        shared one is 1000 by 700), for a page's breakpoints; the window goes when the test
+        ends."""
+        window = classes()['Window']()
+        window.set_default_size(width, height)
+        window.navigation_view.add(page)
+        window.navigation_view.replace([page])
+        window.present()
+        self.addCleanup(window.destroy)
+        self.assertTrue(await self.until(page.get_mapped, 2), f'{type(page).__name__} not shown')
+        return page

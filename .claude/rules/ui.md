@@ -243,7 +243,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - Announcements go through the window (`get_root().announce(...)`): GTK drops one from a widget
   that no assistive technology has asked about yet.
 - Grids and lists have `tab-behavior: item`. Dialog buttons have mnemonics (`_Label`,
-  `use-underline: true`).
+  `use-underline: true`), and so does every menu item, unique within its menu
+  (`actions.action_labels()`, the sort menus' `grid.sort_labels()`). A combo row's or a
+  drop-down's items are named by `labels.named_list_factory()` (the default factories
+  leave them unnamed).
 - Text on an item's colour reaches WCAG AA (`artwork.band_colour()`), and so does the Now
   Playing sheet's text over its artwork tint (`artwork.tint_alpha()`); dim text in markup follows
   the high-contrast setting; style.css may use `@media (prefers-contrast: more)`.

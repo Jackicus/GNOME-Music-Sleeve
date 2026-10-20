@@ -9,7 +9,9 @@ template $AppleMusicLibraryArtistPage: Adw.NavigationPage {
     width-request: 360;
     height-request: 200;
 
-    // Too narrow for a name of some length beside the buttons: the buttons go under it.
+    // Too narrow for a name of some length beside the buttons: the buttons go under it, on
+    // the name's text's edge (the heading box's margin leaves room for the name button's
+    // padding, which the buttons have not got).
     Adw.Breakpoint {
       condition ("max-width: 720sp")
 
@@ -17,6 +19,7 @@ template $AppleMusicLibraryArtistPage: Adw.NavigationPage {
         heading_box.orientation: vertical;
         heading_box.spacing: 12;
         buttons_box.halign: start;
+        buttons_box.margin-start: 10;
       }
     }
 
@@ -31,6 +34,7 @@ template $AppleMusicLibraryArtistPage: Adw.NavigationPage {
         heading_box.margin-start: 7;
         heading_box.margin-end: 14;
         buttons_box.halign: start;
+        buttons_box.margin-start: 10;
         grid_view.margin-start: 14;
         grid_view.margin-end: 14;
       }

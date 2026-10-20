@@ -9,14 +9,16 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
     width-request: 360;
     height-request: 200;
 
-    // Narrow: the album column goes, and the title column gives up what the time column
-    // needs, so that title, artist and time fit a 360 px window.
-    Adw.Breakpoint {
+    // Narrow: the album and artist columns go, the artist shown under the title instead
+    // (songs.py stacks the title cells as this applies), so that the title has the room and
+    // title and time fit a 360 px window.
+    Adw.Breakpoint narrow_breakpoint {
       condition ("max-width: 560sp")
 
       setters {
         album_column.visible: false;
-        title_column.fixed-width: 160;
+        artist_column.visible: false;
+        title_column.fixed-width: 260;
       }
     }
 
@@ -124,8 +126,8 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
                     // Fixed widths, shared out as the table grows, keep the columns from
                     // measuring their cells: rows are rebound all the time while scrolling,
                     // and widths that followed the text shown would jump as it changed.
-                    // Without the album column, and the title column narrowed, they fit a
-                    // 360 px window: 356 px.
+                    // Title and time alone (the narrow breakpoint's) fit a 360 px window:
+                    // 356 px.
                     ColumnViewColumn title_column {
                       title: _("Title");
                       fixed-width: 170;
@@ -177,29 +179,30 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
 }
 
 // The Sort and Filter menu (songs.py's songs.* actions): the keyboard's way to sort, as the
-// column headers take no focus, and Favourites Only.
+// column headers take no focus, and Favourites Only. Each label's mnemonic is its own in the
+// menu; the directions' and Favourites Only's are grid.sort_labels()'.
 menu sort_menu {
   section {
     item {
-      label: _("Title");
+      label: _("_Title");
       action: "songs.sort-column";
       target: "title";
     }
 
     item {
-      label: _("Artist");
+      label: _("_Artist");
       action: "songs.sort-column";
       target: "artist";
     }
 
     item {
-      label: _("Album");
+      label: _("Al_bum");
       action: "songs.sort-column";
       target: "album";
     }
 
     item {
-      label: _("Time");
+      label: _("T_ime");
       action: "songs.sort-column";
       target: "time";
     }
@@ -207,13 +210,13 @@ menu sort_menu {
 
   section {
     item {
-      label: _("Ascending");
+      label: _("Asc_ending");
       action: "songs.sort-order";
       target: "ascending";
     }
 
     item {
-      label: _("Descending");
+      label: _("Desce_nding");
       action: "songs.sort-order";
       target: "descending";
     }
@@ -221,7 +224,7 @@ menu sort_menu {
 
   section {
     item {
-      label: _("Favourites Only");
+      label: _("_Favourites Only");
       action: "songs.favourites-only";
     }
   }
