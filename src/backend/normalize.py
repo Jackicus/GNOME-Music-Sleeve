@@ -48,8 +48,8 @@ LYRICS_KEEP = 2000
 KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
                 'genres.json', 'recent-played.json')
 # The folders of day-long answers, one file an item.
-ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'suggestions', 'credits', 'rooms',
-                  'groupings', 'multirooms', 'charts')
+ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'playlists', 'suggestions', 'credits',
+                  'rooms', 'groupings', 'multirooms', 'charts')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -2983,6 +2983,100 @@ def album_cache_path(cache_dir, album_id):
     """Where an album's page (album_page) is kept for a day, under the id it was asked by: a
     library album's own, or a catalog one."""
     return os.path.join(cache_dir, 'albums', f'{_safe_id(album_id)}.json')
+
+
+# ---------------------------------------------------------------------------
+# A catalog playlist's page under its tracks
+# ---------------------------------------------------------------------------
+
+# The shelves under a catalog playlist's tracks, in the order music.apple.com shows them:
+# its views (api.PLAYLIST_VIEWS), titled as Apple titles them.
+PLAYLIST_SHELVES = ('featured-artists', 'more-by-curator', 'you-might-also-like')
+
+
+def playlist_page(raw, cache_dir):
+    """The rest of a catalog playlist's page (Engine.playlist_page()'s answer, from
+    api.PLAYLIST_ENDPOINT's answer), as {id, curator, shelves}:
+
+    - `id`: the catalog playlist's id.
+    - `curator`: who made it, for the link under its title (playlist_curator()): an Apple
+      curator's category tile (its page is the category page), a third party's `link` (its
+      page on music.apple.com), or None.
+    - `shelves`: [{key, title, items, more}] in PLAYLIST_SHELVES's order, titled as Apple
+      titles the views ('' without a title: the app names it), `more` True when Apple has
+      more than it sent. The curator's playlists and those like it leave the playlist itself
+      out; a shelf with nothing the app can show is left out.
+
+    Items are shaped as a search's are (_shelf_item: an artist, a playlist with its
+    curator)."""
+    raw = raw if isinstance(raw, dict) else {}
+    data = raw.get('data')
+    resource = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else {}
+    attrs = resource.get('attributes') if isinstance(resource.get('attributes'), dict) else {}
+    playlist_id = str(resource.get('id') or '')
+    views = resource.get('views') if isinstance(resource.get('views'), dict) else {}
+    found = {}
+    for name, view in views.items():
+        if name not in PLAYLIST_SHELVES or not isinstance(view, dict):
+            continue
+        title = (view.get('attributes') or {}).get('title')
+        found[name] = {'key': name, 'title': title.strip() if isinstance(title, str) else '',
+                       'items': playlist_view_items(view.get('data'), playlist_id, cache_dir),
+                       'more': bool(view.get('next'))}
+    curator_name = attrs.get('curatorName') if isinstance(attrs.get('curatorName'), str) else ''
+    return {
+        'id': playlist_id,
+        'curator': playlist_curator(resource, curator_name.strip()),
+        'shelves': [found[name] for name in PLAYLIST_SHELVES
+                    if name in found and found[name]['items']],
+    }
+
+
+def playlist_curator(resource, name=''):
+    """Who made a catalog playlist, from its `curator` relationship (`include=curator`): an
+    Apple curator (`apple-curators`) as its category tile (normalize_curator) titled with its
+    whole name, not a tile's short one (named `name`, the playlist's curatorName, when Apple
+    sent its id alone), a third party (`curators`) as
+    a `link` to its page on music.apple.com (curator_link); None for anything else, one with
+    no id, or a third party without an https page."""
+    relationships = resource.get('relationships') if isinstance(resource, dict) else None
+    curator = relationships.get('curator') if isinstance(relationships, dict) else None
+    data = curator.get('data') if isinstance(curator, dict) else None
+    raw = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else {}
+    if not str(raw.get('id') or ''):
+        return None
+    if raw.get('type') == 'apple-curators':
+        item = normalize_curator(raw)
+        if item is None:
+            if not name:
+                return None
+            item = {'id': str(raw['id']), 'kind': 'category', 'title': name, 'subtitle': None,
+                    'art': None, 'artColor': None, 'url': None}
+        full = str((raw.get('attributes') or {}).get('name') or '').strip()
+        if full:  # the page the link opens is titled with the whole name, not a tile's
+            item.update(title=full, subtitle=None)
+        return item
+    if raw.get('type') == 'curators':
+        item = curator_link(raw)
+        return item if item['kind'] == 'link' else None
+    return None
+
+
+def playlist_view_items(resources, playlist_id, cache_dir):
+    """The Items of one of a playlist's views whole (See All), as playlist_page() has them:
+    the playlist itself left out, what the app cannot show too."""
+    items = []
+    for resource in resources if isinstance(resources, list) else []:
+        item = _shelf_item(resource, cache_dir, curators=False)
+        if item is not None and str(playlist_id) not in (item['id'], item.get('catalogId')):
+            items.append(item)
+    return items
+
+
+def playlist_cache_path(cache_dir, playlist_id):
+    """Where a catalog playlist's page (playlist_page) is kept for a day, by its catalog
+    id."""
+    return os.path.join(cache_dir, 'playlists', f'{_safe_id(playlist_id)}.json')
 
 
 # ---------------------------------------------------------------------------

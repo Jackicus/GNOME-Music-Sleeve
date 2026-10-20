@@ -45,8 +45,11 @@ playlists, radio episodes and interviews, and for every third artist an invented
 catalog would show under its tracks (albums/<catalog id>.json, the shape
 normalize.album_page() gives: its release date, copyright and label, and its
 shelves, made of the demo's own albums, videos and playlists and an invented
-edition or two), which the demo engine answers
-from, and each playlist the songs Apple would suggest adding to it
+edition or two), each catalog playlist of the artists' pages what the catalog would
+show under its tracks (playlists/<id>.json, normalize.playlist_page()'s shape: an
+invented Apple curator, its page in categories/, and Featured Artists, More By the
+curator and You Might Also Like of the demo's own artists and playlists), which the
+demo engine answers from, and each playlist the songs Apple would suggest adding to it
 (suggestions/<playlist id>.json, normalize.playlist_suggestions()'s shape:
 twenty-four of the demo's own songs it does not hold), and the Radio page's answer
 (radio.json, normalize.radio_shelves()'s shape: invented live stations, shows, episodes
@@ -2644,6 +2647,7 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
                 'explicit': any(t['explicit'] for t in tracks), 'catalogId': None, 'url': None,
                 'play': play, 'groups': [{'name': '', 'play': play, 'entries': tracks}]}
 
+    catalog_playlists = []  # (artist, genre, its two playlists) for build_playlist_pages
     for index, (data, artist) in enumerate(zip(artists_data, artists, strict=False)):
         name, genre = data['name'], data['genre']
         catalog_id = artist['catalogId']
@@ -2678,6 +2682,7 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
             collection(f'pl.demo{index:02d}2', 'playlist', f'{name}: Deep Cuts',
                        f'Apple Music {genre}', None, picks[::-1][:8], index * 5 + 2)]
         shelf('playlists', 'Artist Playlists', artist_playlists)
+        catalog_playlists.append((artist, genre, artist_playlists))
         hosted = None
         if index % 2 == 0:
             show_title = DEMO_HOSTED_SHOWS[(index // 2) % len(DEMO_HOSTED_SHOWS)].format(
@@ -2808,6 +2813,60 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
             with open(os.path.join(albums_dir, f"{coming['id']}.json"), 'w',
                       encoding='utf-8') as f:
                 json.dump(album_page, f, indent=2)
+    build_playlist_pages(out_dir, catalog_playlists, generated)
+
+
+def build_playlist_pages(out_dir, catalog_playlists, generated):
+    """Write playlists/<id>.json for each catalog playlist of the artists' pages: what the
+    catalog would answer for the rest of its page (normalize.playlist_page()'s shape, kept as
+    the engine keeps it, stamped `cached` with the library's date): its curator, an invented
+    Apple curator, Apple Music <genre>, whose page is written in categories/<id>.json (its
+    playlists), and its shelves: Featured Artists (the artist and the two after them), More
+    By the curator (the artist's other playlist) and You Might Also Like (the next three
+    artists' first playlists). The playlists keep their tracks, so their pages open in the
+    demo. `catalog_playlists` is [(artist, genre, [two playlists])], in the artists'
+    order."""
+    pages_dir = os.path.join(out_dir, 'playlists')
+    categories_dir = os.path.join(out_dir, 'categories')
+    os.makedirs(pages_dir, exist_ok=True)
+    os.makedirs(categories_dir, exist_ok=True)
+    count = len(catalog_playlists)
+    for index, (_artist, genre, playlists) in enumerate(catalog_playlists):
+        title = f'Apple Music {genre}'
+        curator_id = f'demo.apcurator{index:02d}'
+        curator = {'id': curator_id, 'kind': 'category', 'title': title, 'subtitle': None,
+                   'art': None, 'artColor': None,
+                   'url': f'https://music.apple.com/us/curator/{slug(title)}/{curator_id}'}
+        curator_page = {'id': curator_id, 'title': title, 'host': '', 'banner': None,
+                        'shelves': [{'key': f'cat-{curator_id}-playlists', 'title': 'Playlists',
+                                     'items': playlists}],
+                        'cached': generated,
+                        'demo': True}  # invented: the demo engine answers only these
+        with open(os.path.join(categories_dir, f'{curator_id}.json'), 'w',
+                  encoding='utf-8') as f:
+            json.dump(curator_page, f, indent=2)
+        featured = [catalog_playlists[(index + step) % count][0] for step in range(3)]
+        artists = [dict(other, id=other['catalogId'], groups=[],
+                        play={'kind': 'artist', 'id': other['catalogId']})
+                   for other in featured]
+        alike = [catalog_playlists[(index + step) % count][2][0] for step in range(1, 4)]
+        for playlist in playlists:
+            page = {
+                'id': playlist['id'],
+                'curator': curator,
+                'shelves': [
+                    {'key': 'featured-artists', 'title': 'Featured Artists', 'more': False,
+                     'items': artists},
+                    {'key': 'more-by-curator', 'title': f'More By {title}', 'more': False,
+                     'items': [other for other in playlists if other is not playlist]},
+                    {'key': 'you-might-also-like', 'title': 'You Might Also Like',
+                     'more': False, 'items': alike}],
+                'cached': generated,
+                'demo': True,  # invented: the demo engine answers only these
+            }
+            with open(os.path.join(pages_dir, f"{playlist['id']}.json"), 'w',
+                      encoding='utf-8') as f:
+                json.dump(page, f, indent=2)
 
 
 def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums, videos,

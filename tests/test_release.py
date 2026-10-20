@@ -12,9 +12,10 @@ from applemusic.library import Item
 from gi.repository import GLib
 
 from applemusic.release import (album_artist, album_shelves, album_target, coming_text,
-                                curator, footer_lines, hero_caption, is_prerelease,
-                                length_text, release_date_text, released_play, shelf_title,
-                                updated_text)
+                                curator, curator_item, footer_lines, hero_caption,
+                                is_prerelease, length_text, playlist_shelves,
+                                playlist_target, release_date_text, released_play,
+                                shelf_title, updated_text)
 
 
 def album(album_id='l.alb001', catalog_id=None, songs=(None, '1724049201'), **extra):
@@ -268,6 +269,81 @@ class ShelvesTest(unittest.TestCase):
         self.assertEqual(shelves[2].title, 'More By Paper Parachutes')
         self.assertEqual(shelf_title('more-by-artist', '', ''), 'More By the Artist')
         self.assertEqual(album_shelves(None), [])
+
+
+def catalog_playlist(playlist_id='pl.aW52ZW50ZWRwbA', catalog_id=None, **extra):
+    """An invented playlist Item."""
+    play = {'kind': 'playlist', 'id': playlist_id}
+    data = {'id': playlist_id, 'kind': 'playlist', 'title': 'Invented Night Drive',
+            'subtitle': 'Apple Music Invented', 'catalogId': catalog_id, 'play': play,
+            'groups': []}
+    data.update(extra)
+    return Item(data)
+
+
+class PlaylistTest(unittest.TestCase):
+    def test_the_catalog_playlist_asked_for(self):
+        self.assertEqual(playlist_target(catalog_playlist()), 'pl.aW52ZW50ZWRwbA')
+        # One of Apple's added to the library: by the catalog id it carries.
+        added = catalog_playlist('p.aW52ZW50ZWQ', catalog_id='pl.aW52ZW50ZWRwbA',
+                         attributes={'canEdit': False})
+        self.assertEqual(playlist_target(added), 'pl.aW52ZW50ZWRwbA')
+
+    def test_none_to_ask(self):
+        self.assertIsNone(playlist_target(None))
+        self.assertIsNone(playlist_target(album('1724049100')))
+        # The user's own (editable, though it carries a catalog id), Favourite Songs, one
+        # shared from an account, and one without a catalog playlist.
+        apples = {'canEdit': False}
+        for item in (catalog_playlist('p.aW52', catalog_id='pl.u-aW52ZW50'),
+                     catalog_playlist('p.aW52', catalog_id='pl.aW52ZW50ZWRwbA'),
+                     catalog_playlist('p.aW52', catalog_id='pl.aW52ZW50ZWRwbA',
+                                      attributes=dict(apples, isFavourites=True)),
+                     catalog_playlist('pl.u-aW52ZW50ZWQ'),
+                     catalog_playlist('p.aW52', attributes=apples),
+                     catalog_playlist('1724042001')):
+            with self.subTest(item=(item.id, item.catalog_id)):
+                self.assertIsNone(playlist_target(item))
+
+    def answer(self, curator=None):
+        def entry(number, kind='playlist'):
+            return {'id': f'pl.aW52{number}', 'kind': kind, 'title': f'Other {number}',
+                    'groups': []}
+        return {'id': 'pl.aW52ZW50ZWRwbA', 'curator': curator, 'shelves': [
+            {'key': 'featured-artists', 'title': '', 'more': False,
+             'items': [dict(entry(1, 'artist'), id='1724049001')]},
+            {'key': 'more-by-curator', 'title': '', 'more': True, 'items': [entry(2)]},
+            {'key': 'you-might-also-like', 'title': 'Alike', 'more': False, 'items': [entry(3)]},
+            {'key': 'more-by-curator', 'title': '', 'more': False, 'items': []}]}
+
+    def test_the_shelves_titled(self):
+        shelves = playlist_shelves(self.answer(), 'Apple Music Invented')
+        self.assertEqual([(shelf.key, shelf.title, shelf.more) for shelf in shelves], [
+            ('featured-artists', 'Featured Artists', False),
+            ('more-by-curator', 'More By Apple Music Invented', True),
+            ('you-might-also-like', 'Alike', False)])  # Apple's title
+        # The curator named by the answer, else not at all.
+        named = playlist_shelves(self.answer({'id': '1', 'kind': 'category',
+                                              'title': 'Harbour Editors'}))
+        self.assertEqual(named[1].title, 'More By Harbour Editors')
+        self.assertEqual(playlist_shelves(self.answer())[1].title, 'More By the Curator')
+        self.assertEqual(playlist_shelves(None), [])
+
+    def test_the_curators_link(self):
+        category = {'id': '1724049500', 'kind': 'category', 'title': 'Apple Music Invented',
+                    'art': None}
+        item = curator_item({'curator': category})
+        self.assertEqual((item.kind, item.id, item.title),
+                         ('category', '1724049500', 'Apple Music Invented'))
+        url = 'https://music.apple.com/gb/curator/harbour-editors/1724049700'
+        link = curator_item({'curator': {'id': '1724049700', 'kind': 'link',
+                                         'title': 'Harbour Editors', 'url': url}})
+        self.assertEqual((link.kind, link.url), ('link', url))
+        for answer in (None, {}, {'curator': None}, {'curator': dict(category, id='')},
+                       {'curator': dict(category, kind='playlist')},
+                       {'curator': {'id': '1', 'kind': 'link', 'title': 'No Page'}}):
+            with self.subTest(answer=answer):
+                self.assertIsNone(curator_item(answer))
 
 
 if __name__ == '__main__':

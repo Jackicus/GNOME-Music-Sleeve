@@ -190,6 +190,21 @@ ALBUM_PARAMS = {'views': ','.join(ALBUM_VIEWS), 'include': 'artists'}
 ALBUM_VIEW_ENDPOINT = '/v1/catalog/{storefront}/albums/{id}/view/{view}'
 MORE_BY_VIEW = 'full-albums'
 MORE_BY_LIMIT = 30
+# A catalog playlist's page under its tracks (Engine.playlist_page), as music.apple.com's
+# asks for it: the playlist with its curator (`include=curator`: an Apple curator,
+# `apple-curators`, or a third party's, `curators`, with its name and page) and the views
+# its page shows below the list, each with Apple's own title, its first page of resources
+# and a `next` link where there are more. featured-artists ("Featured Artists") and
+# more-by-curator (the curator's other playlists) are Apple's documented playlist views;
+# you-might-also-like is the album's view of that name, asked of a playlist too (to confirm
+# live: Apple leaves a view it does not have out of the answer, as the album's
+# related-albums was). A 400 is asked again with the documented views alone.
+PLAYLIST_ENDPOINT = '/v1/catalog/{storefront}/playlists/{id}'
+PLAYLIST_VIEWS = ('featured-artists', 'more-by-curator', 'you-might-also-like')
+PLAYLIST_PARAMS = {'views': ','.join(PLAYLIST_VIEWS), 'include': 'curator'}
+PLAYLIST_PLAIN_PARAMS = {'views': 'featured-artists,more-by-curator', 'include': 'curator'}
+# One of a playlist's views whole (See All), a page of it at a time.
+PLAYLIST_VIEW_ENDPOINT = '/v1/catalog/{storefront}/playlists/{id}/view/{view}'
 # A catalog song with its albums: the catalog album a library album is, found through one of
 # its songs (a library album carries no catalog id of its own).
 SONG_ALBUMS_PARAMS = {'include': 'albums'}

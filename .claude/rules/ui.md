@@ -202,6 +202,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   which style.css takes out of the rows' inset. No answer (offline, the engine down, a 404)
   leaves them out, only logged. Tab from a track enters the shelves, Shift+Tab from the first
   goes back to the last track (`_on_list_key_pressed`, as for a playlist's suggestions).
+  A catalog playlist (`release.playlist_target()`: never the user's) ends the same way,
+  without the footer, once `Engine.playlist_page` answers (Featured Artists, More By the
+  curator, You Might Also Like: `release.playlist_shelves()`), and its curator's name
+  becomes the hero's link (`artist_button`, `release.curator_item()`: the curator's category
+  page, a third party's page in the browser, through `window.open_item`).
 - A pre-release album (`release.is_prerelease()`: the Item's `prerelease`, Apple's
   isPrerelease) says "Coming <date>" in its caption and footer, and the artist page's release
   card too (`release.coming_text()`). Its tracks not out yet (`Track.unreleased`) are dimmed

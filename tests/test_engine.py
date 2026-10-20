@@ -2064,6 +2064,114 @@ class AlbumPageTest(EngineFixture):
             self.assertEqual(raised.exception.code, 'engine-down')
 
 
+class PlaylistPageTest(EngineFixture):
+    """playlist_page and playlist_view: the read they make (the playlist with its curator and
+    views, again with the documented views alone after a 400), the day-long cache, what they
+    refuse, and the demo's own answers."""
+
+    PLAYLIST = '/v1/catalog/us/playlists/pl.aW52ZW50ZWRwbA'
+
+    async def up(self, authorized=True):
+        self.page.authorized = authorized
+        await self.engine.start()
+
+    def answer(self):
+        with open(FIXTURES / 'catalog_playlist_page.json', encoding='utf-8') as file:
+            self.page.api_answers[self.PLAYLIST] = json.load(file)
+
+    async def test_one_read_kept_for_a_day(self):
+        await self.up()
+        self.answer()
+        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
+        self.assertEqual(self.page.api_calls, [self.PLAYLIST])
+        self.assertEqual(self.page.api_params[0]['views'].split(','),
+                         ['featured-artists', 'more-by-curator', 'you-might-also-like'])
+        self.assertEqual(self.page.api_params[0]['include'], 'curator')
+        self.assertEqual(answer['curator']['id'], '1724049500')
+        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
+                         ['featured-artists', 'more-by-curator', 'you-might-also-like'])
+        self.assertEqual(answer['basis'], ','.join(api.PLAYLIST_VIEWS))
+        self.assertTrue((self.cache / 'playlists' / 'pl.aW52ZW50ZWRwbA.json').is_file())
+        await self.engine.stop()
+        again = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')  # the file, engine down
+        self.assertEqual(again['shelves'], answer['shelves'])
+        self.assertEqual(len(self.page.api_calls), 1)
+
+    async def test_a_400_is_asked_again_with_the_documented_views(self):
+        await self.up()
+        with open(FIXTURES / 'catalog_playlist_page.json', encoding='utf-8') as file:
+            raw = json.load(file)
+        answers = [{'errors': [{'status': '400', 'title': 'Invalid Parameter Value'}]}, raw]
+
+        class Answers(dict):
+            def get(self, key, default=None):
+                return answers.pop(0) if key == PlaylistPageTest.PLAYLIST else default
+
+        self.page.api_answers = Answers()
+        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
+        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.PLAYLIST])
+        self.assertEqual([params['views'] for params in self.page.api_params],
+                         [','.join(api.PLAYLIST_VIEWS), 'featured-artists,more-by-curator'])
+        self.assertEqual(answer['curator']['id'], '1724049500')
+
+    async def test_a_playlist_the_catalog_lacks(self):
+        await self.up()
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.playlist_page('pl.aW52ZW50ZWQ5')
+        self.assertEqual(raised.exception.status, 404)
+        self.assertEqual(self.page.api_calls, ['/v1/catalog/us/playlists/pl.aW52ZW50ZWQ5'])
+        self.assertFalse((self.cache / 'playlists').exists())
+
+    async def test_what_it_refuses(self):
+        await self.up()
+        for playlist_id in ('', None, 'p.aW52ZW50ZWQ', 'l.pl001'):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.playlist_page(playlist_id)
+            self.assertEqual(raised.exception.code, 'usage')
+        for playlist_id, view in (('pl.aW52ZW50ZWRwbA', 'tracks'), ('p.aW52', 'featured-artists'),
+                                  ('', 'more-by-curator')):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.playlist_view(playlist_id, view)
+            self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.api_calls, [])
+
+    async def test_a_view_is_read_whole(self):
+        await self.up()
+        path = f'{self.PLAYLIST}/view/more-by-curator'
+        self.answer()
+        view = self.page.api_answers[self.PLAYLIST]['data'][0]['views']['more-by-curator']
+        own, other = view['data'][:2]
+        self.page.api_answers[path] = {'data': [own, other], 'next': f'{path}?offset=2'}
+        self.page.api_answers[f'{path}?offset=2'] = {'data': [dict(other, id='pl.aW52ZW50ZWQ4')]}
+        items = await self.engine.playlist_view('pl.aW52ZW50ZWRwbA', 'more-by-curator')
+        self.assertEqual(self.page.api_calls, [path, f'{path}?offset=2'])
+        self.assertEqual(self.page.api_params[0], {'limit': 100})
+        self.assertEqual([item['id'] for item in items],
+                         ['pl.aW52ZW50ZWRwMg', 'pl.aW52ZW50ZWQ4'])  # the playlist left out
+
+    async def test_signed_out(self):
+        await self.up(authorized=False)
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
+        self.assertEqual(raised.exception.code, 'not-signed-in')
+
+    async def test_the_demo_answers_from_its_own_cache(self):
+        demo = engine_module.Engine(demo=True)
+        path = pathlib.Path(normalize.playlist_cache_path(str(self.cache), 'pl.demo001'))
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'id': 'pl.demo001', 'curator': None, 'shelves': [],
+                                    'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
+                        encoding='utf-8')
+        answer = await demo.playlist_page('pl.demo001')
+        self.assertEqual(answer['id'], 'pl.demo001')
+        self.assertNotIn('stale', answer)
+        for coro in (demo.playlist_page('pl.demo002'),
+                     demo.playlist_view('pl.demo001', 'more-by-curator')):
+            with self.assertRaises(EngineError) as raised:
+                await coro
+            self.assertEqual(raised.exception.code, 'engine-down')
+
+
 class CreditsTest(EngineFixture):
     """credits: one read of a catalog song's credits, the shaping, the day-long cache, a 404
     as none, and the demo's own answers."""

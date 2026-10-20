@@ -167,6 +167,12 @@ def classes():
         async def album_view(self, album_id, view):
             return await self._answer('album_view', album_id, view)
 
+        async def playlist_page(self, playlist_id, refresh=False):
+            return await self._answer('playlist_page', playlist_id)
+
+        async def playlist_view(self, playlist_id, view):
+            return await self._answer('playlist_view', playlist_id, view)
+
         async def catalog_artist(self, name, song_ids):
             return await self._answer('catalog_artist', name, song_ids)
 

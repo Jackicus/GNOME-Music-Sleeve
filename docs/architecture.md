@@ -107,7 +107,8 @@ touches widgets.
   `suggestions.py`), kept for a day while the playlist holds the same songs; a song plays in
   full or as Apple's preview, which the bridge plays outside MusicKit's queue. An album ends
   with its release footer and the catalog's shelves of it (`release.py`, `Engine.album_page`,
-  kept for a day), asked once its tracks have painted. A song's View Credits is a dialog
+  kept for a day), asked once its tracks have painted, and a catalog playlist with its
+  shelves and its curator's link (`Engine.playlist_page`), the same way. A song's View Credits is a dialog
   (`dialogs/credits.py`, worded by `credits.py`) over `Engine.credits`, kept for a day.
   An album's header names its artist, a playlist's its curator and when it was updated
   (`release.py`), and a catalog one's offers Add, or In Library once the library holds it (`Library.holds()`, from what is loaded).

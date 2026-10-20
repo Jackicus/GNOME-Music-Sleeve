@@ -126,14 +126,14 @@ paths:
   startup and at the end of every sync. The day-long answers (the landing, a category, New,
   the rooms, groupings and multirooms New's links open, Made for You, Radio, Charts (a
   genre's in charts/, the genres), Home's
-  Recently Played, an artist's page, an album's page, a
+  Recently Played, an artist's page, an album's page, a catalog playlist's page, a
   playlist's suggested songs, a song's credits) all go through
   `Engine._kept_answer()`: the file while it is under a day old, else Apple, else (the engine
   down or signed out, Apple failing, but not on a refresh) the older file marked
   `stale: True` (`cache.read_kept(allow_stale=True)`); every answer carries its `cached`
   stamp. An answer asked about something that changes (`basis`: the suggestions' fingerprint
-  of the songs the playlist holds, `suggestions.basis()`; an album's page, the views it asked
-  for, `api.ALBUM_PARAMS`) is kept with it and is not fresh
+  of the songs the playlist holds, `suggestions.basis()`; an album's or a playlist's page, the
+  views it asked for, `api.ALBUM_PARAMS`, `api.PLAYLIST_PARAMS`) is kept with it and is not fresh
   for another, whatever its age; nor is one whose `expires` has passed (Radio's, once a live
   station's programmes run out: `normalize.answer_expired()`). Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations') or in an older `format` than `lyrics.FORMAT` (bump it when the lines carry something new). `item()`'s artwork
   goes to remote-art/ (`place_in_remote_art`): art/ and thumb/ are the library's, pruned

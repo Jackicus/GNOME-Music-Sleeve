@@ -18,6 +18,9 @@ the release footer, then the catalog's shelves.
     release_date_text('2026-09-24')                  '24 September 2026'
     length_text(12, 2580000)                         '12 songs, 43 minutes'
     album_shelves(answer, artist_name)               the answer's shelves as ShelfModels
+    playlist_target(item)         the catalog id Engine.playlist_page() is asked by, or None
+    playlist_shelves(answer, curator_name)           a playlist's answer's, the same way
+    curator_item(answer)          the Item the curator's link opens, or None
 
 A playlist's hero names its curator (Apple's playlists, a curator's) or, for one of the
 user's, the account's name, then says when it was updated (its `modified`, Apple's
@@ -36,6 +39,12 @@ its answer, a library album's included; else the date an Item carries (an artist
 latest release) and the counts alone. The shelves are Other Versions, Music Videos, More By
 <artist>, Featured On and You Might Also Like, in that order (the engine's), titled as Apple
 titles them, or here when Apple gives no title (More By always: it is no view of Apple's).
+
+A catalog playlist (one of Apple's or a curator's, in the library or not) ends with the
+catalog's shelves too (Engine.playlist_page(): Featured Artists, More By <curator>, You Might
+Also Like), titled as Apple titles them, else here, and its curator's name under its title is
+a link to the curator's page once that answer names them (curator_item(): an Apple
+curator's category page, a third party's page on music.apple.com).
 
 GLib, GObject and Gio only, no GTK: the unit tests run it without a display.
 """
@@ -69,6 +78,21 @@ def album_target(item):
         for track in group.entries:
             if track.catalog_id and not is_library_id(track.catalog_id):
                 return str(item.id), str(track.catalog_id)
+    return None
+
+
+def playlist_target(item):
+    """The catalog playlist Engine.playlist_page() is asked for a playlist Item: its own id
+    when it is the catalog's, else the catalog id a library playlist carries (one of Apple's
+    added to the library), a `pl.` id either way. None for anything else: a playlist of the
+    user's (Item.editable), Favourite Songs, or one shared from an account (`pl.u-`: a
+    person's, whose curator is no curator of Apple's)."""
+    if item is None or item.kind != 'playlist' or item.editable or item.favourites:
+        return None
+    for candidate in (item.id, item.catalog_id):
+        candidate = str(candidate or '')
+        if candidate.startswith('pl.') and not candidate.startswith('pl.u-'):
+            return candidate
     return None
 
 
@@ -281,7 +305,8 @@ def footer_lines(item, answer, count, duration_ms):
 
 
 def shelf_title(key, title, artist_name):
-    """A shelf's title: Apple's, else the app's for its key ("More By <artist>" always)."""
+    """A shelf's title: Apple's, else the app's for its key ("More By <artist>" always; a
+    playlist's curator's playlists "More By <curator>", `artist_name` the curator's)."""
     if key == 'more-by-artist':
         if not artist_name:
             # Translators: the shelf of an album's artist's other albums, its artist unknown.
@@ -290,7 +315,17 @@ def shelf_title(key, title, artist_name):
         return _('More By {artist}').format(artist=artist_name)
     if title:
         return title
+    if key == 'more-by-curator':
+        if not artist_name:
+            # Translators: the shelf of the other playlists by a playlist's curator, the
+            # curator unknown.
+            return _('More By the Curator')
+        # Translators: the shelf of the other playlists by a playlist's curator: "More By
+        # Apple Music Jazz".
+        return _('More By {curator}').format(curator=artist_name)
     return {
+        # Translators: the shelf of the artists a playlist's songs are by.
+        'featured-artists': _('Featured Artists'),
         # Translators: the shelf of an album's other editions (deluxe, remastered).
         'other-versions': _('Other Versions'),
         # Translators: the shelf of the music videos of an album's songs.
@@ -307,7 +342,35 @@ def album_shelves(answer, artist_name=''):
     (shelf_title(): More By names `artist_name`, else the answer's artist), their items with
     their artwork where the app fetches it (remote_item), `more` where Apple has more."""
     answer = answer if isinstance(answer, dict) else {}
-    artist_name = artist_name or str(answer.get('artistName') or '')
+    return _shelves(answer, artist_name or str(answer.get('artistName') or ''))
+
+
+def playlist_shelves(answer, curator_name=''):
+    """ShelfModels of an Engine.playlist_page() answer's shelves, as album_shelves() makes
+    an album's: More By (Apple's title, else the app's) names `curator_name`, else the
+    answer's curator."""
+    answer = answer if isinstance(answer, dict) else {}
+    if not curator_name:
+        found = answer.get('curator')
+        curator_name = str(found.get('title') or '') if isinstance(found, dict) else ''
+    return _shelves(answer, curator_name)
+
+
+def curator_item(answer):
+    """The Item a catalog playlist's curator link opens, from an Engine.playlist_page()
+    answer: an Apple curator's category tile (its page) or a third party's link (its page in
+    the browser); None when the answer names neither."""
+    found = answer.get('curator') if isinstance(answer, dict) else None
+    if (not isinstance(found, dict) or not found.get('id')
+            or found.get('kind') not in ('category', 'link')
+            or (found.get('kind') == 'link' and not found.get('url'))):
+        return None
+    return Item(remote_item(found))
+
+
+def _shelves(answer, name):
+    """The ShelfModels of an answer's shelves (album_shelves(), playlist_shelves()), More By
+    naming `name`."""
     shelves = []
     for data in answer.get('shelves') or []:
         if not isinstance(data, dict):
@@ -318,7 +381,7 @@ def album_shelves(answer, artist_name=''):
             continue
         key = str(data.get('key') or '')
         title = data.get('title') if isinstance(data.get('title'), str) else ''
-        shelf = ShelfModel(key, shelf_title(key, title, artist_name), items)
+        shelf = ShelfModel(key, shelf_title(key, title, name), items)
         shelf.more = bool(data.get('more'))
         shelves.append(shelf)
     return shelves

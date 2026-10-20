@@ -245,6 +245,102 @@ class DetailPageTest(PageTestCase):
         await self.settle()
         self.assertEqual(self.rows(page), 4)
         self.assertNotIn('album_page', self.app.engine.calls)
+        self.assertNotIn('playlist_page', self.app.engine.calls)  # the user's own: no shelves
+
+    def catalog_playlist(self, tracks=3, **extra):
+        """An invented catalog playlist (one of Apple's curators'), with its tracks."""
+        data = dict(album(1, tracks=tracks, kind='playlist'), id='pl.aW52ZW50ZWRwbA',
+                    subtitle='Apple Music Invented')
+        data.update(extra)
+        data['play'] = {'kind': 'playlist', 'id': 'pl.aW52ZW50ZWRwbA'}
+        return data
+
+    def playlist_answer(self, curator=None):
+        """An invented Engine.playlist_page answer: its curator, and three shelves."""
+        def entry(number, kind='playlist'):
+            return {'id': f'pl.aW52{number}', 'kind': kind, 'title': f'Other {number}',
+                    'subtitle': 'Apple Music Invented', 'art': None, 'thumb': None,
+                    'groups': [], 'play': {'kind': kind, 'id': f'pl.aW52{number}'}}
+        if curator is None:
+            curator = {'id': '1724049500', 'kind': 'category', 'title': 'Apple Music Invented',
+                       'subtitle': None, 'art': None, 'artColor': None, 'url': None}
+        return {'id': 'pl.aW52ZW50ZWRwbA', 'curator': curator, 'shelves': [
+            {'key': 'featured-artists', 'title': 'Featured Artists', 'more': False,
+             'items': [dict(entry(1, 'artist'), id='1724049001', title='Paper Parachutes')]},
+            {'key': 'more-by-curator', 'title': '', 'more': True, 'items': [entry(2)]},
+            {'key': 'you-might-also-like', 'title': 'You Might Also Like', 'more': False,
+             'items': [entry(3)]}]}
+
+    async def test_a_catalog_playlist_ends_with_the_catalogs_shelves(self):
+        asked = []
+        self.app.engine.answers['playlist_page'] = lambda *args: (asked.append(args),
+                                                                  self.playlist_answer())[1]
+        page = await self.push(self.page(self.catalog_playlist()))
+        # The curator plain at first, a link once the catalog has named them.
+        self.assertTrue(page.subtitle_label.get_visible())
+        self.assertFalse(page.artist_button.get_visible())
+        self.assertTrue(await self.until(lambda: page._shelf_column is not None
+                                         and len(page._shelf_column.widgets) == 3))
+        self.assertEqual(asked, [('pl.aW52ZW50ZWRwbA',)])
+        self.assertEqual(self.rows(page), 5)  # the hero, three tracks, the shelves
+        self.assertEqual([widget.title_label.get_label()
+                          for widget in page._shelf_column.widgets],
+                         ['Featured Artists', 'More By Apple Music Invented',
+                          'You Might Also Like'])
+        self.assertFalse(page.subtitle_label.get_visible())
+        self.assertTrue(page.artist_button.get_visible())
+        self.assertEqual(page.artist_label.get_label(), 'Apple Music Invented')
+        page.artist_button.emit('clicked')
+        self.assertEqual([(item.kind, item.id) for item in self.window.opened],
+                         [('category', '1724049500')])
+        # See All fetches the rest of a shelf Apple has more of, the playlist left out.
+        more = page._shelf_column.shelves[1]
+        self.assertIsNone(page._shelf_column.shelves[0].complete)
+        self.app.engine.answers['playlist_view'] = [
+            {'id': 'pl.aW52ZW50ZWRwbA', 'kind': 'playlist', 'title': 'This One', 'groups': []},
+            {'id': 'pl.aW52ZW50ZWQ4', 'kind': 'playlist', 'title': 'Other 8', 'groups': []}]
+        await more.complete()
+        self.assertEqual([item.id for item in more.items], ['pl.aW52ZW50ZWQ4'])
+        # Where Tab from a track goes into the shelves: after the songs a filter shows.
+        self.assertEqual(page._shelves_start, 4)
+        page.filter_bar.set_text('song 1')
+        self.assertTrue(await self.until(lambda: self.rows(page) == 3))
+        self.assertEqual(page._shelves_start, 2)
+        page.filter_bar.set_text('')
+        self.assertTrue(await self.until(lambda: page._shelves_start == 4))
+
+    async def test_a_third_party_curator_opens_in_the_browser(self):
+        url = 'https://music.apple.com/gb/curator/harbour-editors/1724049700'
+        self.app.engine.answers['playlist_page'] = self.playlist_answer(
+            {'id': '1724049700', 'kind': 'link', 'title': 'Harbour Editors', 'url': url})
+        page = await self.push(self.page(self.catalog_playlist(subtitle='Harbour Editors')))
+        self.assertTrue(await self.until(page.artist_button.get_visible))
+        page.artist_button.emit('clicked')
+        self.assertEqual([(item.kind, item.url) for item in self.window.opened], [('link', url)])
+
+    async def test_an_apple_playlist_in_the_library_is_asked_by_its_catalog_id(self):
+        self.app.engine.answers['playlist_page'] = self.playlist_answer()
+        data = dict(self.catalog_playlist(), id='p.aW52ZW50ZWQ', catalogId='pl.aW52ZW50ZWRwbA',
+                    attributes={'canEdit': False})
+        page = await self.push(self.page(data))
+        self.assertTrue(await self.until(lambda: page._shelf_column is not None))
+        self.assertIn('playlist_page', self.app.engine.calls)
+
+    async def test_a_catalog_playlist_without_an_answer_shows_what_it_has(self):
+        for answer in (EngineError('engine-down'), EngineError('api', 'gone', status=404)):
+            with self.subTest(answer=answer.code):
+                self.app.engine.answers['playlist_page'] = answer
+                page = await self.push(self.page(self.catalog_playlist()))
+                self.assertTrue(await self.until(
+                    lambda: 'playlist_page' in self.app.engine.calls))
+                await self.settle()
+                self.assertEqual(self.rows(page), 4)  # the hero and three tracks
+                self.assertTrue(page.subtitle_label.get_visible())  # the curator, plain
+                self.assertFalse(page.artist_button.get_visible())
+                self.assertIsNone(page._shelf_column)
+                self.assertEqual((self.app.reported, self.app.toasts), ([], []))
+                self.window.navigation_view.pop()
+                await self.settle()
 
     async def test_popping_the_page_cancels_its_fetch(self):
         waiting = asyncio.get_running_loop().create_future()
