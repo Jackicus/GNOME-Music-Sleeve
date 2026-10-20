@@ -48,7 +48,7 @@ class ChartsPageTest(PageTestCase):
     async def all_shelves(self, page):
         """Wait for the column to bind the answer's four shelves: those after FIRST_SHELVES
         come one a frame (ShelfColumn), and a slow display's frames come late."""
-        self.assertTrue(await self.until(lambda: len(page._column.widgets) == 4, timeout=3),
+        self.assertTrue(await self.until_frames(page, lambda: len(page._column.widgets) == 4),
                         [widget.shelf.title for widget in page._column.widgets])
 
     def test_the_charts_item(self):

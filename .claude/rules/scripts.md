@@ -85,5 +85,9 @@ paths:
   the options it was given; the harness and `demo.sh` write build/demo again whenever
   `demo_stamp.py build/demo` says it is missing or out of date (an older checkout's demo lacks
   what newer steps open, such as an artist's Top Songs). A new source the demo's output
-  depends on goes in `SOURCES`.
+  depends on goes in `SOURCES`. Its options only add: `--albums`, `--tracks` and `--playlists`
+  generated albums, songs and playlists, `--videos N` generated music videos (Music Videos
+  only: the other pages keep the six) and `--long-playlist N` one playlist of N songs,
+  `l.pllong`, which `scroll_test.py --open playlist:l.pllong` scrolls. scroll_test.py reports
+  a list that fits the window as having nothing to scroll and quits.
 - Scripts may print; app code logs.

@@ -510,6 +510,34 @@ class PageTestCase(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(interval)
         return True
 
+    async def until_frames(self, widget, predicate, frames=10, timeout=10.0):
+        """until() with a deadline in frames: run the loops until predicate() holds (True),
+        or widget has drawn `frames` frames (False), for what a widget does a frame at a time
+        (ShelfColumn binds a shelf a frame). A frame's time is not a test's to guess: on a GL
+        or Vulkan renderer the process's first frames compile shaders into a cold cache
+        (TEST_HOME's) and the first can take a second on its own. The widget is kept drawing
+        while this waits (a tick callback of its own); `timeout` seconds cap a wait for a
+        widget that gets no frames (unmapped)."""
+        from gi.repository import GLib
+
+        ticks = [0]
+
+        def tick(*_args):
+            ticks[0] += 1
+            return GLib.SOURCE_CONTINUE
+
+        handle = widget.add_tick_callback(tick)
+        deadline = time.monotonic() + timeout
+        try:
+            while not predicate():
+                if ticks[0] >= frames or time.monotonic() >= deadline:
+                    return False
+                pump(10)
+                await asyncio.sleep(0.005)
+            return True
+        finally:
+            widget.remove_tick_callback(handle)
+
     async def until_focused(self, widget):
         """Wait for the window's focus to be in widget (an entry), then a tenth of a second
         more, for the compositor's answer to the text input the process's first focused

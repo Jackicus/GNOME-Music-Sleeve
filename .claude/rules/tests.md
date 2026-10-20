@@ -23,7 +23,9 @@ paths:
   test set (`MUSIC_SLEEVE_TEST_HOME`), as tests/service_app.py does. The toolkit's caches
   (glycin's, the GL shader cache) start cold there on every run, as on CI, so the first frames
   are slower: a widget test waits (`wait_for()`) for what comes after a frame, never trusting
-  one `pump()`.
+  one `pump()`. On a GL or Vulkan renderer (headless.sh's) the first frames compile shaders
+  and one can take a second, so what a widget does a frame at a time (ShelfColumn's shelves
+  after the first) is waited for in frames, `PageTestCase.until_frames()`, not in seconds.
 - Put logic in non-widget classes and pure functions and test it with stand-ins (as
   test_mpris.py, test_player.py and test_actions.py do). A test that must build widgets uses
   `tests/gtk.py`: `@requires_gtk` on the class or method (it skips without a display or a

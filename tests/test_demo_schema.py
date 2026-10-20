@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import gi
 
@@ -633,6 +634,54 @@ class TestGeneratedAlbums(unittest.TestCase):
             self.assertIn(playlist['genre'], playlist['filter_genres'])
         self.assertEqual(self.demo.generated_playlists(50), playlists)
         self.assertEqual(self.demo.generated_playlists(13), self.demo.PLAYLISTS_DATA)
+
+    def test_generated_videos(self):
+        # --videos N: the hand-written videos, then invented ones by any of the artists, all
+        # titled differently; the same N gives the same videos.
+        artists, _albums = self.demo.generated_albums(300)
+        videos = self.demo.generated_videos(400, artists)
+        self.assertEqual(len(videos), 400)
+        self.assertEqual(videos[:6], self.demo.VIDEOS_DATA)
+        self.assertEqual(len({video['title'] for video in videos}), 400)
+        self.assertTrue(all(0 <= video['artist_idx'] < len(artists) for video in videos))
+        self.assertGreater(max(video['artist_idx'] for video in videos),
+                           len(self.demo.ARTISTS_DATA))  # the generated artists' too
+        self.assertEqual(self.demo.generated_videos(400, artists), videos)
+        self.assertEqual(self.demo.generated_videos(6, artists), self.demo.VIDEOS_DATA)
+
+    def test_a_long_playlist_and_many_videos(self):
+        # --long-playlist N and --videos N, for a scroll test: one playlist of N distinct
+        # entries before Favourite Songs; Music Videos at N, the other pages with the six.
+        # Built without drawing (the covers are queued, then dropped).
+        def build(**options):
+            folder = tempfile.TemporaryDirectory()
+            self.addCleanup(folder.cleanup)
+            with mock.patch.object(self.demo, 'draw_covers', lambda *_args: None), \
+                    mock.patch('builtins.print'):
+                self.demo.build_demo_library(folder.name, **options)
+            def read(name):  # the paths in it the same whichever folder it is in
+                with open(os.path.join(folder.name, name), encoding='utf-8') as file:
+                    return json.loads(file.read().replace(folder.name, 'DIR'))
+            return read('library.json'), read('charts.json')
+
+        plain, plain_charts = build()
+        library, charts = build(long_playlist=300, video_count=40)
+        playlists = library['sections']['playlists']
+        long = playlists[-2]
+        self.assertEqual((long['id'], long['title']), ('l.pllong', 'The Long Playlist'))
+        entries = long['groups'][0]['entries']
+        self.assertEqual(long['trackCount'], 300)
+        self.assertEqual(len({entry['id'] for entry in entries}), 300)
+        self.assertEqual(len({entry['catalogId'] for entry in entries}), 300)
+        self.assertTrue(playlists[-1]['attributes']['isFavourites'])
+        self.assertIn({'kind': 'playlist', 'id': 'l.pllong'}, library['folders'][0]['children'])
+        # The rest as they were: the playlists before it, the six videos first, the charts.
+        before = plain['sections']['playlists'][:-1]
+        self.assertEqual(playlists[:len(before)], before)
+        self.assertEqual(len(library['sections']['videos']), 40)
+        self.assertEqual([video['title'] for video in library['sections']['videos'][:6]],
+                         [video['title'] for video in plain['sections']['videos']])
+        self.assertEqual(charts, plain_charts)
 
 
 if __name__ == '__main__':

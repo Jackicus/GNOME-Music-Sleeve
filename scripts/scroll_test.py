@@ -26,6 +26,16 @@ scrolled window:
 
     APPLE_MUSIC_CACHE=build/demo-2500 scripts/scroll_test.py --page songs --distance 40000
 
+A list laid out and shorter than the window (the same height for FITS_FRAMES frames
+in a row) is reported as fitting, with nothing to scroll, and the run ends there:
+Music Videos on a library of six. demo_library.py's --videos and --long-playlist make
+the long ones (the big library CLAUDE.md names has both):
+
+    APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py \
+        --page music-videos
+    APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py \
+        --open playlist:l.pllong --distance 40000
+
 --sidebar scrolls the sidebar instead of the page (a library with many
 playlists makes it long: its rows are not recycled).
 
@@ -39,7 +49,8 @@ waits at worst:
     APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py \
         --page songs --type "the night"
 
---open playlist:ID (or album:ID) pushes the library's item first, for a playlist's filter.
+--open playlist:ID (or album:ID) pushes the library's item first, to scroll it or type
+into its filter.
 
 Two things are reported. The app's own work per frame, timed on the main thread
 from the frame clock's before-paint to the end of its paint (tick callbacks and
@@ -80,6 +91,10 @@ app = harness.make_app('ScrollTest', light=args.light, animations=True, stock_lo
 from gi.repository import GLib, GObject, Gtk  # noqa: E402  (after make_app)
 
 from applemusic.widgets import artwork  # noqa: E402
+
+# How many frames a laid-out list must keep the same height, shorter than the window, to be
+# reported as fitting it (half a second at 60 Hz): one that is still being filled grows.
+FITS_FRAMES = 30
 
 decoded = 0
 _load = artwork._load
@@ -177,10 +192,22 @@ def start():
                 time.perf_counter() - began.pop('at'))),
         ])
 
-    def tick(_widget, clock):
+    fitted = []  # the frames in a row the laid-out list has fitted the window
+
+    def tick(widget, clock):
         end = adjustment.get_upper() - adjustment.get_page_size()
-        if end <= 0:  # not laid out yet
-            return GLib.SOURCE_CONTINUE
+        if end <= 0 and not times:
+            if widget.get_height() <= 0 or adjustment.get_page_size() <= 0:
+                fitted.clear()  # not laid out yet
+                return GLib.SOURCE_CONTINUE
+            fitted.append(adjustment.get_upper())
+            if len(fitted) < FITS_FRAMES or len(set(fitted[-FITS_FRAMES:])) > 1:
+                return GLib.SOURCE_CONTINUE  # laid out, but it may still be growing
+            print(f'scroll-test: the {where()} fits the window at {window_size()}: '
+                  'nothing to scroll', flush=True)
+            GLib.timeout_add(200, app.quit)
+            return GLib.SOURCE_REMOVE
+        fitted.clear()
         if args.distance:
             end = min(end, args.distance)
         now = clock.get_frame_time()
@@ -277,7 +304,9 @@ def report_typing(before, refilters, work, interval):
 
 
 def where():
-    return 'sidebar' if args.sidebar else f'{args.page} page'
+    if args.sidebar:
+        return 'sidebar'
+    return f'{args.open} page' if args.open else f'{args.page} page'
 
 
 def window_size():

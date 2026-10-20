@@ -24,7 +24,9 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
 - Before and after a change on the startup path, a page's first build or a list's bind:
   `scripts/headless.sh scripts/bench.py` (build/demo-big by default; medians of several runs)
   and, for lists, `APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py
-  --page albums` (or `--page songs --distance 40000`, or `--sidebar`). The headless display's
+  --page albums` (or `--page songs --distance 40000`, `--page music-videos`, `--open
+  playlist:l.pllong` for the long playlist, or `--sidebar`; a list that fits the window is
+  reported so). The headless display's
   virtual monitor shows the window (a hidden one gets no frames); compare only headless runs.
   `python3 -X importtime` for imports. The lyrics view's stepping and sweep:
   `scripts/headless.sh scripts/lyrics_test.py` (frames, work a frame, CPU, the lyrics list's
