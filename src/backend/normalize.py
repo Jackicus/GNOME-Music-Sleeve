@@ -35,6 +35,10 @@ Cancelled = store.Cancelled
 # with synced ones, and corrects them).
 ANSWER_MAX_AGE = 24 * 60 * 60
 LYRICS_MAX_AGE = 30 * 24 * 60 * 60
+# How long prune_caches() leaves a kept answer: past its day it is no longer fresh, but it is
+# what the engine answers, marked stale, when Apple cannot be asked (the engine down, signed
+# out, offline), so it stays until an answer from Apple replaces it, or for this long.
+ANSWER_KEEP_AGE = 30 * 24 * 60 * 60
 
 # What prune_caches() leaves of the caches that only grow: the covers the pages fetch
 # themselves, and the lyrics of the songs played last.
@@ -2544,12 +2548,13 @@ def prune_remote_art(cache_dir, max_bytes=REMOTE_ART_BUDGET):
 
 
 def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_keep=LYRICS_KEEP,
-                 answer_age=ANSWER_MAX_AGE):
+                 answer_age=ANSWER_KEEP_AGE):
     """Trim the caches nothing else trims (in a thread, at startup and after a sync):
     remote-art/ to `remote_bytes` (prune_remote_art), lyrics/ to the
     `lyrics_keep` played last (by mtime: a cache hit touches the file), the kept answers
     (categories/, artists/, albums/, suggestions/, landing, New, Made for You, Radio,
-    Charts) stamped longer than `answer_age` ago (by mtime, when they were written), an
+    Charts) written longer than `answer_age` ago (by mtime; ANSWER_KEEP_AGE, well past their
+    day, since a stale one is the answer while Apple cannot be asked), an
     items/ folder older versions kept, and the temporary files of writes a crash cut short
     (store.is_stale_temp) in the cache and its folders. Returns {what: how many went}. art/
     and thumb/ are the library's: prune_art keeps them."""

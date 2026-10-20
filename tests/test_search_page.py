@@ -314,6 +314,38 @@ class SearchPageTest(PageTestCase):
         self.assertTrue(await self.until(lambda: page.kind_list.pager.state == 'done'))
         self.assertEqual(page.kind_list.pager.items.get_n_items(), 40)
 
+    async def test_typing_on_stops_the_kinds_paging_for_good(self):
+        # Typed on while the next page of a kind is on its way: the page is dropped, and the
+        # list, still shown until the new answer replaces it, asks for it no more.
+        self.signed_in_engine()
+        waiting = asyncio.Event()
+
+        async def answer(text, kind, offset):
+            if offset:
+                await waiting.wait()
+            return self.songs_answer(text, kind, offset)
+
+        self.app.engine.answers['search'] = answer
+        self.held('suggest', self.SUGGESTIONS)
+        page = await self.search_page()
+        page.set_kind('songs')
+        self.type(page, 'invented')
+        page._on_entry_activated(page.search_entry)
+        self.assertTrue(await self.until(lambda: page.kind_list.pager is not None
+                                         and page.kind_list.pager.state == 'loading'))
+        pager = page.kind_list.pager
+        self.type(page, 'invente')
+        await self.settle()
+        self.assertEqual(page.stack.get_visible_child_name(), 'kind')
+        self.assertIs(page.kind_list.pager, pager)
+        self.assertEqual(pager.state, 'idle')
+        self.assertEqual([(r['text'], r['offset']) for r in self.app.engine.search_requests],
+                         [('invented', 0), ('invented', 25)])
+        waiting.set()
+        await self.settle()
+        self.assertEqual(len(self.app.engine.search_requests), 2)
+        self.assertEqual(pager.items.get_n_items(), 25)
+
     async def test_see_all_of_a_kind_is_a_page_that_pages_on(self):
         from applemusic.pages.search_all import SearchAllPage
 
@@ -337,6 +369,37 @@ class SearchPageTest(PageTestCase):
         self.assertEqual(see_all.pager.items.get_n_items(), 40)
         see_all.results_list.list_view.emit('activate', 0)
         self.assertEqual([item.id for item in self.window.opened], ['1724000000'])
+
+    async def test_see_all_covered_stops_and_shown_again_pages_on(self):
+        from applemusic.pages.search_all import SearchAllPage
+        from applemusic.search_pager import SearchPager
+
+        self.signed_in_engine()
+        waiting = asyncio.Event()
+
+        async def answer(text, kind, offset):
+            if offset:
+                await waiting.wait()
+            return self.songs_answer(text, kind, offset)
+
+        self.app.engine.answers['search'] = answer
+        first = self.songs_answer('invented', None, 0)['shelves'][1]['items']
+        pager = SearchPager('invented', 'songs', [Item(data) for data in first], 20,
+                            search=self.app.engine.search, spawn=self.app.spawn)
+        see_all = await self.push(SearchAllPage(pager, 'Songs'))
+        self.assertTrue(await self.until(lambda: pager.state == 'loading'))
+        # Covered: the page on its way is dropped, and not asked for again while hidden.
+        await self.push(SearchAllPage(SearchPager('other', 'albums', [], None), 'Albums'))
+        self.assertTrue(await self.until(lambda: not see_all.get_mapped()))
+        await self.turn()
+        waiting.set()
+        await self.turn()
+        self.assertEqual((pager.state, len(self.app.engine.search_requests)), ('idle', 1))
+        # Shown again: it pages on.
+        self.window.navigation_view.pop()
+        self.assertTrue(await self.until(lambda: pager.state == 'done'))
+        self.assertEqual([r['offset'] for r in self.app.engine.search_requests], [20, 20])
+        self.assertEqual(pager.items.get_n_items(), 40)
 
     async def test_a_dropped_page_is_freed(self):
         # Sign-out drops the page (window.forget_account_pages()).

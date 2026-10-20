@@ -142,9 +142,10 @@ class SearchList(Gtk.ScrolledWindow):
 
     While it is shown, the pager is asked for its next page whenever less than MORE_WITHIN
     screens are left below the view (scrolled, laid out, or the last page in), so a list
-    shorter than the window fills it. Activating a hit emits `item-activated` (the page opens
-    it and remembers it), activating the footer, or its Try Again, asks again after a
-    failure. Every signal of a child is connected weakly: a pushed page drops the list."""
+    shorter than the window fills it; a pager cancel()ed is asked no more until the list is
+    shown again (mapped), which resume()s it. Activating a hit emits `item-activated` (the
+    page opens it and remembers it), activating the footer, or its Try Again, asks again
+    after a failure. Every signal of a child is connected weakly: a pushed page drops the list."""
 
     __gtype_name__ = 'AppleMusicSearchList'
 
@@ -209,6 +210,8 @@ class SearchList(Gtk.ScrolledWindow):
     def do_map(self):
         Gtk.ScrolledWindow.do_map(self)
         self._follow_adjustment()
+        if self._pager is not None:
+            self._pager.resume()  # shown again: a page left, and come back to, pages on
         self._maybe_more()
 
     # Paging.
