@@ -12,7 +12,7 @@
                           [--idle] [--position SECONDS] [--playing] [--restored]
                           [--autoplay] [--history] [--album N]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
-                           [--see-all KEY]]
+                           [--see-all KEY]] [--filter TEXT]
                           [--context-menu [KIND] [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
@@ -89,6 +89,8 @@ searches Apple Music instead, as Enter does: with --demo, the demo's invented ca
 answers (its search of `tide` has every kind, and more songs than a shelf shows);
 --search-kind KIND chooses the filter first (songs, albums, radio-shows… : the list of
 that kind), and --see-all KEY then opens the See All of the shelf KEY (songs…).
+--filter TEXT shows the filter bar of the page shown (after --open: the item's page) with
+TEXT typed and the cursor in it, the page filtered by it ('' : the bar shown, empty).
 --context-menu pops up the context menu of the page's first tile or row (the
 first shown widget with a context_item; with KIND, the first whose item is of
 that kind, such as category), as a right click on it would, and
@@ -189,6 +191,8 @@ parser.add_argument('--search-kind', metavar='KIND',
                     help="with --search-in music, the filter's kind (songs, albums…)")
 parser.add_argument('--see-all', metavar='KEY',
                     help='with --search-in music, open the See All of the shelf KEY')
+parser.add_argument('--filter', metavar='TEXT',
+                    help='the page shown filtered by TEXT, its filter bar shown')
 parser.add_argument('--context-menu', metavar='KIND', nargs='?', const=True,
                     help="pop up the context menu of the page's first tile or row (of KIND)")
 parser.add_argument('--submenu', metavar='NAME',
@@ -287,6 +291,7 @@ opened = False
 sheet_opened = False
 searched = False
 seen_all = False
+filtered = False
 menu_opened = False
 banner_shown = False
 scrolled = False
@@ -349,6 +354,19 @@ def open_see_all(window):
     if shelf is None:
         sys.exit(f'screenshot: no {args.see_all} shelf in the results')
     window.open_shelf(shelf)
+
+
+def filter_page(window):
+    """--filter: the page's filter bar shown, the cursor in it, the page filtered by the
+    text at once (not after the entry's delay)."""
+    page = window.navigation_view.get_visible_page()
+    bar = getattr(page, 'filter_bar', None)
+    if bar is None or not page.focus_filter():
+        sys.exit('screenshot: the page shown has no filter to show')
+    bar.set_text(args.filter)
+    bar.set_search_mode(True)  # also for no text
+    bar.entry.grab_focus()
+    bar.entry.set_position(-1)
 
 
 def catalog_item(kind, item_id):
@@ -710,7 +728,7 @@ def shoot():
 
 def _shoot():
     global opened, sheet_opened, searched, menu_opened, banner_shown, preferences, dialog
-    global seen_all
+    global seen_all, filtered
     global scrolled, focused, drop_line_scrolled
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
@@ -742,6 +760,11 @@ def _shoot():
         seen_all = True
         open_see_all(window)
         GLib.timeout_add(1500, shoot)  # after the push, the next page in, artwork decoded
+        return GLib.SOURCE_REMOVE
+    if args.filter is not None and not filtered:
+        filtered = True
+        filter_page(window)
+        GLib.timeout_add(1200, shoot)  # filtered, laid out, the artwork decoded
         return GLib.SOURCE_REMOVE
     if args.context_menu and not menu_opened:
         menu_opened = True

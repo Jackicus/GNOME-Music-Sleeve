@@ -22,7 +22,9 @@ template $AppleMusicGridPage: Adw.NavigationPage {
       }
     }
 
-    child: Adw.ToolbarView {
+    // On a page with a filter, grid.py adds its bar under the header bar and its button
+    // beside Sort By (widgets/filter_bar.py).
+    child: Adw.ToolbarView toolbar {
       [top]
       Adw.HeaderBar header_bar {
         show-title: false;

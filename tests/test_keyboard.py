@@ -180,6 +180,30 @@ class VolumeStepTest(unittest.TestCase):
         self.assertIsNone(keyboard.move_step(keyval, mods, ListItemWidget, False, False))
 
 
+class SearchTargetTest(unittest.TestCase):
+    """Ctrl+F: the page's own filter when it has something to filter, else Search."""
+
+    class Bar:
+        def __init__(self, available):
+            self.available = available
+
+    class Page:
+        def __init__(self, bar):
+            self.filter_bar = bar
+
+        def focus_filter(self):
+            return True
+
+    def test_a_page_with_a_filter_to_show_takes_it(self):
+        self.assertEqual(keyboard.search_target(self.Page(self.Bar(True))), 'filter')
+
+    def test_anything_else_goes_to_search(self):
+        self.assertEqual(keyboard.search_target(self.Page(self.Bar(False))), 'search')  # empty
+        self.assertEqual(keyboard.search_target(self.Page(None)), 'search')  # an album's grid
+        self.assertEqual(keyboard.search_target(object()), 'search')  # Home
+        self.assertEqual(keyboard.search_target(None), 'search')  # nothing shown yet
+
+
 class KeysTest(unittest.TestCase):
     def test_the_playback_keys_are_the_shortcuts_tables(self):
         names = set(keyboard.PLAYBACK_KEYS.values())

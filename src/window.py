@@ -783,13 +783,14 @@ class Window(Adw.ApplicationWindow):
 
     def _on_search(self, *_args):
         """win.search (Ctrl+F): the cursor in the filter of the page shown when it has one
-        (the Songs page's, as GNOME's apps with an in-page filter do), else in the Search
+        to show (keyboard.search_target(): Songs, Albums, Artists, Music Videos, a
+        playlist's songs, as GNOME's apps with an in-page filter do), else in the Search
         page's entry, that page shown over anything pushed on it (the Now Playing sheet
         closed first; the content shown first in the collapsed layout)."""
         self._close_sheet()
         page = self.navigation_view.get_visible_page()
-        if page is not None and page is self._roots.get('songs') and page.focus_filter():
-            self._show_content_then(page.focus_filter)  # again, once the content is mapped
+        if keyboard.search_target(page) == 'filter':
+            self._show_content_then(page.focus_filter)
             return
         self._sidebar.select('search', pop=True)
         page = self._roots.get('search')

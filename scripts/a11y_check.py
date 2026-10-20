@@ -314,6 +314,72 @@ def press(window, accel):
 
 # -- the checklist -------------------------------------------------------------------------
 
+def filter_text(page):
+    """Text a page's filter shows some of its items for: its first item's title (a word
+    of it, when that is long)."""
+    model = filter_view(page).get_model()
+    item = next((model.get_item(n) for n in range(model.get_n_items())
+                 if getattr(model.get_item(n), 'search_key', None)), None)
+    title = item.title if item is not None else ''
+    return title.split()[0] if len(title) > 12 else title
+
+
+def filter_view(page):
+    """The list or grid a page's filter filters."""
+    for name in ('grid_view', 'column_view', 'list_view'):
+        view = getattr(page, name, None)
+        if view is not None:
+            return view
+    return None
+
+
+def shown_count(view):
+    """The items (tracks, on a playlist's page) the list or grid shows."""
+    model = view.get_model()
+    return sum(1 for n in range(model.get_n_items())
+               if getattr(model.get_item(n), 'search_key', None) is not None)
+
+
+async def library_filter(window, page, name):
+    """A library page's filter by keyboard: Ctrl+F, typing, Escape (docs/accessibility.md)."""
+    view = filter_view(page)
+    bar = page.filter_bar
+    # From the filter's button in the header bar: a page shown again gives the focus back
+    # where it was (the Artists page, on an artist's album), where Ctrl+2 leaves it.
+    split_view = getattr(page, 'split_view', None)
+    if split_view is not None and split_view.get_collapsed():
+        split_view.set_show_content(False)  # the Artists list, not an artist's albums
+        await asyncio.sleep(0.6)
+    bar.button.grab_focus()
+    await key(window, '<primary>2', 0.6)
+    check(f'Ctrl+2 puts the focus in {name}', inside(window.get_focus(), view),
+          describe(window.get_focus()))
+    total = shown_count(view)
+    text = filter_text(page)
+    await key(window, '<primary>f', 0.6)
+    check(f'Ctrl+F on {name} shows its filter bar with the cursor in its entry',
+          bar.get_search_mode() and inside(window.get_focus(), bar.entry),
+          describe(window.get_focus()))
+    await type_into(bar.entry, text, 0.8)
+    shown = shown_count(view)
+    check(f'typing filters {name}', 0 < shown < total or (shown == total == 1),
+          (text, shown, total))
+    await key(window, 'Escape', 0.8)
+    check(f'Escape closes it, all of {name} back, the focus in the list',
+          not bar.get_search_mode() and bar.entry.get_text() == ''
+          and shown_count(view) == total and inside(window.get_focus(), view),
+          (bar.get_search_mode(), shown_count(view), describe(window.get_focus())))
+    if keyboard is not None:
+        # Typing on the list starts it (Gtk.SearchBar's key capture).
+        keyboard.type_text(text[:1].lower())
+        await asyncio.sleep(0.8)
+        check(f'typing on {name} shows the filter with the letter in it',
+              bar.get_search_mode() and bar.entry.get_text() == text[:1].lower()
+              and inside(window.get_focus(), bar.entry),
+              (bar.get_search_mode(), bar.entry.get_text(), describe(window.get_focus())))
+        await key(window, 'Escape', 0.8)
+
+
 def first_playlist():
     """The library's first playlist of the user's: one with Rename…."""
     return next(node.item for node in app.library.playlist_tree().flat
@@ -895,9 +961,17 @@ async def walkthrough(window):
     await key(window, '<alt>Left', 0.8)
     check('Alt+Left goes back to Albums', window.navigation_view.get_visible_page() is grid)
     print('-- search')
+    await key(window, '<primary>f', 0.6)
+    check("Ctrl+F on Albums shows the page's own filter, not Search",
+          window.shown == 'albums' and grid.filter_bar.get_search_mode()
+          and inside(window.get_focus(), grid.filter_bar.entry), describe(window.get_focus()))
+    await key(window, 'Escape', 0.6)
+    window.select_page('home')  # a page with no filter
+    await asyncio.sleep(0.8)
+    await key(window, '<primary>2', 0.4)
     await key(window, '<primary>f', 0.8)
     search = window.navigation_view.get_visible_page()
-    check('Ctrl+F shows Search with the focus in its entry',
+    check('Ctrl+F elsewhere shows Search with the focus in its entry',
           window.shown == 'search' and inside(window.get_focus(), search.search_entry))
     await type_into(search.search_entry, 'tide')
     check('typing into the entry reaches it', search.search_entry.get_text() == 'tide',
@@ -984,23 +1058,23 @@ async def walkthrough(window):
         keyboard.type_text('a')
         await asyncio.sleep(0.6)
         check('typing on the page shows the filter bar with the letter in its entry',
-              songs.search_bar.get_search_mode() and songs.filter_entry.get_text() == 'a'
-              and inside(window.get_focus(), songs.filter_entry),
-              (songs.search_bar.get_search_mode(), songs.filter_entry.get_text(),
+              songs.filter_bar.get_search_mode() and songs.filter_bar.entry.get_text() == 'a'
+              and inside(window.get_focus(), songs.filter_bar.entry),
+              (songs.filter_bar.get_search_mode(), songs.filter_bar.entry.get_text(),
                describe(window.get_focus())))
         await key(window, 'Escape', 0.6)
         check('Escape closes it, clears the filter and puts the focus back in the table',
-              not songs.search_bar.get_search_mode() and songs.filter_entry.get_text() == ''
+              not songs.filter_bar.get_search_mode() and songs.filter_bar.entry.get_text() == ''
               and inside(window.get_focus(), songs.column_view),
-              (songs.search_bar.get_search_mode(), songs.filter_entry.get_text(),
+              (songs.filter_bar.get_search_mode(), songs.filter_bar.entry.get_text(),
                describe(window.get_focus())))
     await key(window, '<primary>f', 0.6)
     check("Ctrl+F on Songs shows the page's filter bar with the cursor in its entry",
-          songs.search_bar.get_search_mode() and inside(window.get_focus(), songs.filter_entry),
+          songs.filter_bar.get_search_mode() and inside(window.get_focus(), songs.filter_bar.entry),
           describe(window.get_focus()))
     await key(window, 'Escape', 0.6)
     check('Escape closes the filter bar, the focus back in the table',
-          not songs.search_bar.get_search_mode()
+          not songs.filter_bar.get_search_mode()
           and inside(window.get_focus(), songs.column_view), describe(window.get_focus()))
     print('-- Artists')
     window.select_page('artists')
@@ -1105,6 +1179,34 @@ async def walkthrough(window):
           and all(item.favourite for item in shown), len(shown))
     grid.activate_action('page.favourites-only', None)  # every album again
     app.settings.reset('favourites-only')
+    print("-- the library pages' filters (Ctrl+F)")
+    for key_name, name in (('albums', 'Albums'), ('music-videos', 'Music Videos'),
+                           ('artists', 'Artists'), ('favourite-songs', 'Favourite Songs')):
+        window.select_page(key_name)
+        window.split_view.set_show_content(True)
+        await asyncio.sleep(0.8)
+        await library_filter(window, window.navigation_view.get_visible_page(), name)
+    print("-- a playlist's filter, Escape before Back")
+    window.select_page('albums')
+    await asyncio.sleep(0.4)
+    albums = window.navigation_view.get_visible_page()
+    window.open_item(first_playlist())
+    await asyncio.sleep(1.0)
+    playlist = window.navigation_view.get_visible_page()
+    await library_filter(window, playlist, 'a playlist')
+    await key(window, '<primary>f', 0.6)
+    await type_into(playlist.filter_bar.entry, filter_text(playlist), 0.6)
+    await key(window, '<primary>2', 0.6)
+    check("Ctrl+2 from the playlist's filter moves into its songs",
+          inside(window.get_focus(), playlist.list_view), describe(window.get_focus()))
+    await key(window, 'Escape', 0.6)
+    check('Escape on the songs closes the filter first, the page still shown',
+          not playlist.filter_bar.get_search_mode()
+          and window.navigation_view.get_visible_page() is playlist,
+          (playlist.filter_bar.get_search_mode(), window.navigation_view.get_visible_page()))
+    await key(window, 'Escape', 0.8)
+    check('Escape again goes back', window.navigation_view.get_visible_page() is albums,
+          window.navigation_view.get_visible_page())
     print('-- radio')
     window.select_page('radio')
     await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound

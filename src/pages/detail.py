@@ -46,6 +46,15 @@ its own order only, so every order shown is one that can be changed. A click wit
 still plays the song: the drag starts only past GTK's drag threshold, and then cancels the
 row's click.
 
+A playlist's songs (Favourite Songs' too) have the library pages' filter bar
+(widgets/filter_bar.py: Filter Songs, Ctrl+F through focus_filter(), typing on the page,
+Escape), matching each song's title, artist and album: each group's store passes through a
+Gtk.FilterListModel of the bar's text, shown through a ShownModel (filters_songs(); an
+album's tracks are never filtered), and the sections' positions are worked out again as it
+changes. While it filters, the songs cannot be moved (can_reorder()): the order shown is not
+the playlist's. A filter that leaves none shows No Results Found in the status box, and the
+new count is announced.
+
 A suggested song clicked plays in full, as a track row's song does, or, with the
 `preview-suggestions` setting, Apple's 30-second preview of it (Player.start_preview(): the
 queue pauses for it), clicked again to stop; a song without a preview plays in full. The
@@ -56,8 +65,10 @@ started here stops when the page is left.
 
 import asyncio
 import bisect
+import contextlib
 import logging
 from gettext import gettext as _
+from gettext import ngettext
 
 from gi.repository import Adw, Gdk, Gio, GObject, Graphene, Gtk, Pango
 
@@ -77,6 +88,7 @@ from ..remote import fetch_cover, fetch_shelf_art, remote_item
 from ..widgets import context_menu, dnd, track_links
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
+from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
 from ..widgets.labels import track_label
 from ..widgets.suggested_songs import SuggestedSongs
 from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader, is_playing
@@ -142,6 +154,12 @@ def library_state(library, item):
             or is_library_id(item.id)):
         return None
     return 'held' if library.holds(item) else 'add'
+
+
+def filters_songs(item):
+    """Whether a page showing `item` offers a filter of its songs: a playlist's, not an
+    album's (its tracks are a disc's, numbered)."""
+    return item is not None and item.kind == 'playlist'
 
 
 def should_fetch(item, fetched):
@@ -343,6 +361,7 @@ class DetailPage(Adw.NavigationPage):
                              nick='Table', blurb="A playlist's tracks as a table (wide)")
 
     table_breakpoint = Gtk.Template.Child()
+    toolbar = Gtk.Template.Child()
     header_bar = Gtk.Template.Child()
     stack = Gtk.Template.Child()
     empty_page = Gtk.Template.Child()
@@ -381,6 +400,8 @@ class DetailPage(Adw.NavigationPage):
         self._root = root
         self._album_artist = None  # an album's artist, whose name its rows leave out
         self._groups = 0  # the sections of tracks shown
+        self._track_models = []  # and their models: the groups' stores, or a playlist's filtered
+        self._track_total = 0  # the tracks of the groups shown, filtered or not
         self._bound = set()  # the list items bound to tracks: shown again as `table` changes
         self._starts = []  # the list position of each section of tracks
         self._headings = []  # and its heading
@@ -461,6 +482,13 @@ class DetailPage(Adw.NavigationPage):
         connect_weak(self.more_notes_button, 'clicked', self._on_more_notes_clicked)
         self.more_button.set_create_popup_func(weak_method(self._on_more_popup))
         self._header_title = HeaderTitle(self.header_bar, self.title_label, self.scrolled_window)
+        # A playlist's filter: the bar under the header bar, the text filtering every group.
+        self._text_filter = text_filter()
+        self.filter_bar = FilterBar(_('Filter Songs'))
+        self.toolbar.add_top_bar(self.filter_bar)
+        self.header_bar.pack_end(self.filter_bar.button)
+        connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
+        self.filter_bar.set_focus_return(self._focus_tracks)
         # Tab from the hero's last button goes on into the tracks (_on_list_key_pressed).
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         connect_weak(keys, 'key-pressed', self._on_list_key_pressed)
@@ -609,13 +637,20 @@ class DetailPage(Adw.NavigationPage):
 
         self._shown_groups = item.groups
         groups = [group for group in item.groups if group.entries.get_n_items()]
+        if filters_songs(item):  # through the filter bar's text
+            # Shown through a ShownModel, which a filter's change recycles the rows for.
+            self._track_models = [ShownModel(Gtk.FilterListModel(model=group.entries,
+                                                                 filter=self._text_filter))
+                                  for group in groups]
+        else:
+            self._track_models = [group.entries for group in groups]
         self._starts = []
         self._headings = []
         position = 1  # after the hero
-        for number, group in enumerate(groups, 1):
+        for number, (group, model) in enumerate(zip(groups, self._track_models, strict=True), 1):
             self._starts.append(position)
             self._headings.append(self._heading(item, group, number))
-            position += group.entries.get_n_items()
+            position += model.get_n_items()
 
         # An item that came without its tracks (a shelf's) gets them from the engine, once.
         if should_fetch(item, self._fetched):
@@ -629,7 +664,8 @@ class DetailPage(Adw.NavigationPage):
 
         self._groups = len(groups)
         self._update_headers()
-        sections = [self._hero_section] + [group.entries for group in groups]
+        self._track_total = sum(group.entries.get_n_items() for group in groups)
+        sections = [self._hero_section] + self._track_models
         self._suggestions_start = None
         self._shelves_start = None
         if groups and item.kind == 'album':
@@ -656,12 +692,64 @@ class DetailPage(Adw.NavigationPage):
                 sections.append(self._suggestions_section)
         self._sections.splice(0, self._sections.get_n_items(), sections)
         self._update_state()
+        self._update_filter()
         if shown:
             self._want_more()
         if groups:
             self._ask_album()
             if self._reveal_wanted:
                 self._start_reveal()  # the tracks Go to Current Song waited for
+
+    # A playlist's filter.
+
+    def _on_filter_changed(self, bar):
+        """The filter's text changed (after the entry's delay): the songs that match it
+        shown, the sections after them placed again, the new count announced."""
+        with contextlib.ExitStack() as stack:
+            for model in self._track_models:
+                stack.enter_context(model.replacing(self._scroll_top))
+            self._text_filter.set_search(bar.search or None)
+        position = 1  # after the hero
+        for index, model in enumerate(self._track_models):
+            self._starts[index] = position
+            position += model.get_n_items()
+        if self._suggestions_start is not None:
+            self._suggestions_start = position
+        self._update_filter()
+        if bar.search and self._track_models:
+            shown = self._shown_tracks()
+            total = self._track_total
+            words = ngettext('{shown} of {total} song', '{shown} of {total} songs', total)
+            bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
+
+    def _scroll_top(self):
+        self.list_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
+
+    def _shown_tracks(self):
+        return sum(model.get_n_items() for model in self._track_models)
+
+    def _update_filter(self):
+        """The filter offered while a playlist's songs show (closed otherwise); No Results
+        Found in the status box while it leaves none."""
+        offered = filters_songs(self.item) and bool(self._track_models)
+        self.filter_bar.set_available(offered, self)
+        if not offered:
+            self.filter_bar.close()
+        none = offered and bool(self.filter_bar.search) and not self._shown_tracks()
+        if none:
+            self._show_status('no-results', _('No Results Found'), _('Try a different filter'),
+                              None)
+        self.status_box.set_visible(none or not self._groups)
+
+    def focus_filter(self):
+        """Ctrl+F: the filter bar shown with the cursor in its entry; False on a page with no
+        songs to filter (an album's)."""
+        return self.filter_bar.focus()
+
+    def _focus_tracks(self):
+        """Where Escape puts the focus once the filter bar has closed: the list."""
+        if self.stack.get_visible_child_name() == 'item':
+            self.list_view.grab_focus()
 
     # What the catalog shows under an album's tracks: the footer and the shelves.
 
@@ -1084,6 +1172,8 @@ class DetailPage(Adw.NavigationPage):
         loading = status == 'loading'
         self.status_spinner.set_visible(loading)
         self.status_icon.set_visible(not loading)
+        self.status_icon.set_from_icon_name(
+            'edit-find-symbolic' if status == 'no-results' else 'music-note-symbolic')
         self.status_title.set_label(title or '')
         self.status_title.set_visible(not loading)
         self.status_description.set_label(description or '')
@@ -1208,6 +1298,8 @@ class DetailPage(Adw.NavigationPage):
         if focus is None or last is None:
             return False
         if forward and (focus is last or focus.is_ancestor(last)):
+            if not self._shown_tracks():
+                return False  # a filter left none
             self.list_view.scroll_to(1, Gtk.ListScrollFlags.FOCUS, None)
             return True
         row = _row_of(focus)
@@ -1308,8 +1400,10 @@ class DetailPage(Adw.NavigationPage):
 
     def can_reorder(self):
         """Whether the songs shown can be moved: a playlist of the user's with its one list
-        (PlaylistOrder.can_reorder()), shown in its own order (the page has no other)."""
-        return self._groups == 1 and PlaylistOrder.can_reorder(self.item)
+        (PlaylistOrder.can_reorder()), shown in its own order (the page has no other), and
+        all of it (no filter)."""
+        return (self._groups == 1 and not self.filter_bar.search
+                and PlaylistOrder.can_reorder(self.item))
 
     def _move(self, from_index, to_index, at_once=False):
         """Move the song at from_index to to_index (ItemActions.move_in_playlist()): False

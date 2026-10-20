@@ -191,6 +191,17 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   the library's `favourites-changed`. Albums, Music Videos and Songs have Favourites Only
   in their Sort and Filter menu (`grid.favourites_only()`, the favourites-only setting);
   a sort the data may lack (a video's Date Added) is a grid's `data_sorts`.
+- Albums, Artists, Music Videos, Songs and a playlist's songs (`detail.filters_songs()`)
+  filter through one `widgets.filter_bar.FilterBar`: a `Gtk.SearchBar` added under the
+  page's header bar in code (`add_top_bar`), its toggle `button` packed in the header bar,
+  `set_available(has_items, capture)` (the button, and typing on `capture` starting it),
+  `set_focus_return()` (where Escape puts the focus), `changed` with `search` folded; Ctrl+F
+  reaches it through the page's `focus_filter()`. Matching is `library.filter_matches()` on
+  each object's `search_key`, in C through `filter_bar.text_filter()` (the Songs table in
+  Python); it combines with Favourites Only, says the new count through `announce()`, shows
+  No Results Found (`edit-find-symbolic`) when it leaves none, and turns a playlist's
+  reordering off (`can_reorder()`, and Move Up and Move Down in its songs' menus). A grid
+  takes it with `filter_words` (its label, and its count's words).
 
 ## HIG, style and icons
 
@@ -243,7 +254,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   (the Keyboard Shortcuts dialog); tests/test_shortcuts.py checks that the dialog lists every
   key, and that no accelerator is a HIG standard one the app does not implement (Ctrl+N is
   "New": New Playlist). `src/keyboard.py` decides which action a key runs
-  (`playback_action()`, `tab_action()`, `volume_step()`; tests/test_keyboard.py): Space
+  (`playback_action()`, `tab_action()`, `volume_step()`, and `search_target()`: Ctrl+F's
+  page filter or Search; tests/test_keyboard.py): Space
   belongs to a focused button, switch, check box or boxed-list row (GTK's own binding presses
   it), Ctrl+Up and Ctrl+Down to a slider or a boxed-list row (the sidebar's move without
   selecting), and every key to an entry, a popover or a dialog; `context_menu.MENU_KEYS` is built from

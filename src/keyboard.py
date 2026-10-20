@@ -23,6 +23,11 @@ move_step() is a playlist page's (pages/detail.py): Alt+Up or Alt+Down (shortcut
 MOVE_DOWN) moves the focused song one place, on the same terms. volume_step() is the
 window's: Ctrl+Up or Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN) steps the volume, except
 where those keys are the focused widget's own (VOLUME_OWNERS).
+
+    target = search_target(page)   # 'filter' or 'search': where Ctrl+F goes
+
+Ctrl+F is an accelerator (win.search), which a library page with a filter takes for its
+filter bar (widgets/filter_bar.py), and any other page leaves to the Search page.
 """
 
 from gi.repository import Gdk, Gtk
@@ -130,6 +135,17 @@ def volume_step(keyval, mods, focus_type, dialog_open, in_popover):
     if issubclass(focus_type, TYPING) or issubclass(focus_type, VOLUME_OWNERS):
         return None
     return step
+
+
+def search_target(page):
+    """Where Ctrl+F (win.search) puts the cursor from `page`, the page shown: 'filter', its
+    own filter bar, when it has one with something to filter now (Songs, Albums, Artists,
+    Music Videos, a playlist's songs: the page's focus_filter() shows it), else 'search',
+    the Search page's entry (an album's page, Home, a page still loading)."""
+    bar = getattr(page, 'filter_bar', None)
+    if bar is not None and bar.available and hasattr(page, 'focus_filter'):
+        return 'filter'
+    return 'search'
 
 
 def is_main_menu(keyval, mods):

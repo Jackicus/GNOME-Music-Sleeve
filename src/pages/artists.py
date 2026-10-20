@@ -4,10 +4,14 @@
 """AppleMusicArtistsPage: the Artists destination, as Apple Music's library has it: the
 library's artists in a list beside what the library holds of the one chosen."""
 
+from gettext import gettext as _
+from gettext import ngettext
+
 from gi.repository import Adw, Gdk, GLib, GObject, Gtk
 
 from ..widgets import context_menu
 from ..widgets.artist_row import ArtistRow
+from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.util import MappedHandlers, connect_weak, first_descendant, next_frame
 from . import SignInOffer, app, mark_bound
@@ -32,6 +36,12 @@ class ArtistsPage(Adw.NavigationPage):
     keeps its Items). The list has its first FIRST_ROWS artists for the page's first frame
     and the rest over the next few (_grow()).
 
+    The list has the library pages' filter bar (widgets/filter_bar.py: Filter Artists, Ctrl+F
+    through focus_filter(), typing on the list, Escape), matching the artists' names: a
+    Gtk.FilterListModel over the sort. The artist selected stays while the filter keeps
+    them; one it leaves out gives way to the first that matches, and while none does the
+    albums shown stay, the list giving way to No Results Found.
+
     Narrower than two columns of albums beside the list (600sp), the split view collapses:
     the list alone, and a click or Enter on an artist shows their albums, with a back button
     to the list (Escape, Alt+Left: can_go_back() and go_back(), which the window's Back
@@ -55,6 +65,8 @@ class ArtistsPage(Adw.NavigationPage):
     split_view = Gtk.Template.Child()
     list_page = Gtk.Template.Child()
     list_toolbar = Gtk.Template.Child()
+    list_header = Gtk.Template.Child()
+    list_stack = Gtk.Template.Child()
     list_view = Gtk.Template.Child()
 
     def __init__(self, library, title, icon_name=None):
@@ -68,15 +80,28 @@ class ArtistsPage(Adw.NavigationPage):
 
         self.detail = LibraryArtistPage(library, tag='detail')
         self.split_view.set_content(self.detail)
+        # The list's filter bar, under its header bar.
+        self.filter_bar = FilterBar(_('Filter Artists'))
+        self.list_toolbar.add_top_bar(self.filter_bar)
+        self.list_header.pack_end(self.filter_bar.button)
+        connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
+        self.filter_bar.set_focus_return(self._focus_list)
 
+        # The filter bar's text filters the artists sorted (a filter's change then leaves
+        # the order alone, as the grid pages' does).
+        self._choosing = False  # the filter is changing what is selected
+        self._shown_artist = None  # the artist whose albums show
+        self._text_filter = text_filter()
         sorter, _backwards = make_sorter('title')
         self._sorted = Gtk.SortListModel(model=library.artists, sorter=sorter)
+        self._filtered = Gtk.FilterListModel(model=self._sorted, filter=self._text_filter)
         # The list's first rows at once, the rest a few frames apart (_grow()).
-        self._slice = Gtk.SliceListModel(model=self._sorted, offset=0, size=FIRST_ROWS)
+        self._shown = ShownModel(self._filtered)
+        self._slice = Gtk.SliceListModel(model=self._shown, offset=0, size=FIRST_ROWS)
         self._growing = None  # the task giving the list the rest, once the page has mapped
         self._selection = Gtk.SingleSelection(model=self._slice, autoselect=True)
         connect_weak(self._selection, 'notify::selected-item', self._on_selected)
-        connect_weak(self._sorted, 'items-changed', self._update_state)
+        connect_weak(self._filtered, 'items-changed', self._update_state)
 
         factory = Gtk.SignalListItemFactory()
         connect_weak(factory, 'setup', self._on_setup)
@@ -121,7 +146,7 @@ class ArtistsPage(Adw.NavigationPage):
         page's first frame 35 ms longer. Past ALL_ROWS it makes no more rows, so the rest
         comes at once ("the rest": MAXUINT32, gtk-notes.md)."""
         size = FIRST_ROWS
-        while size < min(ALL_ROWS, self._sorted.get_n_items()):
+        while size < min(ALL_ROWS, self._filtered.get_n_items()):
             await next_frame(self.list_view)
             size += MORE_ROWS
             self._slice.set_size(size)
@@ -129,7 +154,8 @@ class ArtistsPage(Adw.NavigationPage):
 
     def _update_state(self, *_args):
         library = self._library
-        if self._sorted.get_n_items():
+        total = library.artists.get_n_items()
+        if total:
             name = 'artists'
         elif library.state == 'loading' or (library.state == 'empty' and library.syncing):
             name = 'loading'  # the first sync is on its way
@@ -137,11 +163,82 @@ class ArtistsPage(Adw.NavigationPage):
             name = 'empty'
         if self.stack.get_visible_child_name() != name:
             self.stack.set_visible_child_name(name)
+        listed = 'list' if self._filtered.get_n_items() or not total else 'no-results'
+        if self.list_stack.get_visible_child_name() != listed:
+            self.list_stack.set_visible_child_name(listed)
+        self.filter_bar.set_available(total > 0, self.list_page)
+        if not total and name == 'empty':
+            self.filter_bar.close()  # nothing left to filter (a sign-out)
+
+    # The filter.
+
+    def _on_filter_changed(self, bar):
+        """The filter's text changed (after the entry's delay): the list shows the artists
+        that match, the one selected kept when it does, else the first that does (one
+        change of the albums shown, not one for the neighbour GTK would select first), and
+        the new count is announced."""
+        selected = self._shown_artist  # the one the albums are of (none may be selected)
+        self._choosing = True
+        try:
+            with self._shown.replacing(self._scroll_top):  # the rows recycled (ShownModel)
+                self._text_filter.set_search(bar.search or None)
+            position = self._shown.find(selected) if selected is not None else None
+            if position is None or position >= self._slice.get_n_items():
+                position = 0
+            if self._slice.get_n_items():
+                self._selection.set_selected(position)
+        finally:
+            self._choosing = False
+        if self._selection.get_selected_item() is not selected:
+            self._on_selected()
+        self._update_state()
+        shown, total = self._filtered.get_n_items(), self._library.artists.get_n_items()
+        if bar.search:
+            # Translators: said to screen reader users as the Artists filter changes: {shown}
+            # of the library's {total} artists match it ("4 of 120 artists").
+            words = ngettext('{shown} of {total} artist', '{shown} of {total} artists', total)
+            bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
+
+    def _scroll_top(self):
+        if self._slice.get_n_items():
+            self.list_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
+
+    def focus_filter(self):
+        """Ctrl+F: the list's filter bar shown with the cursor in its entry (the list shown
+        again first, in the collapsed layout); False with no artists to filter."""
+        if not self.filter_bar.available:
+            return False
+        if self._detail_shown():
+            self.split_view.set_show_content(False)
+            GLib.idle_add(lambda: self.filter_bar.focus() and False)
+        return self.filter_bar.focus()
+
+    def _focus_list(self):
+        """Where Escape puts the focus once the filter bar has closed: the selected artist."""
+        position = self._selection.get_selected()
+        if position != Gtk.INVALID_LIST_POSITION:
+            self._focus_row(position)
+
+    def _focus_row(self, position):
+        """The focus on the list's row at position. Gtk.ListView.scroll_to() focuses the row
+        only when the focus is in the list already (from a header bar, the filter or the
+        sidebar it only moves the list's own focus to it), so the list's grab follows."""
+        self.list_view.scroll_to(position, Gtk.ListScrollFlags.FOCUS, None)
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        if focus is None or not (focus is self.list_view or focus.is_ancestor(self.list_view)):
+            self.list_view.grab_focus()
 
     # The list.
 
     def _on_selected(self, *_args):
-        self.detail.set_artist(self._selection.get_selected_item())
+        if self._choosing:
+            return  # the filter chooses, once it has filtered (_on_filter_changed)
+        artist = self._selection.get_selected_item()
+        if artist is None and self._filtered.get_n_items() == 0 and self.filter_bar.search:
+            return  # nothing matches the filter: the albums shown stay
+        self._shown_artist = artist
+        self.detail.set_artist(artist)
 
     def _on_setup(self, _factory, list_item):
         list_item.set_child(ArtistRow())
@@ -213,10 +310,12 @@ class ArtistsPage(Adw.NavigationPage):
             self.stack.get_visible_child().child_focus(Gtk.DirectionType.TAB_FORWARD)
         elif self._detail_shown():
             self._focus_detail()
+        elif self.list_stack.get_visible_child_name() != 'list':
+            self.filter_bar.focus()  # no artist matches: the filter, to change it
         else:
             position = self._selection.get_selected()
             if position != Gtk.INVALID_LIST_POSITION:
-                self.list_view.scroll_to(position, Gtk.ListScrollFlags.FOCUS, None)
+                self._focus_row(position)
             else:
                 self.list_view.child_focus(Gtk.DirectionType.TAB_FORWARD)
 

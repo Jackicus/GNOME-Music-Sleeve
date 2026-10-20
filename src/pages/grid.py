@@ -3,10 +3,13 @@
 
 """AppleMusicGridPage: a root page showing a model of Items as a grid of tiles.
 
-The chain is the page's store → Gtk.FilterListModel (Favourites Only, on a page that offers it:
-a Gtk.BoolFilter on Item.favourite, or no filter) → Gtk.SortListModel (the header's sort
-choice, or none) → ReversedModel (that order backwards, for a descending text) →
-Gtk.NoSelection → Gtk.GridView, whose factory recycles AppleMusicTiles. Sorting uses
+The chain is the page's store → Gtk.SortListModel (the header's sort choice, or none) →
+Gtk.FilterListModel (a Gtk.EveryFilter of the filter bar's text, on a page that has one:
+widgets/filter_bar.text_filter(), matching everything until there is text, and Favourites
+Only, on a page that offers it: a Gtk.BoolFilter on Item.favourite) → ShownModel (that
+order backwards, for a descending text, and a filter's change shown so that the grid rebinds
+its tiles rather than building new ones) → Gtk.NoSelection → Gtk.GridView, whose factory
+recycles AppleMusicTiles. Sorting uses
 Gtk.StringSorter and Gtk.NumericSorter over Gtk.PropertyExpressions, which compute one key per
 item and sort in C: about 10 ms for 2,000 albums, against 25 ms for a Python
 Gtk.CustomSorter, whose cost grows with every comparison rather than every item.
@@ -18,6 +21,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from ..library import Item
 from ..widgets import context_menu
+from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
 from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak
@@ -125,7 +129,7 @@ def make_sorter(key, descending=False):
     backwards. Descending turns the first property round and leaves the rest breaking ties as
     they do ascending, as the Songs table's order does (library.SongOrder): a number's
     Gtk.NumericSorter takes the direction, but Gtk.StringSorter sorts one way, so a text's
-    descending order is its ascending one shown backwards (ReversedModel), ties and all."""
+    descending order is its ascending one shown backwards (ShownModel), ties and all."""
     names = SORTS[key][1]
     backwards = descending and names[0] not in NUMBERS
     sorters = [_number(name, descending and name == names[0]) if name in NUMBERS
@@ -135,46 +139,6 @@ def make_sorter(key, descending=False):
 
 def _direction(descending):
     return 'descending' if descending else 'ascending'
-
-
-class ReversedModel(GObject.Object, Gio.ListModel):
-    """`model`'s items in its own order or, set `backwards`, from the last to the first: a
-    grid's descending text order (make_sorter). Nothing is copied or sorted: a position here
-    maps to the model's, and the model's changes to positions here."""
-
-    def __init__(self, model):
-        super().__init__()
-        self._model = model
-        self._backwards = False
-        connect_weak(model, 'items-changed', self._on_items_changed)
-
-    @property
-    def backwards(self):
-        return self._backwards
-
-    def set_backwards(self, backwards):
-        if backwards == self._backwards:
-            return
-        self._backwards = backwards
-        count = self._model.get_n_items()
-        if count > 1:
-            self.items_changed(0, count, count)
-
-    def do_get_item_type(self):
-        return self._model.get_item_type()
-
-    def do_get_n_items(self):
-        return self._model.get_n_items()
-
-    def do_get_item(self, position):
-        if self._backwards:
-            position = self._model.get_n_items() - 1 - position
-        return self._model.get_item(position)
-
-    def _on_items_changed(self, model, position, removed, added):
-        if self._backwards:
-            position = model.get_n_items() - position - added
-        self.items_changed(position, removed, added)
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/grid.ui')
@@ -194,7 +158,11 @@ class GridPage(Adw.NavigationPage):
     the menu (then Sort and Filter, shown while the filter is on whatever it leaves), with
     the empty state's words for no favourite left; remembered per root page in the
     favourites-only setting. `artist` makes round portrait tiles, `video` music videos' 16:9
-    ones (wider columns). `root` is false for a page pushed over another. Root or pushed, the
+    ones (wider columns). `filter_words`, (label, count), gives the page a filter bar
+    (widgets/filter_bar.py) named `label` ("Filter Albums"), whose new count is announced in
+    the words count(shown, total) chooses ("{shown} of {total} albums", formatted here); a
+    filter that leaves nothing shows No Results Found. `root` is false for a page pushed over
+    another. Root or pushed, the
     header bar shows the title while the big one is out of view (HeaderTitle). The
     in-content title follows the page's `title`, on the page's margin, where the first
     column's cover is. The loading and empty states follow the library's
@@ -206,6 +174,7 @@ class GridPage(Adw.NavigationPage):
 
     __gtype_name__ = 'AppleMusicGridPage'
 
+    toolbar = Gtk.Template.Child()
     header_bar = Gtk.Template.Child()
     sort_button = Gtk.Template.Child()
     stack = Gtk.Template.Child()
@@ -217,7 +186,8 @@ class GridPage(Adw.NavigationPage):
 
     def __init__(self, library, title, model, sorts=(), artist=False, video=False, root=True,
                  icon_name=None, empty_title=None, empty_description=None, missing_title=None,
-                 missing_description=None, drag=False, data_sorts=(), favourites=None):
+                 missing_description=None, drag=False, data_sorts=(), favourites=None,
+                 filter_words=None):
         super().__init__(title=title)
         self._library = library
         self._get_model = model if callable(model) else lambda: model
@@ -226,6 +196,8 @@ class GridPage(Adw.NavigationPage):
         self._column_width = VIDEO_COLUMN_WIDTH if video else COLUMN_WIDTH
         self._title_offset = 0
         self._bound = False  # a tile has been bound (the startup timing's mark)
+        self.filter_bar = None  # the page's filter bar, on a page with `filter_words`
+        self._count_words = None
         self._nothing = Gio.ListStore(item_type=Item)  # shown while `model` returns None
         self._missing = False  # `model` returned None
         self._empty = (empty_title or title, empty_description)
@@ -234,6 +206,7 @@ class GridPage(Adw.NavigationPage):
 
         # The page's title, which a folder's page changes when the folder is renamed.
         self.bind_property('title', self.title_label, 'label', GObject.BindingFlags.SYNC_CREATE)
+        self._icon_name = icon_name
         self.empty_page.set_icon_name(icon_name)
         self._sign_in = SignInOffer(self.empty_page)  # Sign In… while signed out
 
@@ -245,15 +218,23 @@ class GridPage(Adw.NavigationPage):
         # Favourites Only: `favourites` is (empty title, empty description) on a page that
         # offers it, the status page's words when no favourite is left to show.
         self._favourites_texts = favourites
+        self._favourites_on = False
         self._favourite_filter = Gtk.BoolFilter(
             expression=Gtk.PropertyExpression.new(Item, None, 'favourite'))
-        self._filtered = Gtk.FilterListModel(model=self._model())
-        self._sorted = Gtk.SortListModel(model=self._filtered, sorter=sorter)
-        self._shown = ReversedModel(self._sorted)
+        # The filter bar's text and Favourites Only: an item shows when it passes both. With
+        # neither, the Gtk.EveryFilter matches everything without reading an item.
+        self._filters = Gtk.EveryFilter()
+        self._text_filter = text_filter()
+        self._filters.append(self._text_filter)
+        # After the sort: a new filter leaves the order as it is, and only takes items out of
+        # it and puts them back (a sort over the filter's output would place each again).
+        self._sorted = Gtk.SortListModel(model=self._model(), sorter=sorter)
+        self._filtered = Gtk.FilterListModel(model=self._sorted, filter=self._filters)
+        self._shown = ShownModel(self._filtered)
         self._shown.set_backwards(backwards)
         # Every signal of a child or of an object the page holds is connected weakly
         # (widgets/util.py): a bound method would keep the page alive once popped.
-        connect_weak(self._sorted, 'items-changed', self._update_state)
+        connect_weak(self._filtered, 'items-changed', self._update_state)
 
         factory = Gtk.SignalListItemFactory()
         connect_weak(factory, 'setup', self._on_setup)
@@ -306,6 +287,15 @@ class GridPage(Adw.NavigationPage):
         self.sort_button.set_menu_model(menu)
         self._update_sorts()
 
+        # The filter bar, under the header bar, its button beside Sort By.
+        if filter_words is not None:
+            label, self._count_words = filter_words
+            self.filter_bar = FilterBar(label)
+            self.toolbar.add_top_bar(self.filter_bar)
+            self.header_bar.pack_end(self.filter_bar.button)
+            connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
+            self.filter_bar.set_focus_return(self._focus_grid)
+
         connect_weak(self.scrolled_window.get_vadjustment(), 'value-changed', self._on_scrolled)
         self._header_title = HeaderTitle(self.header_bar, self.title_label, self.scrolled_window)
         # The library outlives the window: the page follows it only while it is shown.
@@ -341,15 +331,15 @@ class GridPage(Adw.NavigationPage):
 
     def _on_library_changed(self, *_args):
         model = self._model()
-        if model is not self._filtered.get_model():
-            self._filtered.set_model(model)
+        if model is not self._sorted.get_model():
+            self._sorted.set_model(model)
         self._update_sorts()
         self._update_state()
 
     def _update_sorts(self):
         """The orders the Sort By menu offers: the page's, and those of `data_sorts` the items
         have data for (offered()). An order no longer offered gives way to the first."""
-        model = self._filtered.get_model()
+        model = self._sorted.get_model()
         keys = tuple(key for key in self._all_sorts
                      if key not in self._data_sorts or offered(model, key))
         if keys == self._sort_keys and self._keys_menu.get_n_items():
@@ -366,20 +356,58 @@ class GridPage(Adw.NavigationPage):
     def _on_favourites_only(self, action, value):
         action.set_state(value)
         favourites = value.get_boolean()
-        self._filtered.set_filter(self._favourite_filter if favourites else None)
+        if favourites != self._favourites_on:
+            self._favourites_on = favourites
+            with self._shown.replacing(self._scroll_top):
+                if favourites:
+                    self._filters.append(self._favourite_filter)
+                else:
+                    self._filters.remove(1)  # after the text's
         remember_favourites_only(self.get_tag(), favourites)
         self._update_state()
 
     def _on_favourites_changed(self, *_args):
         """The account's favourites changed (a sync, or a heart): Favourites Only shows the
         new ones (the tiles follow their Items' notify::favourite themselves)."""
-        if self._filtered.get_filter() is not None:
+        if self._favourites_on:
             self._favourite_filter.changed(Gtk.FilterChange.DIFFERENT)
+
+    # The filter bar.
+
+    def _on_filter_changed(self, bar):
+        """The filter's text changed (after the entry's delay): the grid shows what matches it
+        (and Favourites Only), from the top, and the new count is announced."""
+        with self._shown.replacing(self._scroll_top):  # the tiles recycled (ShownModel)
+            self._text_filter.set_search(bar.search or None)
+        self._update_state()
+        self._scroll_top()
+        shown, total = self._filtered.get_n_items(), self._sorted.get_n_items()
+        words = self._count_words(shown, total) if bar.search else None
+        if words:
+            bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
+
+    def _scroll_top(self):
+        """Back to the top, where a new filter's items begin."""
+        if self._shown.get_n_items():
+            self.grid_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
+
+    def focus_filter(self):
+        """Ctrl+F: the filter bar shown with the cursor in its entry; False on a page with no
+        filter, or nothing to filter yet."""
+        return self.filter_bar is not None and self.filter_bar.focus()
+
+    def _focus_grid(self):
+        """Where Escape puts the focus once the filter bar has closed: the grid."""
+        if self.stack.get_visible_child_name() == 'items':
+            self.grid_view.grab_focus()
 
     def _update_state(self, *_args):
         library = self._library
-        filtered = self._filtered.get_filter() is not None
-        if self._sorted.get_n_items():
+        searched = self.filter_bar is not None and bool(self.filter_bar.search)
+        filtered = self._favourites_on or searched
+        total = 0 if self._missing else self._sorted.get_n_items()
+        icon_name = self._icon_name
+        if self._filtered.get_n_items():
             name = 'items'
         elif library.state == 'loading' or (library.state == 'empty' and library.syncing):
             name = 'loading'  # the first sync is on its way
@@ -387,17 +415,26 @@ class GridPage(Adw.NavigationPage):
             name = 'empty'
             if self._missing:
                 title, description = self._missing_texts
-            elif filtered and self._filtered.get_model().get_n_items():
-                title, description = self._favourites_texts  # only the filter left none
+            elif searched and total:  # only the text left none
+                title, description = _('No Results Found'), _('Try a different filter')
+                icon_name = 'edit-find-symbolic'
+            elif filtered and total:
+                title, description = self._favourites_texts  # only Favourites Only left none
             else:
                 title, description = self._empty
             self.empty_page.set_title(title)
             self._sign_in.set_description(description)
+        self.empty_page.set_icon_name(icon_name)
         self.stack.set_visible_child_name(name)
-        # Shown while Favourites Only is on, whatever it leaves, so it can be turned off.
+        # Shown while a filter is on, whatever it leaves, so it can be turned off.
         self.sort_button.set_visible(
             (name == 'items' and (len(self._sort_keys) > 1 or self._favourites_texts is not None))
             or (filtered and not self._missing))
+        if self.filter_bar is not None:
+            # Something to filter, filtered out or not; the bar goes with the last of it.
+            self.filter_bar.set_available(total > 0, self)
+            if not total and name == 'empty':
+                self.filter_bar.close()
 
     # Sorting.
 
@@ -439,7 +476,7 @@ class GridPage(Adw.NavigationPage):
             self._sorted.set_sorter(sorter)
         # Back to the top: the grid would otherwise follow the item it showed to wherever the
         # new order puts it.
-        if self._sorted.get_n_items():
+        if self._filtered.get_n_items():
             self.grid_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
 
     # The tiles.

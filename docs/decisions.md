@@ -182,6 +182,19 @@ changes, change it here, with the date. The plan they came from is in
   goes without a layout: an image shown by its opacity in a row, a CSS background in room a
   tile's subtitle line always keeps (an image more a tile cost 12 ms a grid's first build); Favourites Only is a check item in the
   sort menu (Sort and Filter, as Nautilus puts Show Hidden Files beside its sort orders).
+- **A filter on the library's lists** (2026-10-20). Albums, Artists, Music Videos, Songs
+  and a playlist's songs (Favourite Songs' too) have one filter bar (`widgets/filter_bar.py`),
+  as GNOME's apps put one over a list: the header's search button, Ctrl+F, or typing on the
+  page shows it; Escape (in it, or on the page) closes and clears it, before a pushed page's
+  Escape goes back. Ctrl+F takes a library page's filter when the page has something to
+  filter (`keyboard.search_target()`) and goes to Search from anywhere else, as Nautilus
+  and Contacts give Ctrl+F to the view shown. Every filter matches as the Songs filter and
+  Your Library search do: the whole text, case and accents ignored, in one of the title, the
+  artist and the album (an Item's title and subtitle), not words spread over them, so a
+  search's See All opens Songs on the same songs. It narrows Favourites Only (both apply).
+  While a playlist is filtered its songs cannot be moved (no drag, no Alt+Up, no Move Up in
+  their menus): the order shown is not the playlist's. Recently Added, All Playlists and a
+  folder have none (few items, in an order of their own), nor an album's tracks.
 - **A refresh on a schedule** (2026-09-28). The library is synced when the last sync is older
   than the chosen interval, or when library.json is missing, unreadable or of an older
   version, checked by a timer, when the engine comes up and when the library has been read;
@@ -541,6 +554,12 @@ changes, change it here, with the date. The plan they came from is in
   filters, GTK's sorters read each Python item's properties from C too slowly, and a column
   view's own sorter compares pairs. The Songs page sorts and filters in Python and splices the
   result; every other list sorts with GTK's expression sorters.
+- **Filters after the sort, their changes recycled** (2026-10-20). A grid and the Artists
+  list filter their sorted items (a `Gtk.FilterListModel` over the `Gtk.SortListModel`), so a
+  filter's change never sorts again, and show a filter's change through `ShownModel`, which
+  inserts the new items before removing the old with a scroll to the top between, so the
+  view rebinds its rows rather than building them (the Songs table's `_show()` did this
+  already). A key on 3,000 albums went from 48 to 21 ms (docs/notes.md).
 - **The model's own words** (2026-09-28). What the app calls things (an untitled album,
   Home's own shelves, a count caption such as "12 songs, 43 min") is made and translated in
   `library.py` from the data, not read from English text the backend wrote into

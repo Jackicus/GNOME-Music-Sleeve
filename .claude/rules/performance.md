@@ -58,7 +58,9 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   rows and builds new ones. To replace a list's contents, insert the new items first,
   `scroll_to(0)`, then remove the old ones (`SongsPage._show()`): the rows are only rebound.
   A sync's change to what a list shows goes through `library.apply_diff` instead (the fewest
-  splices), so the list keeps its scroll position.
+  splices), so the list keeps its scroll position. A filter's change over GTK's models goes
+  through `widgets.filter_bar.ShownModel`, the list's own model, under `replacing(scroll)`:
+  it shows the change the same way (the grids, Artists, a playlist's songs).
 - A `Gtk.GridView` keeps about 30 rows of `max-columns` tiles alive however few it shows: set
   `max-columns` to what fits (`grid.columns_for()`; `COLUMN_WIDTH` and `VIDEO_COLUMN_WIDTH`
   are a tile, `tile.ART_SIZE` or a video grid's `tile.GRID_VIDEO_SIZE`, plus Adwaita's
@@ -73,6 +75,10 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   sorter's `changed`, then sort and filter in Python and splice: `library.SongOrder` computes
   each column's keys once, in frame-sized steps (`await prepare(column)`), and `tracks()` then
   only sorts (library.md).
+- Filter after sorting (`Gtk.FilterListModel` over the `Gtk.SortListModel`): a filter's
+  change then only removes and puts back, and never sorts again. The Songs table tests only
+  the last matches when the text grows (`songs.narrows()`). Measure a filter with
+  `scroll_test.py --type TEXT` (docs/notes.md).
 
 ## Startup and the main loop
 

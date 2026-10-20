@@ -140,32 +140,32 @@ class SongsPageTest(PageTestCase):
         self.assertEqual(page._rows.get_n_items(), 1)
         self.assertEqual(page.count_label.get_label(), '1 of 12 songs')
         # In the filter bar, shown with the text in it.
-        self.assertTrue(page.search_bar.get_search_mode())
-        self.assertEqual(page.filter_entry.get_text(), 'Song 0011')
+        self.assertTrue(page.filter_bar.get_search_mode())
+        self.assertEqual(page.filter_bar.entry.get_text(), 'Song 0011')
         # Closing the bar (its button, Escape) clears the filter.
-        page.search_bar.set_search_mode(False)
+        page.filter_bar.set_search_mode(False)
         self.assertTrue(await self.until(lambda: page._rows.get_n_items() == 12))
         self.assertEqual(page.count_label.get_label(), '12 songs')
-        self.assertEqual(page.filter_entry.get_text(), '')
+        self.assertEqual(page.filter_bar.entry.get_text(), '')
 
     async def test_the_filter_bar_is_shown_by_ctrl_f_and_typing_and_closed_by_escape(self):
         page = await self.songs_page(3)
         window = page.get_root()
-        self.assertIs(page.search_bar.get_key_capture_widget(), page)  # typing shows it
-        self.assertTrue(page.search_button.get_visible())
-        self.assertFalse(page.search_bar.get_search_mode())
+        self.assertIs(page.filter_bar.get_key_capture_widget(), page)  # typing shows it
+        self.assertTrue(page.filter_bar.button.get_visible())
+        self.assertFalse(page.filter_bar.get_search_mode())
         self.assertTrue(page.focus_filter())
-        self.assertTrue(page.search_bar.get_search_mode())
-        self.assertTrue(page.search_button.get_active())  # the header's toggle follows
+        self.assertTrue(page.filter_bar.get_search_mode())
+        self.assertTrue(page.filter_bar.button.get_active())  # the header's toggle follows
         self.assertTrue(await self.until(
             lambda: window.get_focus() is not None
-            and window.get_focus().is_ancestor(page.filter_entry)))
-        page.filter_entry.set_text('Song 0002')
-        page.on_filter_changed(page.filter_entry)
+            and window.get_focus().is_ancestor(page.filter_bar.entry)))
+        page.filter_bar.entry.set_text('Song 0002')
+        page.filter_bar.entry.emit('search-changed')
         self.assertEqual(page._rows.get_n_items(), 1)
-        page.filter_entry.emit('stop-search')  # Escape
-        self.assertFalse(page.search_bar.get_search_mode())
-        self.assertFalse(page.search_button.get_active())
+        page.filter_bar.entry.emit('stop-search')  # Escape
+        self.assertFalse(page.filter_bar.get_search_mode())
+        self.assertFalse(page.filter_bar.button.get_active())
         self.assertTrue(await self.until(lambda: page._rows.get_n_items() == 3))
         self.assertTrue(await self.until(
             lambda: window.get_focus() is not None
@@ -175,9 +175,9 @@ class SongsPageTest(PageTestCase):
         page = await self.songs_page(0)
         self.assertTrue(await self.until(
             lambda: page.stack.get_visible_child_name() == 'empty'))
-        self.assertFalse(page.search_button.get_visible())
+        self.assertFalse(page.filter_bar.button.get_visible())
         self.assertFalse(page.focus_filter())
-        self.assertFalse(page.search_bar.get_search_mode())
+        self.assertFalse(page.filter_bar.get_search_mode())
 
     async def test_a_row_plays_its_album_from_its_own_song(self):
         from gi.repository import Gtk

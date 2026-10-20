@@ -183,6 +183,25 @@ its "Performance pass" section.
   last row when a queue first filled the first part. A small Python `Gtk.SectionModel` over
   one slice (`widgets.queue.QueueSections`) gives the sections with no change to the rows.
 
+- The library pages' filters typed into (2026-10-20, headless, `scripts/scroll_test.py
+  --type midnight`: a key every 250 ms, past the entry's 150 ms delay, so every key
+  refilters; the time each refilter holds the main loop, the filter, the models and the
+  list's own work). A `Gtk.GridView` or `Gtk.ListView` destroys the rows of the items a
+  change removes and builds rows for the ones it adds, about half a millisecond a tile:
+  typing "m" on 3,000 albums built 65 tiles (48 ms), "mi" 117 (55 ms). With the filter
+  after the sort (a filter's change no longer places what it puts back) and the change shown
+  as the new items before the old, a scroll to the top, the old removed (`ShownModel`, as
+  `SongsPage._show()` does), "m" took 21 ms and "mi" 12 ms, rebinding 2 tiles; on 868
+  artists "m" 52 → 18 ms; on a 5,000-song playlist (invented, built from build/demo-big)
+  "m" 72 → 29 ms, "mi" 146 → 19 ms. The Songs table (40,000 songs) tests only the last
+  matches when the text grows (`songs.narrows()`): "mi" 52 → 40 ms, "mid" 54 → 29 ms; its
+  first key stays 64 ms (26,801 rows spliced). What is left is a list growing back from a
+  few items to many (Backspace from "mid", 5 to 291 albums: 65 ms; 70 to 802 playlist
+  songs, 69 to 5,817 of Songs: 134 ms):
+  a grid or list keeps rows for about 30 rows of tiles or 200 items, and those had gone
+  with the items, so they are built again; it happens once, after the typing has paused.
+  No frame of the typing itself went over 20 ms on the grids and Artists.
+
 ## Memory
 
 The target (`.claude/rules/performance.md`, checked by `scripts/bench.py`): anonymous memory

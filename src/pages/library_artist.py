@@ -21,7 +21,8 @@ from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import Tile
 from ..widgets.util import MappedHandlers, connect_weak, weak_method
 from . import app
-from .grid import SORTS, ReversedModel, columns_for, estimate_columns, make_sorter
+from ..widgets.filter_bar import ShownModel
+from .grid import SORTS, columns_for, estimate_columns, make_sorter
 
 # The orders the Sort By menu offers: newest first, as Apple Music's library has an artist's
 # albums, or by title.
@@ -85,7 +86,7 @@ class LibraryArtistPage(Adw.NavigationPage):
         self._order = order
         sorter, backwards = make_sorter(*order)
         self._sorted = Gtk.SortListModel(model=self._store, sorter=sorter)
-        self._shown = ReversedModel(self._sorted)
+        self._shown = ShownModel(self._sorted)
         self._shown.set_backwards(backwards)
         connect_weak(self._sorted, 'items-changed', self._update_state)
 

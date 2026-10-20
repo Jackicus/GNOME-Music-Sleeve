@@ -69,7 +69,9 @@ template $AppleMusicDetailPage: Adw.NavigationPage {
       }
     }
 
-    child: Adw.ToolbarView {
+    // A playlist's filter bar goes under the header bar, its button in it (detail.py,
+    // widgets/filter_bar.py).
+    child: Adw.ToolbarView toolbar {
       [top]
       Adw.HeaderBar header_bar {}
 

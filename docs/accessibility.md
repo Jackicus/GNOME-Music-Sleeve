@@ -25,7 +25,8 @@ list and the script together.
    page, and Left on a playlist inside a folder moves to the folder. A screen reader hears
    whether a folder is expanded and how deep an item is nested.
 2. Ctrl+2 puts the focus in the page: the first tile of a grid, the Songs table, the Search
-   entry, an album's Play; from the page's header bar (Back, Filter Songs, Sort By) too. Arrows
+   entry, an album's Play, the Artists list's selected artist; from the page's header bar
+   (Back, a filter's button, Sort By) and from the sidebar too. Arrows
    move between tiles and rows, Tab leaves a grid, shelf or list after one item, Enter opens a
    tile or plays a row, Menu or Shift+F10 opens the focused item's context menu and Escape
    closes it.
@@ -72,10 +73,12 @@ list and the script together.
    entry).
 6. Ctrl+F shows Search with the cursor in the entry, over any page opened from its results;
    Ctrl+Up there leaves the volume alone; Tab reaches the Apple Music / Your Library toggle;
-   Escape in the entry clears it. On the
-   Songs page, Ctrl+F shows the page's own filter bar instead, with the cursor in its entry;
-   typing on the page (in the table, or on the header bar's buttons) shows it too, with what
-   was typed; Escape closes it, clears the filter and puts the focus back in the table.
+   Escape in the entry clears it. On Albums, Artists, Songs, Music Videos and a playlist
+   (Favourite Songs too), Ctrl+F shows the page's own filter bar instead, with the cursor in
+   its entry; typing on the page (in the list, or on the header bar's buttons) shows it too,
+   with what was typed; the new count is read out once the typing pauses ("2 of 40
+   albums"); Escape, in the entry or on the list, closes it, clears the filter and puts the
+   focus back in the list, and on a playlist opened from a grid a second Escape goes back.
 7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
    it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
    Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its

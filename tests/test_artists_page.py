@@ -87,6 +87,50 @@ class ArtistsPageTest(PageTestCase):
             lambda: len(self.listed(page)) == FIRST_ROWS + 30))
         self.assertEqual(self.listed(page)[-1], f'Invented Artist {FIRST_ROWS + 29:03d}')
 
+    async def test_the_filter_keeps_the_artist_selected_or_takes_the_first_match(self):
+        self.library.state = 'ready'
+        aura, _album = self.add_artist('l.art1', 'Aura Invented', 1)
+        harbour, _album = self.add_artist('l.art2', 'Harbour Lines', 2)
+        lines, _album = self.add_artist('l.art3', 'Lines Collective', 3)
+        zed, _album = self.add_artist('l.art4', 'Zephyr Café', 4)
+        page = await self.page()
+        bar = page.filter_bar
+        self.assertTrue(bar.button.get_visible())
+        self.assertIs(bar.get_key_capture_widget(), page.list_page)  # typing on the list
+        page.list_view.get_model().set_selected(2)
+        self.assertIs(page.detail.artist, lines)
+        shown = []
+        page.detail.set_artist = lambda artist: shown.append(artist)  # what the pane is told
+        self.assertTrue(page.focus_filter())
+        bar.set_text('lines')  # still listed: still selected, the albums as they were
+        self.assertEqual(self.listed(page), ['Harbour Lines', 'Lines Collective'])
+        self.assertIs(page.list_view.get_model().get_selected_item(), lines)
+        self.assertEqual(shown, [])
+        bar.set_text('cafe')  # left out: the first match, once
+        self.assertEqual(self.listed(page), ['Zephyr Café'])
+        self.assertEqual(shown, [zed])
+        bar.set_text('nothing invented')  # no match: the albums shown stay
+        self.assertEqual(page.list_stack.get_visible_child_name(), 'no-results')
+        self.assertEqual(shown, [zed])
+        page.focus_content()  # Ctrl+2 with nothing listed: the filter, to change it
+        self.assertTrue(await self.until_focused(bar.entry))
+        bar.close()
+        self.assertTrue(await self.until(lambda: len(self.listed(page)) == 4))
+        self.assertEqual(page.list_stack.get_visible_child_name(), 'list')
+        self.assertIs(page.list_view.get_model().get_selected_item(), zed)
+        del page.detail.set_artist
+
+    async def test_ctrl_f_in_the_collapsed_layout_goes_back_to_the_list(self):
+        self.library.state = 'ready'
+        self.add_artist('l.art1', 'Aura Invented', 1)
+        page = await self.page()
+        page.split_view.set_collapsed(True)
+        page.list_view.emit('activate', 0)
+        self.assertTrue(page.split_view.get_show_content())
+        self.assertTrue(page.focus_filter())
+        self.assertFalse(page.split_view.get_show_content())
+        self.assertTrue(await self.until_focused(page.filter_bar.entry))
+
     async def test_loading_then_empty(self):
         self.library.state = 'loading'
         page = await self.page()

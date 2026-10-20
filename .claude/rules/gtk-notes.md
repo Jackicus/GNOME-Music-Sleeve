@@ -29,6 +29,14 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   initial order only, or call `sort_by_column(None, …)` first.
 - A `Gtk.StringFilter` over `Gtk.ClosureExpression.new(str, lambda item: item.search_key, None)`
   filters tens of thousands of items in one pass (fold the text first, `ignore-case: false`).
+  With no search it matches everything without reading an item; a longer search refilters
+  only what matched.
+- `Gtk.ListView.scroll_to(position, FOCUS)` focuses the row only when the focus is in the
+  list already; from elsewhere (a header bar, an entry, the sidebar) it only moves the list's
+  own focus there, and `list_view.grab_focus()` then focuses that row (`ArtistsPage._focus_row`).
+- `Gtk.Editable.set_text()` empties the entry before it inserts, and a `Gtk.SearchEntry`
+  emits `search-changed` at once for an empty text: replacing a filter's text refilters
+  twice (everything, then the text). Typing inserts and deletes, which waits for the delay.
 - A `Gtk.ListView` keeps its focused row's widget alive, unmapped (not child-visible), once
   it has scrolled away from it, and Tab back into the list focuses that widget: the keys
   then reach nothing (GTK delivers them to the list). `LyricsView` moves the focus to the
