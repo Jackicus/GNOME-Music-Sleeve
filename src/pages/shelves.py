@@ -124,6 +124,7 @@ class ShelvesPage(Adw.NavigationPage):
         self._remote = []  # the engine's shelves, as ShelfModel objects
         self._shelves = []  # the shelves shown (the engine's, arranged)
         self._status = None  # the failure the status page shows (_show_status's arguments)
+        self._focus_asked = None  # Ctrl+2 while loading: a weak ref to where the focus was
         self._handlers = MappedHandlers(self)
         # What the page says when the engine cannot answer, and what its button does.
         self._engine_status = EngineStatus(app(), self._show_status, self.load, {
@@ -155,6 +156,7 @@ class ShelvesPage(Adw.NavigationPage):
 
     def do_unmap(self):
         self._engine_status.unwatch()
+        self._focus_asked = None
         Adw.NavigationPage.do_unmap(self)
 
     def do_hidden(self):
@@ -287,15 +289,40 @@ class ShelvesPage(Adw.NavigationPage):
         shelf once it is laid out. The stack moves the focus it held (the spinner's, the
         status page's button's) into its new child at once, before the shelves' rows exist,
         and a shelf hidden for another (a new answer) loses it: either way the scrolled window
-        takes it, where no key reaches a tile and Ctrl+2 finds it in the content already."""
+        takes it, where no key reaches a tile. So does a Ctrl+2 pressed while the page was
+        loading (focus_content()), when the focus is still where it was then."""
+        asked, self._focus_asked = self._focus_asked, None
         for _frame in range(3):
             await next_frame(self.shelves_box)
             root = self.get_root()
-            widgets = self._column.widgets
-            if root is None or root.get_focus() is not self.scrolled_window or not widgets:
+            focus = root.get_focus() if root is not None else None
+            if root is None or not self._column.widgets or (
+                    focus is not self.scrolled_window
+                    and (asked is None or focus != asked())):
                 return
-            if widgets[0].child_focus(Gtk.DirectionType.TAB_FORWARD):
+            if self._column.focus():
                 return
+
+    def focus_content(self):
+        """Ctrl+2 (win.focus-content): the focus on the first shelf (ShelfColumn.focus(), in
+        the shelves' order, whichever have been laid out yet), or what the page shows instead
+        (the links, the status page's button); nothing moves when the focus is in the page's
+        content already (but on the scrolled window itself, where no key reaches a tile).
+        While the page is loading there is nothing to focus: the first shelf takes the focus
+        as the answer shows, unless it has moved meanwhile."""
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        if focus is not None and focus is not self.scrolled_window and (
+                focus is self.stack or focus.is_ancestor(self.stack)):
+            return
+        shown = self.stack.get_visible_child_name()
+        if shown == 'loading':
+            self._focus_asked = focus.weak_ref() if focus is not None else (lambda: None)
+            return
+        if shown == 'items' and self._column.focus():
+            return
+        if not self.stack.child_focus(Gtk.DirectionType.TAB_FORWARD):
+            self.child_focus(Gtk.DirectionType.TAB_FORWARD)
 
     def _show_status(self, status, title, description, button):
         """The spinner ('loading'), or the status page: EngineStatus's states, or 'empty'. A
@@ -313,6 +340,7 @@ class ShelvesPage(Adw.NavigationPage):
                 return
             self._column.show([])
             self._shelves = []
+        self._focus_asked = None  # nothing comes to take it
         self.status_page.set_icon_name(self._icon_name)
         self.status_page.set_title(title)
         self.status_page.set_description(description)

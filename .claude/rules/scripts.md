@@ -68,7 +68,11 @@ paths:
   `--emulate-keys`, and any session without that interface (a desktop one puts it behind the
   remote-desktop portal), falls back to `press()`, which runs the controllers a real event would
   reach, a label's mnemonic included, and leaves those steps out. A dialog is inside the window only while that is
-  maximized (or tiled), so the dialog step maximizes it and puts it back. `--names` runs a private
+  maximized (or tiled), so the dialog step maximizes it and puts it back. A page of shelves
+  (Radio, New, Charts, Home) is waited for in the window's frames, not seconds
+  (`shelves_shown()`: every shelf bound and laid out, then a frame), since the column binds
+  a shelf a frame and a loaded machine draws them slowly; `--step radio` walks Radio's steps
+  alone, to repeat them. `--names` runs a private
   AT-SPI bus (a dbus-daemon and at-spi2-registryd) and stops it however the script exits.
 - `am.py` drives the real engine: `status`, `eval`, `now-playing`, `events`. By default each
   command starts a Chrome of its own on the release build's profile (`--devel` for the .Devel

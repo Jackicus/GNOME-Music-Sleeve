@@ -88,6 +88,9 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   sorts a box layout's children by x, whatever the direction); only a container with
   another layout sorts right to left there. A widget's text direction NONE is the default
   direction (`Gtk.Widget.set_default_direction()`, as a locale sets it), not its parent's.
+  A widget added (or shown) since the last layout has no place yet and sorts first: Ctrl+2
+  on a page of shelves, one bound a frame after the first few, took the focus to it, so
+  such a page focuses its first shelf in the column's order (`ShelfColumn.focus()`).
 - A `Gtk.Stack` will not switch to a child that is not visible. `Gtk.Inscription`'s CSS name is
   `label`.
 - Several `Adw.Breakpoint`s: only the last matching one applies, so the window's narrower one

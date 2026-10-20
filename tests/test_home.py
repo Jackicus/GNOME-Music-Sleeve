@@ -336,6 +336,25 @@ class HomePageTest(PageTestCase):
         page.map()
         self.assertEqual(self.shown(page)[1], 'recently-played')
 
+    async def test_ctrl_2_goes_to_the_first_shelf_before_a_new_one_is_laid_out(self):
+        # A shelf the column has bound since the last layout has no place yet: the box's own
+        # Tab order (by place) would give it the focus before the first.
+        self.up()
+        self.app.engine.answers['recently_played'] = EngineError('timeout')
+        page = await self.home_page()
+        self.assertTrue(await self.until_frames(page, lambda: all(
+            widget.get_width() > 0 for widget in page._column.widgets)))
+        later = ShelfModel('later', 'Invented Later Shelf',
+                           [Item(dict(album(4), id='later.1'))])
+        page._column.show([*page._column.shelves, later], hero_first=True)
+        self.window.set_focus(None)
+        page.focus_content()  # Ctrl+2
+        first = page._column.widgets[0]
+        focus = self.window.get_focus()
+        self.assertTrue(focus is not None and focus.is_ancestor(first), focus)
+        page.focus_content()  # again: nothing moves
+        self.assertEqual(self.window.get_focus(), focus)
+
     async def test_refresh_asks_apple_and_the_sync_for_the_shelves(self):
         self.up()
         engine = self.app.engine

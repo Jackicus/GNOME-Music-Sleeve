@@ -67,6 +67,66 @@ class ShelvesPageTest(PageTestCase):
         self.assertTrue(await self.until(lambda: self.window.get_focus() is not None
                                          and self.window.get_focus().is_ancestor(first)))
 
+    def focus_in(self, widget):
+        focus = self.window.get_focus()
+        return focus is not None and (focus == widget or focus.is_ancestor(widget))
+
+    async def test_ctrl_2_goes_to_the_first_shelf_before_a_new_one_is_laid_out(self):
+        # The column binds a shelf a frame after its first few. Until its first layout it has
+        # no place, and the box's own Tab order (by place) would put it first.
+        from gi.repository import Gtk
+
+        from applemusic.library import Item, ShelfModel
+
+        self.app.engine.answers['browse'] = answer(3)
+        page = await self.show_root(self.page(self.app.engine.browse))
+        await self.settle()
+
+        def laid_out():
+            widgets = page._column.widgets
+            return len(widgets) == 3 and all(widget.get_width() > 0 for widget in widgets)
+
+        self.assertTrue(await self.until_frames(page, laid_out))
+        later = ShelfModel('later', 'Invented Later Shelf',
+                           [Item(dict(album(1, tracks=0), id='later.1'))])
+        page._present([*page._shelves, later])
+        new = page._column.widget_for(later)
+        self.window.set_focus(None)
+        self.assertTrue(page.stack.child_focus(Gtk.DirectionType.TAB_FORWARD))
+        self.assertTrue(self.focus_in(new))  # what Ctrl+2 found before focus_content()
+        self.window.set_focus(None)
+        page.focus_content()  # Ctrl+2
+        self.assertTrue(self.focus_in(page._column.widgets[0]), self.window.get_focus())
+        page.focus_content()  # again: the focus is in the content already
+        self.assertTrue(self.focus_in(page._column.widgets[0]))
+
+    async def test_ctrl_2_while_loading_goes_to_the_first_shelf_as_it_shows(self):
+        answered = asyncio.get_running_loop().create_future()
+        self.app.engine.answers['browse'] = lambda _refresh: answered
+        page = await self.show_root(self.page(self.app.engine.browse))
+        await self.turn()
+        self.assertEqual(page.stack.get_visible_child_name(), 'loading')
+        page.refresh_button.grab_focus()
+        page.focus_content()  # Ctrl+2 from the header bar: nothing to focus yet
+        self.assertEqual(self.window.get_focus(), page.refresh_button)
+        answered.set_result(answer())
+        self.assertTrue(await self.until_frames(
+            page, lambda: bool(page._column.widgets)
+            and self.focus_in(page._column.widgets[0])), self.window.get_focus())
+
+    async def test_ctrl_2_while_loading_leaves_a_focus_moved_since(self):
+        answered = asyncio.get_running_loop().create_future()
+        self.app.engine.answers['browse'] = lambda _refresh: answered
+        page = await self.show_root(self.page(self.app.engine.browse))
+        await self.turn()
+        self.window.set_focus(None)
+        page.focus_content()
+        page.refresh_button.grab_focus()  # the user went on meanwhile
+        answered.set_result(answer())
+        self.assertTrue(await self.until_frames(page, lambda: bool(page._column.widgets)))
+        await self.until_frames(page, lambda: False, frames=4)  # _focus_shelves' frames
+        self.assertEqual(self.window.get_focus(), page.refresh_button)
+
     async def test_refresh_does_nothing_while_a_request_runs(self):
         waiting = asyncio.get_running_loop().create_future()
 

@@ -470,6 +470,13 @@ class ShelfColumn:
         """The widget showing `shelf`, or None while it shows none."""
         return self._widgets.get(shelf)
 
+    def focus(self):
+        """Give the focus to the first shelf shown that takes it, in the column's order: True
+        when one did. Not the box's own Tab order, which follows where its children were laid
+        out: a shelf bound since the last layout (one a frame, after FIRST_SHELVES) has no
+        place yet, sorts before the others, and would take the focus from the first."""
+        return any(widget.child_focus(Gtk.DirectionType.TAB_FORWARD) for widget in self.widgets)
+
     def show(self, shelves, hero_first=False, heroes=()):
         if self._task is not None and not self._task.done():
             self._task.cancel()
