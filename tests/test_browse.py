@@ -166,6 +166,8 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertEqual(link(store + 'viewMultiRoom?FCID=2')['kind'], 'multiroom')
         self.assertEqual(link(store + 'viewTop?cc=gb')['kind'], 'charts')  # no genre
         self.assertNotIn('genre', link(store + 'viewTop?cc=gb'))
+        self.assertEqual(link(store + 'viewTop?genreId=21&cc=gb')['genre'], '21')
+        self.assertNotIn('genre', link(store + 'viewTop?genreId=abc'))  # not a genre's id
         # An in-app route marked external opens in the browser, as Apple's page would.
         self.assertEqual(link(store + 'viewRoom?fcId=1', target='external')['kind'], 'link')
         # An id that is not one (it goes into a path), a route without its id: none.
@@ -506,6 +508,45 @@ class ChartsShelvesTest(unittest.TestCase):
     def test_cache_path(self):
         self.assertEqual(normalize.charts_cache_path('/c'), os.path.join('/c', 'charts.json'))
         self.assertIn('charts.json', normalize.KEPT_ANSWERS)
+        # A genre's beside it, in a folder of their own, pruned as the other answers are.
+        self.assertEqual(normalize.charts_cache_path('/c', '21'),
+                         os.path.join('/c', 'charts', '21.json'))
+        self.assertIn('charts', normalize.ANSWER_FOLDERS)
+        self.assertEqual(normalize.genres_cache_path('/c'), os.path.join('/c', 'genres.json'))
+        self.assertIn('genres.json', normalize.KEPT_ANSWERS)
+
+
+class CatalogGenresTest(unittest.TestCase):
+    """The catalog's genres (`/v1/catalog/<sf>/genres`) as the Charts page's choice."""
+
+    @staticmethod
+    def genre(genre_id, name, parent='9000'):
+        attrs = {'name': name, 'url': f'https://music.apple.com/xx/genre/{genre_id}'}
+        if parent is not None:
+            attrs.update(parentId=parent, parentName='Invented Music')
+        return {'id': genre_id, 'type': 'genres', 'href': f'/v1/catalog/xx/genres/{genre_id}',
+                'attributes': attrs}
+
+    def test_the_genres_in_apples_order_without_the_one_they_belong_to(self):
+        raw = {'data': [self.genre('9000', 'Invented Music', parent=None),
+                        self.genre('9002', ' Invented   Rock '),
+                        self.genre('9001', 'Invented Folk'),
+                        self.genre('9002', 'Again'),  # once
+                        self.genre('9003', ''),  # no name
+                        self.genre('../x', 'Not an Id'),
+                        {'id': '9004', 'type': 'songs', 'attributes': {'name': 'A Song'}},
+                        'junk']}
+        self.assertEqual(normalize.catalog_genres(raw), {'genres': [
+            {'id': '9002', 'title': 'Invented Rock'}, {'id': '9001', 'title': 'Invented Folk'}]})
+
+    def test_a_genre_without_a_parent_that_is_nobodys_stays(self):
+        raw = {'data': [self.genre('9005', 'Invented Jazz', parent=None)]}
+        self.assertEqual(normalize.catalog_genres(raw)['genres'],
+                         [{'id': '9005', 'title': 'Invented Jazz'}])
+
+    def test_nothing(self):
+        for raw in (None, {}, {'data': None}, {'data': 'junk'}, 'junk'):
+            self.assertEqual(normalize.catalog_genres(raw), {'genres': []})
 
 
 class RecommendationReasonTest(unittest.TestCase):

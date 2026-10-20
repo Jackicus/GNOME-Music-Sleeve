@@ -182,6 +182,21 @@ class ShelvesPage(Adw.NavigationPage):
             self._task.cancel()
         self._task = app().spawn(self._load(refresh))
 
+    def start_over(self):
+        """Ask for the shelves anew, those shown dropped (the spinner, then the answer or
+        the status page): what the page asks for has changed (the Charts page's genre)."""
+        if self._art_task is not None and not self._art_task.done():
+            self._art_task.cancel()
+        self._art_task = None
+        self._answer = None
+        self._remote = []
+        self._shelves = []
+        self._status = None
+        self._column.show([])
+        self.explore_box.show_sections([])
+        self.scrolled_window.get_vadjustment().set_value(0)
+        self.load()
+
     async def _load(self, refresh):
         if not self._shelves:
             self._engine_status.loading()

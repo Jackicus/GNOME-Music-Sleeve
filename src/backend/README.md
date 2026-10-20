@@ -349,7 +349,7 @@ New's answer (`Engine.browse()`, `normalize.editorial_shelves()`) is `{shelves, 
 | `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>`, `https://music.apple.com/<sf>/room/<id>` | `room` | `Engine.room(id)`: `GET /v1/editorial/<sf>/rooms/<id>` (`api.ROOM_ENDPOINT`), `rooms` with `title`, `sorts`, `contents` (up to 100): `normalize.editorial_room()`'s `{id, title, items}`, a grid |
 | `…/viewGrouping?cc=<sf>&id=<id>` | `grouping` | `Engine.grouping(id)`: `GET /v1/editorial/<sf>/groupings/<id>` with `api.GROUPING_PARAMS` (`platform=web`, without which it is a 400, "A single platform must be supplied"; `extend=editorialArtwork`), the same shape as New: `editorial_grouping()`'s `{id, title, shelves, links}` |
 | `…/viewMultiRoom?cc=<sf>&fcId=<id>` | `multiroom` | `Engine.multiroom(id)`: `GET /v1/editorial/<sf>/multirooms/<id>` with `api.MULTIROOM_PARAMS` (`extend=editorialArtwork,uber,lockupStyle`): `multirooms` with `title`, `uber` (`masterArt`, `name`, `description`, colours) and `children` (404 a header, 345 shelves with `contents` and `room`): `editorial_multiroom()`'s `{id, title, shelves, links}` |
-| `…/viewTop?genreId=<n>`, `https://music.apple.com/<sf>/charts` | `charts` | the Charts page (`genre` kept for #404; not tried live) |
+| `…/viewTop?genreId=<n>`, `https://music.apple.com/<sf>/charts` | `charts` | the Charts page, on the genre `genre` names (an `api.is_genre_id()` id) when the link has one; not tried live |
 | any other https URL, or one with `target: 'external'` (`https://music.apple.com/concerts`) | `link` | the browser |
 
 The `music.apple.com/<sf>/room/<id>` and `/charts` forms were not among the links seen live
@@ -465,7 +465,17 @@ Not checked live yet: the `with` values and the keys they answer under are the w
 player's as remembered, so the normaliser takes any key. The documented answer is
 `results`, one entry per type, each a list of charts `{chart, name, orderId, href, next,
 data}` (`chart` `most-played`, `name` Apple's title in the account's language, "Top Songs",
-`data` the resources in chart order); `genre=<id>` would narrow it to a genre (#404).
+`data` the resources in chart order). `Engine.charts(genre=<id>)` narrows it to a genre
+(`api.charts_params()`: `CHARTS_PLAIN_PARAMS` and `genre=<id>`, without `with`: the Daily
+Top 100 and City Charts are no genre's; an id that is not `api.is_genre_id()`, digits, is
+`usage`), kept as `charts/<id>.json`. The genres the page offers are `Engine.genres()`:
+`GET /v1/catalog/<sf>/genres` (`api.GENRES_ENDPOINT`, no parameters), Apple's documented
+`genres` resources `{id, attributes: {name, parentId, parentName}}`, shaped by
+`normalize.catalog_genres()` as `{genres: [{id, title}]}` in Apple's order, the genre the
+others belong to (Music, without a parent and every other's parent: what the charts are
+without a genre) left out, kept as `genres.json` for a day. Not checked live yet: the
+`genre` parameter with `types` of four kinds, and whether the list is the top level alone
+or the subgenres too.
 `normalize.charts_shelves()` makes a shelf of each chart with something in it, in the
 page's order (`CHART_ORDER`: songs, albums, playlists, `dailyGlobalTopCharts`,
 `cityCharts`, music videos, then any other key), keyed `charts-<key>`, with `chart` (the

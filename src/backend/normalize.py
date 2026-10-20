@@ -46,10 +46,10 @@ REMOTE_ART_BUDGET = 32 * 1024 * 1024
 LYRICS_KEEP = 2000
 # The day-long answers in the cache's top folder, beside categories/.
 KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
-                'recent-played.json')
+                'genres.json', 'recent-played.json')
 # The folders of day-long answers, one file an item.
 ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'suggestions', 'credits', 'rooms',
-                  'groupings', 'multirooms')
+                  'groupings', 'multirooms', 'charts')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -1758,7 +1758,7 @@ def editorial_link(link):
             found = query.get(name, '')
             if kind == 'charts':
                 answer = {'title': label, 'kind': 'charts', 'id': 'charts', 'url': None}
-                if api.is_editorial_id(found):
+                if api.is_genre_id(found):
                     answer['genre'] = found
                 return answer
             if not api.is_editorial_id(found):
@@ -2075,6 +2075,37 @@ def charts_shelves(raw, cache_dir):
                 shelf['form'] = 'songs'
         shelves.append(shelf)
     return {'shelves': shelves}
+
+
+def catalog_genres(raw, cache_dir=None):
+    """`genres`' answer from the catalog's genres (`/v1/catalog/<storefront>/genres`):
+    {genres: [{id, title}]}, the genres the Charts page offers, in Apple's order, each once.
+    The genre the others belong to (Music, every genre's: a genre without a parent that is
+    another's parent) is left out, as are a genre without a name and an id that
+    api.is_genre_id refuses."""
+    data = raw.get('data') if isinstance(raw, dict) else None
+    resources = [entry for entry in data if isinstance(entry, dict)] if isinstance(
+        data, list) else []
+    parents = set()
+    for resource in resources:
+        parent = (resource.get('attributes') or {}).get('parentId')
+        if parent is not None:
+            parents.add(str(parent))
+    genres = []
+    seen = set()
+    for resource in resources:
+        attrs = resource.get('attributes') or {}
+        genre_id = str(resource.get('id') or '')
+        title = ' '.join(str(attrs.get('name') or '').split())
+        if resource.get('type') not in (None, 'genres') or not title or genre_id in seen:
+            continue
+        if not api.is_genre_id(genre_id):
+            continue
+        if attrs.get('parentId') is None and genre_id in parents:
+            continue  # Music: what the charts are without a genre
+        seen.add(genre_id)
+        genres.append({'id': genre_id, 'title': title})
+    return {'genres': genres}
 
 
 def _chart_items(resources, cache_dir):
@@ -2869,9 +2900,10 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
     """Trim the caches nothing else trims (in a thread, at startup and after a sync):
     remote-art/ to `remote_bytes` (prune_remote_art), lyrics/ to the
     `lyrics_keep` played last (by mtime: a cache hit touches the file), the kept answers
-    (categories/, artists/, albums/, suggestions/, credits/, landing, New, Made for You,
-    Radio, Charts) written longer than `answer_age` ago (by mtime; ANSWER_KEEP_AGE, well past their
-    day, since a stale one is the answer while Apple cannot be asked), an
+    (categories/, artists/, albums/, suggestions/, credits/, charts/, landing, New, Made for
+    You, Radio, Charts, the genres) written longer than `answer_age` ago (by mtime;
+    ANSWER_KEEP_AGE, well past their day, since a stale one is the answer while Apple
+    cannot be asked), an
     items/ folder older versions kept, and the temporary files of writes a crash cut short
     (store.is_stale_temp) in the cache and its folders. Returns {what: how many went}. art/
     and thumb/ are the library's: prune_art keeps them."""
@@ -2984,9 +3016,18 @@ def radio_cache_path(cache_dir):
     return os.path.join(cache_dir, 'radio.json')
 
 
-def charts_cache_path(cache_dir):
-    """Where the Charts page's shelves (charts_shelves) are kept for a day."""
+def charts_cache_path(cache_dir, genre=None):
+    """Where the Charts page's shelves (charts_shelves) are kept for a day: every genre's in
+    charts.json, a genre's in charts/<genre>.json."""
+    if genre:
+        return os.path.join(cache_dir, 'charts', f'{_safe_id(genre)}.json')
     return os.path.join(cache_dir, 'charts.json')
+
+
+def genres_cache_path(cache_dir):
+    """Where the catalog's genres (catalog_genres), the Charts page's choice, are kept for a
+    day."""
+    return os.path.join(cache_dir, 'genres.json')
 
 
 def room_cache_path(cache_dir, room_id):

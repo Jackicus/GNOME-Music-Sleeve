@@ -56,7 +56,8 @@ artists, albums, songs, playlists, videos and stations, the Radio page's shows, 
 invented curators with their pages in categories/), and the Charts page's
 (charts.json, normalize.charts_shelves()'s shape: the demo's own songs, albums,
 playlists and videos ranked, and invented Daily Top 100 and City Charts playlists of
-its songs, for invented places), the New page's (browse.json,
+its songs, for invented places; invented genres in genres.json, each genre's charts of
+the demo's albums of it in charts/<id>.json), the New page's (browse.json,
 normalize.editorial_shelves()'s shape: invented banners over the demo's own albums and
 playlists, its shelves, and More to Explore's invented links, each link's page in rooms/,
 groupings/ or multirooms/), and each hand-written album's songs' credits (credits/<catalog
@@ -199,6 +200,19 @@ DEMO_RADIO_SHOWS = [('The Morning Tide', 'Mara Quinn'), ('Evergreen Requests', '
 DEMO_CHART_COUNTRIES = ['Northmarch', 'Isle of Avery', 'Calder Coast', 'Westerly Reach']
 DEMO_CHART_CITIES = ['Port Avery', 'Fernhollow', 'Saltmere', 'Kestrel Bay', 'Lindenford',
                      'Marlow Heights']
+# Its invented genres (genres.json, in this order): an id of the kind Apple's are (digits),
+# the name, and the demo albums' genres that make the genre's charts (charts/<id>.json).
+DEMO_CHART_GENRES = [
+    ('9001', 'Alternative', ('Post-Rock', 'Shoegaze', 'Math Rock', 'Indie Pop', 'Indie Folk',
+                             'Dream Pop')),
+    ('9002', 'Electronic', ('Synthwave', 'Synthpop', 'Electronic', 'Deep House',
+                            'Melodic Techno')),
+    ('9003', 'Jazz', ('Nu-Jazz', 'Funk & Jazz', 'Contemporary Jazz')),
+    ('9004', 'Classical', ('Modern Classical', 'Cinematic')),
+    ('9005', 'R&B/Soul', ('Neo-Soul',)),
+    ('9006', 'Hip-Hop/Rap', ('Lo-Fi Hip-Hop',)),
+    ('9007', 'Ambient', ('Ambient', 'Downtempo')),
+]
 DEMO_GENRE_STATIONS = [('Coastal Indie', 'Indie & Alternative'), ('Night Jazz', 'Jazz'),
                        ('Harbour Folk', 'Folk'), ('Deep Focus', 'Ambient'),
                        ('Northern Soul Kitchen', 'R&B/Soul'), ('Tape Hiss Classics', 'Rock')]
@@ -2948,7 +2962,9 @@ def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for,
     the library's songs, ranked, a list), Top Albums and Top Playlists (the library's own,
     ranked: their pages are the library's), the Daily Top 100 (the world's and invented
     countries') and City Charts (invented cities') as playlists of the library's songs with
-    their tracks, so their pages open without the engine, and Top Music Videos."""
+    their tracks, so their pages open without the engine, and Top Music Videos. Beside it,
+    genres.json (DEMO_CHART_GENRES, normalize.catalog_genres()'s shape) and each genre's
+    charts in charts/<id>.json: Top Songs and Top Albums of the library's albums of it."""
     rnd = random.Random(43)
     art_dir = os.path.join(out_dir, 'art')
 
@@ -3015,6 +3031,34 @@ def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for,
     with open(os.path.join(out_dir, 'charts.json'), 'w', encoding='utf-8') as f:
         json.dump(answer, f, indent=2)
 
+    # Each genre's, drawn apart (a Random of its own) so the charts above stay as they were.
+    by_genre = random.Random(47)
+    genres = {'genres': [{'id': genre_id, 'title': name}
+                         for genre_id, name, _kinds in DEMO_CHART_GENRES],
+              'cached': generated, 'demo': True}
+    with open(os.path.join(out_dir, 'genres.json'), 'w', encoding='utf-8') as f:
+        json.dump(genres, f, indent=2)
+    os.makedirs(os.path.join(out_dir, 'charts'), exist_ok=True)
+    for genre_id, _name, kinds in DEMO_CHART_GENRES:
+        own = [album for album in albums if album['genre'] in kinds]
+        own_tracks = [(track, album) for track, album in tracks if album['genre'] in kinds]
+        chart = {
+            'shelves': [
+                {'key': 'charts-songs', 'title': 'Top Songs', 'chart': 'songs', 'ranked': True,
+                 'form': 'songs', 'items': [
+                     song(track, album) for track, album in by_genre.sample(
+                         own_tracks, min(30, len(own_tracks)))]},
+                {'key': 'charts-albums', 'title': 'Top Albums', 'chart': 'albums',
+                 'ranked': True,
+                 'items': [brief(album) for album in by_genre.sample(own, len(own))]},
+            ],
+            'cached': generated,
+            'demo': True,  # invented: the demo engine answers only these
+        }
+        with open(os.path.join(out_dir, 'charts', f'{genre_id}.json'), 'w',
+                  encoding='utf-8') as f:
+            json.dump(chart, f, indent=2)
+
 
 # The New page's invented banners: the label over each, its line under the title, and which
 # of the library's albums (by place) or playlists (`playlist`) it shows; the last has no
@@ -3024,13 +3068,15 @@ DEMO_BANNERS = [('NEW ALBUM', 'A tide of tape-looped guitars, out now', 'album',
                 ('PRE-RELEASE', 'Hear the first two songs before Friday', 'album', 3),
                 ('NEW EP', 'Four songs recorded live to tape', 'album', 5),
                 ('EXCLUSIVE', 'The complete sessions, remastered', 'album', 7)]
-# Its links (More to Explore, then the untitled genres' row): (label, kind, id); the pages
-# they open are written beside it (rooms/, groupings/, multirooms/).
+# Its links (More to Explore, then the untitled genres' row): (label, kind, id[, genre]); the
+# pages they open are written beside it (rooms/, groupings/, multirooms/), a genre's charts
+# by build_charts_page (charts/<genre>.json).
 DEMO_EXPLORE = [('Late-Night Listening', 'room', 'demo.room01'),
                 ('Quiet Mornings', 'room', 'demo.room02'),
                 ('Sounds of the Coast', 'grouping', 'demo.grouping01'),
                 ('Instrumental Worlds', 'multiroom', 'demo.multiroom01'),
                 ('Charts', 'charts', 'charts'),
+                ('Electronic Charts', 'charts', 'charts', '9002'),
                 ('Live Near You', 'link', 'https://example.org/live-near-you')]
 DEMO_BANNER_SIZE = 1280  # an invented banner's width; 16:9, as Apple's wide cut is shown
 
@@ -3079,8 +3125,14 @@ def build_new_page(out_dir, albums, playlists, videos, stations, draw_cover, gen
         banners.append(brief(item, **extra))
 
     def links(rows):
-        return [{'title': label, 'kind': kind, 'id': link_id,
-                 'url': link_id if kind == 'link' else None} for label, kind, link_id in rows]
+        found = []
+        for label, kind, link_id, *genre in rows:
+            link = {'title': label, 'kind': kind, 'id': link_id,
+                    'url': link_id if kind == 'link' else None}
+            if genre:
+                link['genre'] = genre[0]
+            found.append(link)
+        return found
 
     genres = sorted({album['genre'] for album in albums})[:9]
     genre_rows = [(genre, 'grouping', f'demo.genre{number:02d}')

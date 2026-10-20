@@ -103,6 +103,7 @@ install_data(
   'actions.py',
   'background.py',
   'cache.py',
+  'charts.py',
   'credits.py',
   'discord.py',
   'discography.py',

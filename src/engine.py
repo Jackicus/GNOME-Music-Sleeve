@@ -94,6 +94,9 @@ UI awaits.
     await engine.radio()         # {shelves[, expires]}: the Radio page (the radio grouping)
     await engine.charts()        # {shelves}: the Charts page (the catalog's charts: Top Songs,
                                  # Albums, Playlists, Music Videos, Daily Top 100, City Charts)
+    await engine.charts(genre='21')   # {shelves}: one genre's charts (no Daily Top 100 or City
+                                 # Charts)
+    await engine.genres()        # {genres: [{id, title}]}: the genres the Charts page offers
     await engine.artist_page(id) # {id, artist, banner, latest, topSongs, shelves,
                                  # favourite}: a catalog artist's page, every view of it at
                                  # once, and whether they are a favourite
@@ -106,9 +109,10 @@ UI awaits.
                                  # playlist, none of `offered`; more=True: a few more, unkept
     await engine.credits(catalog_song_id)   # {categories: [{kind, title, people: [{name,
                                  # roles}]}]}: a song's credits (View Credits), in Apple's order
-    # The last fourteen are kept under the cache for a day (landing.json, categories/,
+    # The last sixteen are kept under the cache for a day (landing.json, categories/,
     # browse.json, rooms/, groupings/, multirooms/, made-for-you.json, radio.json,
-    # charts.json, recent-played.json, artists/, albums/, suggestions/, credits/) and
+    # charts.json, charts/, genres.json, recent-played.json, artists/, albums/,
+    # suggestions/, credits/) and
     # answered from there without the engine;
     # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
     # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
@@ -2359,28 +2363,46 @@ class Engine(GObject.Object):
         return await self._kept_answer(normalize.radio_cache_path(str(self.cache_dir)),
                                        refresh, fetch, normalize.radio_shelves)
 
-    async def charts(self, refresh=False):
+    async def charts(self, genre=None, refresh=False):
         """The Charts page: {shelves: [{key, title, items, chart[, ranked][, form]}]}, the
         storefront's charts (api.CHARTS_ENDPOINT with api.CHARTS_PARAMS: every kind, most
         played, with the Daily Top 100 and City Charts playlists) as normalize.charts_shelves
         shapes them: Top Songs (ranked, a list), Top Albums, Top Playlists (ranked), the Daily
         Top 100 and City Charts playlists, Top Music Videos (ranked). Apple refusing the
-        playlists' `with` (a 400) is asked again without it (api.CHARTS_PLAIN_PARAMS). From
-        <cache>/charts.json for a day, else fetched and kept."""
+        playlists' `with` (a 400) is asked again without it (api.CHARTS_PLAIN_PARAMS). With a
+        `genre` (a catalog genre's id, genres()'s), that genre's rankings alone
+        (api.charts_params). From <cache>/charts.json (a genre's charts/<genre>.json) for a
+        day, else fetched and kept."""
+        genre = str(genre or '')
+        if genre and not api.is_genre_id(genre):
+            raise EngineError('usage', 'charts needs a genre id')
+
         async def fetch(client):
             storefront = await self._current_storefront()
             endpoint = api.CHARTS_ENDPOINT.format(storefront=storefront)
             try:
-                return await self._api(client, endpoint, api.CHARTS_PARAMS,
+                return await self._api(client, endpoint, api.charts_params(genre),
                                        timeout=BROWSE_TIMEOUT)
             except EngineError as error:
-                if error.status != 400:
+                if genre or error.status != 400:
                     raise
                 log.info('charts: the daily and city charts refused (%s); without them', error)
                 return await self._api(client, endpoint, api.CHARTS_PLAIN_PARAMS,
                                        timeout=BROWSE_TIMEOUT)
-        return await self._kept_answer(normalize.charts_cache_path(str(self.cache_dir)),
+        return await self._kept_answer(normalize.charts_cache_path(str(self.cache_dir), genre),
                                        refresh, fetch, normalize.charts_shelves)
+
+    async def genres(self, refresh=False):
+        """The genres the Charts page offers: {genres: [{id, title}]}, the catalog's
+        (api.GENRES_ENDPOINT) in Apple's order, Music, every genre's, left out
+        (normalize.catalog_genres). From <cache>/genres.json for a day, else fetched and
+        kept."""
+        async def fetch(client):
+            storefront = await self._current_storefront()
+            return await self._api(client, api.GENRES_ENDPOINT.format(storefront=storefront),
+                                   api.GENRES_PARAMS, timeout=BROWSE_TIMEOUT)
+        return await self._kept_answer(normalize.genres_cache_path(str(self.cache_dir)),
+                                       refresh, fetch, normalize.catalog_genres)
 
     async def _editorial_page(self, what, page_id, refresh, endpoint, params, path, shaper):
         """One of the pages More to Explore's links open (a room, a grouping, a multiroom):

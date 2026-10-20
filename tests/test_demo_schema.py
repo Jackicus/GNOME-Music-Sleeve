@@ -417,6 +417,8 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertTrue(page.get('items') or page['shelves'][0]['items'])
                 elif link['kind'] == 'link':
                     self.assertTrue(link['url'].startswith('https://example.'))
+                elif link.get('genre'):  # a genre's charts, written beside the charts
+                    self.assertIs(read('charts', f"{link['genre']}.json")['demo'], True)
         self.assertEqual(kinds, {'room', 'grouping', 'multiroom', 'charts', 'link'})
         self.assertEqual([row['title'] for row in answer['links']], ['More to Explore', ''])
 
@@ -474,6 +476,31 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 self.assertEqual(item['kind'], 'playlist')
                 self.assertTrue(item['groups'][0]['entries'])
                 self.assertTrue(os.path.exists(item['thumb']))
+
+    def test_charts_genres(self):
+        # The genres the Charts page offers (normalize.catalog_genres' shape) and each one's
+        # charts (charts/<id>.json): its rankings alone, of the library's albums of it.
+        def read(*parts):
+            with open(os.path.join(self.out_dir, *parts), encoding='utf-8') as f:
+                return json.load(f)
+
+        answer = read('genres.json')
+        self.assertIs(answer['demo'], True)
+        self.assertEqual(set(answer) - {'demo', 'cached'}, {'genres'})
+        self.assertGreater(len(answer['genres']), 3)
+        albums = {album['id'] for album in self.data['sections']['albums']}
+        for genre in answer['genres']:
+            with self.subTest(genre=genre['title']):
+                self.assertEqual(set(genre), {'id', 'title'})
+                self.assertTrue(genre['id'].isdigit())
+                chart = read('charts', f"{genre['id']}.json")
+                self.assertIs(chart['demo'], True)
+                self.assertEqual([shelf['chart'] for shelf in chart['shelves']],
+                                 ['songs', 'albums'])
+                for shelf in chart['shelves']:
+                    self.assertTrue(shelf['ranked'] and shelf['items'])
+                self.assertLessEqual({item['id'] for item in chart['shelves'][1]['items']},
+                                     albums)
 
     def test_recently_played(self):
         # Home's Recently Played, as the engine keeps it (normalize.recently_played's

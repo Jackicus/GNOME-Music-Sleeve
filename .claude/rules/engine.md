@@ -124,7 +124,8 @@ paths:
   played last, kept answers written over 30 days ago, `normalize.ANSWER_KEEP_AGE`, since a
   stale one is the offline answer, crash leftovers), once the library has loaded at
   startup and at the end of every sync. The day-long answers (the landing, a category, New,
-  the rooms, groupings and multirooms New's links open, Made for You, Radio, Charts, Home's
+  the rooms, groupings and multirooms New's links open, Made for You, Radio, Charts (a
+  genre's in charts/, the genres), Home's
   Recently Played, an artist's page, an album's page, a
   playlist's suggested songs, a song's credits) all go through
   `Engine._kept_answer()`: the file while it is under a day old, else Apple, else (the engine
