@@ -43,6 +43,11 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   it has scrolled away from it, and Tab back into the list focuses that widget: the keys
   then reach nothing (GTK delivers them to the list). `LyricsView` moves the focus to the
   current line when it finds it there.
+- A model change that drops the row with the focus leaves that row the window's focus for a
+  frame or so: a `Gtk.Stack` switched away from the list then carries no focus over, and
+  GTK's own refocusing once the row goes logged a `gtk_widget_is_ancestor` critical
+  (taken by a selectable `Gtk.Label`). Switch the page first, then change the model
+  (`LyricsView._on_lyrics`).
 - A `Gtk.SliceListModel` whose `offset` plus `size` passes `G_MAXUINT` wraps its end and
   ignores changes after it, or reports them wrongly (a `Gtk.ListView` over it has crashed):
   "the rest from N" is `size = GLib.MAXUINT32 - N`, set again whenever the offset changes.
@@ -96,7 +101,9 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   in `do_hidden` (after it has really gone), not in `do_unmap`.
 - An `Adw.Dialog` over a window that is neither maximized nor tiled is a separate
   `Gtk.Window` transient for it: its widgets find no `app.*` actions (Preferences inserts the
-  `app` group itself), `get_active_window()` stays the main window, `get_visible_dialog()` does
+  `app` group itself) and no `win.*` ones (a toast's button there runs a window action
+  through `app.window-action`: `main.app_action()`, as a notification's does),
+  `get_active_window()` stays the main window, `get_visible_dialog()` does
   not see it (use `Gtk.Window.list_toplevels()`), and a screenshot of the window misses it.
 - An actionable widget's sensitivity is its action's: `set_sensitive(False)` on a row with an
   `action-name` is undone.

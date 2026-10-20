@@ -19,7 +19,7 @@ import unittest
 from unittest import mock
 
 from tests import ROOT
-from tests.gtk import SCHEMA_ID, requires_gtk, wait_for
+from tests.gtk import SCHEMA_ID, pump, requires_gtk, wait_for
 from tests.test_player import TRACK, make_player
 
 FIXTURES = ROOT / 'tests' / 'fixtures'
@@ -658,6 +658,32 @@ class LyricsViewTest(unittest.TestCase):
         self.assertEqual(self.view.get_visible_child_name(), 'empty')
         self.assertEqual(self.view.empty_page.get_description(),
                          'No lyrics are available for this song')
+
+    def test_text_after_synced_lyrics_takes_the_focus_on_a_line_cleanly(self):
+        """Synced lyrics, a line focused, then a song with text only: the focus goes over to
+        the text, and GTK logs no critical. (The list's rows went first, the line's with the
+        focus, and GTK's focus change after them logged gtk_widget_is_ancestor's.)"""
+        from gi.repository import GLib
+
+        criticals = []
+        handler = GLib.log_set_handler(
+            'Gtk', GLib.LogLevelFlags.LEVEL_CRITICAL | GLib.LogLevelFlags.LEVEL_WARNING,
+            lambda _domain, _level, message, *_data: criticals.append(message))
+        self.addCleanup(GLib.log_remove_handler, 'Gtk', handler)
+        self.play(fixture('lyrics_syllable.json'))
+        list_view = self.view.list_view
+        self.assertTrue(wait_for(lambda: 0 in self.view._rows))
+        root = self.view.get_root()
+        list_view.grab_focus()
+        self.assertTrue(wait_for(lambda: root.get_focus() is not None
+                                 and root.get_focus().is_ancestor(list_view)))
+        self.play({'synced': False, 'lines': [{'text': '潮'}]})
+        self.assertEqual(self.view.get_visible_child_name(), 'text')
+        wait_for(lambda: criticals or not self.view.get_transition_running())
+        pump()
+        self.assertEqual(criticals, [])
+        self.assertFalse(self.view.get_transition_running())
+        self.assertIs(root.get_focus(), self.view.text_label)
 
     def test_the_unsynced_text_follows_the_settings(self):
         self.play({'synced': False, 'lines': [

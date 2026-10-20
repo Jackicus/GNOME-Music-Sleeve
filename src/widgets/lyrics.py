@@ -301,6 +301,12 @@ class LyricsView(Gtk.Stack):
             self._stop_sweep()
             self._stop_centring()
             self._stop_animation()  # a glide still running would scroll the new song's list
+            if lyrics is None or not lyrics.synced:
+                # The list's page goes before its rows, so the stack takes a focus on a line
+                # over to the page coming in: rows dropped first leave the focused one the
+                # window's focus a moment, nothing is carried over, and GTK's refocusing
+                # once it goes logs a critical (gtk-notes.md).
+                self._update_page()
             self.list_view.set_model(
                 Gtk.NoSelection(model=lyrics.lines if lyrics is not None and lyrics.synced
                                 else None))
