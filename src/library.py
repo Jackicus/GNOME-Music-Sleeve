@@ -484,6 +484,7 @@ class ItemRefs(GObject.Object):
         provider = widgets.dnd.provider(refs)   # Gdk.ContentProvider.new_for_value(refs)
         refs.refs          # (Ref, …), never empty
         refs.origin        # (kind, id) of the list dragged from, or None
+        refs.objects       # the Tracks and Items the refs were made of, in their order
         refs.tracks()      # the songs and videos: what a playlist takes
         refs.containers()  # the playlists and folders: what a folder takes
         refs.only('song', 'video')   # every Ref is of these kinds
@@ -492,21 +493,28 @@ class ItemRefs(GObject.Object):
     `origin` tells a drop where the drag came from: a playlist's tracks dropped back on the
     same playlist are a reorder, not an add. Only drags that start in the app carry one
     (widgets.dnd.current() is the drag in progress); a drop target takes no other.
+    `objects` are what the refs name, for a drop that needs more than a Ref says (the player
+    bar queues each by its play target: actions.queue_targets()); empty for ItemRefs made
+    of Refs alone.
     """
 
     __gtype_name__ = 'AppleMusicItemRefs'
 
-    def __init__(self, refs=(), origin=None):
+    def __init__(self, refs=(), origin=None, objects=()):
         super().__init__()
         self.refs = tuple(refs)
         self.origin = tuple(origin) if origin is not None else None
+        self.objects = tuple(objects)
 
     @classmethod
     def for_objects(cls, objects, origin=None):
         """The ItemRefs of `objects` (Tracks, and Items: item_ref()), in order, those that
         cannot be dragged left out; None when none can."""
-        refs = [ref for ref in map(item_ref, objects) if ref is not None]
-        return cls(refs, origin) if refs else None
+        pairs = [(ref, obj) for ref, obj in ((item_ref(obj), obj) for obj in objects)
+                 if ref is not None]
+        if not pairs:
+            return None
+        return cls([ref for ref, _obj in pairs], origin, [obj for _ref, obj in pairs])
 
     def tracks(self):
         """The songs and videos, in order: what a playlist takes."""

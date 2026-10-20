@@ -36,9 +36,11 @@ folders are kept in the expanded-folders setting, written a moment after the las
 (EXPANDED_WRITE_DELAY_MS) and when the window closes.
 
 Drags (widgets/dnd.py, library.ItemRefs; only drags that start in the app): a track dropped
-on a playlist that takes songs is added to it (COPY); a playlist (or a folder) dropped on a
-folder goes into it, and on All Playlists to the top level (MOVE, actions.drop_into_folder),
-unless that is where it is, or a folder would go into itself (refused: 0). The row a drop
+on a playlist that takes songs is added to it (COPY); songs and music videos dropped on All
+Playlists make a new playlist of them, named in New Playlist's dialog (COPY,
+actions.drop_new_playlist); a playlist (or a folder) dropped on a folder goes into it, and
+on All Playlists to the top level (MOVE, actions.drop_into_folder), unless that is where it
+is, or a folder would go into itself (refused: 0). The row a drop
 would go to is highlighted (DropFeedback), the sidebar scrolls while the pointer is near
 its top or bottom edge, and a closed folder the drag hovers over opens after a moment
 (SPRING_DELAY_MS), so what is inside can take the drop. The playlists' and folders' own
@@ -58,6 +60,7 @@ import time
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
 
 from . import sections, shortcuts
+from .actions import new_playlist_tracks
 from .library import ROOT_FOLDER, ItemRefs
 from .sections import ALL_PLAYLISTS, FAVOURITE_SONGS, HOME, PLAYLISTS_SECTION
 from .sidebar import (DEPTH_CLASSES, SidebarEntry, SidebarItem, depth_class, is_shown,
@@ -508,6 +511,11 @@ class SidebarController:
 
     # -- drags and drops ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_all_playlists(item):
+        return (isinstance(item, SidebarItem) and item.entry.kind == 'fixed'
+                and item.entry.key == ALL_PLAYLISTS)
+
     def _drop_folder(self, item):
         """The folder id a playlist or folder dropped on the sidebar item goes into: a
         folder's, or the top level's for All Playlists (ROOT_FOLDER); None elsewhere."""
@@ -515,17 +523,21 @@ class SidebarController:
             return None
         if item.entry.kind == 'folder':
             return item.entry.folder_id
-        if item.entry.kind == 'fixed' and item.entry.key == ALL_PLAYLISTS:
+        if self._is_all_playlists(item):
             return ROOT_FOLDER
         return None
 
     def drop_action(self, index, refs):
         """What dropping `refs` (a library.ItemRefs) on the item at index would do: COPY a
-        track onto a playlist that takes songs, MOVE playlists or folders into a folder (All
-        Playlists: the top level) they can go into (actions.can_move_refs), else 0."""
+        track onto a playlist that takes songs, or songs and music videos onto All Playlists
+        (a new playlist of them: actions.new_playlist_tracks), MOVE playlists or folders into
+        a folder (All Playlists: the top level) they can go into (actions.can_move_refs),
+        else 0."""
         if not isinstance(refs, ItemRefs):
             return 0
         item = self._sidebar.get_item(index)
+        if self._is_all_playlists(item) and new_playlist_tracks(refs):
+            return Gdk.DragAction.COPY
         if isinstance(item, SidebarItem) and item.entry.kind == 'playlist':
             playlist = item.entry.item
             if (len(refs) == 1 and refs.tracks()
@@ -595,7 +607,15 @@ class SidebarController:
             return False
         if isinstance(item, SidebarItem) and item.entry.kind == 'playlist':
             return self._item_actions.drop(item.entry.item, value)
+        if self._is_all_playlists(item) and new_playlist_tracks(value):
+            # The dialog once the drop is over, not inside the drag's own handling.
+            GLib.idle_add(self._new_playlist, value)
+            return True
         return self._item_actions.drop_into_folder(self._drop_folder(item), value)
+
+    def _new_playlist(self, refs):
+        self._item_actions.drop_new_playlist(refs)
+        return GLib.SOURCE_REMOVE
 
     def _drag_source(self, x, y):
         """dnd.attach_source()'s find: the playlist or folder whose row is under (x, y), as

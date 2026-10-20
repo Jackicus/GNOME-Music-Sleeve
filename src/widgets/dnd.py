@@ -7,6 +7,7 @@ goes through here, so they look and behave alike.
 
     provider(refs)            # a Gdk.ContentProvider of a library.ItemRefs
     current()                 # the ItemRefs of the in-app drag in progress, or None
+    offered()                 # the Gdk.DragAction its source offers, or 0
     attach_source(widget, find, actions=Gdk.DragAction.COPY,
                   phase=Gtk.PropagationPhase.BUBBLE)
                               # a Gtk.DragSource on widget: find(x, y), in widget's
@@ -20,6 +21,9 @@ goes through here, so they look and behave alike.
 
     scroll_step(y, height, edge=EDGE, speed=MAX_SPEED)   # px a frame: <0 up, >0 down, 0
     insertion_point(row_tops, row_heights, y)            # (index, after) of the gap at y
+    choose_action(actions, preferred=COPY)               # the one action a target answers
+    shift_held(selected, offered, modifiers)             # whether the drop is a Shift-drop
+    modifiers(widget)                                    # the keyboard's modifiers now
 
 The payload is library.ItemRefs, the app's one drag type: one or more library objects in
 order (tracks, albums, playlists, folders, stations), with the list they came from.
@@ -53,6 +57,7 @@ AFTER = 'drop-after'
 MARKS = (HIGHLIGHT, BEFORE, AFTER)
 
 _current = None  # the ItemRefs of the drag that started in the app, while it lasts
+_offered = 0  # the actions its source offers
 
 
 def provider(refs):
@@ -66,9 +71,40 @@ def current():
     return _current
 
 
-def _set_current(refs):
-    global _current
+def offered():
+    """The actions (Gdk.DragAction) the source of the in-app drag in progress offers, or 0."""
+    return _offered if _current is not None else 0
+
+
+def _set_current(refs, actions=Gdk.DragAction.COPY | Gdk.DragAction.MOVE):
+    global _current, _offered
     _current = refs
+    _offered = actions if refs is not None else 0
+
+
+def choose_action(actions, preferred=Gdk.DragAction.COPY):
+    """The one action a drop target answers a drag with, of `actions` (the drop's, which
+    it must be among): `preferred` when it is there, else MOVE, else COPY; 0 for neither."""
+    for action in (preferred, Gdk.DragAction.MOVE, Gdk.DragAction.COPY):
+        if actions & action:
+            return action
+    return 0
+
+
+def shift_held(selected, offered, modifiers):
+    """Whether a drop was made with Shift held: the keyboard's `modifiers` say so, or the
+    drop's `selected` action is MOVE while its source `offered` COPY too (GTK under X11 and
+    the compositor under Wayland turn Shift into a move, and a drag's own key state may not
+    reach the app)."""
+    return (bool(modifiers & Gdk.ModifierType.SHIFT_MASK)
+            or (selected == Gdk.DragAction.MOVE and bool(offered & Gdk.DragAction.COPY)))
+
+
+def modifiers(widget):
+    """The modifiers held on the keyboard of widget's display now (0 without one)."""
+    seat = widget.get_display().get_default_seat()
+    keyboard = seat.get_keyboard() if seat is not None else None
+    return keyboard.get_modifier_state() if keyboard is not None else 0
 
 
 def attach_source(widget, find, actions=Gdk.DragAction.COPY,
@@ -110,8 +146,8 @@ def attach_source(widget, find, actions=Gdk.DragAction.COPY,
         prepared[0] = refs
         return provider(refs)
 
-    def on_begin(_source, _drag):
-        _set_current(prepared[0])
+    def on_begin(source, _drag):
+        _set_current(prepared[0], source.get_actions())
 
     def on_end(_source, *_args):
         if _current is prepared[0]:

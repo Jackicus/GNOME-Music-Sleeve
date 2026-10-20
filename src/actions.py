@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """What can be done to an album, playlist, song, station, artist or video: the window's item
-actions, the menus that offer them, and what a track dragged onto a sidebar playlist does.
+actions, the menus that offer them, and what a drop on the sidebar or the player bar does.
 
     actions = ItemActions(window, app)     # made once by the window; adds the win.* actions
     menu = actions.menu_for(obj)           # a Gio.Menu for an Item or a Track, or None
@@ -12,6 +12,8 @@ actions, the menus that offer them, and what a track dragged onto a sidebar play
     actions.add_to_library(item)           # a catalog album's or playlist's page's Add button
     actions.fill_sidebar_menu(menu, item)  # a sidebar playlist's or folder's menu
     actions.drop(playlist, refs)           # a library.ItemRefs dropped on a sidebar playlist
+    actions.drop_new_playlist(refs)        # songs dropped on All Playlists: a new playlist
+    actions.queue_drop(refs, next_up=False)   # dropped on the player bar: queued
     actions.move_to_folder(obj, folder_id) # a playlist (or folder) into a folder, at once
     actions.new_folder(parent_id)          # a folder named in a dialog ('root': top level)
     actions.move_in_playlist(playlist, 3, 1)   # its 4th song 2nd (playlist_order.py)
@@ -123,8 +125,8 @@ from . import related
 from .backend import api
 from .backend.errors import EngineError
 from .backend.api import is_library_id
-from .library import (REMOVABLE, ROOT_FOLDER, TRACK_KINDS, Item, ItemRefs, Track,
-                      TreeChange, track_ref)
+from .library import (REMOVABLE, ROOT_FOLDER, TRACK_KINDS, TRACK_REF_KINDS, Item, ItemRefs,
+                      Track, TreeChange, track_ref)
 from .playlist_order import PlaylistOrder, refresh_playlist, sync_tracks
 
 log = logging.getLogger(__name__)
@@ -260,6 +262,40 @@ def queue_target(obj):
         kind, item_id = obj.play.get('kind'), obj.play.get('id')
         return (kind, item_id) if kind and item_id else None
     return None
+
+
+def queue_targets(refs):
+    """What a drop of `refs` (a library.ItemRefs) on the player bar queues: each object's
+    queue_target(), in order (a song by its catalog id, an album or a playlist by its play
+    target, as Play Later queues it); None when refs is no ItemRefs, names no objects, or
+    names one that cannot be queued (a folder, a song with no id to play by)."""
+    objects = refs.objects if isinstance(refs, ItemRefs) else ()
+    targets = [queue_target(obj) for obj in objects]
+    return targets if targets and None not in targets else None
+
+
+def queue_message(title, later, count=1):
+    """The toast after Play Next or Play Later (`later`) of one item called `title`, or of
+    `count` of them."""
+    if count > 1:
+        if later:
+            return ngettext('{count} item will play later', '{count} items will play later',
+                            count).format(count=count)
+        return ngettext('{count} item will play next', '{count} items will play next',
+                        count).format(count=count)
+    if later:
+        return (_('“{title}” will play later').format(title=title) if title
+                else _('Playing later'))
+    return _('“{title}” will play next').format(title=title) if title else _('Playing next')
+
+
+def new_playlist_tracks(refs):
+    """What the playlist made from a drop of `refs` on All Playlists holds: the songs and
+    music videos, in order, as (kind, id) by their own ids (as Add to Playlist adds them);
+    None when refs is no ItemRefs or carries anything else (playlists moved there instead)."""
+    if not isinstance(refs, ItemRefs) or not refs.only(*TRACK_REF_KINDS):
+        return None
+    return [(ref.kind, ref.id) for ref in refs]
 
 
 def station_target(obj):
@@ -1081,13 +1117,9 @@ class ItemActions:
         if target is None:
             self.app.toast(_('This cannot be queued'))
             return None
-        title = obj.title if obj is not None else ''
+        message = queue_message(obj.title if obj is not None else '', later)
         if later:
-            message = (_('“{title}” will play later').format(title=title) if title
-                       else _('Playing later'))
             return self._run(self.app.player.play_later, target, message, ensure=False)
-        message = (_('“{title}” will play next').format(title=title) if title
-                   else _('Playing next'))
         return self._run(self.app.player.play_next, target, message, ensure=False)
 
     def _on_play_next(self, _action, parameter):
@@ -1347,6 +1379,45 @@ class ItemActions:
                 return False
         return True
 
+    def queue_drop(self, refs, next_up=False):
+        """What was dropped on the player bar (a library.ItemRefs) queued, each by its
+        queue_targets() target: at the end, as Play Later does, or with `next_up` (Shift
+        held) after the item playing, as Play Next does, in the order they were dragged. A
+        toast confirms. False when the drop is refused (not all it carries can be
+        queued)."""
+        targets = queue_targets(refs)
+        if targets is None:
+            return False
+        player = self.app.player
+
+        async def queue():
+            if next_up:
+                for kind, item_id in reversed(targets):  # each goes in front of the last
+                    await player.play_next(kind, item_id)
+            else:
+                for kind, item_id in targets:
+                    await player.play_later(kind, item_id)
+
+        message = queue_message(refs.refs[0].title, not next_up, len(targets))
+        self._run(queue, (), message, ensure=False)
+        return True
+
+    def drop_new_playlist(self, refs):
+        """Songs or music videos (a library.ItemRefs of nothing else) dropped on All
+        Playlists: New Playlist's dialog, the name filled in with the first one's title,
+        makes a playlist holding them all (create_playlist()), whose page is then shown.
+        False when the drop is refused (new_playlist_tracks())."""
+        tracks = new_playlist_tracks(refs)
+        if not tracks:
+            return False
+        name = refs.refs[0].title
+        title = name if len(tracks) == 1 else ''
+        self.ask_name(
+            _('New Playlist'), _('_Create'), name, '',
+            lambda name, description: self.create_playlist(name, description, tracks, None,
+                                                           title, show=True))
+        return True
+
     def drop_into_folder(self, folder_id, refs):
         """An ItemRefs of playlists or folders dropped on a sidebar folder (ROOT_FOLDER:
         All Playlists, the top level): each moved there (move_to_folder()). False when the
@@ -1392,9 +1463,11 @@ class ItemActions:
             lambda name, description: self.create_playlist(name, description, tracks,
                                                            folder_id, title))
 
-    def create_playlist(self, name, description='', tracks=(), folder_id=None, title=''):
+    def create_playlist(self, name, description='', tracks=(), folder_id=None, title='',
+                        show=False):
         """Make the playlist (Engine.create_playlist), confirm with a toast and follow Apple's
-        listing; one made empty (New Playlist) is then shown. The task, or None."""
+        listing; one made empty (New Playlist), or with `show`, is then shown. The task, or
+        None."""
         if self.app.refuse_in_demo():
             return None
         if title:
@@ -1413,7 +1486,7 @@ class ItemActions:
                 return
             self.app.toast(message)
             await self._follow_listing(folder_id or ROOT_FOLDER, new_id, name)
-            if not tracks and self.library.by_id('playlist', new_id) is not None:
+            if (show or not tracks) and self.library.by_id('playlist', new_id) is not None:
                 self.window.select_page(f'playlist:{new_id}')  # sidebar.playlist_key
 
         return self.app.spawn(run())

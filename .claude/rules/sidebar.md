@@ -51,7 +51,9 @@ entry: it is spliced out and in, and the window selects it again by key).
 - Drops: `setup_drop_target(COPY | MOVE, [ItemRefs])` takes Python GObject classes;
   `drop-enter(index)` returns the action (0 refuses) and is told nothing of the drag, so the
   controller asks `widgets.dnd.current()` (`drop_action()`: a track onto a playlist, COPY;
-  playlists onto a folder or All Playlists, MOVE, as `actions.can_move_refs` allows) and marks
+  songs and videos onto All Playlists, COPY, a new playlist of them, its dialog opened from
+  an idle after the drop (`actions.drop_new_playlist`); playlists onto a folder or All
+  Playlists, MOVE, as `actions.can_move_refs` allows) and marks
   the row itself (`DropFeedback.highlight`; libadwaita's own `:drop(active)` ring is 1px).
   An item's `drag-motion-activate` defaults to TRUE, which switches pages under a drag:
   every item here sets it FALSE. It has no drag source: the controller puts one on the

@@ -170,6 +170,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   up when it can take it, a closed folder opens when you hold the drag over it, and the
   sidebar scrolls when you drag near its top or bottom. The playlist moves at once; if Apple
   refuses, it goes back and the app says why. The toast after a move has **Undo**.
+- Drag a song, a music video or a playlist onto the player bar to add it to Up Next: it
+  plays after everything already there, as **Play Later** does, or right after the song
+  playing if you hold <kbd>Shift</kbd> as you drop it, as **Play Next** does. The bar lights
+  up while it can take what you drag (a folder cannot be queued); it is there only while
+  something plays. Drag songs onto **All Playlists** in the sidebar to make a new playlist
+  of them: the New Playlist dialog opens with the first song's name filled in, and once
+  Apple lists the new playlist, its page opens. The menus do the same from the keyboard:
+  **Play Later**, **Play Next**, and **Add to Playlist › New Playlist…**.
 - **Remove from Library…** in the menu of a song, an album or a music video in your library,
   or of one of Apple's playlists you added, takes it out of your library on all your
   devices, after asking. A song goes from every playlist that held it too, and an album
