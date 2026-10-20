@@ -43,10 +43,11 @@ The screenshots show an invented demo library.
   profile.
 - Light and dark styles; the window adapts down to 360 px wide.
 
-What it does not do: offline listening or downloads (it streams, as the web player does);
+What it does not do: Lossless, Dolby Atmos, an equaliser, crossfade or Sound Check, and
+offline listening or downloads (it plays through Apple's web player, which has none of them);
 music videos with a picture (they play as audio); reordering a playlist's songs, making
-playlist folders or moving playlists between them (Apple's own apps do those). The whole list
-is in the [user guide](docs/user-guide.md).
+playlist folders or moving playlists between them (Apple's own apps do those). The whole list,
+with the reasons, is in the [user guide](docs/user-guide.md#known-limitations).
 
 ## Requirements
 

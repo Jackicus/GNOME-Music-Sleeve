@@ -214,6 +214,18 @@ changes, change it here, with the date. The plan they came from is in
   transport fade (their room and focus kept) and the pointer hides, as in GNOME Videos;
   with animations off they go at once. Nothing runs or is fetched while it is not shown.
   MPRIS's `Fullscreen` stays false: no client uses it (#313).
+- **Not possible through the web player** (2026-10-20, #358). The music plays in Apple's web
+  player, through MusicKit JS, so what MusicKit JS and music.apple.com cannot do is out of
+  reach, and a later audit need not suggest it again. Sound: MusicKit JS streams AAC at 64 or
+  256 kbps (`PlaybackBitrate` STANDARD and HIGH; the app leaves MusicKit's own choice, which the
+  bridge's `status()` reports as `bitrate`), never Lossless, Hi-Res Lossless or Dolby Atmos
+  (Spatial Audio), so album pages show no audio badges (Lossless, Atmos, Hi-Res) on purpose:
+  they would promise sound the app does not play. Processing: MusicKit JS has no equaliser,
+  crossfade, AutoMix or Sound Check; an equaliser belongs to the system (EasyEffects on Chrome's
+  PipeWire stream), not to the app. Offline: no downloads, as the web player has none. Features
+  with no web API: Apple Music Sing, lyrics share cards, social profiles and friends,
+  collaborative playlists, making smart playlists and a playlist's artwork upload. The user
+  guide's Known limitations says so in a user's words.
 
 ## Engine
 
