@@ -161,7 +161,8 @@ class GridPage(Adw.NavigationPage):
     where the first column's cover is. The loading and empty states follow the library's
     state (the first sync filling an empty library is loading) and the model's item count. A
     playlist folder's page is one too (pages.folder()): its folders are tiles with a folder
-    icon.
+    icon. `drag` makes the tiles draggable (widgets/dnd.py): All Playlists' and a folder's,
+    whose playlists and folders drop on the sidebar's folders.
     """
 
     __gtype_name__ = 'AppleMusicGridPage'
@@ -177,7 +178,7 @@ class GridPage(Adw.NavigationPage):
 
     def __init__(self, library, title, model, sorts=(), artist=False, video=False, root=True,
                  icon_name=None, empty_title=None, empty_description=None, missing_title=None,
-                 missing_description=None):
+                 missing_description=None, drag=False):
         super().__init__(title=title)
         self._library = library
         self._get_model = model if callable(model) else lambda: model
@@ -221,7 +222,7 @@ class GridPage(Adw.NavigationPage):
             self.grid_view.set_min_columns(1)  # two of them are wider than a 360 px window
         self._set_columns(estimate_columns(self._column_width))
         self.grid_view.set_model(Gtk.NoSelection(model=self._shown))
-        context_menu.attach(self.grid_view)
+        context_menu.attach(self.grid_view, drag=drag)
 
         # Sort By: a menu of the orders and of the directions, as radio items of the stateful
         # page.sort and page.sort-order actions.

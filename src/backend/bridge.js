@@ -985,6 +985,32 @@
             return await apiWrite('/v1/me/library/playlist-folders/' + folderId, {}, { method: 'DELETE' });
         },
 
+        // A new playlist folder: `attributes` {name}, in the folder `parentId` when
+        // given (else at the top level). Answers {id}, the new folder's.
+        createFolder: async function (attributes, parentId) {
+            const body = { attributes: attributes };
+            if (parentId) {
+                body.relationships = {
+                    parent: { data: [{ id: parentId, type: 'library-playlist-folders' }] }
+                };
+            }
+            const answer = await apiWrite('/v1/me/library/playlist-folders', {}, { method: 'POST', body: body });
+            const id = createdId(answer);
+            if (!id) throw new Error('Apple answered the new folder without its id');
+            return { id: id };
+        },
+
+        // A library playlist (`type` 'library-playlists') or folder
+        // ('library-playlist-folders') into the folder `folderId` (Apple's root,
+        // p.playlistsroot, for the top level): the web player's requestMoveToFolder.
+        moveToFolder: async function (type, id, folderId) {
+            const collection = type === 'library-playlist-folders' ? 'playlist-folders' : 'playlists';
+            return await apiWrite('/v1/me/library/' + collection + '/' + id + '/parent', {}, {
+                method: 'PUT',
+                body: { data: [{ id: folderId, type: 'library-playlist-folders' }] }
+            });
+        },
+
         // A catalog song's lyrics, as music.apple.com asks for them: syllable-lyrics, with
         // `languages` ({lyrics: 'en-GB', script: 'en-Latn'}, api.lyrics_languages) asking
         // for the lines' translations into that language and pronunciations in that script

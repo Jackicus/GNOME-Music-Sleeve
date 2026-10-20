@@ -166,6 +166,7 @@ install_data(
   'widgets/category_tile.py',
   'widgets/context_menu.py',
   'widgets/cover.py',
+  'widgets/dnd.py',
   'widgets/engine_status.py',
   'widgets/fullscreen_player.py',
   'widgets/hero_tile.py',

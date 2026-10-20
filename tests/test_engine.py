@@ -33,7 +33,7 @@ from gi.events import GLibEventLoop
 from gi.repository import Gio, GLib
 
 from applemusic import engine as engine_module
-from applemusic.backend import chrome, normalize, store
+from applemusic.backend import api, chrome, normalize, store
 from applemusic.backend import client as client_module
 from applemusic.backend.errors import EngineError
 from applemusic.engine import Engine
@@ -47,7 +47,8 @@ PLAYBACK_METHODS = ('signout', 'play', 'playNext', 'playLater', 'control', 'seek
                     'search', 'suggest', 'searchLanding', 'category', 'playlistSuggestions',
                     'rating', 'addToLibrary', 'addToPlaylist', 'createPlaylist',
                     'updatePlaylist', 'deletePlaylist', 'removeFromPlaylist',
-                    'replacePlaylistTracks', 'updateFolder', 'deleteFolder', 'preview',
+                    'replacePlaylistTracks', 'updateFolder', 'deleteFolder', 'createFolder',
+                    'moveToFolder', 'preview',
                     'stopPreview')
 
 
@@ -2210,6 +2211,55 @@ class PlaylistWriteTest(EngineFixture):
             ('updateFolder', 'p.fd1', {'name': 'Late Evenings'}),
             ('deletePlaylist', 'p.1'), ('deletePlaylist', 'p.2'), ('deleteFolder', 'p.fd2'),
             ('deleteFolder', 'p.fd1')])
+
+    async def test_create_a_folder_and_move_a_playlist_into_it(self):
+        await self.up()
+        self.page.bridge_answers['createFolder'] = {'id': 'p.fdnew'}
+        self.assertEqual(await self.engine.create_folder(' Box ', 'p.fd1'), 'p.fdnew')
+        self.assertEqual(await self.engine.create_folder('Top', 'root'), 'p.fdnew')
+        await self.engine.move_to_folder('playlist', 'p.1', 'p.fdnew')
+        self.assertEqual(self.page.bridge_calls, [
+            ('createFolder', {'name': 'Box'}, 'p.fd1'),
+            ('createFolder', {'name': 'Top'}, None),
+            ('moveToFolder', 'library-playlists', 'p.1', 'p.fdnew')])
+
+    async def test_the_unconfirmed_moves_wait_for_their_switch(self):
+        await self.up()
+        for coro in (self.engine.move_to_folder('playlist', 'p.1', 'root'),
+                     self.engine.move_to_folder('playlist', 'p.1', None),
+                     self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')):
+            with self.assertRaises(EngineError) as raised:
+                await coro
+            self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.bridge_calls, [])
+        # Switched on: the top level is Apple's root folder; a folder moves as a folder.
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True), \
+                mock.patch.object(api, 'MOVE_FOLDERS', True):
+            await self.engine.move_to_folder('playlist', 'p.1', 'root')
+            await self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')
+        self.assertEqual(self.page.bridge_calls, [
+            ('moveToFolder', 'library-playlists', 'p.1', 'p.playlistsroot'),
+            ('moveToFolder', 'library-playlist-folders', 'p.fd2', 'p.fd1')])
+
+    async def test_what_the_folder_writes_refuse(self):
+        await self.up()
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True), \
+                mock.patch.object(api, 'MOVE_FOLDERS', True):
+            for coro in (self.engine.create_folder('  '),
+                         self.engine.create_folder('X', '1000000001'),
+                         self.engine.move_to_folder('playlist', 'pl.u-catalog', 'p.fd1'),
+                         self.engine.move_to_folder('album', 'l.1', 'p.fd1'),
+                         self.engine.move_to_folder('folder', 'root', 'p.fd1'),
+                         self.engine.move_to_folder('folder', 'p.fd1', 'p.fd1'),
+                         self.engine.move_to_folder('playlist', 'p.1', 'l.notafolder')):
+                with self.assertRaises(EngineError) as raised:
+                    await coro
+                self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.bridge_calls, [])
+        self.page.bridge_answers['createFolder'] = {'ok': True}
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.create_folder('X')
+        self.assertEqual(raised.exception.code, 'api')
 
 
 def curator(curator_id, name, short=None):

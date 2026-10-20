@@ -951,6 +951,45 @@ class BridgeTest(unittest.TestCase):
              {'params': {}, 'method': 'DELETE'}],
         ])
 
+    @scenario("""
+        mk.writeStatus = 201;
+        mk.writeBody = JSON.stringify({data: [{id: 'p.fdnew', type: 'library-playlist-folders'}]});
+        const inside = await bridge.createFolder({name: 'Box'}, 'p.fd1');
+        const top = await bridge.createFolder({name: 'Top'}, null);
+        mk.writeStatus = 204;
+        mk.writeBody = '';
+        const moved = await bridge.moveToFolder('library-playlists', 'p.pl1', 'p.fdnew');
+        await bridge.moveToFolder('library-playlists', 'p.pl1', 'p.playlistsroot');
+        await bridge.moveToFolder('library-playlist-folders', 'p.fd2', 'p.fd1');
+        let unnamed = null;
+        mk.writeStatus = 201;
+        try { await bridge.createFolder({name: 'X'}, null); } catch (error) {
+            unnamed = String(error);
+        }
+        return {inside, top, moved, calls: mk.calls, unnamed};
+    """)
+    def test_the_folder_writes(self, value):
+        self.assertEqual(value['inside'], {'id': 'p.fdnew'})
+        self.assertEqual(value['top'], {'id': 'p.fdnew'})
+        self.assertEqual(value['moved'], {'ok': True})
+        self.assertIn('without its id', value['unnamed'])
+        folders = '/v1/me/library/playlist-folders'
+        into = {'type': 'library-playlist-folders'}
+        self.assertEqual(value['calls'][:5], [
+            ['request', folders, {'params': {}, 'method': 'POST', 'body': {
+                'attributes': {'name': 'Box'},
+                'relationships': {'parent': {'data': [dict(into, id='p.fd1')]}}}}],
+            ['request', folders, {'params': {}, 'method': 'POST',
+                                  'body': {'attributes': {'name': 'Top'}}}],
+            ['request', '/v1/me/library/playlists/p.pl1/parent', {
+                'params': {}, 'method': 'PUT', 'body': {'data': [dict(into, id='p.fdnew')]}}],
+            ['request', '/v1/me/library/playlists/p.pl1/parent', {
+                'params': {}, 'method': 'PUT',
+                'body': {'data': [dict(into, id='p.playlistsroot')]}}],
+            ['request', f'{folders}/p.fd2/parent', {
+                'params': {}, 'method': 'PUT', 'body': {'data': [dict(into, id='p.fd1')]}}],
+        ])
+
 
 if __name__ == '__main__':
     unittest.main()

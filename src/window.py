@@ -39,7 +39,7 @@ from gettext import gettext as _
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 
 from . import keyboard, pages, related
-from .actions import ItemActions
+from .actions import ItemActions, main_menu_section
 from .backend.errors import EngineError
 from .fullscreen import FullscreenHost
 from .library import ROOT_FOLDER, Item
@@ -109,6 +109,9 @@ class Window(Adw.ApplicationWindow):
         # The win.item-* actions the context menus run (actions.py), before the sidebar,
         # whose playlists' menu is theirs.
         self.item_actions = ItemActions(self, app)
+        # The main menu starts with New Playlist… and New Folder…, at the top level: win.*
+        # actions with a target, which a .blp menu cannot type.
+        self.primary_menu_button.get_menu_model().prepend_section(None, main_menu_section())
         self._sidebar = SidebarController(self, self.sidebar, self._library, self._settings,
                                           self.item_actions)
         self.player_bar.set_player(app.player, app)

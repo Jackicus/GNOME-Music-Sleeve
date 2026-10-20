@@ -48,9 +48,18 @@ entry: it is spliced out and in, and the window selects it again by key).
   section's `menu-model`. An empty model still shows an empty popover (the controller pops it
   down from an idle). `setup-menu(None)` can arrive after the next item's `setup-menu`: never clear
   the menu on None.
-- Drops: `setup_drop_target(Gdk.DragAction.COPY, [TrackRef])` takes Python GObject classes;
-  `drop-enter` returns the action (0 refuses). An item's `drag-motion-activate` defaults to TRUE,
-  which switches pages under a drag: every item here sets it FALSE.
+- Drops: `setup_drop_target(COPY | MOVE, [ItemRefs])` takes Python GObject classes;
+  `drop-enter(index)` returns the action (0 refuses) and is told nothing of the drag, so the
+  controller asks `widgets.dnd.current()` (`drop_action()`: a track onto a playlist, COPY;
+  playlists onto a folder or All Playlists, MOVE, as `actions.can_move_refs` allows) and marks
+  the row itself (`DropFeedback.highlight`; libadwaita's own `:drop(active)` ring is 1px).
+  An item's `drag-motion-activate` defaults to TRUE, which switches pages under a drag:
+  every item here sets it FALSE. It has no drag source: the controller puts one on the
+  sidebar in the capture phase and finds the row under the pointer as `rows()` walks them.
+  A drag near the list's top or bottom scrolls it (`DropFeedback.motion`, from the
+  `Gtk.DropControllerMotion`, on the `Gtk.ScrolledWindow` the mode shows). A splice that
+  replaces the focused row's item loses the focus: `update_playlists()` gives it back in an
+  idle (`_refocus`).
 - Section headers: in sidebar mode each is a `.header` widget in its list (`.first` on the
   first), a stack showing a `separator` for an untitled section or the title (a `.heading`
   label; in 1.10 inside a box, for the section's suffix), the title's text 12px below the

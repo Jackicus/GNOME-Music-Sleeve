@@ -69,8 +69,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `window.item_actions.menu_for(item)` makes as it opens (`set_create_popup_func`); long
   notes show three lines and More (`pages.show_notes()`); an album's artist is a link when
   the library has them (`detail.resolve_artist()`). All Playlists and a folder's page have
-  New Playlist (`list-add-symbolic`) in the header bar, and a folder's page its More Options
-  menu (`pages.add_folder_buttons()`). The playlists' dialogs (the name, the confirmation
+  New Playlist (`list-add-symbolic`) and New Folder (`folder-new-symbolic`) in the header
+  bar, and a folder's page its More Options menu (`pages.add_folder_buttons()`); their tiles
+  drag onto the sidebar's folders (`GridPage(drag=True)`). The playlists' dialogs (the name, the confirmation
   before a delete) are `dialogs/playlist.py`'s, presented by the item actions.
 - New, Made for You and a search category are `ShelvesPage`s over the engine's answers. They,
   Search and the album and artist pages show what the engine's failure means through one

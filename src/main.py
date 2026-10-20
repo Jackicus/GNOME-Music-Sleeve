@@ -551,15 +551,18 @@ class Application(Adw.Application):
 
     # -- messages ------------------------------------------------------------------------
 
-    def toast(self, title, button_label=None, action_name=None):
+    def toast(self, title, button_label=None, action_name=None, action_target=None):
         """Tell the user something: a toast on the active window, or in Preferences while
-        that is open over it, with a button running an action when given. The one way the
+        that is open over it, with a button running an action when given (with its target,
+        a GLib.Variant, when the action takes one: Undo's move back). The one way the
         app makes a toast; its title is plain text, never markup. With the window closed for
         background playback, a notification instead (the last one only), withdrawn when the
         window is back."""
         if self.background is not None and self.background.active:
             notification = Gio.Notification.new(title)
-            if button_label and action_name:
+            if button_label and action_name and action_target is not None:
+                notification.add_button_with_target(button_label, action_name, action_target)
+            elif button_label and action_name:
                 notification.add_button(button_label, action_name)
             self.send_notification(BACKGROUND_NOTIFICATION, notification)
             return
@@ -572,6 +575,8 @@ class Application(Adw.Application):
         if button_label and action_name:
             toast.set_button_label(button_label)
             toast.set_action_name(action_name)
+            if action_target is not None:
+                toast.set_action_target_value(action_target)
         target.add_toast(toast)
 
     def report(self, error):

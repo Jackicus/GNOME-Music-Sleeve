@@ -48,10 +48,12 @@ touches widgets.
   and context menus are `actions.py` and `widgets/context_menu.py`; where their Go to Album
   and Go to Artist lead is `related.py`'s: an album the library's, else the catalog's, which
   the engine looks up; an artist Apple Music's while the engine is up, the library's
-  otherwise. Making, renaming and deleting playlists and folders are item actions too, with
-  their dialogs in `dialogs/playlist.py`: the engine writes, the window leaves the pages of
-  what was deleted, and the library follows once Apple lists the change, through the sync's
-  short playlists pass.
+  otherwise. Making, renaming and deleting playlists and folders, and moving playlists into
+  folders, are item actions too, with their dialogs in `dialogs/playlist.py`: the engine
+  writes, the window leaves the pages of what was deleted, and the library follows once Apple
+  lists the change, through the sync's short playlists pass; a move or a new folder shows at
+  once, held in the library's tree (`Library.hold()`) until Apple lists it. Drags carry
+  `library.ItemRefs` and every source and drop target goes through `widgets/dnd.py`.
 - **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
   library pages bind the library's stores (Artists is a list beside the library's page of
   the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow); New,

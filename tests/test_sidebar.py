@@ -530,5 +530,172 @@ def shown(widget):
             yield from shown(child)
 
 
+class StubActions:
+    """The item actions the sidebar's drops ask: the real rules (ItemActions.can_move_refs,
+    move_targets) over the stub library's tree; the drops recorded."""
+
+    def __init__(self, library):
+        from applemusic.actions import ItemActions
+
+        self.library = library
+        self.dropped = []
+        self.can_move_refs = ItemActions.can_move_refs.__get__(self)
+        self.move_targets = ItemActions.move_targets.__get__(self)
+
+    def can_drop(self, playlist):
+        return not playlist.favourites  # these invented ids are no library's ("p.")
+
+    def drop(self, playlist, refs):
+        self.dropped.append(('playlist', playlist.id, [ref.id for ref in refs]))
+        return True
+
+    def drop_into_folder(self, folder_id, refs):
+        self.dropped.append(('folder', folder_id, [ref.id for ref in refs]))
+        return True
+
+
+@requires_gtk
+class DragDropTest(unittest.TestCase):
+    """The sidebar's drops: what each row takes from a drag in progress (dnd.current()), the
+    row marked, the drop handed to the item actions; its rows as drag sources; the focus
+    kept on a row a move splices anew."""
+
+    def setUp(self):
+        from gi.repository import Adw, Gdk, Gio, Gtk
+
+        from applemusic.sidebar_view import SidebarController
+        from applemusic.widgets import dnd
+        from tests.gtk import SCHEMA_ID
+
+        self.Gdk, self.Gtk, self.dnd = Gdk, Gtk, dnd
+        self.settings = Gio.Settings.new(SCHEMA_ID)
+        self.settings.set_strv('expanded-folders', ['a', 'b', 'c'])
+        self.library = StubLibrary(tree())
+        self.actions = StubActions(self.library)
+        self.widget = Adw.Sidebar()
+        self.window = StubWindow()
+        self.controller = SidebarController(self.window, self.widget, self.library,
+                                            self.settings, self.actions)
+        self.addCleanup(dnd._set_current, None)
+
+    def tearDown(self):
+        self.controller.write_expanded()
+        self.settings.reset('expanded-folders')
+
+    def index(self, key):
+        return self.controller.item_for(key).get_index()
+
+    def refs(self, *keys):
+        from applemusic.library import ItemRefs
+
+        return ItemRefs.for_objects([self.controller.entry(key).item for key in keys])
+
+    def test_what_each_row_takes(self):
+        from applemusic.library import ItemRefs, Ref
+
+        copy, move = self.Gdk.DragAction.COPY, self.Gdk.DragAction.MOVE
+        action = self.controller.drop_action
+        p1 = self.refs('playlist:p1')  # in folder a
+        self.assertEqual(action(self.index('folder:c'), p1), move)
+        self.assertEqual(action(self.index('folder:b'), p1), move)
+        self.assertEqual(action(self.index('folder:a'), p1), 0)  # where it is
+        self.assertEqual(action(self.index('playlist:p2'), p1), 0)  # a playlist takes songs
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), p1), 0)  # the top level: gated
+        self.assertEqual(action(self.index(HOME), p1), 0)
+        song = ItemRefs([Ref('song', 'i.s1', 'Song')])
+        self.assertEqual(action(self.index('playlist:p2'), song), copy)
+        self.assertEqual(action(self.index('folder:c'), song), 0)
+        self.assertEqual(action(self.index('folder:c'), None), 0)  # from elsewhere
+        # A folder waits for api.MOVE_FOLDERS; then never into itself or what is inside it.
+        folder_a = self.refs('folder:a')
+        self.assertEqual(action(self.index('folder:c'), folder_a), 0)
+        from unittest import mock
+
+        from applemusic.backend import api
+
+        with mock.patch.object(api, 'MOVE_FOLDERS', True), \
+                mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True):
+            self.assertEqual(action(self.index('folder:c'), folder_a), move)
+            self.assertEqual(action(self.index('folder:b'), folder_a), 0)
+            self.assertEqual(action(self.index('folder:a'), folder_a), 0)
+            self.assertEqual(action(self.index(ALL_PLAYLISTS), p1), move)
+
+    def test_drop_enter_marks_the_row_and_drop_hands_it_over(self):
+        self.dnd._set_current(self.refs('playlist:p2'))
+        rows = self.controller.rows()
+        target, refused = self.index('folder:c'), self.index('playlist:p1')
+        self.assertEqual(self.controller._on_drop_enter(self.widget, target),
+                         self.Gdk.DragAction.MOVE)
+        self.assertTrue(rows[target].has_css_class('drop-highlight'))
+        self.assertEqual(self.controller._on_drop_enter(self.widget, refused), 0)
+        self.assertFalse(any(row.has_css_class('drop-highlight') for row in rows))
+        self.controller._on_drop_enter(self.widget, target)
+        self.assertTrue(self.controller._on_drop(self.widget, target,
+                                                 self.refs('playlist:p2'), 0))
+        self.assertFalse(rows[target].has_css_class('drop-highlight'))  # cleared
+        self.assertFalse(self.controller._on_drop(self.widget, refused,
+                                                  self.refs('playlist:p2'), 0))
+        self.assertEqual(self.actions.dropped, [('folder', 'c', ['p2'])])
+
+    def test_show_drop_target(self):
+        rows = self.controller.rows()
+        self.controller.show_drop_target('folder:b')
+        self.assertTrue(rows[self.index('folder:b')].has_css_class('drop-highlight'))
+        self.controller.show_drop_target(None)
+        self.assertFalse(any(row.has_css_class('drop-highlight') for row in rows))
+
+    def present(self):
+        from tests.gtk import wait_for
+
+        window = self.Gtk.Window(child=self.widget, default_width=300, default_height=900)
+        self.addCleanup(window.destroy)
+        window.present()
+        self.assertTrue(wait_for(lambda: all(row.get_width() > 0 for row in self.controller.rows()
+                                             if row.get_child_visible())))
+        return window
+
+    def middle_of(self, key):
+        row = self.controller.row(self.index(key))
+        found, bounds = row.compute_bounds(self.widget)
+        self.assertTrue(found)
+        return (bounds.get_x() + bounds.get_width() / 2,
+                bounds.get_y() + bounds.get_height() / 2), row
+
+    def test_rows_are_drag_sources(self):
+        self.present()
+        (x, y), row = self.middle_of('playlist:p1')
+        refs, icon = self.controller._drag_source(x, y)
+        self.assertEqual([ref.id for ref in refs], ['p1'])
+        self.assertIs(icon, row)
+        # Not a fixed item, not Favourite Songs, not a folder while folders cannot move.
+        for key in (ALL_PLAYLISTS, HOME, 'folder:a'):
+            self.assertIsNone(self.controller._drag_source(*self.middle_of(key)[0]), key)
+        self.assertIsNone(self.controller._drag_source(-50, -50))
+
+    def test_the_focus_stays_on_a_moved_row(self):
+        from tests.gtk import wait_for
+
+        window = self.present()
+        self.window.get_focus = window.get_focus
+        self.controller.row(self.index('playlist:p1')).grab_focus()
+        self.assertEqual(self.controller._focused_key(), 'playlist:p1')
+        # p1 moves from folder a to folder c: its entry and row are new.
+        old_row = self.controller.row(self.index('playlist:p1'))
+        self.library.tree = tree(folders=[
+            {'id': 'root', 'title': '', 'parent': None, 'children': [
+                {'kind': 'folder', 'id': 'a'}, {'kind': 'playlist', 'id': 'p2'},
+                {'kind': 'playlist', 'id': 'fav'}, {'kind': 'folder', 'id': 'c'}]},
+            {'id': 'a', 'title': 'Folder A', 'parent': 'root', 'children': [
+                {'kind': 'folder', 'id': 'b'}]},
+            {'id': 'b', 'title': 'Folder B', 'parent': 'a', 'children': [
+                {'kind': 'playlist', 'id': 'p3'}]},
+            {'id': 'c', 'title': 'Folder C', 'parent': 'root', 'children': [
+                {'kind': 'playlist', 'id': 'p1'}]}])
+        self.controller.update_playlists()
+        new_row = self.controller.row(self.index('playlist:p1'))
+        self.assertIsNot(new_row, old_row)
+        self.assertTrue(wait_for(lambda: window.get_focus() is new_row))
+
+
 if __name__ == '__main__':
     unittest.main()

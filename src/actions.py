@@ -10,7 +10,9 @@ actions, the menus that offer them, and what a track dragged onto a sidebar play
     actions.go_to(obj, 'album')            # obj's album's page ('artist': its artist's)
     actions.show_artist(obj)               # a link's artist: the library's page of them
     actions.fill_sidebar_menu(menu, item)  # a sidebar playlist's or folder's menu
-    actions.drop(playlist, ref)            # a library.TrackRef dropped on a sidebar playlist
+    actions.drop(playlist, refs)           # a library.ItemRefs dropped on a sidebar playlist
+    actions.move_to_folder(obj, folder_id) # a playlist (or folder) into a folder, at once
+    actions.new_folder(parent_id)          # a folder named in a dialog ('root': top level)
 
 The actions, each on the window (win.*) with a GLib.Variant target "(ss)", the (kind, id) of
 what it acts on (an Item's kind and id, or 'song' and a Track's id):
@@ -33,12 +35,19 @@ library playlist. The playlists' own, each through a dialog (dialogs/playlist.py
                          target, or in the folder it names ('folder', 'root': the top level)
     item-rename          a playlist's name and description, or a folder's name
     item-delete          a playlist, or a folder with what is in it, once a dialog confirms
+    item-new-folder      a folder named in a dialog, in the folder the target names
+                         ('folder', 'root': the top level)
 
 and item-remove-from-playlist, "(ssi)" (playlist id, track id, the track's index): one entry
-of a playlist taken out. A target names an object the menu was built for (remembered, the
-last REMEMBERED of them) or one the library has; failing both, the target's kind and id are
-used as they are. Each action awaits the engine (started first when it is down and the account is
-signed in, as a play request does) and confirms with a toast, or reports the EngineError
+of a playlist taken out; item-move-to-folder, "(sss)" (folder id, kind, id): a playlist (or
+folder) moved into the folder ('root': the top level), shown at once (Library.hold()), put
+back if Apple refuses, with Undo on its toast; with an empty folder id, into a new folder
+named in a dialog and made beside it (Move to Folder's New Folder…).
+
+A target names an object the menu was built for (remembered, the last REMEMBERED of them)
+or one the library has; failing both, the target's kind and id are used as they are. Each
+action awaits the engine (started first when it is down and the account is signed in, as a
+play request does) and confirms with a toast, or reports the EngineError
 (app.report: signed out, that opens the sign-in). After a song was added to a playlist, or a
 song loved or unloved, the playlist (Favourite Songs) is fetched again and merged into the
 library's Item, so an open page shows the change at once.
@@ -47,12 +56,15 @@ The menus are built in code, per kind (build_menu): Play, Play Next, Play Later;
 Go to Artist (not where the page shown is that album or artist already); Favourite and
 Remove from Favourites (both, of which the menu shows the one whose action is enabled: the
 actions' state says whether the item is loved), Add to Library, Add to Playlist (the
-library's playlists that take songs, each folder a submenu, then New Playlist…), Remove from
+library's playlists that take songs, each folder a submenu, then New Playlist…), Move to
+Folder (a playlist's or folder's: Top Level, the folders it can go into, a folder holding
+others a submenu headed by itself, then New Folder…: move_targets()), Remove from
 Playlist (a track shown in a playlist of the user's: `container`); Open in Browser, Copy Link
 (only an address anyone can open: not the web player's library routes; a library artist's is
 the catalog artist's page, which the engine finds through their songs); Rename… and Delete
 Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs);
-each only where it applies.
+a folder's menu starts with New Playlist… and New Folder… (in it); each only where it
+applies.
 
 After a playlist or folder was made, renamed or deleted, the window leaves the pages of what
 is gone (Window.leave), the sidebar shows a new name at once, and the library follows Apple's
@@ -78,9 +90,10 @@ from urllib.parse import urlsplit
 from gi.repository import Gio, GLib
 
 from . import related
+from .backend import api
 from .backend.errors import EngineError
 from .backend.api import is_library_id
-from .library import ROOT_FOLDER, TRACK_KINDS, Item, Track, TrackRef
+from .library import ROOT_FOLDER, TRACK_KINDS, Item, ItemRefs, Track, TreeChange, track_ref
 
 log = logging.getLogger(__name__)
 
@@ -139,6 +152,8 @@ def action_labels():
         'item-new-playlist': _('Ne_w Playlist…'),
         'item-rename': _('Rena_me…'),
         'item-delete': _('_Delete Playlist…'),
+        'item-move-to-folder': _('Mov_e to Folder'),
+        'item-new-folder': _('New _Folder…'),
     }
 
 
@@ -230,9 +245,9 @@ def library_target(obj):
 def playlist_track(obj):
     """(kind, id) that Add to Playlist and a drop add, or None: a Track's or a song or music
     video Item's own id (a library "i." id, or a catalog one), as a 'song' or a 'video'
-    (library.TrackRef.for_object's rule)."""
-    ref = TrackRef.for_object(obj)
-    return (ref.kind, ref.song_id) if ref is not None else None
+    (library.track_ref()'s rule)."""
+    ref = track_ref(obj)
+    return (ref.kind, ref.id) if ref is not None else None
 
 
 def playlist_song(obj):
@@ -378,20 +393,118 @@ def playlist_submenu(entries, named):
     return menu
 
 
-def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None):
+def move_targets(tree, obj):
+    """Where obj, a playlist or folder of the library.PlaylistTree `tree`, can be moved, for
+    Move to Folder: (top_level, entries), `top_level` whether it can go to the top level and
+    `entries` the folders as (id, title, movable, children), in the sidebar's order:
+    `movable` whether obj can go into that folder (not the one it is in), `children` the
+    entries of the folders inside it. obj itself, and so whatever is inside it, is left out,
+    as is a folder that is neither a target nor holds one. None when obj cannot be moved at
+    all: not in the tree, Favourite Songs, the top level itself, or a kind of move Apple is
+    not known to take (api.can_move_to_folder: a folder, while MOVE_FOLDERS is off)."""
+    if not isinstance(obj, Item) or obj.kind not in ('playlist', 'folder') or tree is None:
+        return None
+    node = tree.node(obj.kind, obj.id)
+    if node is None or node is tree.root or node.item.favourites:
+        return None
+    if obj.kind == 'folder' and not api.MOVE_FOLDERS:
+        return None
+
+    def entries(folder):
+        found = []
+        for child in folder.children:
+            if child.kind != 'folder' or child is node:
+                continue
+            inside = entries(child)
+            movable = (tree.can_move(obj.kind, obj.id, child.id)
+                       and api.can_move_to_folder(obj.kind, child.id))
+            if movable or inside:
+                found.append((child.id, child.item.title, movable, inside))
+        return found
+
+    top_level = (tree.can_move(obj.kind, obj.id, ROOT_FOLDER)
+                 and api.can_move_to_folder(obj.kind, ROOT_FOLDER))
+    return top_level, entries(tree.root)
+
+
+def folder_submenu(entries, named):
+    """The Move to Folder items for `entries` (move_targets()'s), moving the playlist or
+    folder `named` ((kind, id)): a folder an item, or, when it holds folders, a submenu of
+    its own whose first item is the folder itself (when obj can go there), then its
+    folders."""
+    menu = Gio.Menu()
+    for folder_id, title, movable, children in entries:
+        label = mnemonic_escaped(title or _('Untitled Folder'))
+        target = GLib.Variant('(sss)', (folder_id, *named))
+        if children:
+            submenu = Gio.Menu()
+            if movable:
+                itself = Gio.Menu()
+                itself.append_item(menu_item('item-move-to-folder', target, label=label))
+                submenu.append_section(None, itself)
+            submenu.append_section(None, folder_submenu(children, named))
+            menu.append_submenu(label, submenu)
+        else:
+            menu.append_item(menu_item('item-move-to-folder', target, label=label))
+    return menu
+
+
+def move_submenu(moves, named):
+    """Move to Folder's submenu for the playlist or folder `named` ((kind, id)), from
+    move_targets()'s `moves`: Top Level (when it can go there), the folders
+    (folder_submenu()), then New Folder…, a folder holding it. Never empty."""
+    top_level, entries = moves
+    submenu = Gio.Menu()
+    if top_level:
+        top = Gio.Menu()
+        top.append_item(menu_item('item-move-to-folder',
+                                  GLib.Variant('(sss)', (ROOT_FOLDER, *named)),
+                                  label=_('Top Level')))
+        submenu.append_section(None, top)
+    listed = folder_submenu(entries, named)
+    if listed.get_n_items():
+        submenu.append_section(None, listed)
+    created = Gio.Menu()
+    created.append_item(menu_item('item-move-to-folder', GLib.Variant('(sss)', ('', *named)),
+                                  label=action_labels()['item-new-folder']))
+    submenu.append_section(None, created)
+    return submenu
+
+
+def new_items(folder_id):
+    """New Playlist… and New Folder…, both in the folder folder_id (ROOT_FOLDER: the top
+    level)."""
+    target = GLib.Variant('(ss)', ('folder', folder_id))
+    return [menu_item('item-new-playlist', target), menu_item('item-new-folder', target)]
+
+
+def main_menu_section():
+    """The main menu's first section: New Playlist… and New Folder…, at the top level."""
+    section = Gio.Menu()
+    for item in new_items(ROOT_FOLDER):
+        section.append_item(item)
+    return section
+
+
+def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
+               moves=None):
     """The menu for obj (an Item or a Track), or None when nothing applies (the top level
     of the folders, a category). `playlists` are the entries the Add to Playlist submenu
     lists (ItemActions.playlists(): (id, title, children), a folder's children its own
     entries, a submenu); `here` is the Item of the page shown (Go to Album and Go to Artist are
     left out where they would go nowhere: related.shows); `queued`, obj is in the player's
     queue (no Play); `container`, the playlist Item the track obj is shown in (Remove from
-    Playlist, when it is one of the user's)."""
+    Playlist, when it is one of the user's); `moves`, where a playlist or folder can be
+    moved (move_targets(): Move to Folder; None, not at all)."""
     named = describe(obj)
     if named is None or (isinstance(obj, Item) and obj.kind not in MENU_KINDS):
         return None
     target = GLib.Variant('(ss)', named)
     sections = [Gio.Menu(), Gio.Menu(), Gio.Menu(), Gio.Menu(), Gio.Menu()]
     play, go, keep, share, manage = sections
+    if is_user_folder(obj):
+        for item in new_items(obj.id):
+            play.append_item(item)
     if can_play(obj) and not queued:
         play.append_item(menu_item('item-play', target))
     if queue_target(obj) is not None:
@@ -417,6 +530,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         created.append_item(menu_item('item-new-playlist', target))
         submenu.append_section(None, created)
         keep.append_submenu(action_labels()['item-add-to-playlist'], submenu)
+    if moves is not None:
+        keep.append_submenu(action_labels()['item-move-to-folder'], move_submenu(moves, named))
     removed = entry_target(container, obj)
     if removed is not None:
         keep.append_item(menu_item('item-remove-from-playlist', removed))
@@ -435,11 +550,12 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     return menu if menu.get_n_items() else None
 
 
-def fill_sidebar_menu(menu, item):
+def fill_sidebar_menu(menu, item, moves=None):
     """Make `menu` a sidebar item's: a playlist's Play, Play Next, Open in Browser
-    (SIDEBAR_ACTIONS), then Rename… and Delete Playlist… for one of the user's; a folder's
-    New Playlist… (in it), Rename… and Delete Folder…; All Playlists' (the folder Item
-    ROOT_FOLDER) New Playlist…. Empty when `item` is None."""
+    (SIDEBAR_ACTIONS), then Move to Folder (`moves`, move_targets()'s, unless None), then
+    Rename… and Delete Playlist… for one of the user's; a folder's New Playlist… and New
+    Folder… (in it), Move to Folder, Rename… and Delete Folder…; All Playlists' (the folder
+    Item ROOT_FOLDER) New Playlist… and New Folder…. Empty when `item` is None."""
     menu.remove_all()
     named = describe(item)
     if named is None:
@@ -447,7 +563,8 @@ def fill_sidebar_menu(menu, item):
     target = GLib.Variant('(ss)', named)
     first = Gio.Menu()
     if item.kind == 'folder':
-        first.append_item(menu_item('item-new-playlist', target))
+        for entry in new_items(item.id):
+            first.append_item(entry)
     elif item.kind == 'playlist':
         for action in SIDEBAR_ACTIONS:
             if action == 'item-play' and not can_play(item):
@@ -457,10 +574,13 @@ def fill_sidebar_menu(menu, item):
             if action == 'item-open-in-browser' and not web_url(item):
                 continue
             first.append_item(menu_item(action, target))
+    keep = Gio.Menu()
+    if moves is not None:
+        keep.append_submenu(action_labels()['item-move-to-folder'], move_submenu(moves, named))
     manage = Gio.Menu()
     for entry in manage_items(item):
         manage.append_item(entry)
-    for section in (first, manage):
+    for section in (first, keep, manage):
         if section.get_n_items():
             menu.append_section(None, section)
 
@@ -520,12 +640,14 @@ class ItemActions:
             'item-new-playlist': self._on_new_playlist,
             'item-rename': self._on_rename,
             'item-delete': self._on_delete,
+            'item-new-folder': self._on_new_folder,
         }
         self.actions = {}
         for name, handler in handlers.items():
             self._add(name, TARGET, handler)
         self._add('item-add-to-playlist', PLAYLIST_TARGET, self._on_add_to_playlist)
         self._add('item-remove-from-playlist', ENTRY_TARGET, self._on_remove_from_playlist)
+        self._add('item-move-to-folder', PLAYLIST_TARGET, self._on_move_to_folder)
 
     def _add(self, name, parameter_type, handler):
         action = Gio.SimpleAction.new(name, parameter_type)
@@ -553,7 +675,7 @@ class ItemActions:
             return None
         menu = build_menu(obj, self.playlists() if playlist_song(obj) else (),
                           self._storefront(), here=self._shown(), queued=queued,
-                          container=self.container(obj))
+                          container=self.container(obj), moves=self.move_targets(obj))
         if menu is None:
             return None
         self._remember(named, obj)
@@ -567,7 +689,7 @@ class ItemActions:
     def fill_sidebar_menu(self, menu, item):
         """The sidebar's menu for a playlist or a folder (None: emptied). See
         fill_sidebar_menu()."""
-        fill_sidebar_menu(menu, item)
+        fill_sidebar_menu(menu, item, self.move_targets(item))
         named = describe(item)
         if named is not None:
             self._remember(named, item)
@@ -579,6 +701,11 @@ class ItemActions:
             return None
         playlist = self.library.by_id('playlist', obj.play.get('id'))
         return playlist if is_manageable(playlist) else None
+
+    def move_targets(self, obj):
+        """Where a playlist or folder of the library's can be moved (move_targets()), or
+        None."""
+        return move_targets(self.library.playlist_tree(), obj)
 
     def playlists(self):
         """The library playlists that take songs, nested in their folders as the sidebar
@@ -869,12 +996,41 @@ class ItemActions:
         songs; not a folder, not a fixed item, not Favourite Songs)."""
         return isinstance(playlist, Item) and playlist.editable
 
-    def drop(self, playlist, ref):
-        """A library.TrackRef dropped on a sidebar playlist: added to it. False when the
-        playlist takes nothing (the drop is refused) or the ref names no song."""
-        if not self.can_drop(playlist) or not isinstance(ref, TrackRef) or not ref.song_id:
+    def drop(self, playlist, refs):
+        """A library.ItemRefs of one song or music video dropped on a sidebar playlist:
+        added to it. False when the playlist takes nothing (the drop is refused) or the drag
+        carries anything but one track."""
+        tracks = refs.tracks() if isinstance(refs, ItemRefs) else ()
+        if not self.can_drop(playlist) or len(tracks) != 1 or len(refs) != 1:
             return False
-        self.add_to_playlist(playlist.id, ref.song_id, ref.title, kind=ref.kind or 'song')
+        ref = tracks[0]
+        self.add_to_playlist(playlist.id, ref.id, ref.title, kind=ref.kind)
+        return True
+
+    def can_move_refs(self, refs, folder_id):
+        """Whether the playlists and folders a drag carries (an ItemRefs of nothing else)
+        may all go into the folder folder_id (ROOT_FOLDER: the top level): the tree takes
+        each move (PlaylistTree.can_move: not into itself, a folder inside it, or where it
+        is already) and Apple is known to take it (api.can_move_to_folder)."""
+        if not isinstance(refs, ItemRefs) or not refs.only('playlist', 'folder'):
+            return False
+        tree = self.library.playlist_tree()
+        for ref in refs:
+            node = tree.node(ref.kind, ref.id)
+            if (node is None or node.item.favourites or not api.can_move_to_folder(
+                    ref.kind, folder_id) or not tree.can_move(ref.kind, ref.id, folder_id)):
+                return False
+        return True
+
+    def drop_into_folder(self, folder_id, refs):
+        """An ItemRefs of playlists or folders dropped on a sidebar folder (ROOT_FOLDER:
+        All Playlists, the top level): each moved there (move_to_folder()). False when the
+        drop is refused (can_move_refs())."""
+        if not self.can_move_refs(refs, folder_id):
+            return False
+        tree = self.library.playlist_tree()
+        for ref in refs:
+            self.move_to_folder(tree.node(ref.kind, ref.id).item, folder_id)
         return True
 
     # -- managing playlists and folders ------------------------------------------------------
@@ -1010,6 +1166,102 @@ class ItemActions:
 
         return self._run(method, (obj.id,), _('Deleted “{name}”').format(name=obj.title),
                          after=after)
+
+    def _on_move_to_folder(self, _action, parameter):
+        folder_id, kind, item_id = parameter.unpack()
+        obj = self._resolve(kind, item_id)
+        if not folder_id:  # Move to Folder's New Folder…
+            return self._ask_new_folder_for(obj)
+        return self.move_to_folder(obj, folder_id)
+
+    def move_to_folder(self, obj, folder_id):
+        """Move a playlist (or a folder) into the folder folder_id (ROOT_FOLDER: the top
+        level). The library shows it there at once (Library.hold(): the sidebar and the
+        folders' pages follow); Apple's refusal puts it back (Library.release()) and is
+        reported; once Apple takes it, a toast says where it went, with Undo (a move back),
+        and the library follows Apple's listing. The task, or None when it cannot be moved
+        there (toasted) or with the demo library."""
+        if self.app.refuse_in_demo():
+            return None
+        tree = self.library.playlist_tree()
+        if (not isinstance(obj, Item) or move_targets(tree, obj) is None
+                or not tree.can_move(obj.kind, obj.id, folder_id)
+                or not api.can_move_to_folder(obj.kind, folder_id)):
+            self.app.toast(_('This cannot be moved there'))
+            return None
+        previous = self._parent_of(obj)
+        folder = self.library.by_id('folder', folder_id)
+        if folder_id == ROOT_FOLDER or folder is None:
+            message = _('Moved “{name}” to the top level').format(name=obj.title)
+        else:
+            message = _('Moved “{name}” to “{folder}”').format(name=obj.title,
+                                                               folder=folder.title)
+        change = TreeChange.move(obj.kind, obj.id, folder_id)
+        self.library.hold(change)
+
+        async def run():
+            try:
+                await self.app.player.ensure_engine()
+                await self.engine.move_to_folder(obj.kind, obj.id, folder_id)
+            except EngineError as error:
+                self.library.release(change)
+                self.app.report(error)
+                return False
+            if api.can_move_to_folder(obj.kind, previous):
+                self.app.toast(message, _('Undo'), 'win.item-move-to-folder',
+                               GLib.Variant('(sss)', (previous, obj.kind, obj.id)))
+            else:
+                self.app.toast(message)
+            await self._follow_listing(folder_id, obj.id, obj.title)
+            return True
+
+        return self.app.spawn(run())
+
+    def _on_new_folder(self, _action, parameter):
+        """A new folder, named in a dialog, in the folder the target names ('folder', its
+        id; 'root': the top level)."""
+        _obj, kind, item_id = self._unpack(parameter)
+        parent = item_id if kind == 'folder' and item_id else ROOT_FOLDER
+        return self.ask_name(_('New Folder'), _('_Create'), '', None,
+                             lambda name, _description: self.new_folder(parent, name))
+
+    def _ask_new_folder_for(self, obj):
+        """Move to Folder's New Folder…: a folder named in a dialog, made in the folder
+        that holds obj, and obj moved into it."""
+        if not isinstance(obj, Item) or move_targets(self.library.playlist_tree(), obj) is None:
+            self.app.toast(_('This cannot be moved there'))
+            return None
+        parent = self._parent_of(obj)
+        return self.ask_name(_('New Folder'), _('_Create'), '', None,
+                             lambda name, _description: self.new_folder(parent, name, obj))
+
+    def new_folder(self, parent_id, name, holding=None):
+        """Make a folder called `name` in the folder parent_id (ROOT_FOLDER: the top
+        level), and, with `holding` (a playlist or folder Item), move that into it. The
+        folder is shown as soon as Apple answers with its id (Library.hold()) and its page
+        selected; the library then follows Apple's listing. A move that fails keeps the
+        folder (the failure is reported). The task, or None with the demo library."""
+        if self.app.refuse_in_demo():
+            return None
+
+        async def run():
+            try:
+                await self.app.player.ensure_engine()
+                new_id = await self.engine.create_folder(name, parent_id)
+            except EngineError as error:
+                self.app.report(error)
+                return False
+            self.library.hold(TreeChange.create(new_id, name, parent_id))
+            self.window.select_page(f'folder:{new_id}')  # sidebar.folder_key
+            self.app.toast(_('Created “{folder}”').format(folder=name))
+            if holding is not None:
+                task = self.move_to_folder(holding, new_id)
+                if task is not None:
+                    await asyncio.wait([task])
+            await self._follow_listing(parent_id, new_id, name)
+            return True
+
+        return self.app.spawn(run())
 
     def _on_remove_from_playlist(self, _action, parameter):
         playlist_id, track_id, index = parameter.unpack()

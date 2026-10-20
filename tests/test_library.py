@@ -24,8 +24,10 @@ from unittest import mock
 from tests import ROOT
 
 from applemusic import library as library_module
-from applemusic.library import (ROOT_FOLDER, SECTIONS, Group, Item, Library, PlaylistTree,
-                                SongOrder, Track, TrackRecord, fold, parse, paused_gc)
+from applemusic.library import (PENDING_HOLD, ROOT_FOLDER, SECTIONS, Group, Item, ItemRefs,
+                                Library, PlaylistTree, Ref, SongOrder, Track, TrackRecord,
+                                TreeChange, apply_changes, change_settled, fold, folder_of,
+                                item_ref, parse, paused_gc, track_ref)
 
 
 def load(cache_dir, library=None):
@@ -1248,6 +1250,203 @@ class TestPlaylistTree(unittest.TestCase):
             self.assertIs(library.folder_items(ROOT_FOLDER), top)
             self.assertEqual([item.id for item in top], ['p2', 'p1'])
             self.assertEqual([node.id for node in tree.flat], ['p2', 'p1'])
+
+
+class TestTreeChanges(unittest.TestCase):
+    """Moves and new folders shown ahead of Apple's listing: apply_changes() over library.json's
+    folders, the tree's refusals, and Library.hold()/release() through reloads."""
+
+    FOLDERS = [folder('root', ['f:a', 'p3']), folder('a', ['f:b', 'p1']),
+               folder('b', ['p2'], parent='a')]
+
+    def tree(self, folders=None, changes=()):
+        playlists = [playlist(f'p{n}') for n in (1, 2, 3)]
+        return PlaylistTree(apply_changes(folders or self.FOLDERS, list(changes)), playlists)
+
+    def test_a_playlist_into_a_folder_and_out_to_the_top(self):
+        into = TreeChange.move('playlist', 'p3', 'b')
+        self.assertEqual(shape(self.tree(changes=[into])), [
+            ('folder', 'a', 0, []), ('folder', 'b', 1, ['a']),
+            ('playlist', 'p2', 2, ['a', 'b']), ('playlist', 'p3', 2, ['a', 'b']),
+            ('playlist', 'p1', 1, ['a'])])
+        out = TreeChange.move('playlist', 'p2', ROOT_FOLDER)
+        self.assertEqual(shape(self.tree(changes=[out]))[-2:],
+                         [('playlist', 'p2', 0, []), ('playlist', 'p3', 0, [])])
+        # The list given is left alone.
+        self.assertEqual(self.FOLDERS[2]['children'], [{'kind': 'playlist', 'id': 'p2'}])
+
+    def test_a_folder_moves_with_what_is_in_it(self):
+        moved = self.tree(changes=[TreeChange.move('folder', 'b', ROOT_FOLDER)])
+        self.assertEqual(shape(moved), [
+            ('folder', 'a', 0, []), ('playlist', 'p1', 1, ['a']),
+            ('folder', 'b', 0, []), ('playlist', 'p2', 1, ['b']),
+            ('playlist', 'p3', 0, [])])
+
+    def test_a_folder_created(self):
+        created = self.tree(changes=[TreeChange.create('c', 'New One', 'a')])
+        self.assertIn(('folder', 'c', 1, ['a']), shape(created))
+        self.assertEqual(created.folder('c').item.title, 'New One')
+        # Twice, or in a folder that is not there: nothing more.
+        self.assertEqual(shape(self.tree(changes=[TreeChange.create('c', 'X', 'a')] * 2)),
+                         shape(created))
+        self.assertEqual(shape(self.tree(changes=[TreeChange.create('c', 'X', 'gone')])),
+                         shape(self.tree()))
+
+    def test_without_a_root_entry(self):
+        folders = [folder('a', ['p1'], parent=None)]
+        moved = self.tree(folders, [TreeChange.move('playlist', 'p1', ROOT_FOLDER)])
+        self.assertEqual(shape(moved)[:1], [('folder', 'a', 0, [])])
+        self.assertIn(('playlist', 'p1', 0, []), shape(moved))
+
+    def test_what_the_tree_refuses(self):
+        tree = self.tree()
+        self.assertTrue(tree.can_move('playlist', 'p3', 'a'))
+        self.assertTrue(tree.can_move('folder', 'b', ROOT_FOLDER))
+        self.assertFalse(tree.can_move('playlist', 'p3', ROOT_FOLDER))  # where it is
+        self.assertFalse(tree.can_move('folder', 'a', 'a'))  # into itself
+        self.assertFalse(tree.can_move('folder', 'a', 'b'))  # into a folder inside it
+        self.assertFalse(tree.can_move('folder', ROOT_FOLDER, 'a'))  # the top level
+        self.assertFalse(tree.can_move('playlist', 'p9', 'a'))  # not in the tree
+        self.assertFalse(tree.can_move('playlist', 'p3', 'gone'))
+        favourites = Item({'id': 'fav', 'kind': 'playlist', 'title': 'Favourite Songs',
+                           'attributes': {'isFavourites': True}, 'groups': []})
+        tree = PlaylistTree(self.FOLDERS, [playlist('p1'), favourites])
+        self.assertFalse(tree.can_move('playlist', 'fav', 'a'))
+        self.assertIs(tree.node('folder', 'a'), tree.folder('a'))
+        self.assertEqual(tree.node('playlist', 'p1').parent.id, 'a')
+
+    def test_settled_when_the_file_shows_it(self):
+        folders = [folder('root', ['f:a', 'p3']), folder('a', ['p1'])]
+        self.assertTrue(change_settled(folders, TreeChange.move('playlist', 'p1', 'a')))
+        self.assertTrue(change_settled(folders, TreeChange.move('playlist', 'p3', ROOT_FOLDER)))
+        self.assertTrue(change_settled(folders, TreeChange.move('playlist', 'p9', ROOT_FOLDER)))
+        self.assertFalse(change_settled(folders, TreeChange.move('playlist', 'p3', 'a')))
+        self.assertTrue(change_settled(folders, TreeChange.create('a', 'A', ROOT_FOLDER)))
+        self.assertFalse(change_settled(folders, TreeChange.create('c', 'C', ROOT_FOLDER)))
+        self.assertEqual(folder_of(folders, 'folder', 'gone'), None)
+
+    def test_hold_and_release_through_reloads(self):
+        raw = [{'id': f'p{n}', 'kind': 'playlist', 'title': f'P{n}',
+                'play': {'kind': 'playlist', 'id': f'p{n}'}, 'groups': []} for n in (1, 2, 3)]
+        library = Library()
+        with tempfile.TemporaryDirectory() as cache:
+            def reload(folders):
+                write_library(cache, [], playlists=raw, folders=folders)
+                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+                    asyncio.run(library.reload())
+
+            write_library(cache, [], playlists=raw, folders=self.FOLDERS)
+            load(cache, library)
+            top, inner = library.folder_items(ROOT_FOLDER), library.folder_items('a')
+            folder_a = library.by_id('folder', 'a')
+            told = []
+            library.connect('playlists-changed', lambda _library: told.append(True))
+
+            # A move shows at once, in the same stores and folder Items.
+            move = TreeChange.move('playlist', 'p3', 'a')
+            self.assertTrue(library.hold(move))
+            self.assertEqual(told, [True])
+            self.assertEqual([item.id for item in top], ['a'])
+            self.assertIs(library.folder_items('a'), inner)
+            self.assertEqual([item.id for item in inner], ['b', 'p1', 'p3'])
+            self.assertIs(library.by_id('folder', 'a'), folder_a)
+            # The tree refuses: nothing held, nothing told.
+            self.assertFalse(library.hold(TreeChange.move('folder', 'a', 'b')))
+            self.assertEqual(len(told), 1)
+
+            # A sync before Apple lists it keeps it shown; one that lists it settles it.
+            reload(self.FOLDERS)
+            self.assertEqual([item.id for item in inner], ['b', 'p1', 'p3'])
+            self.assertEqual(library.pending_changes(), [move])
+            reload([folder('root', ['f:a']), folder('a', ['f:b', 'p1', 'p3']),
+                    folder('b', ['p2'], parent='a')])
+            self.assertEqual(library.pending_changes(), [])
+            self.assertEqual([item.id for item in inner], ['b', 'p1', 'p3'])
+
+            # A move and its Undo before any sync: the later replaces the earlier.
+            there = TreeChange.move('playlist', 'p2', 'a')
+            library.hold(there)
+            undone = TreeChange.move('playlist', 'p2', 'b')
+            library.hold(undone)
+            self.assertEqual(library.pending_changes(), [undone])
+            reload(self.FOLDERS)  # the file has it in b: settled, nothing held
+            self.assertEqual(library.pending_changes(), [])
+            self.assertEqual([item.id for item in library.folder_items('b')], ['p2'])
+            reload([folder('root', ['f:a']), folder('a', ['f:b', 'p1', 'p3']),
+                    folder('b', ['p2'], parent='a')])
+
+            # Released (Apple refused it): back where the file has it.
+            back = TreeChange.move('playlist', 'p3', ROOT_FOLDER)
+            library.hold(back)
+            self.assertEqual([item.id for item in top], ['a', 'p3'])
+            library.release(back)
+            self.assertEqual([item.id for item in top], ['a'])
+            self.assertEqual(library.pending_changes(), [])
+
+            # A new folder is in the tree and by_id() at once, and goes when released.
+            created = TreeChange.create('c', 'Fresh', ROOT_FOLDER)
+            self.assertTrue(library.hold(created))
+            self.assertEqual(library.by_id('folder', 'c').title, 'Fresh')
+            self.assertEqual([item.id for item in top], ['a', 'c'])
+            self.assertFalse(library.hold(TreeChange.create('c', 'Again', ROOT_FOLDER)))
+            library.release(created)
+            self.assertIsNone(library.by_id('folder', 'c'))
+
+    def test_an_expired_change_gives_way_and_a_load_forgets_them(self):
+        raw = [{'id': 'p1', 'kind': 'playlist', 'title': 'P1',
+                'play': {'kind': 'playlist', 'id': 'p1'}, 'groups': []}]
+        folders = [folder('root', ['f:a', 'p1']), folder('a', [])]
+        library = Library()
+        with tempfile.TemporaryDirectory() as cache:
+            write_library(cache, [], playlists=raw, folders=folders)
+            load(cache, library)
+            with mock.patch.object(library_module, '_now', return_value=1000.0):
+                library.hold(TreeChange.move('playlist', 'p1', 'a'))
+            with mock.patch.object(library_module, '_now', return_value=1000.0 + PENDING_HOLD):
+                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+                    asyncio.run(library.reload())
+            self.assertEqual(library.pending_changes(), [])
+            self.assertEqual([item.id for item in library.folder_items('a')], [])
+            library.hold(TreeChange.move('playlist', 'p1', 'a'))
+            load(cache, library)
+            self.assertEqual(library.pending_changes(), [])
+            self.assertEqual([item.id for item in library.folder_items('a')], [])
+
+
+class TestItemRefs(unittest.TestCase):
+    """What a drag carries: library.ItemRefs of tracks and Items."""
+
+    def test_refs_of_tracks_and_items(self):
+        track = Track({'id': 'i.s1', 'catalogId': '100', 'title': 'Song', 'index': 4},
+                      play={'kind': 'playlist', 'id': 'p.1'})
+        video = Track({'id': '200', 'title': 'Clip', 'type': 'music-videos', 'index': 0})
+        song = Item({'id': '300', 'kind': 'song', 'title': 'Single', 'catalogId': '300'})
+        listed = playlist('p.2', 'List')
+        box = Item({'id': 'p.f', 'kind': 'folder', 'title': 'Box'})
+        album = Item({'id': 'l.a', 'kind': 'album', 'title': 'Album'})
+        artist = Item({'id': 'l.art', 'kind': 'artist', 'title': 'Someone'})
+        refs = ItemRefs.for_objects([track, video, song, listed, box, album, artist],
+                                    origin=('playlist', 'p.1'))
+        self.assertEqual(list(refs), [
+            Ref('song', 'i.s1', 'Song', 4), Ref('video', '200', 'Clip', 0),
+            Ref('song', '300', 'Single'), Ref('playlist', 'p.2', 'List'),
+            Ref('folder', 'p.f', 'Box'), Ref('album', 'l.a', 'Album')])
+        self.assertEqual(refs.origin, ('playlist', 'p.1'))
+        self.assertEqual([ref.id for ref in refs.tracks()], ['i.s1', '200', '300'])
+        self.assertEqual([ref.id for ref in refs.containers()], ['p.2', 'p.f'])
+        self.assertFalse(refs.only('song', 'video'))
+        self.assertEqual(len(refs), 6)
+        one = ItemRefs.for_objects([listed])
+        self.assertTrue(one.only('playlist', 'folder'))
+        self.assertIsNone(one.origin)
+        self.assertIsNone(ItemRefs.for_objects([artist, Track({'title': 'No id'})]))
+        self.assertIsNone(ItemRefs.for_objects([]))
+
+    def test_track_ref_is_what_add_to_playlist_takes(self):
+        track = Track({'id': '', 'catalogId': '100', 'title': 'Catalog Only', 'index': 1})
+        self.assertEqual(track_ref(track), Ref('song', '100', 'Catalog Only', 1))
+        self.assertIsNone(track_ref(playlist('p.1')))
+        self.assertEqual(item_ref(playlist('p.1')), Ref('playlist', 'p.1', 'p.1'))
 
 
 class TestBuildSongs(unittest.TestCase):

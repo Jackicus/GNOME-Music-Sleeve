@@ -39,6 +39,7 @@ dropped frame each time one came round.
 """
 
 import asyncio
+import collections
 import concurrent.futures
 import difflib
 import gc
@@ -84,6 +85,11 @@ EDITABLE = 'canEdit'
 
 # The id of the folders entry that lists the top level: the playlists and folders in no folder.
 ROOT_FOLDER = 'root'
+
+# How long a change to the playlist folders that Apple has taken is shown ahead of its listing
+# (Library.hold()), in seconds: a sync that runs before Apple lists it keeps showing it, and
+# after this the listing wins. A new playlist took 4 to 6.5 s to be listed (2026-10-03).
+PENDING_HOLD = 120
 
 def N_(text):
     """Mark a string for translation where it is defined; _() translates it where it is used."""
@@ -381,30 +387,100 @@ class Track(GObject.Object):
         return self._search_key
 
 
-class TrackRef(GObject.Object):
-    """What a dragged track carries (Gdk.ContentProvider.new_for_value), and what a sidebar
-    playlist accepts (actions.ItemActions.drop): a song's or music video's own id (a
-    library "i." id, else a catalog one), its `kind` ('song' or 'video': what it is added
-    to a playlist as) and its title."""
+# One library object a drag carries (ItemRefs): its `kind` ('song', 'video', 'album',
+# 'playlist', 'folder', 'station'…), the `id` the writes take (a track's own id, a library
+# "i." one else a catalog one; an Item's id), its `title`, and for a track its `index`, its
+# place in the list it was dragged from (Track.index), else -1.
+Ref = collections.namedtuple('Ref', 'kind id title index', defaults=(-1,))
 
-    __gtype_name__ = 'AppleMusicTrackRef'
+# The kinds of Ref a playlist takes, and those a folder takes.
+TRACK_REF_KINDS = ('song', 'video')
+CONTAINER_REF_KINDS = ('playlist', 'folder')
+# The Items a drag may carry besides songs and videos.
+DRAGGABLE_KINDS = ('album', 'playlist', 'folder', 'station')
 
-    song_id = GObject.Property(type=str, default='')
-    kind = GObject.Property(type=str, default='song')
-    title = GObject.Property(type=str, default='')
+
+def track_ref(obj):
+    """The Ref of a Track (a video by Track.kind), or of a song or music video Item, by its
+    own id (a library "i." id, else its catalog id); None for anything else, or for one
+    without an id. What Add to Playlist and a drop add."""
+    if isinstance(obj, Track):
+        kind = obj.kind or 'song'
+    elif isinstance(obj, Item) and obj.kind in TRACK_REF_KINDS:
+        kind = obj.kind
+    else:
+        return None
+    song_id = obj.id or obj.catalog_id
+    if not song_id:
+        return None
+    return Ref(kind, song_id, obj.title or '', obj.index if isinstance(obj, Track) else -1)
+
+
+def item_ref(obj):
+    """The Ref of anything a drag may carry: a track or a song or video (track_ref()), an
+    album, playlist, folder or station Item by its kind and id; None for anything else."""
+    ref = track_ref(obj)
+    if ref is None and isinstance(obj, Item) and obj.kind in DRAGGABLE_KINDS and obj.id:
+        ref = Ref(obj.kind, obj.id, obj.title or '')
+    return ref
+
+
+class ItemRefs(GObject.Object):
+    """What a drag inside the app carries: one or more library objects, in order, as Refs.
+    The app's one drag type: a track row's drag is an ItemRefs of one 'song' (or 'video')
+    Ref, a playlist's or folder's (a sidebar row, a tile) one of that kind.
+
+        refs = ItemRefs.for_objects([track], origin=('playlist', 'p.1'))   # or None
+        provider = widgets.dnd.provider(refs)   # Gdk.ContentProvider.new_for_value(refs)
+        refs.refs          # (Ref, …), never empty
+        refs.origin        # (kind, id) of the list dragged from, or None
+        refs.tracks()      # the songs and videos: what a playlist takes
+        refs.containers()  # the playlists and folders: what a folder takes
+        refs.only('song', 'video')   # every Ref is of these kinds
+        len(refs); list(refs)
+
+    `origin` tells a drop where the drag came from: a playlist's tracks dropped back on the
+    same playlist are a reorder, not an add. Only drags that start in the app carry one
+    (widgets.dnd.current() is the drag in progress); a drop target takes no other.
+    """
+
+    __gtype_name__ = 'AppleMusicItemRefs'
+
+    def __init__(self, refs=(), origin=None):
+        super().__init__()
+        self.refs = tuple(refs)
+        self.origin = tuple(origin) if origin is not None else None
 
     @classmethod
-    def for_object(cls, obj):
-        """The TrackRef of a Track (a video by Track.kind), or of a song or music video Item;
-        None for anything else, or for one without an id."""
-        if isinstance(obj, Track):
-            kind = obj.kind or 'song'
-        elif isinstance(obj, Item) and obj.kind in ('song', 'video'):
-            kind = obj.kind
-        else:
-            return None
-        song_id = obj.id or obj.catalog_id
-        return cls(song_id=song_id, kind=kind, title=obj.title or '') if song_id else None
+    def for_objects(cls, objects, origin=None):
+        """The ItemRefs of `objects` (Tracks, and Items: item_ref()), in order, those that
+        cannot be dragged left out; None when none can."""
+        refs = [ref for ref in map(item_ref, objects) if ref is not None]
+        return cls(refs, origin) if refs else None
+
+    def tracks(self):
+        """The songs and videos, in order: what a playlist takes."""
+        return tuple(ref for ref in self.refs if ref.kind in TRACK_REF_KINDS)
+
+    def containers(self):
+        """The playlists and folders, in order: what a folder takes."""
+        return tuple(ref for ref in self.refs if ref.kind in CONTAINER_REF_KINDS)
+
+    def only(self, *kinds):
+        """Whether every Ref is of one of `kinds` (and there is one)."""
+        return bool(self.refs) and all(ref.kind in kinds for ref in self.refs)
+
+    def __len__(self):
+        return len(self.refs)
+
+    def __iter__(self):
+        return iter(self.refs)
+
+    def __bool__(self):
+        return bool(self.refs)
+
+    def __repr__(self):
+        return f'ItemRefs({list(self.refs)!r}, origin={self.origin!r})'
 
 
 class Group(GObject.Object):
@@ -792,6 +868,32 @@ class PlaylistTree:
         """Every folder's TreeNode but the root's, depth first."""
         return [node for node in self.flat if node.kind == 'folder']
 
+    def node(self, kind, item_id):
+        """The TreeNode of the playlist or folder of that kind and id (the root's for the
+        folder ROOT_FOLDER), or None."""
+        if kind == 'folder':
+            return self._folders.get(item_id)
+        return next((node for node in self.flat if node.kind == kind and node.id == item_id),
+                    None)
+
+    def can_move(self, kind, item_id, folder_id):
+        """Whether the playlist or folder of that kind and id can go into the folder
+        `folder_id` (ROOT_FOLDER: the top level): both are in the tree, it is not Favourite
+        Songs, not the top level itself, not in that folder already, and a folder does not go
+        into itself or into a folder inside it."""
+        node = self.node(kind, item_id)
+        target = self._folders.get(folder_id)
+        if node is None or target is None or node is self.root or node.item.favourites:
+            return False
+        if node.parent is target:
+            return False
+        ancestor = target
+        while ancestor is not None:
+            if ancestor is node:
+                return False
+            ancestor = ancestor.parent
+        return True
+
     def stores(self):
         """Every folder's store by the folder's id, the root's (ROOT_FOLDER) first."""
         return {folder_id: node.store for folder_id, node in self._folders.items()}
@@ -809,6 +911,113 @@ def _folder_item(raw, existing=None, changed=None):
             changed.append(existing)
         return existing
     return Item(data)
+
+
+class TreeChange:
+    """A change to the playlist folders that Apple has taken but may not list yet
+    (Library.hold()): `op` 'move' (the playlist or folder of `kind` and `id` into the folder
+    `folder_id`, ROOT_FOLDER for the top level) or 'create' (a new folder `id` called
+    `title`, in `folder_id`). `expires` is when Apple's listing wins regardless (_now()
+    seconds)."""
+
+    __slots__ = ('op', 'kind', 'id', 'folder_id', 'title', 'expires')
+
+    def __init__(self, op, kind, item_id, folder_id, title='', hold=None):
+        self.op = op
+        self.kind = kind
+        self.id = item_id
+        self.folder_id = folder_id or ROOT_FOLDER
+        self.title = title
+        self.expires = _now() + (PENDING_HOLD if hold is None else hold)
+
+    @classmethod
+    def move(cls, kind, item_id, folder_id):
+        return cls('move', kind, item_id, folder_id)
+
+    @classmethod
+    def create(cls, folder_id, title, parent_id):
+        return cls('create', 'folder', folder_id, parent_id, title)
+
+    def __repr__(self):
+        return f'TreeChange({self.op}, {self.kind}, {self.id!r}, into {self.folder_id!r})'
+
+
+def _now():
+    return time.monotonic()
+
+
+def _with_root(folders):
+    """library.json's `folders` as fresh dicts (their `children` lists copied), with a root
+    entry: made from the parentless folders when the file has none, as PlaylistTree does."""
+    copied = [dict(raw, children=list(_dicts(raw.get('children')))) for raw in _dicts(folders)
+              if _text(raw.get('id'))]
+    if not any(_text(raw.get('id')) == ROOT_FOLDER for raw in copied):
+        copied.insert(0, {'id': ROOT_FOLDER, 'title': '', 'parent': None, 'children': [
+            {'kind': 'folder', 'id': _text(raw.get('id'))} for raw in copied
+            if raw.get('parent') is None]})
+    return copied
+
+
+def folder_of(folders, kind, item_id):
+    """The id of the folder library.json's `folders` lists the playlist or folder in (the
+    first that does), ROOT_FOLDER when none does (PlaylistTree puts it at the top level), or
+    None for a folder the file does not have at all."""
+    if kind == 'folder' and not any(_text(raw.get('id')) == item_id for raw in _dicts(folders)):
+        return None
+    for raw in _dicts(folders):
+        for child in _dicts(raw.get('children')):
+            if child.get('kind') == kind and _text(child.get('id')) == item_id:
+                return _text(raw.get('id'))
+    return ROOT_FOLDER
+
+
+def change_settled(folders, change):
+    """Whether library.json's `folders` shows the TreeChange already: the item listed in
+    its new folder, the folder created."""
+    if change.op == 'create':
+        return folder_of(folders, 'folder', change.id) is not None
+    return folder_of(folders, change.kind, change.id) == change.folder_id
+
+
+def apply_changes(folders, changes):
+    """library.json's `folders` with the TreeChanges applied, in order, as a new list (the
+    one given is left alone): a moved playlist or folder taken out of every folder's
+    children and added to its new folder's (a folder's own `parent` follows), a created
+    folder added with no children. A change naming a folder the list lacks is skipped.
+    PlaylistTree orders each folder's contents by title, so where a child goes in its list
+    does not matter."""
+    if not changes:
+        return list(_dicts(folders))
+    result = _with_root(folders)
+    by_id = {_text(raw.get('id')): raw for raw in result}
+    for change in changes:
+        target = by_id.get(change.folder_id)
+        if target is None:
+            continue
+        if change.op == 'create':
+            if change.id in by_id:
+                continue
+            entry = {'id': change.id, 'title': change.title, 'parent': change.folder_id,
+                     'children': []}
+            result.append(entry)
+            by_id[change.id] = entry
+        elif change.kind == 'folder' and change.id not in by_id:
+            continue
+        for raw in result:
+            raw['children'] = [child for child in raw['children']
+                               if (child.get('kind'), _text(child.get('id')))
+                               != (change.kind, change.id)]
+        target['children'].append({'kind': change.kind, 'id': change.id})
+        if change.kind == 'folder':
+            by_id[change.id]['parent'] = change.folder_id
+    return result
+
+
+def _index_folders(index, tree):
+    """Add a PlaylistTree's folder Items, the top level's among them, to a by_id() index."""
+    for node in tree.folders():
+        index.setdefault(('folder', node.id), node.item)
+    index.setdefault(('folder', ROOT_FOLDER), tree.root.item)
 
 
 def apply_diff(store, items, old=None):
@@ -886,7 +1095,9 @@ class Library(GObject.Object):
     missing, unreadable or outdated library is due a sync. `syncing` is true while a sync
     runs (the sync sets it), so that a page can show an empty library as on its way.
     `playlists-changed` says the playlist tree was placed again between loads
-    (place_playlists()).
+    (place_playlists()), or made again with a change to the folders held ahead of Apple's
+    listing (hold(), release(): a playlist moved or a folder made, shown at once and kept
+    through reloads until library.json shows it or PENDING_HOLD has passed).
     """
 
     __gtype_name__ = 'AppleMusicLibrary'
@@ -933,6 +1144,8 @@ class Library(GObject.Object):
         self._loose = []  # sections.songs: the loose songs' Track dicts
         self._loose_tracks = {}  # id -> Track, for the loose songs wrapped so far
         self._tree = PlaylistTree()
+        self._folders = []  # library.json's `folders`, as the last load read them
+        self._changes = []  # TreeChanges held ahead of Apple's listing (hold())
         self._generation = 0
         self._paused = 0.0  # when a load or Songs build last paused for a frame (_pause())
         self._syncing = False
@@ -1011,6 +1224,60 @@ class Library(GObject.Object):
         the window's sidebar follows the signal as it follows `changed` (retitled, moved,
         selection and folders kept). A load or reload places everything itself."""
         self._tree.sort()
+        self.emit('playlists-changed')
+
+    def hold(self, change):
+        """Show a TreeChange to the playlist folders at once, ahead of Apple's listing: the
+        tree is made again from the file's folders and the changes held (apply_changes()),
+        keeping the folder Items and stores, and `playlists-changed` emitted (the sidebar
+        moves what moved, its selection and open folders kept). Every reload() goes on
+        showing it until library.json does (change_settled()) or it expires (PENDING_HOLD);
+        load() forgets every change. False, and nothing held, for a move the tree refuses
+        (PlaylistTree.can_move()) or a folder created twice."""
+        if change.op == 'move' and not self._tree.can_move(change.kind, change.id,
+                                                          change.folder_id):
+            return False
+        if change.op == 'create' and (self._tree.folder(change.id) is not None
+                                      or self._tree.folder(change.folder_id) is None):
+            return False
+        if change.op == 'move':
+            # A later move of the same item (Undo) replaces the one before: the two would
+            # never both be listed.
+            self._changes = [held for held in self._changes
+                             if (held.op, held.kind, held.id) != ('move', change.kind, change.id)]
+        self._changes.append(change)
+        self._replant()
+        return True
+
+    def release(self, change):
+        """Stop showing a TreeChange held (Apple refused it): the tree is made again without
+        it, so what it moved is back where the file has it. Nothing for one not held."""
+        if change in self._changes:
+            self._changes.remove(change)
+            self._replant()
+
+    def pending_changes(self):
+        """The TreeChanges held ahead of Apple's listing, oldest first."""
+        return list(self._changes)
+
+    def _pending(self, folders):
+        """The changes held that library.json's `folders` does not show yet and that have
+        not expired."""
+        now = _now()
+        return [change for change in self._changes
+                if change.expires > now and not change_settled(folders, change)]
+
+    def _replant(self):
+        """The playlist tree made again from the file's folders and the changes held, as a
+        reload makes it (the folder Items and stores kept), and `playlists-changed`."""
+        tree = PlaylistTree(apply_changes(self._folders, self._changes), list(self.playlists),
+                            self._index, self._tree.stores())
+        index = {key: item for key, item in self._index.items() if key[0] != 'folder'}
+        _index_folders(index, tree)
+        self._tree = tree
+        self._index = index
+        if tree.changed:
+            self._notify_changed(dict.fromkeys(tree.changed))
         self.emit('playlists-changed')
 
     def favourite_songs(self):
@@ -1157,11 +1424,11 @@ class Library(GObject.Object):
             else:
                 shelf.update(title, items)
             shelves.append(shelf)
-        tree = PlaylistTree(_dicts(data.get('folders')), list(self.playlists), existing,
-                            self._tree.stores() if keep else None)
-        for node in tree.folders():
-            index.setdefault(('folder', node.id), node.item)
-        index.setdefault(('folder', ROOT_FOLDER), tree.root.item)
+        self._folders = _dicts(data.get('folders'))
+        self._changes = self._pending(self._folders) if keep else []
+        tree = PlaylistTree(apply_changes(self._folders, self._changes), list(self.playlists),
+                            existing, self._tree.stores() if keep else None)
+        _index_folders(index, tree)
         self._loose = _entries(sections.get('songs'))
         if not keep:
             self._loose_tracks = {}

@@ -85,8 +85,17 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   claimed, so the item's own click gesture never sees them. A popover can be parented to any
   widget with a layout manager; unparent it from an idle after `closed`, because the chosen
   item's action runs after the popover closes and finds `win.*` through its parent.
-- The drag type is `library.TrackRef`, offered with `Gdk.ContentProvider.new_for_value(ref)`.
-  `Gdk.Clipboard.set(text)` works from Python (it is `set_value`).
+- The one drag type is `library.ItemRefs` (one or more library objects, in order), offered
+  with `Gdk.ContentProvider.new_for_value(refs)` through `widgets/dnd.py`. Only in-app drags
+  are taken: a drop target decides from `dnd.current()`, the ItemRefs its source made at
+  `drag-begin`, since GTK loads a drop's value only asynchronously and AdwSidebar's
+  `drop-enter` gets nothing but the item's index. Every drag source goes through
+  `dnd.attach_source()`, every drop target's look and auto-scroll through `dnd.DropFeedback`
+  (`.drop-highlight`, `.drop-before`/`.drop-after`: inset shadows, never a margin). A
+  `Gtk.DragSource` in the capture phase on a container sees the press before its rows'
+  click gestures and cancels them once the drag starts. `Gtk.DragSource`'s `prepare` can be
+  emitted from a test (no event device then). `Gdk.Clipboard.set(text)` works from Python (it
+  is `set_value`).
 - A `Gio.MenuItem` with the attribute `hidden-when` = `action-disabled` is shown by a
   `Gtk.PopoverMenu` only while its action is enabled, and follows the action's state while
   the menu is open (Favourite / Remove from Favourites, as Nautilus's Star / Unstar).

@@ -13,8 +13,9 @@
                           [--search TERM]
                           [--context-menu [--submenu NAME]]
                           [--preferences [general|engine]]
-                          [--dialog about|shortcuts|new-playlist|rename|delete]
-                          [--more-options] [--sidebar-menu KEY] [--scroll PX]
+                          [--dialog about|shortcuts|new-playlist|new-folder|rename|delete]
+                          [--more-options] [--sidebar-menu KEY [--submenu NAME]]
+                          [--drop-target KEY] [--scroll PX]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
 through scripts/headless.sh, so the window opens on a private display and never on
@@ -79,15 +80,20 @@ on Engine, and shoots it: inside the window when libadwaita put it there, else i
 own window (a fixed-size window that is neither maximized nor tiled gets one), at
 --size when that is narrower than 640 px.
 --dialog opens the About (app.about) or Keyboard Shortcuts (app.shortcuts) dialog and
-shoots it as --preferences does; new-playlist, rename and delete open the playlists' dialogs
-(win.item-new-playlist, win.item-rename, win.item-delete) for the playlist or folder the page
-shows, else the library's first playlist of the user's (a new playlist: in the folder shown,
-else at the top level). The demo writes nothing: the dialogs only show.
+shoots it as --preferences does; new-playlist, new-folder, rename and delete open the
+playlists' dialogs (win.item-new-playlist, win.item-new-folder, win.item-rename,
+win.item-delete) for the playlist or folder the page shows, else the library's first playlist
+of the user's (a new playlist or folder: in the folder shown, else at the top level). The
+demo writes nothing: the dialogs only show.
 --more-options pops up the More Options menu of the page shown (an album's, a playlist's, a
 folder's) as a click on it would.
 --sidebar-menu KEY pops up the sidebar's context menu for KEY (playlist:ID, folder:ID,
 all-playlists; playlist:first and folder:first are the library's first of each), drawn from
-the menu the sidebar fills for it, beside its row (--expand the folder holding it).
+the menu the sidebar fills for it, beside its row (--expand the folder holding it); with
+--submenu NAME, its submenu of that label ("Mov_e to Folder").
+--drop-target KEY marks KEY's sidebar row (as --sidebar-menu names one) as where a drop goes,
+as a drag over it that the row takes marks it (SidebarController.show_drop_target, which the
+sidebar's drop-enter calls): the drop highlight, which no headless script can drag to.
 --scroll PX scrolls the page shown down by PX pixels before the shot (its first
 scrolled window that scrolls vertically): the rest of a page taller than the
 virtual monitor, which a --size cannot show.
@@ -147,13 +153,15 @@ parser.add_argument('--submenu', metavar='NAME',
 parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
                     choices=['general', 'engine'],
                     help='open Preferences on PAGE and shoot the dialog')
-parser.add_argument('--dialog', choices=['about', 'shortcuts', 'new-playlist', 'rename',
-                                         'delete'],
+parser.add_argument('--dialog', choices=['about', 'shortcuts', 'new-playlist', 'new-folder',
+                                         'rename', 'delete'],
                     help='open the About, Keyboard Shortcuts or a playlist dialog; shoot it')
 parser.add_argument('--more-options', action='store_true',
                     help='pop up the More Options menu of the page shown')
 parser.add_argument('--sidebar-menu', metavar='KEY',
                     help="pop up the sidebar's context menu for KEY")
+parser.add_argument('--drop-target', metavar='KEY',
+                    help="mark KEY's sidebar row as a drop's target")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
 parser.add_argument('--focus', action='store_true',
@@ -164,8 +172,8 @@ parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[
 args = parser.parse_args()
 if args.search:
     args.page = 'search'
-if args.submenu and not args.context_menu:
-    parser.error('--submenu needs --context-menu')
+if args.submenu and not (args.context_menu or args.sidebar_menu):
+    parser.error('--submenu needs --context-menu or --sidebar-menu')
 if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
         and not args.demo:
     parser.error('--now-playing, --playing, --restored and --fullscreen-player need --demo')
@@ -358,9 +366,10 @@ def subject(window):
 
 
 def open_playlist_dialog(window):
-    """--dialog new-playlist, rename or delete: the item action, as its menu item runs it."""
+    """--dialog new-playlist, new-folder, rename or delete: the item action, as its menu item
+    runs it."""
     item = subject(window)
-    if args.dialog == 'new-playlist':
+    if args.dialog in ('new-playlist', 'new-folder'):
         folder = item.id if item is not None and item.kind == 'folder' else 'root'
         target = ('folder', folder)
     elif item is None:
@@ -383,11 +392,7 @@ def open_more_options(window):
 def open_sidebar_menu(window):
     """--sidebar-menu: the menu the sidebar fills for the key's item (sidebar_view's
     setup-menu handler), popped up beside its row as the sidebar shows it."""
-    key = args.sidebar_menu
-    if key == 'folder:first':
-        key = f'folder:{first_folder()}'
-    elif key == 'playlist:first':
-        key = f'playlist:{first_playlist().id}'
+    key = sidebar_key(args.sidebar_menu)
     sidebar = window._sidebar
     item = sidebar.item_for(key)
     row = sidebar.row(item.get_index()) if item is not None else None
@@ -403,6 +408,31 @@ def open_sidebar_menu(window):
     popover.set_pointing_to(rectangle)
     popover.set_halign(Gtk.Align.START)
     popover.popup()
+    if args.submenu:
+        popover.set_property('visible-submenu', args.submenu)
+
+
+def sidebar_key(key):
+    """A sidebar key, with playlist:first and folder:first the library's first of each."""
+    if key == 'folder:first':
+        return f'folder:{first_folder()}'
+    if key == 'playlist:first':
+        return f'playlist:{first_playlist().id}'
+    return key
+
+
+def mark_drop_target(window):
+    """--drop-target: the row marked as where a drop goes, scrolled into view."""
+    key = sidebar_key(args.drop_target)
+    sidebar = window._sidebar
+    item = sidebar.item_for(key)
+    row = sidebar.row(item.get_index()) if item is not None else None
+    if row is None:
+        sys.exit(f'screenshot: no sidebar row for {key}')
+    sidebar.show_drop_target(key)
+    viewport = row.get_ancestor(Gtk.Viewport)
+    if viewport is not None:
+        viewport.scroll_to(row, None)
 
 
 def harness_descendants(widget, kind):
@@ -418,7 +448,7 @@ def open_dialog(window):
     """--dialog: the About or Keyboard Shortcuts dialog, as its menu item opens it (inside
     the window, or in a window of its own), or a playlist dialog; the dialog, or None when
     none is shown."""
-    if args.dialog in ('new-playlist', 'rename', 'delete'):
+    if args.dialog in ('new-playlist', 'new-folder', 'rename', 'delete'):
         open_playlist_dialog(window)
         kind = Adw.AlertDialog
     else:
@@ -548,6 +578,11 @@ def _shoot():
         menu_opened = True
         open_sidebar_menu(window)
         GLib.timeout_add(800, shoot)
+        return GLib.SOURCE_REMOVE
+    if args.drop_target and not menu_opened:
+        menu_opened = True
+        mark_drop_target(window)
+        GLib.timeout_add(400, shoot)
         return GLib.SOURCE_REMOVE
     if args.preferences and preferences is None:
         preferences = app.show_preferences(args.preferences)

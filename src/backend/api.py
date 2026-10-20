@@ -18,6 +18,7 @@ The standard library only; engine.py and actions.py use it.
     lyrics_languages('ja_JP.UTF-8')     # {'lyrics': 'ja-JP', 'script': 'ja-Kana'}: what a
                                         # lyrics request asks its translations and
                                         # pronunciations in
+    can_move_to_folder('playlist', 'p.1')   # whether Apple is known to take that folder move
 """
 
 from .errors import EngineError
@@ -41,6 +42,16 @@ RESOURCE_TYPES = {
 
 # The New page: the editorial groupings behind music.apple.com's own (the request it makes,
 # less its field selections and `format[resources]=map`, which flattens the answer).
+# The playlist-folder moves Apple is known to take (src/backend/README.md): a playlist into a
+# folder (checked on 2026-10-03). A move to the top level (into Apple's root folder) and a
+# folder into another folder are not confirmed yet: the app offers neither, and the engine
+# refuses them, until they are switched on here.
+MOVE_TO_TOP_LEVEL = False
+MOVE_FOLDERS = False
+# The id the library calls the top level of the folders (library.ROOT_FOLDER), and Apple's.
+ROOT_FOLDER = 'root'
+APPLE_ROOT_FOLDER = 'p.playlistsroot'
+
 BROWSE_ENDPOINT = '/v1/editorial/{storefront}/groupings'
 BROWSE_PARAMS = {'name': 'music', 'platform': 'web', 'extend': 'editorialArtwork'}
 # Made for You: the recommendations, of which the mixes and stations are kept.
@@ -152,6 +163,17 @@ def lyrics_languages(locale_name):
     tag = '-'.join([language] + [part.upper() for part in parts[1:2] if part.isalpha()])
     script = 'Latn' if latin else SCRIPT_OF_LANGUAGE.get(language, 'Latn')
     return {'lyrics': tag, 'script': f'{language}-{script}'}
+
+
+def can_move_to_folder(kind, folder_id):
+    """Whether a playlist (`kind` 'playlist') or a folder ('folder') may be moved into the
+    folder `folder_id` (None, ROOT_FOLDER or Apple's root: the top level), as far as Apple is
+    known to take it (MOVE_TO_TOP_LEVEL, MOVE_FOLDERS)."""
+    if kind not in ('playlist', 'folder'):
+        return False
+    if kind == 'folder' and not MOVE_FOLDERS:
+        return False
+    return MOVE_TO_TOP_LEVEL or folder_id not in (None, '', ROOT_FOLDER, APPLE_ROOT_FOLDER)
 
 
 def is_library_id(item_id):

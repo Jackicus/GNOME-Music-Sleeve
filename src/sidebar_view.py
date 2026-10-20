@@ -18,6 +18,7 @@ rows' accessible names and indentation.
     sidebar.focus()                   # the focus on the selected row
     sidebar.forget_expanded()         # every folder closed (sign-out)
     sidebar.write_expanded()          # the expanded folders written now (the window closing)
+    sidebar.show_drop_target(key)     # key's row marked as a drop's target (None: no mark)
 
 The first sections are fixed items; the Playlists section is bound to a store of SidebarEntry
 (sidebar.py): its two destinations, then the library's folders and playlists. The window shows
@@ -30,10 +31,20 @@ on is listed in .claude/rules/sidebar.md.
 Folders: a click (or Enter) on a folder shows its page and, in the sidebar mode, opens or
 closes it; in the page mode (the collapsed layout) it only drills down, and the folder's
 arrow is hidden (the row has one of its own). Right and Left on a focused folder open and
-close it without changing the page, Left on a nested item moves to its folder. A track
-dragged over a closed folder opens it after a moment (SPRING_DELAY_MS), so a playlist inside
-can take the drop. The open folders are kept in the expanded-folders setting, written a
-moment after the last change (EXPANDED_WRITE_DELAY_MS) and when the window closes.
+close it without changing the page, Left on a nested item moves to its folder. The open
+folders are kept in the expanded-folders setting, written a moment after the last change
+(EXPANDED_WRITE_DELAY_MS) and when the window closes.
+
+Drags (widgets/dnd.py, library.ItemRefs; only drags that start in the app): a track dropped
+on a playlist that takes songs is added to it (COPY); a playlist (or a folder) dropped on a
+folder goes into it, and on All Playlists to the top level (MOVE, actions.drop_into_folder),
+unless that is where it is, or a folder would go into itself (refused: 0). The row a drop
+would go to is highlighted (DropFeedback), the sidebar scrolls while the pointer is near
+its top or bottom edge, and a closed folder the drag hovers over opens after a moment
+(SPRING_DELAY_MS), so what is inside can take the drop. The playlists' and folders' own
+rows are drag sources (AdwSidebar has none of its own: a Gtk.DragSource on the sidebar, in
+the capture phase, before the rows' clicks, finds the row under the pointer as rows()
+walks them). After a move the moved row has the focus again if it had it.
 
 Nesting: a nested item's row carries a style class for its depth (sidebar.depth_class(),
 `depth-1` to `depth-3`), which style.css indents, set with the rows' accessible names and
@@ -44,14 +55,15 @@ opened or closed, the switch between the sidebar and page modes, which builds ne
 import logging
 import time
 
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
 
 from . import sections, shortcuts
-from .library import ROOT_FOLDER, TrackRef
+from .library import ROOT_FOLDER, ItemRefs
 from .sections import ALL_PLAYLISTS, FAVOURITE_SONGS, HOME, PLAYLISTS_SECTION
 from .sidebar import (DEPTH_CLASSES, SidebarEntry, SidebarItem, depth_class, is_shown,
                       plan_update, playlist_entries, reveal)
-from .widgets.util import descendants
+from .widgets import dnd
+from .widgets.util import descendants, first_descendant
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +96,7 @@ class SidebarController:
         self._expanded_write = None  # the timeout that will write expanded-folders
         self._spring = None  # the timeout that will open the folder a drag hovers over
         self._reveal = None  # the idle scrolling the selected row into view, and its tries
+        self._feedback = dnd.DropFeedback()  # the drop target's row marked, the auto-scroll
         self._build()
         self.update_playlists()
 
@@ -120,13 +133,17 @@ class SidebarController:
         self._sidebar.connect('notify::mode', self._on_mode_changed)
         self._sidebar.connect('activated', self._on_activated)
         self._sidebar.connect('setup-menu', self._on_setup_menu)
-        # Tracks dragged from a list (widgets/context_menu.py) drop onto playlists.
-        self._sidebar.setup_drop_target(Gdk.DragAction.COPY, [TrackRef])
+        # Tracks dragged from a list (widgets/context_menu.py) drop onto playlists, and
+        # playlists and folders onto folders and All Playlists.
+        self._sidebar.setup_drop_target(Gdk.DragAction.COPY | Gdk.DragAction.MOVE, [ItemRefs])
         self._sidebar.connect('drop-enter', self._on_drop_enter)
         self._sidebar.connect('drop', self._on_drop)
         motion = Gtk.DropControllerMotion()
-        motion.connect('leave', lambda *_: self._cancel_spring())
+        motion.connect('motion', self._on_drag_motion)
+        motion.connect('leave', lambda *_: self._end_drag())
         self._sidebar.add_controller(motion)
+        dnd.attach_source(self._sidebar, self._drag_source, Gdk.DragAction.MOVE,
+                          Gtk.PropagationPhase.CAPTURE)
         # Right and Left on a focused row (shortcuts.FOLDER_OPEN and FOLDER_CLOSE): a folder
         # opens and closes, a nested item goes to its folder. Only with the focus in the
         # sidebar (a bubble-phase controller).
@@ -359,6 +376,7 @@ class SidebarController:
         is spliced (bind_model makes a new item for every entry spliced in, and the
         selection is lost when the selected item goes: the window reselects by key)."""
         started = time.perf_counter()
+        focused = self._focused_key()
         entries = playlist_entries(self._library.playlist_tree())
         fixed = self._fixed_count
         old = [self._playlist_store.get_item(position)
@@ -384,6 +402,9 @@ class SidebarController:
                 self._quiet = False
             self._positions = {entry.key: position
                                for position, entry in enumerate(self._playlist_store)}
+            if focused is not None:
+                # After the window has selected and revealed what it shows again.
+                GLib.idle_add(self._refocus, focused)
         if splices or retitles:
             self.update_rows()
         if splices or retitles or log.isEnabledFor(logging.DEBUG):
@@ -485,28 +506,71 @@ class SidebarController:
             child = child.get_next_sibling()
         return GLib.SOURCE_REMOVE
 
-    # -- drops ---------------------------------------------------------------------------
+    # -- drags and drops ------------------------------------------------------------------
 
-    def _drop_playlist(self, index):
-        """The playlist a track dropped on the item at index goes to: only a playlist entry
-        that takes songs (not a folder, not a fixed item)."""
-        item = self._sidebar.get_item(index)
-        if not isinstance(item, SidebarItem) or item.entry.kind != 'playlist':
+    def _drop_folder(self, item):
+        """The folder id a playlist or folder dropped on the sidebar item goes into: a
+        folder's, or the top level's for All Playlists (ROOT_FOLDER); None elsewhere."""
+        if not isinstance(item, SidebarItem):
             return None
-        playlist = item.entry.item
-        return playlist if self._item_actions.can_drop(playlist) else None
+        if item.entry.kind == 'folder':
+            return item.entry.folder_id
+        if item.entry.kind == 'fixed' and item.entry.key == ALL_PLAYLISTS:
+            return ROOT_FOLDER
+        return None
+
+    def drop_action(self, index, refs):
+        """What dropping `refs` (a library.ItemRefs) on the item at index would do: COPY a
+        track onto a playlist that takes songs, MOVE playlists or folders into a folder (All
+        Playlists: the top level) they can go into (actions.can_move_refs), else 0."""
+        if not isinstance(refs, ItemRefs):
+            return 0
+        item = self._sidebar.get_item(index)
+        if isinstance(item, SidebarItem) and item.entry.kind == 'playlist':
+            playlist = item.entry.item
+            if (len(refs) == 1 and refs.tracks()
+                    and self._item_actions.can_drop(playlist)):
+                return Gdk.DragAction.COPY
+            return 0
+        folder_id = self._drop_folder(item)
+        if folder_id is not None and self._item_actions.can_move_refs(refs, folder_id):
+            return Gdk.DragAction.MOVE
+        return 0
 
     def _on_drop_enter(self, _sidebar, index):
-        """A drag over the item at index: the action a drop would do (COPY onto a playlist
-        that takes songs, nothing elsewhere), and a closed folder starts opening
-        (SPRING_DELAY_MS) so a playlist inside can take the drop."""
+        """A drag over the item at index: the action a drop would do (drop_action(), for the
+        in-app drag in progress: widgets.dnd.current()), its row marked when there is one,
+        and a closed folder starts opening (SPRING_DELAY_MS) so what is inside can take the
+        drop."""
         self._cancel_spring()
         item = self._sidebar.get_item(index)
         if (isinstance(item, SidebarItem) and item.entry.kind == 'folder'
                 and item.entry.folder_id not in self._expanded):
             self._spring = GLib.timeout_add(SPRING_DELAY_MS, self._spring_open,
                                             item.entry.folder_id)
-        return Gdk.DragAction.COPY if self._drop_playlist(index) is not None else 0
+        action = self.drop_action(index, dnd.current())
+        self._feedback.highlight(self.row(index) if action else None)
+        return action
+
+    def show_drop_target(self, key):
+        """Mark the row of key's item as where a drop goes, as a drag over it that it takes
+        does (None: no row marked)."""
+        item = self.item_for(key) if key is not None else None
+        self._feedback.highlight(self.row(item.get_index()) if item is not None else None)
+
+    def _on_drag_motion(self, motion, x, y):
+        """The pointer of a drag over the sidebar: scroll its list near the top or bottom
+        edge (DropFeedback.motion), whichever list the mode shows."""
+        scrolled = first_descendant(self._sidebar, Gtk.ScrolledWindow)
+        if scrolled is None:
+            return
+        if self._feedback.scrolled is not scrolled:
+            self._feedback.scrolled = scrolled
+        point = Graphene.Point()
+        point.x, point.y = x, y
+        ok, local = self._sidebar.compute_point(scrolled, point)
+        if ok:
+            self._feedback.motion(local.y)
 
     def _spring_open(self, folder_id):
         self._spring = None
@@ -519,12 +583,62 @@ class SidebarController:
             GLib.source_remove(self._spring)
             self._spring = None
 
-    def _on_drop(self, _sidebar, index, value, _action):
+    def _end_drag(self):
+        """A drag left the sidebar, or dropped: no folder opening, no mark, no scrolling."""
         self._cancel_spring()
-        playlist = self._drop_playlist(index)
-        if playlist is None:
+        self._feedback.clear()
+
+    def _on_drop(self, _sidebar, index, value, _action):
+        self._end_drag()
+        item = self._sidebar.get_item(index)
+        if not self.drop_action(index, value):
             return False
-        return self._item_actions.drop(playlist, value)
+        if isinstance(item, SidebarItem) and item.entry.kind == 'playlist':
+            return self._item_actions.drop(item.entry.item, value)
+        return self._item_actions.drop_into_folder(self._drop_folder(item), value)
+
+    def _drag_source(self, x, y):
+        """dnd.attach_source()'s find: the playlist or folder whose row is under (x, y), as
+        library.ItemRefs, with its row as the drag's icon; None for anything else (the
+        fixed items, a header, a playlist or folder that cannot be moved)."""
+        picked = self._sidebar.pick(x, y, Gtk.PickFlags.DEFAULT)
+        row = picked if isinstance(picked, Gtk.ListBoxRow) else (
+            picked.get_ancestor(Gtk.ListBoxRow) if picked is not None else None)
+        rows = self.rows()
+        if row is None or row not in rows:
+            return None
+        item = self._sidebar.get_items().get_item(rows.index(row))
+        if not isinstance(item, SidebarItem) or item.entry.kind not in ('playlist', 'folder'):
+            return None
+        if self._item_actions.move_targets(item.entry.item) is None:
+            return None
+        refs = ItemRefs.for_objects([item.entry.item])
+        return (refs, row) if refs is not None else None
+
+    def _focused_key(self):
+        """The key of the sidebar row with the focus, or None."""
+        focus = self._window.get_focus()
+        if focus is None:
+            return None
+        rows = self.rows()
+        for index, row in enumerate(rows):
+            if focus is row or focus.is_ancestor(row):
+                return self.key_of(self._sidebar.get_items().get_item(index))
+        return None
+
+    def _refocus(self, key):
+        """Give key's row the focus again, after a reload or a move spliced its item anew,
+        unless the focus has gone somewhere else than the sidebar meanwhile (a dialog, a
+        page)."""
+        focus = self._window.get_focus()
+        if (focus is not None and focus.get_mapped() and focus is not self._sidebar
+                and not focus.is_ancestor(self._sidebar)):
+            return GLib.SOURCE_REMOVE
+        item = self.item_for(key)
+        row = self.row(item.get_index()) if item is not None else None
+        if row is not None and row.get_mapped():
+            row.grab_focus()
+        return GLib.SOURCE_REMOVE
 
     # -- the rows, for their accessible names and states and their indentation -----------
     # AdwSidebar builds a row per item, hidden ones too, in item order (one Gtk.ListBox in

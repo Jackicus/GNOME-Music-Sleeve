@@ -8,18 +8,22 @@ the actions' coroutines run under asyncio."""
 
 import asyncio
 import unittest
+from unittest import mock
 
 from gi.repository import Gio, GLib, GObject
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
 from applemusic.actions import (ItemActions, build_menu, can_play, fill_sidebar_menu,
-                                is_apple_music_url, is_shareable, library_target, mnemonic_escaped,
+                                is_apple_music_url, is_shareable, library_target,
+                                main_menu_section, mnemonic_escaped, move_targets,
                                 now_playing_track, playlist_song, playlist_track, queue_target,
                                 rating_target, share_url, web_url)
+from applemusic.backend import api
 from applemusic import actions as actions_module
 from applemusic.backend.errors import EngineError
-from applemusic.library import Item, PlaylistTree, Track, TrackRef
+from applemusic.library import (Item, ItemRefs, PlaylistTree, Ref, Track, apply_changes,
+                                track_ref)
 from applemusic.player import NowPlaying
 
 # Invented items, in the library's shapes.
@@ -282,8 +286,11 @@ class MenuTest(unittest.TestCase):
         for playlist in (READ_ONLY, FAVOURITES):
             self.assertFalse({'win.item-rename', 'win.item-delete'}
                              & set(names(build_menu(playlist))), playlist.title)
-        # A folder of the user's: only those two, Delete Folder… by name.
+        # A folder of the user's: New Playlist… and New Folder… in it, then those two,
+        # Delete Folder… by name.
         self.assertEqual(actions_of(build_menu(FOLDER)), [
+            ('win.item-new-playlist', ('folder', 'l.fd1')),
+            ('win.item-new-folder', ('folder', 'l.fd1')),
             ('win.item-rename', ('folder', 'l.fd1')), ('win.item-delete', ('folder', 'l.fd1'))])
         self.assertIn('_Delete Folder…', labels_of(build_menu(FOLDER)))
 
@@ -335,13 +342,77 @@ class MenuTest(unittest.TestCase):
         fill_sidebar_menu(menu, FOLDER)
         self.assertEqual(actions_of(menu), [
             ('win.item-new-playlist', ('folder', 'l.fd1')),
+            ('win.item-new-folder', ('folder', 'l.fd1')),
             ('win.item-rename', ('folder', 'l.fd1')),
             ('win.item-delete', ('folder', 'l.fd1'))])
         self.assertIn('_Delete Folder…', labels_of(menu))
+        self.assertIn('New _Folder…', labels_of(menu))
         fill_sidebar_menu(menu, TOP_LEVEL)  # All Playlists
-        self.assertEqual(actions_of(menu), [('win.item-new-playlist', ('folder', 'root'))])
+        self.assertEqual(actions_of(menu), [('win.item-new-playlist', ('folder', 'root')),
+                                            ('win.item-new-folder', ('folder', 'root'))])
+        # With where it can be moved: Move to Folder, before Rename… and Delete….
+        fill_sidebar_menu(menu, PLAYLIST, (False, [('l.fd1', 'Evenings', True, [])]))
+        self.assertEqual(names(menu)[3:], ['win.item-move-to-folder',
+                                           'win.item-move-to-folder', 'win.item-rename',
+                                           'win.item-delete'])
+        self.assertIsNotNone(submenu_of(menu, 'Mov_e to Folder'))
         fill_sidebar_menu(menu, None)
         self.assertEqual(menu.get_n_items(), 0)
+
+    def test_move_targets_and_their_submenu(self):
+        playlists = [Item(dict(item.raw)) for item in (PLAYLIST, READ_ONLY, FAVOURITES)]
+        tree = PlaylistTree([
+            {'id': 'root', 'title': '', 'parent': None,
+             'children': [{'kind': 'folder', 'id': 'p.fd1'}, {'kind': 'folder', 'id': 'p.fd2'},
+                          {'kind': 'playlist', 'id': 'p.pl2'},
+                          {'kind': 'playlist', 'id': 'p.fav'}]},
+            {'id': 'p.fd1', 'title': 'Evenings', 'parent': 'root',
+             'children': [{'kind': 'playlist', 'id': 'p.pl1'}, {'kind': 'folder', 'id': 'p.fd3'}]},
+            {'id': 'p.fd3', 'title': 'Late_Night', 'parent': 'p.fd1', 'children': []},
+            {'id': 'p.fd2', 'title': 'Mornings', 'parent': 'root', 'children': []}], playlists)
+        playlist, evenings = playlists[0], tree.folder('p.fd1').item
+        # Its own folder is no target, but holds one; the top level is not offered while
+        # Apple is not known to take it (api.MOVE_TO_TOP_LEVEL).
+        moves = move_targets(tree, playlist)
+        self.assertEqual(moves, (False, [('p.fd1', 'Evenings', False,
+                                          [('p.fd3', 'Late_Night', True, [])]),
+                                         ('p.fd2', 'Mornings', True, [])]))
+        menu = build_menu(playlist, moves=moves)
+        submenu = submenu_of(menu, 'Mov_e to Folder')
+        self.assertEqual(actions_of(submenu), [
+            ('win.item-move-to-folder', ('p.fd3', 'playlist', 'p.pl1')),
+            ('win.item-move-to-folder', ('p.fd2', 'playlist', 'p.pl1')),
+            ('win.item-move-to-folder', ('', 'playlist', 'p.pl1'))])  # New Folder…
+        self.assertEqual(labels_of(submenu), ['Evenings', 'Late__Night', 'Mornings',
+                                              'New _Folder…'])
+        # Every level has mnemonics of its own (a popover shows one level at a time).
+        for level in (set(labels_of(menu)) - set(labels_of(submenu)), labels_of(submenu)):
+            letters = [label[label.index('_') + 1].lower() for label in level
+                       if '_' in label and label != 'Late__Night']
+            self.assertEqual(len(letters), len(set(letters)), level)
+        # Apple's own playlist at the top level: every folder; Favourite Songs: never.
+        self.assertEqual(move_targets(tree, playlists[1])[1][1][:3], ('p.fd2', 'Mornings', True))
+        self.assertIsNone(move_targets(tree, playlists[2]))
+        self.assertIsNone(move_targets(tree, LIBRARY_ALBUM))
+        self.assertIsNone(move_targets(tree, tree.root.item))
+        self.assertIsNone(move_targets(tree, evenings))  # folders wait for api.MOVE_FOLDERS
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True), \
+                mock.patch.object(api, 'MOVE_FOLDERS', True):
+            top, entries = move_targets(tree, playlist)
+            self.assertTrue(top)
+            moved = submenu_of(build_menu(playlist, moves=(top, entries)), 'Mov_e to Folder')
+            self.assertEqual(actions_of(moved)[0],
+                             ('win.item-move-to-folder', ('root', 'playlist', 'p.pl1')))
+            self.assertEqual(labels_of(moved)[0], 'Top Level')
+            # A folder: not into itself or what is inside it, nor the top level it is at.
+            self.assertEqual(move_targets(tree, evenings),
+                             (False, [('p.fd2', 'Mornings', True, [])]))
+            self.assertEqual(move_targets(tree, tree.folder('p.fd3').item)[0], True)
+
+    def test_main_menu_starts_with_new_playlist_and_folder(self):
+        self.assertEqual(actions_of(main_menu_section()), [
+            ('win.item-new-playlist', ('folder', 'root')),
+            ('win.item-new-folder', ('folder', 'root'))])
 
     def test_targets(self):
         self.assertEqual(queue_target(LIBRARY_TRACK), ('song', '1000000001'))
@@ -416,12 +487,11 @@ class MenuTest(unittest.TestCase):
         self.assertTrue(is_shareable('https://music.apple.com/gb/album/x/1000000010'))
 
     def test_track_ref(self):
-        ref = TrackRef.for_object(LIBRARY_TRACK)
-        self.assertEqual((ref.song_id, ref.kind, ref.title), ('i.song1', 'song', 'Harbour Lights'))
-        self.assertEqual(TrackRef.for_object(CATALOG_SONG).song_id, '1000000007')
-        self.assertEqual(TrackRef.for_object(VIDEO_TRACK).kind, 'video')
-        self.assertEqual(TrackRef.for_object(CATALOG_VIDEO).kind, 'video')
-        self.assertIsNone(TrackRef.for_object(LIBRARY_ALBUM))
+        self.assertEqual(track_ref(LIBRARY_TRACK), Ref('song', 'i.song1', 'Harbour Lights', 2))
+        self.assertEqual(track_ref(CATALOG_SONG).id, '1000000007')
+        self.assertEqual(track_ref(VIDEO_TRACK).kind, 'video')
+        self.assertEqual(track_ref(CATALOG_VIDEO).kind, 'video')
+        self.assertIsNone(track_ref(LIBRARY_ALBUM))
 
 
 class FakeEngine(GObject.Object):
@@ -445,6 +515,7 @@ class FakeEngine(GObject.Object):
         self.items = {}  # (kind, id) -> the Item dict item() answers
         self.related_answers = {}  # (kind, id) -> related()'s answer
         self.listings = []  # folder_children()'s answers, one per call; then none
+        self.moving = None  # an asyncio.Event move_to_folder() waits for, when set
 
     async def _record(self, name, *args):
         self.calls.append((name, *args))
@@ -478,6 +549,15 @@ class FakeEngine(GObject.Object):
     async def catalog_url(self, kind, item_id):
         await self._record('catalog_url', kind, item_id)
         return self.catalog_urls.get(item_id)
+
+    async def create_folder(self, name, folder_id=None):
+        await self._record('create_folder', name, folder_id)
+        return 'p.fdnew'
+
+    async def move_to_folder(self, kind, item_id, folder_id=None):
+        if self.moving is not None:
+            await self.moving.wait()
+        await self._record('move_to_folder', kind, item_id, folder_id)
 
     async def related(self, kind, item_id):
         await self._record('related', kind, item_id)
@@ -543,10 +623,31 @@ class FakeLibrary:
         self.playlists = [item for item in items if item.kind == 'playlist']
         self.albums = [item for item in items if item.kind == 'album']
         self.artists = [item for item in items if item.kind == 'artist']
+        self.folders = list(folders)
+        self.changes = []  # hold()'s TreeChanges, as Library keeps them
         self.tree = PlaylistTree(folders, self.playlists)
         for node in self.tree.folders():
             self.items[('folder', node.id)] = node.item
         self.placed = 0
+        self.released = []
+
+    def hold(self, change):
+        self.changes.append(change)
+        self._replant()
+        return True
+
+    def release(self, change):
+        self.released.append(change)
+        if change in self.changes:
+            self.changes.remove(change)
+            self._replant()
+
+    def _replant(self):
+        existing = {key: item for key, item in self.items.items() if key[0] == 'folder'}
+        self.tree = PlaylistTree(apply_changes(self.folders, self.changes), self.playlists,
+                                 existing)
+        for node in self.tree.folders():
+            self.items[('folder', node.id)] = node.item
 
     def by_id(self, kind, item_id):
         return self.items.get((kind, item_id))
@@ -577,6 +678,7 @@ class FakeApp:
         self.tasks = []
         self.reported = []
         self.toasts = []
+        self.buttons = []  # (label, action, target) of the toasts' buttons
         self.syncs = []  # (quick,) per start_sync
 
     def spawn(self, coro):
@@ -587,8 +689,11 @@ class FakeApp:
     def report(self, error):
         self.reported.append(error.code)
 
-    def toast(self, title):
+    def toast(self, title, button_label=None, action_name=None, action_target=None):
         self.toasts.append(title)
+        if button_label:
+            self.buttons.append((button_label, action_name,
+                                 action_target.unpack() if action_target else None))
 
     def start_sync(self, quick=False, playlists=False):
         self.syncs.append('playlists' if playlists else quick)
@@ -671,7 +776,8 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-play', 'item-play-next', 'item-play-later', 'item-love', 'item-unlove',
             'item-add-to-library', 'item-add-to-playlist', 'item-open-in-browser',
             'item-copy-link', 'item-go-to-album', 'item-go-to-artist', 'item-new-playlist',
-            'item-rename', 'item-delete', 'item-remove-from-playlist']))
+            'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
+            'item-move-to-folder']))
         self.assertEqual(
             self.window.actions['item-remove-from-playlist'].get_parameter_type().dup_string(),
             '(ssi)')
@@ -779,20 +885,24 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
                          ['1. One', '2. Two', 'alpha', 'Zulu'])
 
     async def test_drop_on_a_playlist(self):
-        ref = TrackRef(song_id='1000000009', title='Shoreline')
+        ref = ItemRefs([Ref('song', '1000000009', 'Shoreline')])
         self.assertTrue(self.actions.drop(self.app.playlist, ref))
         await asyncio.gather(*self.app.tasks)
         self.assertEqual(self.app.engine.calls[0],
                          ('add_to_playlist', 'p.pl1', '1000000009', 'song'))
         self.assertEqual(self.app.toasts, ['Added “Shoreline” to “Road Trip”'])
-        video = TrackRef(song_id='i.vid1', kind='video', title='Live')
+        video = ItemRefs([Ref('video', 'i.vid1', 'Live')])
         self.assertTrue(self.actions.drop(self.app.playlist, video))
         await asyncio.gather(*self.app.tasks)
         self.assertIn(('add_to_playlist', 'p.pl1', 'i.vid1', 'video'), self.app.engine.calls)
         for playlist in (READ_ONLY, self.app.favourites, FOLDER, LIBRARY_ALBUM, None):
             self.assertFalse(self.actions.drop(playlist, ref))
-        self.assertFalse(self.actions.drop(self.app.playlist, TrackRef()))
+        self.assertFalse(self.actions.drop(self.app.playlist, ItemRefs()))
         self.assertFalse(self.actions.drop(self.app.playlist, 'not a ref'))
+        # Only one track: a playlist, or several songs, is not added by a drop.
+        self.assertFalse(self.actions.drop(self.app.playlist, ItemRefs.for_objects([PLAYLIST])))
+        self.assertFalse(self.actions.drop(self.app.playlist, ItemRefs(
+            [Ref('song', '1', 'One'), Ref('song', '2', 'Two')])))
         self.assertEqual(len([call for call in self.app.engine.calls
                               if call[0] == 'add_to_playlist']), 2)
 
@@ -1056,9 +1166,11 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         # The playlist in a folder of the user's, which holds it alone.
         folders = [{'id': 'root', 'title': '', 'parent': None,
                     'children': [{'kind': 'folder', 'id': 'p.fd1'},
+                                 {'kind': 'folder', 'id': 'p.fd2'},
                                  {'kind': 'playlist', 'id': 'p.pl2'}]},
                    {'id': 'p.fd1', 'title': 'Evenings', 'parent': 'root',
-                    'children': [{'kind': 'playlist', 'id': 'p.pl1'}]}]
+                    'children': [{'kind': 'playlist', 'id': 'p.pl1'}]},
+                   {'id': 'p.fd2', 'title': 'Mornings', 'parent': 'root', 'children': []}]
         self.app.library = FakeLibrary([self.app.playlist, READ_ONLY, self.app.favourites],
                                        folders)
         self.folder = self.app.library.by_id('folder', 'p.fd1')
@@ -1238,6 +1350,116 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.confirms[0][3]()
         await self.settle()
         self.assertEqual(self.writes(), [])
+        self.assertEqual(self.app.toasts, ['Not available with the demo library'] * 2)
+
+    def parent_of(self, kind, item_id):
+        return self.app.library.playlist_tree().node(kind, item_id).parent.id
+
+    async def test_move_to_folder_shows_at_once_then_follows_apple(self):
+        self.app.engine.moving = asyncio.Event()
+        self.window.actions['item-move-to-folder'].activate(
+            GLib.Variant('(sss)', ('p.fd2', 'playlist', 'p.pl1')))
+        for _turn in range(3):
+            await asyncio.sleep(0)
+        # Shown in its new folder before Apple has answered.
+        self.assertEqual(self.parent_of('playlist', 'p.pl1'), 'p.fd2')
+        self.assertEqual(self.writes(), [])
+        self.app.engine.listings = [[{'kind': 'playlist', 'id': 'p.pl1', 'name': 'Road Trip'}]]
+        self.app.engine.moving.set()
+        await self.settle()
+        self.assertEqual(self.writes(), [('move_to_folder', 'playlist', 'p.pl1', 'p.fd2')])
+        self.assertEqual(self.app.toasts, ['Moved “Road Trip” to “Mornings”'])
+        # Undo moves it back where it was; the library follows Apple's listing.
+        self.assertEqual(self.app.buttons, [('Undo', 'win.item-move-to-folder',
+                                             ('p.fd1', 'playlist', 'p.pl1'))])
+        self.assertIn(('folder_children', 'p.fd2'), self.app.engine.calls)
+        self.assertEqual(self.app.syncs, ['playlists'])
+        self.assertEqual(self.app.library.released, [])
+
+    async def test_a_move_apple_refuses_is_put_back(self):
+        self.app.engine.fail = EngineError('api', 'HTTP 403')
+        await self.run_action('item-move-to-folder', 'p.fd2', 'playlist', 'p.pl1')
+        self.assertEqual(self.parent_of('playlist', 'p.pl1'), 'p.fd1')
+        self.assertEqual(len(self.app.library.released), 1)
+        self.assertEqual(self.app.reported, ['api'])
+        self.assertEqual((self.app.toasts, self.app.syncs), ([], []))
+
+    async def test_moves_that_are_not_offered_are_refused(self):
+        await self.run_action('item-move-to-folder', 'p.fd1', 'playlist', 'p.pl1')  # there
+        await self.run_action('item-move-to-folder', 'root', 'playlist', 'p.pl1')  # gated
+        await self.run_action('item-move-to-folder', 'p.fd2', 'folder', 'p.fd1')  # gated
+        await self.run_action('item-move-to-folder', 'p.fd1', 'playlist', 'p.fav')
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.app.toasts, ['This cannot be moved there'] * 4)
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True):
+            await self.run_action('item-move-to-folder', 'root', 'playlist', 'p.pl1')
+        self.assertEqual(self.writes(), [('move_to_folder', 'playlist', 'p.pl1', 'root')])
+        self.assertEqual(self.app.toasts[-1], 'Moved “Road Trip” to the top level')
+
+    async def test_dropping_playlists_on_a_folder(self):
+        refs = ItemRefs.for_objects([self.app.playlist])
+        self.assertTrue(self.actions.can_move_refs(refs, 'p.fd2'))
+        self.assertFalse(self.actions.can_move_refs(refs, 'p.fd1'))  # where it is
+        self.assertFalse(self.actions.can_move_refs(refs, 'root'))  # not confirmed yet
+        self.assertFalse(self.actions.can_move_refs(ItemRefs.for_objects([self.folder]),
+                                                    'p.fd2'))
+        self.assertFalse(self.actions.can_move_refs(ItemRefs.for_objects([LIBRARY_TRACK]),
+                                                    'p.fd2'))
+        self.assertFalse(self.actions.can_move_refs(ItemRefs.for_objects([self.app.favourites]),
+                                                    'p.fd2'))
+        self.assertFalse(self.actions.can_move_refs('not refs', 'p.fd2'))
+        self.assertFalse(self.actions.drop_into_folder('p.fd1', refs))
+        self.assertTrue(self.actions.drop_into_folder('p.fd2', refs))
+        await self.settle()
+        self.assertEqual(self.writes(), [('move_to_folder', 'playlist', 'p.pl1', 'p.fd2')])
+
+    async def test_new_folder(self):
+        await self.run_action('item-new-folder', 'folder', 'p.fd1')
+        heading, confirm, name, description, done = self.asked[0]
+        self.assertEqual((heading, confirm, name, description),
+                         ('New Folder', '_Create', '', None))
+        done('Box', None)
+        await self.settle()
+        self.assertEqual(self.writes(), [('create_folder', 'Box', 'p.fd1')])
+        # Shown and selected as soon as Apple answers with its id.
+        self.assertEqual(self.parent_of('folder', 'p.fdnew'), 'p.fd1')
+        self.assertEqual(self.app.library.by_id('folder', 'p.fdnew').title, 'Box')
+        self.assertEqual(self.window.selected, ['folder:p.fdnew'])
+        self.assertEqual(self.app.toasts, ['Created “Box”'])
+        self.assertIn(('folder_children', 'p.fd1'), self.app.engine.calls)
+        # At the top level, from the main menu or All Playlists.
+        await self.run_action('item-new-folder', 'folder', 'root')
+        self.asked[1][4]('Top', None)
+        await self.settle()
+        self.assertEqual(self.writes()[-1], ('create_folder', 'Top', 'root'))
+
+    async def test_new_folder_holding_a_playlist(self):
+        await self.run_action('item-move-to-folder', '', 'playlist', 'p.pl1')
+        self.assertEqual(self.asked[0][:2], ('New Folder', '_Create'))
+        self.asked[0][4]('Box', None)
+        await self.settle()
+        # Made beside it, then the playlist moved in.
+        self.assertEqual(self.writes(), [('create_folder', 'Box', 'p.fd1'),
+                                         ('move_to_folder', 'playlist', 'p.pl1', 'p.fdnew')])
+        self.assertEqual(self.parent_of('playlist', 'p.pl1'), 'p.fdnew')
+        self.assertEqual(self.app.toasts, ['Created “Box”', 'Moved “Road Trip” to “Box”'])
+
+    async def test_a_failed_new_folder_is_reported(self):
+        self.app.engine.fail = EngineError('api', 'HTTP 500')
+        await self.run_action('item-new-folder', 'folder', 'root')
+        self.asked[0][4]('Box', None)
+        await self.settle()
+        self.assertEqual(self.app.reported, ['api'])
+        self.assertEqual((self.window.selected, self.app.library.changes), ([], []))
+
+    async def test_the_demo_moves_and_makes_nothing(self):
+        self.app.demo = True
+        await self.run_action('item-move-to-folder', 'p.fd2', 'playlist', 'p.pl1')
+        await self.run_action('item-new-folder', 'folder', 'root')
+        self.asked[0][4]('Box', None)
+        await self.settle()
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.parent_of('playlist', 'p.pl1'), 'p.fd1')
         self.assertEqual(self.app.toasts, ['Not available with the demo library'] * 2)
 
     async def test_waiting_for_the_listing(self):

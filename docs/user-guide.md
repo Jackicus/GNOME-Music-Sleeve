@@ -104,11 +104,20 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   description, **Delete Playlist…** deletes it from your library on all your devices, after
   asking. A song's menu on one of your playlists has **Remove from Playlist**, which takes out
   that one entry (the same song elsewhere in the playlist stays). **New Playlist…** is at the
-  end of **Add to Playlist** (a new playlist holding that song), in a folder's menu, and is
-  the **+** button of All Playlists and of a folder's page. A folder's menu also has
-  **Rename…** and **Delete Folder…**, which deletes the playlists in it too. Favourite Songs
-  and Apple's playlists in your library cannot be renamed or deleted. A change takes a few
-  seconds to reach the library's listing, as Apple lists it.
+  end of **Add to Playlist** (a new playlist holding that song), in a folder's menu, in the
+  main menu, and is the **+** button of All Playlists and of a folder's page. A folder's menu
+  also has **Rename…** and **Delete Folder…**, which deletes the playlists in it too.
+  Favourite Songs and Apple's playlists in your library cannot be renamed or deleted. A
+  change takes a few seconds to reach the library's listing, as Apple lists it.
+- Playlist folders: **New Folder…** is in the main menu, in a folder's menu (a folder inside
+  it) and in All Playlists' menu, and is the folder button beside the **+** of All Playlists
+  and of a folder's page. A playlist's menu (in the sidebar, on its tile, or **More Options**
+  on its page) has **Move to Folder**: the folders it can go into, and **New Folder…**, a new
+  folder beside it with the playlist inside. Or drag the playlist's row in the sidebar, or its
+  tile in All Playlists or a folder's page, onto a folder in the sidebar: the folder lights
+  up when it can take it, a closed folder opens when you hold the drag over it, and the
+  sidebar scrolls when you drag near its top or bottom. The playlist moves at once; if Apple
+  refuses, it goes back and the app says why. The toast after a move has **Undo**.
 - The Activities overview's search finds your albums, artists, playlists and songs (songs
   once the running app has listed them: after a visit to Songs, or a library search in
   the app): choosing one opens its page, or plays the song; the Music Sleeve heading above
@@ -147,8 +156,10 @@ Other limits:
   day-old copy of them): without them, or for an album Apple Music no longer has, the page
   shows the songs and their count alone. Songs you added without their album, which show as
   an album of their own, have no shelves.
-- Reordering a playlist's songs, making playlist folders and moving playlists between them
-  happen in Apple's own apps.
+- Reordering a playlist's songs happens in Apple's own apps.
+- A playlist moves into a folder, but not yet out of every folder to the top level, and a
+  folder does not move into another folder: Apple's service has not been seen to take those
+  moves from the app yet, so it does not offer them. Apple's own apps can.
 - One Apple Account per build: a release install and a development build each have their own
   Chrome profile, cache and sign-in, so each is signed in and synced on its own.
 - The account's name next to the avatar is read from Apple's web page and may stay
