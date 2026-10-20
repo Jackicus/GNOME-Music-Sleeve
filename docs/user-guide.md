@@ -16,6 +16,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 
 - The app starts Chrome, its playback engine, whenever it starts. Preferences › Engine › Start
   Engine on Launch turns that off; the first thing you play then starts it.
+- The app opens with the song you last listened to in the player bar, paused where it
+  stopped, and Up Next as it was: **Play** carries on from that second. Before you press it,
+  the previous and next buttons and the slider move through it without playing; a song in
+  Up Next plays from its start. The queue comes back in its order with Shuffle off (turn it
+  on to shuffle what follows), and with Repeat as it was. A radio station comes back as the
+  station, live. The system's media controls show the song paused too. Signing out or
+  clearing the cache forgets it.
 - While the engine runs, the library is refreshed when the last refresh is older than the
   interval chosen in Preferences › General › Library › Refresh Library (every hour, every
   6 hours, the default, every day, or manually). Last Refreshed beneath says when it last was;
@@ -134,6 +141,13 @@ Other limits:
   Chrome profile, cache and sign-in, so each is signed in and synced on its own.
 - The account's name next to the avatar is read from Apple's web page and may stay
   "Signed In" when the page does not show it.
+- The song you last listened to comes back at launch only as Apple still has it: a song
+  since removed from your library, or not available any more in your country or region,
+  leaves it out (or, when Apple refuses the whole queue, nothing comes back, and a message
+  says why). Where the app ended without quitting (a crash, the computer switched off), it
+  comes back up to half a minute earlier in the song. A queue of more than 250 songs comes
+  back as the 250 around the song, unless it is still an album or playlist as it was
+  started, which comes back whole.
 
 ## Troubleshooting
 
@@ -188,7 +202,7 @@ Other limits:
 
 | What | Where |
 |---|---|
-| The library snapshot, artwork, lyrics and cached pages | `~/.cache/apple-music/` |
+| The library snapshot, artwork, lyrics, cached pages, Recently Searched and the last session (the queue the player bar shows at launch) | `~/.cache/apple-music/` |
 | Chrome's profile, which holds your Apple sign-in | `~/.local/share/apple-music/chrome/` |
 | Settings | GSettings schema `io.github.jackicus.MusicSleeve` |
 

@@ -333,6 +333,7 @@ class Presence:
             (player, player.connect('notify::state', self._on_change)),
             (player, player.connect('notify::duration', self._on_change)),
             (player, player.connect('notify::pending', self._on_change)),
+            (player, player.connect('notify::restored', self._on_change)),
         ]
         if self._enabled():
             self._update_soon()
@@ -407,7 +408,9 @@ class Presence:
             await asyncio.sleep(DURATION_GRACE_MS / 1000)
             state = player.resting
         left = self._paused_for(state if player.track is not None else None)
-        if left is not None and left <= 0:
+        if player.restored:
+            activity, left = None, None  # the last session, shown at launch: not played yet
+        elif left is not None and left <= 0:
             activity, left = None, None  # paused long enough: nobody is listening
         else:
             activity = activity_for(player.track, state, player.position, player.duration)

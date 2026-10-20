@@ -9,7 +9,7 @@ scripts/a11y_check.py walks on the real window."""
 import unittest
 
 from tests.gtk import requires_gtk
-from tests.test_player import TRACK, FakeApp
+from tests.test_player import SESSION, TRACK, FakeApp
 from tests.test_transport import RatingEngine
 
 from applemusic.player import Player
@@ -50,6 +50,17 @@ class PlayerBarTest(unittest.TestCase):
         self.assertEqual(self.bar.title_label.get_label(), 'Not Playing')
         self.assertFalse(self.bar.seek_box.get_visible())
         self.assertFalse(self.bar.explicit_badge.get_visible())
+
+    def test_the_last_session_restored_shows_paused_where_it_stopped(self):
+        self.player.restore(SESSION)
+        self.assertEqual(self.bar.title_label.get_label(), 'Harbour Lights')
+        self.assertTrue(self.bar.seek_box.get_visible())
+        self.assertEqual(self.bar.seek_adjustment.get_value(), 83.0)
+        self.assertEqual(self.bar.elapsed_label.get_label(), '1:23')
+        self.assertEqual(self.bar.remaining_label.get_label(), '-2:11')
+        self.assertEqual(self.bar.play_button.get_icon_name(), 'transport-play-symbolic')
+        self.assertTrue(self.bar.repeat_button.get_active())  # repeat all, as it was
+        self.assertFalse(self.bar.shuffle_button.get_active())
 
     def test_compact_shrinks_the_cover_and_drops_the_right_hand_box(self):
         from applemusic.player_bar import COMPACT_COVER_SIZE, COVER_SIZE

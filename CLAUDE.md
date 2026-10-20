@@ -31,8 +31,8 @@ One thread runs GTK and asyncio: the GLib main loop is the asyncio loop
 `asyncio.to_thread`; the library file is parsed in a thread of its own.
 
 ```
-Application (main.py)    app.settings, .library, .engine, .player, .mpris, .library_sync, .demo;
-│                        app.spawn(coro), app.toast(), app.report(error), app.player_command(coro)
+Application (main.py)    app.settings, .library, .engine, .player, .mpris, .session, .library_sync,
+│                        .demo; app.spawn(coro), app.toast(), app.report(error), .player_command()
 ├─ Window (window.py)    Stack: AdwBottomSheet > AdwToastOverlay > AdwNavigationSplitView, or
 │  │                     the full-screen player (fullscreen.py); keys as keyboard.py decides
 │  ├─ sidebar            AdwSidebar run by sidebar_view.SidebarController: sections.py's
@@ -54,10 +54,10 @@ Pages reach the window through its seams (`self.get_root()`), not its internals:
 `open_shelf()`, `open_songs()`, `play_request(play, start_with, shuffle, start_id)` (every "play
 this"), `add_toast()`, `item_actions`; the Application through `pages.app()`.
 
-On disk: `$XDG_CACHE_HOME/apple-music/` (library.json, art/, thumb/, remote-art/, lyrics/,
-day-long page answers, Recently Searched) and `$XDG_DATA_HOME/apple-music/chrome/` (the Chrome profile), with
-`apple-music-devel/` and `chrome-devel/` for .Devel; GSettings, one schema for both builds, the
-sign-in's keys each build's own (`account_key()`).
+On disk: `$XDG_CACHE_HOME/apple-music/` (library.json, art/, thumb/, remote-art/, lyrics/, day-long
+page answers, Recently Searched, session.json) and `$XDG_DATA_HOME/apple-music/chrome/` (the
+Chrome profile), with `apple-music-devel/` and `chrome-devel/` for .Devel; GSettings, one schema
+for both builds, the sign-in's keys each build's own (`account_key()`).
 
 ## Where things go
 
@@ -65,8 +65,8 @@ sign-in's keys each build's own (`account_key()`).
 src/main.py, src/window.py      the Application, the Window (player_bar, sidebar_view, fullscreen)
 src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
                                 sync, account, cache, background, actions, related, discography,
-                                suggestions, errors, i18n, lyrics, remote, recent_searches, timing,
-                                shortcuts, keyboard, sidebar, sections; new ones go here)
+                                suggestions, errors, i18n, lyrics, remote, recent_searches, session,
+                                timing, shortcuts, keyboard, sidebar, sections; new ones go here)
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork

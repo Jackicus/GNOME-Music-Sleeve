@@ -148,6 +148,7 @@ async def sign_out(app):
                 log.error('could not sign out of Apple Music', exc_info=revocation.exception())
             engine.refuse_starts = 'signing out'
             store.bump_cache_generation()  # before anything is wiped
+            _forget_session(app)
             try:
                 await engine.stop()
             except EngineError as error:
@@ -206,6 +207,15 @@ def _forget(app):
     _forget_artwork(app)
 
 
+def _forget_session(app):
+    """The last session (session.py): nothing kept of it is written again, and a session
+    restored on the Player goes (its file goes with the cache)."""
+    if app.session is not None:
+        app.session.forget()
+    if app.player is not None:
+        app.player.forget_session()
+
+
 def _forget_artwork(app):
     """The decoded artwork, and the file MPRIS names, may be the wiped cache's."""
     artwork.get_default().clear()
@@ -222,6 +232,7 @@ async def clear_cache(app):
         return False
     with app.library_sync.held():
         store.bump_cache_generation()  # before anything is cancelled or wiped
+        _forget_session(app)
         await app.library_sync.cancel()
         await asyncio.to_thread(cache.clear, config.cache_dir())
         _forget_artwork(app)

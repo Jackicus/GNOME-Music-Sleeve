@@ -23,7 +23,8 @@ What to shoot: $ARGUMENTS
      translations, shown with `--setting lyrics-pronunciations=true` and
      `--setting lyrics-translations=true`; `syllable`: Lyrics, an invented word-timed duet
      with background vocals, a long intro and a long break); `--position SECONDS` puts the
-     item that far in (65 by default), mid-word or inside a break;
+     item that far in (65 by default), mid-word or inside a break; `--restored`: the item as
+     the last session restored at launch, paused, the sheet closed;
    - `--signed-in [NAME]`: the account button signed in (an invented NAME: its avatar's colour
      follows the name); `--banner sign-in|expired`: the sign-in banner;
    - `--sidebar` (the narrow layout: the sidebar rather than the page), `--expand first`,

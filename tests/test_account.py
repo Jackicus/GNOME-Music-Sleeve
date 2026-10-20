@@ -143,6 +143,22 @@ class FakeMpris:
         self.calls.append('refresh-art')
 
 
+class FakeSession:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def forget(self):
+        self.calls.append('forget-session')
+
+
+class FakePlayer:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def forget_session(self):
+        self.calls.append('forget-restored')
+
+
 class FakeWindow:
     def __init__(self, calls):
         self.calls = calls
@@ -166,6 +182,8 @@ class FakeApp:
         self.library_sync = FakeSync(calls)
         self.library = FakeLibrary(calls)
         self.mpris = FakeMpris(calls)
+        self.session = FakeSession(calls)
+        self.player = FakePlayer(calls)
         self.window = FakeWindow(calls)
         self.toasts = []
 
@@ -228,9 +246,11 @@ class SignOutTest(AccountTestCase):
         app.settings.set_string('last-page', 'playlist:p.pl123')
         await account.sign_out(app)
         # The sync first (revoking the session would fail it), the generation bumped before
-        # the wipe, and once more at the end for what a page fetched meanwhile.
-        self.assertEqual(self.calls, ['cancel', 'unauthorize', 'bump', 'stop', 'wipe',
-                                      'refresh-art', 'load', 'forget-pages', 'bump'])
+        # the wipe, and once more at the end for what a page fetched meanwhile; the last
+        # session forgotten from the bump on.
+        self.assertEqual(self.calls, ['cancel', 'unauthorize', 'bump', 'forget-session',
+                                      'forget-restored', 'stop', 'wipe', 'refresh-art', 'load',
+                                      'forget-pages', 'bump'])
         self.assertEqual(app.library_sync.held_while, [True])
         # No Chrome may start while the profile goes; after, it may again.
         self.assertEqual(app.engine.refused_at_stop, 'signing out')
@@ -400,7 +420,8 @@ class ClearCacheTest(AccountTestCase):
     async def test_the_order_and_what_is_left(self):
         app = self.make_app()
         self.assertTrue(await account.clear_cache(app))
-        self.assertEqual(self.calls, ['bump', 'cancel', 'refresh-art', 'load', ('sync', 0)])
+        self.assertEqual(self.calls, ['bump', 'forget-session', 'forget-restored', 'cancel',
+                                      'refresh-art', 'load', ('sync', 0)])
         self.assertEqual(app.library_sync.held_while, [True])
         self.assertEqual(sorted(os.listdir(self.cache)), ['notes.txt'])  # no *.tmp either
         self.assertTrue(self.profile.exists())

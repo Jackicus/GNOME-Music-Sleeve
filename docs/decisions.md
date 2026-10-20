@@ -258,6 +258,24 @@ changes, change it here, with the date. The plan they came from is in
   account's: the web player keeps it in its page's local storage for the account's token, so
   an Autoplay toggle in the app is the app's setting and does not follow the account to
   Apple's other players.
+- **The last session, shown paused, handed over at Play** (2026-10-20, #342). As Apple's own
+  apps do, the app opens with the last item in the bar, paused where it stopped, and its
+  queue. It is kept in the cache (`session.json`: library ids and titles, so not the
+  settings; written 2 s after a change and every 30 s while playing, at quit, never over a
+  good file with nothing), and restored as the Player's own state (`restored`), not
+  MusicKit's: Chrome is not started early, and nothing is asked of Apple for a session the
+  user may never resume. MusicKit gets it at the first Play (or an Up Next row) as one play
+  request (the album or playlist it came from while the queue still is that, else its songs
+  by id; the position as `setQueue`'s `startTime`, with one seek after the play when MusicKit
+  began further back), which is the path the app trusts most: loading the queue paused at
+  launch would seek an item MusicKit had not loaded, without its Widevine licence, and would
+  run only for those whose engine starts on launch. Until then seek, previous and next move
+  through it paused, without the engine. Shuffle comes back off, the queue in its order (the
+  same Up Next), since turning MusicKit's shuffle on reshuffles what follows; repeat comes
+  back. Play Next or Later on it first queues it paused (the start waits for the first play
+  in the bridge). No Preferences switch: Apple's apps, GNOME Music and the HIG's "fewer
+  preferences" agree, and a paused bar gets in the way of nothing. Signing out and Clear
+  Cache forget it; MusicKit refusing it drops it. Discord shows nothing until it plays.
 
 ## Engine
 

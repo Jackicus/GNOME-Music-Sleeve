@@ -120,6 +120,7 @@ install_data(
   'remote.py',
   'search_provider.py',
   'sections.py',
+  'session.py',
   'shortcuts.py',
   'sidebar.py',
   'sidebar_view.py',

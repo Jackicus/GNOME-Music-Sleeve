@@ -52,6 +52,23 @@ paths:
   `previous()` restarts the item after `PREVIOUS_RESTART` seconds. A `mediaPlaybackError` is
   emitted as `error(sentence)`, the sentence `playback_error_text(code)` gives MusicKit's
   code; the app toasts it as it is.
+- The last session (`src/session.py`'s `SessionKeeper`, `app.session`, not in demo mode):
+  `<cache>/session.json`, written 2 s after a change and every 30 s while playing, at quit
+  (the snapshot taken before the engine's stop empties the Player), never with nothing over
+  a good file. At launch, after the library's load, `Player.restore()` shows it as the
+  Player's own state with `restored` True: MusicKit holding nothing (its empty refresh()
+  answer, null items, states, times, bridgeReset, the engine going down) changes nothing
+  meanwhile; MusicKit holding an item or a queue of its own ends it. Seek, next, previous,
+  stop, shuffle, repeat (and the volume with the engine down) are local and paused; Play and
+  an Up Next row hand it to MusicKit as one play request (`restore_session()`: `source`, the
+  album, playlist or station the queue still is, else its songs' ids; `shuffle=False`, the
+  position as `start_time`); play_next/play_later queue it paused first (`paused`). The
+  request takes the session (`_take_restored`, which makes a refresh() answer under way
+  stale) and gives it back on a failure, unless MusicKit refused it (`api` with a code:
+  dropped, `session-dropped` deletes the file, `error` toasts why). A refresh() answer while
+  a play request is pending sets only the modes. Discord publishes nothing while restored.
+  tests/test_session.py and test_player.py's RestoreTest; `scripts/screenshot.py --demo
+  --restored` shows it.
 - A preview (a suggested song's 30-second clip, `Player.start_preview`) plays in the
   page's own audio element, not through MusicKit, which pauses for it: the state, track,
   times and queue stay MusicKit's, so the bar, the sheet and MPRIS show the queue paused,

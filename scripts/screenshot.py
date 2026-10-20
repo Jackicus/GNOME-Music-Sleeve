@@ -9,7 +9,8 @@
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|localized|syllable|queue]]
                           [--fullscreen-player [lyrics|localized|syllable|none]]
-                          [--idle] [--position SECONDS] [--playing] [--search TERM]
+                          [--idle] [--position SECONDS] [--playing] [--restored]
+                          [--search TERM]
                           [--context-menu [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|rename|delete]
@@ -57,7 +58,9 @@ With --demo only.
 --position SECONDS puts the invented item that many seconds in (65 by default: a
 line of each lyrics fixture is current), say mid-word, or inside a break.
 --playing puts the same item on the Player and leaves the sheet closed: the player
-bar in its playing state. With --demo only.
+bar in its playing state. --restored shows it as the last session restored at launch
+(Player.restore): paused at --position, its queue the album, MusicKit not asked. With
+--demo only.
 --fullscreen-player puts the same item on the Player with the lyrics of the fixture
 named (syllable by default; none: a song without lyrics) and enters the full-screen
 player (win.fullscreen-player, F11's). The harness's window is not resizable, so the
@@ -133,6 +136,8 @@ parser.add_argument('--idle', action='store_true',
                     help='with --fullscreen-player, the controls hidden as when idle')
 parser.add_argument('--playing', action='store_true',
                     help='an invented item playing, the sheet closed (the player bar)')
+parser.add_argument('--restored', action='store_true',
+                    help='the invented item as the last session restored at launch, paused')
 parser.add_argument('--search', metavar='TERM',
                     help='the Search page in Your Library mode with TERM typed')
 parser.add_argument('--context-menu', action='store_true',
@@ -161,11 +166,13 @@ if args.search:
     args.page = 'search'
 if args.submenu and not args.context_menu:
     parser.error('--submenu needs --context-menu')
-if (args.now_playing or args.playing or args.fullscreen_player) and not args.demo:
-    parser.error('--now-playing, --playing and --fullscreen-player need --demo')
-if args.position is not None and not (args.now_playing or args.playing
+if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
+        and not args.demo:
+    parser.error('--now-playing, --playing, --restored and --fullscreen-player need --demo')
+if args.position is not None and not (args.now_playing or args.playing or args.restored
                                       or args.fullscreen_player):
-    parser.error('--position needs --now-playing, --playing or --fullscreen-player')
+    parser.error('--position needs --now-playing, --playing, --restored or '
+                 '--fullscreen-player')
 if args.idle and not args.fullscreen_player:
     parser.error('--idle needs --fullscreen-player')
 width, height = (int(n) for n in args.size.split('x'))
@@ -233,7 +240,10 @@ artwork_quiet = 0
 def open_now_playing(window):
     """--now-playing: the invented item on the Player (the demo's first album playing, with
     the lyrics fixture) and the sheet open on the tab; --playing: the item only, for the
-    player bar."""
+    player bar; --restored: the item as the last session restored, paused."""
+    if args.restored:
+        app.player.restore(harness.invented_session(app, position=args.position))
+        return
     chosen = args.fullscreen_player or args.now_playing
     fixture = chosen if chosen in harness.LYRICS_FIXTURES else 'lyrics'
     app.player.apply(harness.invented_playing_state(app, lyrics=chosen != 'none',
@@ -513,7 +523,8 @@ def _shoot():
         open_item(window)
         GLib.timeout_add(1500, shoot)  # after the push, with the artwork decoded
         return GLib.SOURCE_REMOVE
-    if (args.now_playing or args.playing or args.fullscreen_player) and not sheet_opened:
+    if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
+            and not sheet_opened:
         sheet_opened = True
         open_now_playing(window)
         GLib.timeout_add(1500, shoot)  # the sheet open, the artwork decoded

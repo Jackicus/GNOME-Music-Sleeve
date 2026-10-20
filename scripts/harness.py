@@ -198,6 +198,18 @@ def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None):
     return state
 
 
+def invented_session(app, position=None):
+    """A Player.restore() session (session.read()'s shape) of invented_playing_state's: the
+    demo's first album as the queue, its first track paused `position` seconds in, the
+    album its source."""
+    state = invented_playing_state(app, position=position)
+    queue = [{key: value for key, value in entry.items() if key != 'index'}
+             for entry in state['queue']['items']]
+    return {'queue': queue, 'index': 0, 'offset': 0, 'position': state['position'],
+            'duration': state['duration'], 'repeat': 'none',
+            'source': {'kind': 'album', 'id': app.library.albums.get_item(0).id}}
+
+
 def popovers(widget):
     """The popovers shown under widget (each a child of the widget it points from), depth
     first."""

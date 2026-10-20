@@ -413,6 +413,31 @@
         };
     }
 
+    // A restored session's start ({id, time}), while a queue loaded paused (play()'s
+    // `paused`) waits for its first play: control('play') then seeks the item there when
+    // MusicKit did not start it at that time itself. Any other command clears it.
+    let pendingStart = null;
+
+    // How far short of a start time MusicKit may begin before the bridge seeks there itself
+    // (setQueue's `startTime` taken, it begins within a second of it).
+    const START_SLACK = 2;
+
+    // Whether the item playing is the one a start names (or there is no id to compare).
+    function atItem(mk, id) {
+        if (!id) return true;
+        const items = (mk.queue && mk.queue.items) || [];
+        const position = mk.queue ? mk.queue.position : -1;
+        return isItem(items[position], id) || isItem(mk.nowPlayingItem, id);
+    }
+
+    // Once playing: seek to `time` when MusicKit began the item further back than that (it
+    // ignored setQueue's startTime). Whether it sought.
+    async function resumeAt(mk, time) {
+        if ((Number(mk.currentPlaybackTime) || 0) >= time - START_SLACK) return false;
+        await mk.seekToTime(time);
+        return true;
+    }
+
     // MusicKit numbers its playback states; MusicKit.PlaybackStates maps both
     // ways (0 -> 'none', 'none' -> 0), so the name is one lookup.
     function playbackStateName(state) {
@@ -652,10 +677,20 @@
                 }
             }
 
+            // `startTime` (seconds) and `paused`: a restored session (the last one, at
+            // launch). Its item starts that far in: setQueue's startTime, and a seek once it
+            // plays if MusicKit began it further back. `paused` loads the queue without
+            // playing it (an item queued Play Next before the first Play); the start waits
+            // for the next control('play') then (pendingStart).
+            const startTime = Number(options.startTime) > 0 ? Number(options.startTime) : 0;
+            const paused = options.paused === true;
+            pendingStart = null;
+
             endPreview('playback');
             const queueObj = kind === 'artist' ? await artistQueue(mk, id) : queueOptions(kind, id);
             queueObj.startWith = startWith;
-            queueObj.startPlaying = true;
+            queueObj.startPlaying = !paused;
+            if (startTime) queueObj.startTime = startTime;
 
             // MusicKit refusing (an item not in this storefront, no subscription…)
             // answers {error, code} rather than throwing, so its code reaches the app.
@@ -663,11 +698,14 @@
             // not hold its entries where the library's list has them (it leaves out what it
             // cannot play, and orders the album its own way), so the queue is moved to the
             // item with that id where startWith found another. The answer says it moved.
+            // Loaded paused, the queue is not moved: changeToMediaAtIndex plays the item it
+            // goes to.
             const startId = options.startId ? String(options.startId) : null;
             let moved = null;
+            let sought = false;
             try {
                 await mk.setQueue(queueObj);
-                if (startId) {
+                if (startId && !paused) {
                     const items = (mk.queue && mk.queue.items) || [];
                     const position = mk.queue ? mk.queue.position : -1;
                     if (!isItem(items[position], startId)) {
@@ -678,11 +716,21 @@
                         }
                     }
                 }
-                await mk.play();
+                if (paused) {
+                    if (startTime && atItem(mk, startId)) {
+                        pendingStart = { id: startId, time: startTime };
+                    }
+                } else {
+                    await mk.play();
+                    if (startTime && atItem(mk, startId)) sought = await resumeAt(mk, startTime);
+                }
             } catch (err) {
                 return { error: describeError(err), code: errorCode(err) };
             }
-            return moved ? { ok: true, moved: moved } : { ok: true };
+            const answer = { ok: true };
+            if (moved) answer.moved = moved;
+            if (sought) answer.sought = true;
+            return answer;
         },
 
         playNext: async function (kind, id) {
@@ -702,18 +750,26 @@
         control: async function (action) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
-            // Any of them is the player taken in hand again: a preview stops.
+            // Any of them is the player taken in hand again: a preview stops. A queue loaded
+            // paused starts where its session was at the first play (pendingStart), which
+            // anything but a pause gives up.
             endPreview('playback');
+            const start = pendingStart;
+            if (action !== 'pause') pendingStart = null;
+            const resume = async function () {
+                await mk.play();
+                if (start && atItem(mk, start.id)) await resumeAt(mk, start.time);
+            };
             switch (action) {
                 case 'play':
-                    await mk.play();
+                    await resume();
                     break;
                 case 'pause':
                     await mk.pause();
                     break;
                 case 'toggle':
                     if (mk.isPlaying) await mk.pause();
-                    else await mk.play();
+                    else await resume();
                     break;
                 case 'next':
                     await mk.skipToNextItem();
@@ -733,6 +789,7 @@
         seek: async function (sec) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
+            pendingStart = null;
             await mk.seekToTime(Number(sec));
             return { ok: true };
         },
@@ -828,6 +885,7 @@
         queueJump: async function (index) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
+            pendingStart = null;
             await mk.changeToMediaAtIndex(Number(index));
             return { ok: true };
         },

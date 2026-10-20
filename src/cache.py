@@ -27,13 +27,13 @@ log = logging.getLogger(__name__)
 
 # What the cache directory holds, all of it fetched again as needed: the library, its artwork
 # (covers, thumbnails, remote art), lyrics, the day-long answers (landing, categories, the
-# New page, Made for You, the artists' pages, the playlists' suggested songs) and Recently
-# Searched (recent_searches.py), which goes with the account's other traces. `items` and
-# `library.lock` are what older versions kept there (items' answers, the sync's lock), cleared
-# with the rest.
+# New page, Made for You, the artists' pages, the playlists' suggested songs), Recently
+# Searched (recent_searches.py) and the last session (session.py), which go with the
+# account's other traces. `items` and `library.lock` are what older versions kept there
+# (items' answers, the sync's lock), cleared with the rest.
 CACHE_ENTRIES = ('library.json', 'art', 'thumb', 'remote-art', 'lyrics', 'landing.json',
                  'categories', 'browse.json', 'made-for-you.json', 'artists', 'suggestions',
-                 'recent-searches.json', 'items', 'library.lock')
+                 'recent-searches.json', 'items', 'library.lock', 'session.json')
 
 
 def cache_size(path):

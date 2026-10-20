@@ -38,7 +38,8 @@ paths:
   names the .Devel build's): never for a shot that is committed or shared. `--now-playing
   [lyrics|localized|syllable|queue]` opens the sheet on an invented item (the lyrics of
   `harness.LYRICS_FIXTURES`); `--playing` puts the item on the Player with the sheet closed
-  (the bar's playing state); both need `--demo`, and take `--position SECONDS`. `--signed-in [NAME]`,
+  (the bar's playing state), `--restored` as the last session restored at launch (paused,
+  `harness.invented_session()`); all need `--demo`, and take `--position SECONDS`. `--signed-in [NAME]`,
   `--banner sign-in|expired` and `--sidebar` (the narrow layout's sidebar) show those states;
   `--fullscreen-player [lyrics|localized|syllable|none]` enters the full-screen player on
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;
