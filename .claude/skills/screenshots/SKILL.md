@@ -16,7 +16,10 @@ What to shoot: $ARGUMENTS
      page (a destination key from `src/sections.py`, `playlist:ID`, `folder:ID` or
      `folder:first`);
    - `--open KIND:first` (or `KIND:ID`; KIND `album`, `artist`, `playlist`, `folder`,
-     `station` or `video`): a pushed page over `--page`;
+     `station` or `video`): a pushed page over `--page`; an ID the library lacks opens the
+     catalog's album or playlist (`album:demo.edition0010`, `playlist:pl.demo001`: Add in
+     its header), or a library album's catalog copy by its catalog id (`album:1724040010`:
+     In Library);
    - `--playing`: an invented item playing (the first album's first track), the player bar in
      its playing state; `--now-playing [lyrics|queue]`: the same with the Now Playing sheet
      open on that tab (`localized`: Lyrics, invented Japanese lines with pronunciations and

@@ -1,14 +1,23 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""What an album's page shows under its tracks (pages/detail.py), as Apple Music's clients
-show it: the release footer, then the catalog's shelves.
+"""The words an album's or playlist's page shows besides its tracks (pages/detail.py), as
+Apple Music's clients show them: the hero's curator and caption, and under an album's tracks
+the release footer, then the catalog's shelves.
 
+    curator(item, 'Alex')         a playlist's curator, the user for one of theirs; '' else
+    hero_caption(item)            'Pop · 2001 · 12 songs, 43 min'; 'Updated 3 March · 22 songs…'
+    updated_text('2026-03-03T09:00:00Z')             'Updated 3 March' (or today, yesterday…)
     album_target(item)            (album id, song id) Engine.album_page() is asked by, or None
     footer_lines(item, answer, count, duration_ms)   the footer's lines, in the reader's words
     release_date_text('2026-09-24')                  '24 September 2026'
     length_text(12, 2580000)                         '12 songs, 43 minutes'
     album_shelves(answer, artist_name)               the answer's shelves as ShelfModels
+
+A playlist's hero names its curator (Apple's playlists, a curator's) or, for one of the
+user's, the account's name, then says when it was updated (its `modified`, Apple's
+lastModifiedDate: today, yesterday, a weekday within the week, else the date) and its songs
+and their time; an album's says its genre, year, songs and time.
 
 The footer is the release date in full, the songs and their total time, and the ℗ or © line
 (else the label): the catalog album's (Engine.album_page()'s `release`) when the page has
@@ -49,6 +58,91 @@ def album_target(item):
             if track.catalog_id and not is_library_id(track.catalog_id):
                 return str(item.id), str(track.catalog_id)
     return None
+
+
+def curator(item, account_name=''):
+    """The line under a playlist's or album's title: its subtitle (an album's artist, a
+    playlist's curator), else for a playlist of the user's (Item.editable, or Favourite
+    Songs) `account_name`, the account's (the user's own carry no curator); else ''."""
+    if item is None:
+        return ''
+    if item.subtitle:
+        return item.subtitle
+    if item.kind == 'playlist' and (item.editable or item.favourites):
+        return account_name or ''
+    return ''
+
+
+def _datetime(make):
+    """make()'s GLib.DateTime, or None for a date GLib refuses (PyGObject raises TypeError
+    for the NULL GLib answers)."""
+    try:
+        return make()
+    except (TypeError, ValueError):
+        return None
+
+
+def _day(date):
+    """The local midnight starting the day of a GLib.DateTime."""
+    return GLib.DateTime.new_local(date.get_year(), date.get_month(), date.get_day_of_month(),
+                                   0, 0, 0)
+
+
+def updated_text(modified, now=None):
+    """When a playlist was last changed (Apple's lastModifiedDate, '2026-03-03T09:00:00Z'), in
+    the reader's words and time zone: "Updated today", "Updated yesterday", the weekday within
+    the week ("Updated Monday"), the day and month this year ("Updated 3 March"), else with the
+    year ("Updated 3 March 2025"). '' for anything that is not such a date. `now` is a
+    GLib.DateTime (the local time when None)."""
+    if not isinstance(modified, str) or not modified.strip():
+        return ''
+    text = modified.strip()
+    date = _datetime(lambda: GLib.DateTime.new_from_iso8601(text, GLib.TimeZone.new_utc()))
+    if date is None and len(text) == 10:  # a day alone ('2026-03-03'): that local day
+        parts = text.split('-')
+        if len(parts) == 3 and all(part.isdigit() for part in parts):
+            year, month, day = (int(part) for part in parts)
+            date = _datetime(lambda: GLib.DateTime.new_local(year, month, day, 12, 0, 0))
+    if date is None:
+        return ''
+    date = date.to_local()
+    now = (now or GLib.DateTime.new_now_local()).to_local()
+    days = round(_day(now).difference(_day(date)) / GLib.TIME_SPAN_DAY)
+    if days <= 0:
+        # Translators: when a playlist was last changed, under its title.
+        return _('Updated today')
+    if days == 1:
+        # Translators: when a playlist was last changed, under its title.
+        return _('Updated yesterday')
+    if days < 7:
+        # Translators: when a playlist was last changed, under its title, within the past
+        # week: {weekday} is the day's name ("Updated Monday").
+        return _('Updated {weekday}').format(weekday=date.format('%A') or '')
+    if date.get_year() == now.get_year():
+        # Translators: a playlist's last change this year, as GLib.DateTime.format() takes
+        # it: "%-d %B" is "3 March".
+        day = date.format(C_('playlist updated date', '%-d %B')) or ''
+    else:
+        # Translators: a playlist's last change in another year, as GLib.DateTime.format()
+        # takes it: "%-d %B %Y" is "3 March 2025".
+        day = date.format(C_('playlist updated date', '%-d %B %Y')) or ''
+    # Translators: when a playlist was last changed, under its title: {date} is a date
+    # ("Updated 3 March").
+    return _('Updated {date}').format(date=day) if day else ''
+
+
+def hero_caption(item, now=None):
+    """The caption under an album's or playlist's title: an album's genre, year, and songs
+    and time (its count-label); a playlist's last change (updated_text()) and count-label,
+    joined by middle dots. '' when there is none of them."""
+    if item is None:
+        return ''
+    if item.kind == 'playlist':
+        modified = item.raw.get('modified') if isinstance(item.raw, dict) else None
+        details = [updated_text(modified, now), item.count_label]
+    else:
+        details = [item.genre, str(item.year) if item.year else None, item.count_label]
+    return ' · '.join(detail for detail in details if detail)
 
 
 def release_date_text(text):

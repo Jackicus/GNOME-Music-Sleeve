@@ -265,6 +265,22 @@ class TestSync(unittest.TestCase):
         self.assertEqual(item['groups'][0]['entries'][0]['title'], 'Energy')
         self.assertIn('thumb', item)
         self.assertIn('thumb', item['groups'][0]['entries'][0])
+        # When Apple last changed it: what its page says it was updated.
+        self.assertEqual(item['modified'], '2024-05-01')
+        self.assertIsNone(item['catalogId'])  # one of the user's, not published
+        raw_playlist['attributes'].pop('lastModifiedDate')
+        self.assertNotIn('modified', normalize.normalize_playlist(raw_playlist))
+
+    def test_a_library_playlist_names_its_catalog_playlist(self):
+        # One of Apple's added to the library: its play parameters' globalId is the catalog
+        # playlist it is, which the catalog's page finds it by (Library.holds()).
+        raw = {'id': 'p.pl124', 'type': 'library-playlists',
+               'attributes': {'name': 'Invented Picks', 'canEdit': False,
+                              'playParams': {'id': 'p.pl124', 'kind': 'playlist',
+                                             'isLibrary': True, 'globalId': 'pl.0123abcd'}}}
+        self.assertEqual(normalize.normalize_playlist(raw)['catalogId'], 'pl.0123abcd')
+        raw['attributes']['playParams']['globalId'] = 'not a playlist id'
+        self.assertIsNone(normalize.normalize_playlist(raw)['catalogId'])
 
     def test_recommendation_shelves_follow_apples_order_and_titles(self):
         def album(i):

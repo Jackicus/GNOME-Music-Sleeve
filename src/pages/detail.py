@@ -51,10 +51,11 @@ from gettext import gettext as _
 
 from gi.repository import Adw, Gdk, Gio, GObject, Gtk, Pango
 
+from ..backend.api import is_library_id
 from ..backend.errors import EngineError
-from ..library import Item, ShelfModel, Track
+from ..library import HELD_KINDS, Item, ShelfModel, Track
 from ..related import catalog_target
-from ..release import album_shelves, album_target, footer_lines
+from ..release import album_shelves, album_target, curator, footer_lines, hero_caption
 from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
@@ -97,6 +98,17 @@ def links_catalog_artist(item):
     return (item is not None and item.kind == 'album' and bool(item.subtitle)
             and catalog_target(item) is not None
             and application is not None and not application.demo)
+
+
+def library_state(library, item):
+    """What the hero says of the library for `item`: 'add' for an album or playlist of the
+    catalog's that the library does not hold (the Add button), 'held' for one it holds (In
+    Library: Library.holds(), which knows one just added ahead of Apple's listing), None for
+    the library's own (its page is the library's) and anything else."""
+    if (item is None or item.kind not in HELD_KINDS or not item.id
+            or is_library_id(item.id)):
+        return None
+    return 'held' if library.holds(item) else 'add'
 
 
 def should_fetch(item, fetched):
@@ -255,7 +267,13 @@ class DetailPage(Adw.NavigationPage):
     row's accessible description), every bound row again as the item changes. A click on a
     track plays its group from it, as Enter does (the list's single-click-activate).
 
-    The hero: an album's artist links to what the library holds of them when it has them
+    The hero: under the title, an album's artist or a playlist's curator (release.curator():
+    the account's name for one of the user's), then the caption (release.hero_caption(): a
+    playlist's "Updated" date and its songs, an album's genre, year and songs). Beside Play
+    and Shuffle, an album or playlist of the catalog's has Add, which adds it to the library
+    (window.item_actions.add_to_library()), or In Library once the library holds it
+    (library_state(); the page follows Library's `item-added` and `changed`). An album's
+    artist links to what the library holds of them when it has them
     (resolve_artist(), window.open_item()), else to Apple Music's page of them when the
     catalog can say (links_catalog_artist()), as Go to Artist opens it
     (window.item_actions.go_to()); a More Options menu
@@ -296,6 +314,8 @@ class DetailPage(Adw.NavigationPage):
     caption_label = Gtk.Template.Child()
     play_button = Gtk.Template.Child()
     shuffle_button = Gtk.Template.Child()
+    add_button = Gtk.Template.Child()
+    in_library_box = Gtk.Template.Child()
     more_button = Gtk.Template.Child()
     summary_box = Gtk.Template.Child()
     summary_label = Gtk.Template.Child()
@@ -328,6 +348,7 @@ class DetailPage(Adw.NavigationPage):
         self._artist = None  # the library's artist Item the subtitle names, if any
         self._painted = None  # (frame clock, handler): the notes' More follows each paint
         self._focused = False  # the page has put the focus on Play once, as it was pushed
+        self._adding = None  # the Item whose add to the library is under way (Add)
         # The songs Apple suggests (wants_suggestions): the Item they were asked for, what
         # is shown of them (a Suggestions), the requests under way, and the section that
         # shows them, made when there are some (_suggestions_widget()).
@@ -380,6 +401,7 @@ class DetailPage(Adw.NavigationPage):
         connect_weak(self.table_breakpoint, 'unapply', self._on_table_unapply)
         connect_weak(self.play_button, 'clicked', self._on_play_clicked)
         connect_weak(self.shuffle_button, 'clicked', self._on_shuffle_clicked)
+        connect_weak(self.add_button, 'clicked', self._on_add_clicked)
         connect_weak(self.status_button, 'clicked', self._on_status_clicked)
         connect_weak(self.artist_button, 'clicked', self._on_artist_clicked)
         connect_weak(self.more_notes_button, 'clicked', self._on_more_notes_clicked)
@@ -395,6 +417,7 @@ class DetailPage(Adw.NavigationPage):
         self._handlers = MappedHandlers(self)
         self._handlers.add(library, 'notify::state', self._follow)
         self._handlers.add(library, 'changed', self._follow)
+        self._handlers.add(library, 'item-added', self._on_item_added)
         self._playing = PlayingMark(getattr(app(), 'player', None))
         if self._playing.player is not None:
             self._handlers.add(self._playing.player, 'notify::track', self._on_track_changed)
@@ -480,6 +503,7 @@ class DetailPage(Adw.NavigationPage):
         if item is not self.item or (item is not None and item.groups is not self._shown_groups):
             self._show(item)
         self._update_state()
+        self._update_library_state()  # an album or playlist added, or listed at last
 
     def _update_state(self):
         if self.item is not None:
@@ -882,16 +906,64 @@ class DetailPage(Adw.NavigationPage):
         self.title_label.set_label(item.title)
         self._artist = resolve_artist(self._library, item)
         linked = self._artist is not None or links_catalog_artist(item)
-        self.subtitle_label.set_label(item.subtitle)
-        self.subtitle_label.set_visible(bool(item.subtitle) and not linked)
+        subtitle = curator(item, self._account_name())
+        self.subtitle_label.set_label(subtitle)
+        self.subtitle_label.set_visible(bool(subtitle) and not linked)
         self.artist_label.set_label(item.subtitle)
         self.artist_button.set_visible(linked)
-        details = [item.genre, str(item.year) if item.year else None, item.count_label]
-        self.caption_label.set_label(' · '.join(detail for detail in details if detail))
-        self.caption_label.set_visible(any(details))
+        caption = hero_caption(item)
+        self.caption_label.set_label(caption)
+        self.caption_label.set_visible(bool(caption))
         self.summary_label.set_label(item.summary or '')
         self.summary_box.set_visible(bool(item.summary))
         self._update_buttons()
+        self._update_library_state()
+
+    def _account_name(self):
+        """The account's name, which a playlist of the user's shows as its curator ('' when
+        unknown: the sign-in has not read it, or a stand-in application)."""
+        application = app()
+        key = getattr(application, 'account_key', None)
+        if self._settings is None or key is None:
+            return ''
+        return self._settings.get_string(key('account-name'))
+
+    def _update_library_state(self):
+        """Add or In Library, as library_state() says for the item shown; neither for the
+        library's own. The focus moves to More Options when Add, focused, gives way to In
+        Library."""
+        state = library_state(self._library, self.item)
+        if state != 'add' and self.add_button.is_focus():
+            self.more_button.grab_focus()
+        self.add_button.set_visible(state == 'add')
+        self.in_library_box.set_visible(state == 'held')
+
+    def _on_item_added(self, _library, kind, item_id):
+        if self.item is not None and (self.item.kind, self.item.id) == (kind, item_id):
+            self._update_library_state()
+
+    def _on_add_clicked(self, _button):
+        """Add the album or playlist to the library (the item actions' Add to Library, which
+        notes it in the library once Apple has taken it: In Library then shows)."""
+        actions = getattr(self.get_root(), 'item_actions', None)
+        item = self.item
+        if (actions is None or item is None or self._adding is item
+                or library_state(self._library, item) != 'add'):
+            return  # nothing to add, or its add is under way already (a second click)
+        task = actions.add_to_library(item)
+        if task is None:
+            return  # nothing to add, or the demo library (which says so)
+        self._adding = item
+        # The task outlives a page that may be popped meanwhile: it holds the page weakly.
+        done = weak_method(self._on_add_done)
+        task.add_done_callback(lambda _task: done(item))
+
+    def _on_add_done(self, item):
+        """The add ended: Add can be clicked again when it failed (reported already); In
+        Library shows when the library holds the item (Library's `item-added`)."""
+        if self._adding is item:
+            self._adding = None
+            self._update_library_state()
 
     def _update_buttons(self):
         """Play and Shuffle: with something to play, and tracks to play (or on their way: the
@@ -1021,8 +1093,9 @@ class DetailPage(Adw.NavigationPage):
             list_item.set_accessible_description(self._playing.description(track, playing))
 
     def _last_button(self):
-        """The hero's last button that takes the focus: More Options, Shuffle or Play."""
-        for button in (self.more_button, self.shuffle_button, self.play_button):
+        """The hero's last button that takes the focus: More Options, Add, Shuffle or Play."""
+        for button in (self.more_button, self.add_button, self.shuffle_button,
+                       self.play_button):
             if button.get_visible() and button.get_sensitive():
                 return button
         return None

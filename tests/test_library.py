@@ -1413,6 +1413,91 @@ class TestTreeChanges(unittest.TestCase):
             self.assertEqual([item.id for item in library.folder_items('a')], [])
 
 
+class TestHolds(unittest.TestCase):
+    """Library.holds(): whether an album or playlist of the catalog's is in the library, which
+    an album's or playlist's page shows as Add or In Library."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.cache = self.temp_dir.name
+        tracks = album('l.a1', 'Harbour Lights', ['i.1', 'i.2'])
+        for position, entry in enumerate(tracks['groups'][0]['entries']):
+            entry['catalogId'] = str(500 + position)
+        compilation = album('l.a2', 'Same Title', ['i.3'])
+        compilation['catalogId'] = '700'
+        apple = {'id': 'p.ap', 'kind': 'playlist', 'title': 'Invented Picks',
+                 'subtitle': 'An Invented Curator', 'catalogId': 'pl.900',
+                 'play': {'kind': 'playlist', 'id': 'p.ap'}, 'groups': []}
+        catalog_shelf_item = {'id': '800', 'kind': 'album', 'title': 'Only On A Shelf',
+                              'play': {'kind': 'album', 'id': '800'}}
+        write_library(self.cache, [tracks, compilation], playlists=[apple],
+                      shelves=[{'key': 'rec-1', 'title': 'Invented', 'items': [
+                          catalog_shelf_item]}])
+        self.library = load(self.cache)
+
+    @staticmethod
+    def catalog(item_id, kind='album', title='Harbour Lights', artist='Test Artist',
+                songs=()):
+        play = {'kind': kind, 'id': item_id}
+        entries = [{'id': song, 'catalogId': song, 'title': 'Song', 'index': index}
+                   for index, song in enumerate(songs)]
+        return Item({'id': item_id, 'kind': kind, 'title': title, 'subtitle': artist,
+                     'play': play, 'groups': [{'name': '', 'play': play, 'entries': entries}]
+                     if entries else []})
+
+    def test_by_its_own_id_or_its_catalog_id(self):
+        self.assertTrue(self.library.holds(self.library.by_id('album', 'l.a1')))
+        self.assertTrue(self.library.holds(self.catalog('700', title='Other Words')))
+        self.assertTrue(self.library.holds(self.catalog('pl.900', kind='playlist')))
+        self.assertFalse(self.library.holds(self.catalog('pl.901', kind='playlist')))
+        # A shelf's album is not the library's.
+        self.assertFalse(self.library.holds(self.catalog('800', title='Only On A Shelf')))
+        self.assertFalse(self.library.holds(None))
+        self.assertFalse(self.library.holds(self.catalog('42', kind='song')))
+
+    def test_an_album_by_its_title_and_artist_and_a_song(self):
+        # A library album carries no catalog id: its title and artist (case and accents
+        # ignored) find it, and one of its songs confirms it when the catalog's has its songs.
+        self.assertTrue(self.library.holds(self.catalog('600', title='harbour lights')))
+        self.assertTrue(self.library.holds(self.catalog('600', songs=('501', '999'))))
+        self.assertFalse(self.library.holds(self.catalog('600', songs=('998', '999'))))
+        self.assertFalse(self.library.holds(self.catalog('600', artist='Someone Else')))
+        self.assertFalse(self.library.holds(self.catalog('601', title='Harbour Lights (Deluxe)',
+                                                         songs=('500', '501'))))
+
+    def test_one_just_added_until_the_library_lists_it(self):
+        added = []
+        self.library.connect('item-added', lambda _library, *args: added.append(args))
+        picks = self.catalog('pl.902', kind='playlist')
+        self.library.note_added(picks)
+        self.assertEqual(added, [('playlist', 'pl.902')])
+        self.assertTrue(self.library.holds(picks))
+        # A reload that does not list it yet (Apple's listing lags) keeps the note.
+        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.cache}):
+            asyncio.run(self.library.reload())
+        self.assertTrue(self.library.holds(picks))
+        # Once listed the library answers by itself; a load (another account) forgets notes.
+        data = json.loads(Path(self.cache, 'library.json').read_text(encoding='utf-8'))
+        data['sections']['playlists'].append({
+            'id': 'p.new', 'kind': 'playlist', 'title': 'Listed', 'catalogId': 'pl.902',
+            'play': {'kind': 'playlist', 'id': 'p.new'}, 'groups': []})
+        Path(self.cache, 'library.json').write_text(json.dumps(data), encoding='utf-8')
+        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.cache}):
+            asyncio.run(self.library.reload())
+        self.assertTrue(self.library.holds(picks))
+        # The note went with that reload: once removed (elsewhere), it is not held.
+        data['sections']['playlists'].pop()
+        Path(self.cache, 'library.json').write_text(json.dumps(data), encoding='utf-8')
+        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.cache}):
+            asyncio.run(self.library.reload())
+        self.assertFalse(self.library.holds(picks))
+        other = self.catalog('pl.903', kind='playlist')
+        self.library.note_added(other)
+        load(self.cache, self.library)
+        self.assertFalse(self.library.holds(other))
+
+
 class TestItemRefs(unittest.TestCase):
     """What a drag carries: library.ItemRefs of tracks and Items."""
 

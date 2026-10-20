@@ -118,7 +118,7 @@ song and an album added for the check and removed again:
 
 | Request | Apple's answer |
 |---|---|
-| `POST /v1/me/library?ids[songs]=<catalog id>` (or `ids[albums]`) | 202 (Add to Library). The library id and `inLibrary` show some seconds to a minute later, and the album leads `/v1/me/library/recently-added`; an album brings its tracks (as library songs of their own) |
+| `POST /v1/me/library?ids[songs]=<catalog id>` (or `ids[albums]`) | 202 (Add to Library). The library id and `inLibrary` show some seconds to a minute later, and the album leads `/v1/me/library/recently-added`; an album brings its tracks (as library songs of their own). The app notes an album or playlist it added (`Library.note_added()`), so its page says In Library before the listing does |
 | `DELETE /v1/me/library/songs/<library id>`, `.../albums/<library id>` | 204, no body. `GET /v1/me/library/songs/<id>` (the bridge's `libraryHas`, `Engine.in_library()`) is 404 within 2 s, the album within 7 s, and the library listings drop them within 2 to 7 s; the catalog read's `inLibrary` turns false after about 19 s. An album goes with its tracks, and no library artist was left behind |
 | `DELETE /v1/me/library/songs/<catalog id>` | 500, not a 404: a catalog id is never the id to delete by |
 
@@ -382,11 +382,15 @@ Item = {
   "trackCount": 12, "durationMs": 2580000,           // albums, playlists (videos: length)
   "albumCount": 3,                                   // artists
   "catalogId": "…" /* or null */, "url": "https://music.apple.com/…" /* or null */,
+                                // a library playlist's: its playParams' globalId ("pl.…",
+                                // not checked against the API yet)
   "attributes": {"isFavourites": true, "canEdit": false, "canDelete": false},   // playlists,
                                                      // when they apply
   "modified": "2025-05-01T09:00:00Z",                // playlists: Apple's lastModifiedDate as
                                                      // listed when `groups` was last read; the
-                                                     // sync keeps them while it holds (sync.py)
+                                                     // sync keeps them while it holds (sync.py);
+                                                     // an item() answer's, its own (the page's
+                                                     // "Updated")
   "play": {"kind": "album", "id": "l.…"},            // what the bridge's play() takes
   "groups": [{"name": "Disc 1", "play": {…}, "entries": [Track]}]   // an album's discs, a
                                                      // playlist's "Tracks", an artist's albums

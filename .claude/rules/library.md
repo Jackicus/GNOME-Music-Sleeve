@@ -121,7 +121,11 @@ them before changing either. What matters most:
   playlists that held what went (`videos`, `tracks_of`), once Apple's read of the item is a
   404; until a load no longer meets it, `Library.hide()` has every load leave it out
   (`leave_out()`, on the parsed file in a thread), so a sync in between cannot bring it
-  back, and `unhide()` brings it back after a refusal.
+  back, and `unhide()` brings it back after a refusal. Apple lists an addition up to a
+  minute late, so an album or playlist added is noted first (`Library.note_added()`,
+  `item-added`), and `holds()` answers for it until a reload lists it. `holds()` reads the
+  Albums and Playlists stores only (never the shelves), by id or catalog id, an album also
+  by title and artist: dictionaries made at its first question.
 - A full pass reads a playlist's tracks again only when its listing's `lastModifiedDate` or
   `trackCount` differs from what the Item recorded when they were last read (`modified`, and
   its `trackCount`: `playlist_unchanged()`); kept tracks keep their stamp, so a pass that

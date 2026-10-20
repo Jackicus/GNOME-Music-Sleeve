@@ -529,6 +529,33 @@ async def walkthrough(window):
               and focus.__gtype__.name == 'GtkListItemWidget'
               and focus.get_first_child().track_row.context_item
               is detail._rows.get_item(last), describe(focus))
+    print('-- catalog album')
+    # One of the catalog's the library lacks (Other Versions' first): Add between Shuffle and
+    # More Options.
+    other = None
+    for shelf in detail._album_shelves:
+        other = next((shelf.items.get_item(position)
+                      for position in range(shelf.items.get_n_items())
+                      if shelf.items.get_item(position).kind == 'album'), None)
+        if other is not None:
+            break
+    check('an album the library lacks is on a shelf', other is not None)
+    if other is not None:
+        window.open_item(other)
+        await asyncio.sleep(1.0)
+        catalog = window.navigation_view.get_visible_page()
+        check('it has Add', catalog.add_button.get_visible()
+              and not catalog.in_library_box.get_visible())
+        catalog.play_button.grab_focus()
+        await key(window, 'Tab')
+        check('Tab: Shuffle', inside(window.get_focus(), catalog.shuffle_button))
+        await key(window, 'Tab')
+        check('Tab: Add', inside(window.get_focus(), catalog.add_button),
+              describe(window.get_focus()))
+        await key(window, 'Tab')
+        check('Tab: More Options', inside(window.get_focus(), catalog.more_button))
+        window.navigation_view.pop()  # back to the album, as the steps below expect
+        await asyncio.sleep(0.6)
     print('-- artist')
     window.open_artist_page(app.library.artists.get_item(0))  # Go to Artist's page
     await asyncio.sleep(1.5)  # its page answered from the demo's invented one

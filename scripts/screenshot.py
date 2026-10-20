@@ -38,7 +38,11 @@ tile does (window.open_item), over the --page (default home): KIND is album,
 artist, playlist, folder, station or video, and ID an item id or "first", the
 first of that section (for folder, the library's first playlist folder). An
 artist opens as the library's page of them; artist-page:ID opens Apple Music's
-page of the artist instead, as Go to Artist does (window.open_artist_page).
+page of the artist instead, as Go to Artist does (window.open_artist_page). An
+ID the library lacks opens the catalog's album or playlist of that id, as a
+shelf's tile would: one of the demo's invented catalog answers (an album page's
+or an artist page's shelves, demo.edition0010 say), else the catalog's copy of
+the library's album or playlist with that catalog id (in the library, then).
 --page also takes a sidebar playlist or folder, as last-page names them:
 playlist:ID or folder:ID (folder:first too). --expand opens these playlist
 folders in the sidebar (the expanded-folders setting); "first" is the library's
@@ -284,6 +288,35 @@ def search_library(window):
     page.search_entry.set_text(args.search)
 
 
+def catalog_item(kind, item_id):
+    """The catalog's album or playlist of that id, as a shelf's tile would carry it: from the
+    demo's invented answers (albums/, artists/), else a copy of the library's Item whose
+    catalog id it is, under that id. None when neither has it."""
+    from applemusic.backend import config
+    from applemusic.library import Item
+    from applemusic.remote import remote_item
+
+    for path in sorted(config.cache_dir().glob('albums/*.json')) + sorted(
+            config.cache_dir().glob('artists/*.json')):
+        try:
+            with open(path, encoding='utf-8') as file:
+                answer = json.load(file)
+        except (OSError, ValueError):
+            continue
+        for shelf in answer.get('shelves') or []:
+            for data in shelf.get('items') or []:
+                if data.get('kind') == kind and data.get('id') == item_id:
+                    return Item(remote_item(data))
+    store = getattr(app.library, SECTIONS.get(kind, ''), None)
+    for position in range(store.get_n_items() if store is not None else 0):
+        item = store.get_item(position)
+        if item.catalog_id == item_id:
+            play = {'kind': kind, 'id': item_id}
+            groups = [dict(group, play=play) for group in item.raw.get('groups') or []]
+            return Item(dict(item.raw, id=item_id, play=play, groups=groups))
+    return None
+
+
 def open_item(window):
     """--open: the item it names, opened as its tile would be."""
     kind, _sep, item_id = args.open.partition(':')
@@ -295,7 +328,7 @@ def open_item(window):
     elif item_id == 'first' and kind == 'folder':
         item = app.library.by_id('folder', first_folder())
     else:
-        item = app.library.by_id(kind, item_id)
+        item = app.library.by_id(kind, item_id) or catalog_item(kind, item_id)
     if item is None:
         sys.exit(f'screenshot: no {args.open} in the library')
     if catalog:

@@ -642,6 +642,12 @@ def _extract_catalog_id(attrs, raw_item, resource_type):
     play_params = attrs.get('playParams') or {}
     if 'catalogId' in play_params:
         return str(play_params['catalogId'])
+    # A library playlist names the catalog playlist it is (one of Apple's added, or one the
+    # user published) as its play parameters' globalId, a "pl." id.
+    global_id = play_params.get('globalId')
+    if resource_type == 'playlists' and isinstance(global_id, str) and global_id.startswith(
+            'pl.'):
+        return global_id
 
     if raw_item.get('catalogId'):
         return str(raw_item['catalogId'])
@@ -940,6 +946,8 @@ def normalize_playlist(raw_playlist, cache_dir=None, tracks=None, art_urls=None)
     `tracks` are the playlist's songs when the caller fetched them; otherwise
     the `tracks` relationship is read.
     groups=[{"name": "Tracks", "play": {"kind": "playlist", "id": item_id}, "entries": [...]}]
+    `modified` is Apple's lastModifiedDate, when the answer has one: what the page says it was
+    updated (the sync keeps its own, the tracks' stamp, in its place).
     """
     attrs = raw_playlist.get('attributes') or {}
     item_id = str(raw_playlist.get('id') or '')
@@ -998,7 +1006,7 @@ def normalize_playlist(raw_playlist, cache_dir=None, tracks=None, art_urls=None)
         or any(t.get('explicit') for t in normalized_tracks)
     )
 
-    return {
+    item = {
         'id': item_id,
         'kind': 'playlist',
         'title': title,
@@ -1017,6 +1025,10 @@ def normalize_playlist(raw_playlist, cache_dir=None, tracks=None, art_urls=None)
         'play': {'kind': 'playlist', 'id': item_id},
         'groups': groups,
     }
+    modified = attrs.get('lastModifiedDate')
+    if isinstance(modified, str) and modified:
+        item['modified'] = modified
+    return item
 
 
 def normalize_station(raw_station, cache_dir=None, art_urls=None):
