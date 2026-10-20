@@ -479,6 +479,110 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
                      if folder['id'] == 'p.fldB2')
         self.assertEqual(inner['children'], [])
 
+    def with_a_copy(self, wired):
+        """The answers with one more playlist, a copy, in the folder p.fldA1 (beside p.fldB2
+        and p.pl456), as Duplicate leaves one: listed, with its tracks."""
+        playlists = json.loads(json.dumps(wired[app_sync.PLAYLISTS_ENDPOINT]))
+        copy = json.loads(json.dumps(playlists['data'][1]))
+        copy['id'] = 'p.copy1'
+        copy['attributes']['name'] = 'Rock Workout Copy'
+        playlists['data'].append(copy)
+        wired[app_sync.PLAYLISTS_ENDPOINT] = playlists
+        wired[f'{app_sync.PLAYLISTS_ENDPOINT}/p.copy1/tracks'] = fixture('playlist_tracks.json')
+        folder = fixture('playlist_folders.json')['p.fldA1']
+        folder['data'].append({'id': 'p.copy1', 'type': app_sync.PLAYLIST_TYPE,
+                               'attributes': {'name': 'Rock Workout Copy'}})
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldA1/children'] = folder
+        return wired
+
+    def children(self, folder_id):
+        folder = next(folder for folder in self.read_json()['folders']
+                      if folder['id'] == folder_id)
+        return [(child['kind'], child['id']) for child in folder['children']]
+
+    async def test_a_folder_read_as_empty_after_a_delete_keeps_what_is_still_listed(self):
+        # The copy is deleted from the folder; the playlists pass that follows finds Apple
+        # answering for the folder with a 404, with nothing, or with nothing but nameless
+        # entries, while its other playlists are still listed: they stay in it.
+        nameless = {'data': [
+            {'id': child_id, 'type': kind,
+             'attributes': {'canEdit': False, 'canDelete': False}}
+            for child_id, kind in (('p.fldB2', app_sync.FOLDER_TYPE),
+                                   ('p.pl456', app_sync.PLAYLIST_TYPE),
+                                   ('p.copy1', app_sync.PLAYLIST_TYPE))]}
+        for answer in (EngineError('api', 'Not Found', status=404),
+                       {'data': [], 'meta': {'total': 0}}, nameless):
+            with self.subTest(answer=answer):
+                library = Library()
+                await app_sync.sync_library(FakeEngine(self.with_a_copy(answers())), library)
+                self.assertEqual(self.children('p.fldA1'), [
+                    ('folder', 'p.fldB2'), ('playlist', 'p.pl456'), ('playlist', 'p.copy1')])
+                wired = answers()  # the copy gone from the listing
+                wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldA1/children'] = answer
+                await app_sync.sync_library(FakeEngine(wired), library, playlists=True)
+                self.assertEqual(self.children('p.fldA1'),
+                                 [('folder', 'p.fldB2'), ('playlist', 'p.pl456')])
+                self.assertEqual(self.children('p.fldB2'), [('playlist', 'p.pl789')])
+                tree = library.playlist_tree()
+                self.assertEqual([node.id for node in tree.folder('p.fldA1').children],
+                                 ['p.fldB2', 'p.pl456'])
+                self.assertEqual([node.id for node in tree.root.children],
+                                 ['p.favs0', 'p.fldA1', 'p.pl123'])
+
+    async def test_a_top_level_read_as_empty_keeps_the_folders(self):
+        await app_sync.sync_library(FakeEngine(answers()), self.library)
+        before = self.read_json()['folders']
+        wired = answers()
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/{app_sync.APPLE_ROOT_FOLDER}/children'] = (
+            EngineError('api', 'Not Found', status=404))
+        await app_sync.sync_library(FakeEngine(wired), self.library, playlists=True)
+
+        def shape(folders):  # the tree orders a folder's contents itself
+            return {folder['id']: (folder['parent'], folder['title'], sorted(
+                (child['kind'], child['id']) for child in folder['children']))
+                for folder in folders}
+
+        self.assertEqual(shape(self.read_json()['folders']), shape(before))
+
+    async def test_a_folder_emptied_elsewhere_is_empty(self):
+        # Moved out on another device: the top level lists the playlist now.
+        await app_sync.sync_library(FakeEngine(answers()), self.library)
+        wired = answers()
+        folders = fixture('playlist_folders.json')
+        root = folders[app_sync.APPLE_ROOT_FOLDER]
+        root['data'].append(folders['p.fldB2']['data'][0])
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/{app_sync.APPLE_ROOT_FOLDER}/children'] = root
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldB2/children'] = {'data': []}
+        await app_sync.sync_library(FakeEngine(wired), self.library, playlists=True)
+        self.assertEqual(self.children('p.fldB2'), [])
+        self.assertIn(('playlist', 'p.pl789'), self.children(ROOT_FOLDER))
+
+    async def test_a_folder_deleted_with_its_playlists_is_not_kept(self):
+        # p.fldB2 and the one playlist in it deleted: the folder that held it answers with
+        # nothing live, and p.fldB2 itself with a 404. Last time's file has p.fldB2, but
+        # nothing of it is listed any more, so it is not kept.
+        await app_sync.sync_library(FakeEngine(answers()), self.library)
+        wired = answers()
+        playlists = fixture('library_playlists_tags.json')
+        playlists['data'] = [raw for raw in playlists['data'] if raw['id'] != 'p.pl789']
+        wired[app_sync.PLAYLISTS_ENDPOINT] = playlists
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldA1/children'] = {'data': [
+            {'id': 'p.pl456', 'type': app_sync.PLAYLIST_TYPE,
+             'attributes': {'name': 'Rock Workout'}}]}
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldB2/children'] = EngineError(
+            'api', 'Not Found', status=404)
+        await app_sync.sync_library(FakeEngine(wired), self.library, playlists=True)
+        self.assertEqual(self.children('p.fldA1'), [('playlist', 'p.pl456')])
+        self.assertEqual([folder['id'] for folder in self.read_json()['folders']],
+                         [ROOT_FOLDER, 'p.fldA1'])
+        # And when the folder that held it answers with nothing at all.
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldA1/children'] = {'data': []}
+        await app_sync.sync_library(FakeEngine(answers()), self.library)
+        await app_sync.sync_library(FakeEngine(wired), self.library, playlists=True)
+        self.assertEqual(self.children('p.fldA1'), [('playlist', 'p.pl456')])
+        self.assertEqual([folder['id'] for folder in self.read_json()['folders']],
+                         [ROOT_FOLDER, 'p.fldA1'])
+
     async def test_a_song_listed_twice_is_kept_once(self):
         wired = answers()
         songs = fixture('library_songs_albums.json')

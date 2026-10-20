@@ -2610,7 +2610,12 @@ class ItemActions:
     async def wait_listed(self, folder_id, item_id, name):
         """Wait until Apple lists the playlist or folder item_id in the folder folder_id
         under `name` (None: not at all), looking again after each of SETTLE_DELAYS. True
-        once it does; False when it never did, or the engine could not say."""
+        once it does; False when it never did, or the engine could not say. Right after a
+        deletion Apple can answer for the folder with nothing at all (a 404, or an empty
+        list) while it still holds other things: for `name` None, an empty answer counts
+        only when the folder held nothing else."""
+        node = self.library.playlist_tree().folder(folder_id)
+        others = node is not None and any(child.id != item_id for child in node.children)
         for delay in SETTLE_DELAYS:
             await asyncio.sleep(delay)
             try:
@@ -2619,7 +2624,7 @@ class ItemActions:
                 log.debug('playlist listing not read: %s', error)
                 return False
             found = next((child for child in children if child['id'] == item_id), None)
-            if name is None and found is None:
+            if name is None and found is None and (children or not others):
                 return True
             if name is not None and found is not None and found['name'] == name:
                 return True
