@@ -347,6 +347,32 @@ changes, change it here, with the date. The plan they came from is in
   selection, its icon its count. While selecting, a playlist's songs do not move. Batch
   Favourite is left out: one rating write per song, and ambiguous over a mixed selection
   (#491 for Favourite Songs' Remove from Favourites).
+- **Delete removes a playlist's song; Sort By is the view's; Add Songs… is a dialog**
+  (2026-10-20, #372, #374). Delete on the focused song of a playlist of the user's is Remove
+  from Playlist, as Files' Delete acts on what is focused and Up Next's Delete takes out its
+  entry: a key of the page's own controller (`keyboard.remove_key()`), never an accelerator,
+  since the filter's entry needs Delete. It goes through the selection's one write with Undo
+  on its toast (`ItemActions.remove_entries()`, naming the one song), not the menu's single
+  removal, which has no Undo, so a slip of the key is one click from being put back;
+  in the selection mode it takes out the songs selected, as the bar's Remove from Playlist
+  does, rather than only the focused one. One removal at a time a page: a second, made
+  before Apple's answer, would be made on a list Apple has changed already and refused.
+  Sort By (Playlist Order, Title, Artist, Album, Time, either way) orders only what the page
+  shows, through a `Gtk.SortListModel` before the filter, as the grids sort: Apple's API has
+  no sort of a playlist, and writing one would be a reorder of the whole list. So Play,
+  Duplicate and a reorder keep the playlist's order, and while another order shows nothing
+  moves (`can_reorder()`). It lasts as long as the page, not in the settings: a playlist
+  opened again shows its own order, which is the one its songs are moved in, and the
+  settings hold no playlist's id for it. Duplicate copies any playlist of the library
+  (Favourite Songs and Apple's too, into one of the user's), named "<name> Copy" as Files
+  names a copy, in the original's folder, with its description; a catalog playlist has Add
+  to Library and Add to Playlist's New Playlist… instead. Add Songs… is a dialog rather than
+  a mode of the Search page: it picks from the library's songs (all of them, narrowed as
+  typed) and Apple Music's (a search of songs, paged as the Search page's list is), keeps
+  the picks across both and every search, and adds them in their order with one write
+  (`add_items_to_playlist()`, one POST up to `api.PLAYLIST_BATCH`), so a dozen songs are
+  one toast and one refresh, not a dozen. It does not mark songs the playlist holds: a
+  playlist may hold a song twice, as Apple's does.
 - **One look for loading, status pages, links and grids** (2026-10-01). A page that waits
   shows a bare 32 px `AdwSpinner`, the album and artist pages' sections under their hero too,
   in place of three looks (that spinner, a hand-made "Loading…", a status page with a spinner

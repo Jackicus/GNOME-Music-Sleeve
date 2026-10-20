@@ -16,9 +16,11 @@
                           [--context-menu [KIND] [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
-                                    remove-from-library|credits] [--song N]
+                                    remove-from-library|credits|add-songs] [--song N]
+                          [--find TERM] [--pick N]
                           [--more-options] [--main-menu] [--sidebar-menu KEY [--submenu NAME]]
                           [--drop-target KEY] [--drop-line N] [--scroll PX] [--select N]
+                          [--sort KEY[:descending]]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
 through scripts/headless.sh, so the window opens on a private display and never on
@@ -120,8 +122,13 @@ of the user's (a new playlist or folder: in the folder shown, else at the top le
 remove-from-library the confirmation of win.item-remove-from-library for the item the page
 shows, else the library's first album; credits the View Credits dialog of a song of the album
 the page shows, else of the library's first album: its first, or its Nth with --song N (-1:
-its last; the demo's last album's last song has no credits), the demo's invented answer. The
-demo writes nothing: the dialogs only show.
+its last; the demo's last album's last song has no credits), the demo's invented answer;
+add-songs the Add Songs… dialog of the playlist the page shows (else the library's first of
+the user's), with --find TERM typed into its search (with --search-in music, Apple Music's:
+the demo's invented catalogue) and --pick N its first N songs picked. The demo writes
+nothing: the dialogs only show.
+--sort KEY (a playlist's Sort By: title, artist, album, time, playlist; KEY:descending the
+other way) shows the playlist's songs in that order.
 --more-options pops up the More Options menu of the page shown (an album's, a playlist's, a
 folder's) as a click on it would; --main-menu the main menu (in the narrow layout, with
 --sidebar, where its button is).
@@ -226,7 +233,8 @@ parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
                     choices=['general', 'engine'],
                     help='open Preferences on PAGE and shoot the dialog')
 parser.add_argument('--dialog', choices=['about', 'shortcuts', 'new-playlist', 'new-folder',
-                                         'rename', 'delete', 'remove-from-library', 'credits'],
+                                         'rename', 'delete', 'remove-from-library', 'credits',
+                                         'add-songs'],
                     help='open the About, Keyboard Shortcuts, a playlist, the Remove from '
                          'Library or the View Credits dialog; shoot it')
 parser.add_argument('--song', metavar='N', type=int, default=0,
@@ -246,6 +254,12 @@ parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
 parser.add_argument('--select', metavar='N', type=int,
                     help="the page's track list in its selection mode, its first N selected")
+parser.add_argument('--sort', metavar='KEY[:descending]',
+                    help="a playlist's songs in the order of its Sort By KEY")
+parser.add_argument('--find', metavar='TERM',
+                    help='with --dialog add-songs, TERM typed into its search')
+parser.add_argument('--pick', metavar='N', type=int,
+                    help='with --dialog add-songs, its first N songs picked')
 parser.add_argument('--focus', action='store_true',
                     help="give the keyboard focus to the page's first tile or row")
 parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[],
@@ -327,6 +341,8 @@ searched = False
 seen_all = False
 filtered = False
 selected = False
+sorted_ = False  # --sort applied
+found = False  # --find typed and --pick picked, in the Add Songs dialog
 menu_opened = False
 banner_shown = False
 scrolled = False
@@ -410,6 +426,30 @@ def filter_page(window):
     bar.set_search_mode(True)  # also for no text
     bar.entry.grab_focus()
     bar.entry.set_position(-1)
+
+
+def sort_songs(window):
+    """--sort: the playlist's songs in the order of its Sort By."""
+    page = window.navigation_view.get_visible_page()
+    if not hasattr(page, 'sort'):
+        sys.exit('screenshot: the page shown is no playlist to sort')
+    key, _sep, direction = args.sort.partition(':')
+    page.sort(key, direction == 'descending')
+
+
+def find_songs(shown):
+    """--find and --pick in the Add Songs dialog: what is typed (Apple Music's, with
+    --search-in music) and its first songs picked."""
+    if args.find is not None:
+        if args.search_in == 'music':
+            shown.scope_toggle.set_active_name('catalog')
+        shown.search_entry.set_text(args.find)
+        return  # the songs found show after the entry's delay (and Apple Music's answer)
+    if args.pick:
+        view = shown.catalog_list.list_view if shown.scope == 'catalog' else shown.library_view
+        model = view.get_model()
+        for position in range(min(args.pick, model.get_n_items() if model else 0)):
+            view.emit('activate', position)
 
 
 def select_songs(window):
@@ -753,6 +793,14 @@ def open_dialog(window):
 
         open_credits_dialog(window)
         kind = CreditsDialog
+    elif args.dialog == 'add-songs':
+        from applemusic.dialogs.add_songs import AddSongsDialog
+
+        item = subject(window)
+        if item is None or item.kind != 'playlist':
+            sys.exit("screenshot: no playlist of the user's to add songs to")
+        window.activate_action('win.item-add-songs', GLib.Variant('(ss)', (item.kind, item.id)))
+        kind = AddSongsDialog
     else:
         kind = {'about': Adw.AboutDialog, 'shortcuts': Adw.ShortcutsDialog}[args.dialog]
         app.activate_action(args.dialog)
@@ -839,7 +887,7 @@ def shoot():
 
 def _shoot():
     global opened, sheet_opened, searched, menu_opened, banner_shown, preferences, dialog
-    global seen_all, filtered, selected
+    global seen_all, filtered, selected, sorted_, found
     global scrolled, focused, drop_line_scrolled
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
@@ -929,6 +977,14 @@ def _shoot():
             sys.exit(f'screenshot: no {args.dialog} dialog shown')
         GLib.timeout_add(1200, shoot)  # shown
         return GLib.SOURCE_REMOVE
+    if args.dialog == 'add-songs' and (args.find is not None or args.pick) and not found:
+        found = True
+        find_songs(dialog)
+        if args.pick and args.find is not None:
+            found = False  # typed now; picked once the songs found show
+            args.find = None
+        GLib.timeout_add(1500, shoot)  # filtered or answered, the artwork decoded
+        return GLib.SOURCE_REMOVE
     if args.banner and not banner_shown:
         banner_shown = True
         from applemusic.window import sign_in_title
@@ -936,6 +992,11 @@ def _shoot():
         window.sign_in_banner.set_title(sign_in_title(args.banner == 'expired'))
         window.sign_in_banner.set_revealed(True)
         GLib.timeout_add(600, shoot)  # laid out under the header bar
+        return GLib.SOURCE_REMOVE
+    if args.sort and not sorted_:
+        sorted_ = True
+        sort_songs(window)
+        GLib.timeout_add(800, shoot)  # sorted, the rows bound again
         return GLib.SOURCE_REMOVE
     if args.select is not None and not selected:
         selected = True

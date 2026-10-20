@@ -239,7 +239,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   All Playlists, or use **More Options** on its page): **Rename…** changes its name and
   description, **Delete Playlist…** deletes it from your library on all your devices, after
   asking. A song's menu on one of your playlists has **Remove from Playlist**, which takes out
-  that one entry (the same song elsewhere in the playlist stays). **New Playlist…** is at the
+  that one entry (the same song elsewhere in the playlist stays); <kbd>Delete</kbd> on the
+  focused song does the same, with **Undo** in the message that follows, and the focus moves
+  to the song that took its place (while selecting songs, <kbd>Delete</kbd> takes out the
+  songs selected). **Duplicate** in a playlist's menu (any in your library, Favourite Songs
+  too) makes a playlist of your own with the same songs in the same order, named "… Copy",
+  beside it, and opens it. **New Playlist…** is at the
   end of **Add to Playlist** (a new playlist holding that song), in a folder's menu, in the
   main menu (<kbd>Ctrl</kbd>+<kbd>N</kbd>), and is the **+** button of All Playlists and of a folder's page. A folder's menu
   also has **Rename…** and **Delete Folder…**, which deletes the playlists in it too.
@@ -257,6 +262,19 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   still plays it; only a drag moves it. Favourite Songs and Apple's playlists keep their
   order. Up Next does not change when you reorder the playlist that is playing: the next time
   you play it, it plays in the new order. In the demo library a move shows but is not kept.
+- **Sort By**, the button beside the filter in a playlist's header bar, shows its songs by
+  title, artist, album or time, either way round, or back in **Playlist Order**. It changes
+  only what the page shows: the playlist keeps its order, plays in it from Play, and is
+  duplicated in it. While another order shows, songs cannot be moved. The page keeps the
+  order you chose while it stays open; a playlist opened again shows its own order.
+- **Add Songs…** in the menu of one of your playlists (and the button of an empty one) opens
+  a dialog to pick songs for it: **Your Library** lists all your songs, narrowed as you type,
+  and **Apple Music** searches the catalogue for what you type. Click a song, or press
+  <kbd>Enter</kbd> on it, to pick it or unpick it; picks from both stay as you search again,
+  and the header bar counts them. **Add** puts them at the end of the playlist, in the order
+  you picked them, in one change. <kbd>Enter</kbd> in the search moves to the first song;
+  <kbd>Esc</kbd> or **Cancel** closes the dialog, adding nothing (in the search,
+  <kbd>Esc</kbd> first clears what you typed).
 - Playlist folders: **New Folder…** is in the main menu, in a folder's menu (a folder inside
   it) and in All Playlists' menu, and is the folder button beside the **+** of All Playlists
   and of a folder's page. A playlist's menu (in the sidebar, on its tile, or **More Options**

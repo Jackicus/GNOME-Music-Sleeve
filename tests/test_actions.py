@@ -419,7 +419,8 @@ class MenuTest(unittest.TestCase):
         self.assertEqual(names(build_menu(FAVOURITES)), [
             'win.item-play', 'win.item-play-next', 'win.item-play-later',
             'win.item-new-playlist',
-            'win.item-open-in-browser'])  # its library route is the owner's: no Copy Link
+            'win.item-open-in-browser',  # its library route is the owner's: no Copy Link
+            'win.item-duplicate'])  # a copy of its songs, of the user's own
         self.assertEqual(names(build_menu(MADE_UP_ALBUM)), ['win.item-play',
                                                             'win.item-new-playlist'])
         self.assertNotIn('win.item-open-in-browser', names(build_menu(UPLOAD_TRACK)))
@@ -498,6 +499,31 @@ class MenuTest(unittest.TestCase):
             ('win.item-rename', ('folder', 'l.fd1')), ('win.item-delete', ('folder', 'l.fd1'))])
         self.assertIn('_Delete Folder…', labels_of(build_menu(FOLDER)))
 
+    def test_add_songs_and_duplicate(self):
+        # Add Songs… on a playlist of the user's; Duplicate on any of the library's, before
+        # Rename… and Delete Playlist….
+        self.assertEqual(names(build_menu(PLAYLIST))[-4:], [
+            'win.item-add-songs', 'win.item-duplicate', 'win.item-rename', 'win.item-delete'])
+        self.assertIn('Add Son_gs…', labels_of(build_menu(PLAYLIST)))
+        self.assertIn('Dupl_icate', labels_of(build_menu(PLAYLIST)))
+        for playlist in (READ_ONLY, FAVOURITES):
+            self.assertNotIn('win.item-add-songs', names(build_menu(playlist)))
+            self.assertIn(('win.item-duplicate', ('playlist', playlist.id)),
+                          actions_of(build_menu(playlist)))
+        # A catalog playlist is added to the library (or Add to Playlist's New Playlist…);
+        # nothing else is duplicated.
+        catalog = Item({'id': 'pl.1000000003', 'kind': 'playlist', 'title': 'Harbour Mix',
+                        'play': {'kind': 'playlist', 'id': 'pl.1000000003'}})
+        for obj in (catalog, LIBRARY_ALBUM, FOLDER, LIBRARY_TRACK):
+            self.assertFalse({'win.item-add-songs', 'win.item-duplicate'}
+                             & set(names(build_menu(obj)) or ()), obj.title)
+        self.assertTrue(actions_module.adds_to(PLAYLIST))
+        self.assertFalse(actions_module.adds_to(FAVOURITES))
+        self.assertTrue(actions_module.duplicates(READ_ONLY))
+        self.assertFalse(actions_module.duplicates(catalog))
+        self.assertEqual(actions_module.duplicate_name('Road Trip'), 'Road Trip Copy')
+        self.assertEqual(actions_module.duplicate_name(''), 'Untitled Playlist Copy')
+
     def test_remove_from_playlist_where_the_track_is_shown(self):
         track = Track({'id': 'i.song1', 'title': 'Harbour Lights', 'type': 'library-songs',
                        'index': 4}, play={'kind': 'playlist', 'id': 'p.pl1'})
@@ -560,7 +586,8 @@ class MenuTest(unittest.TestCase):
             *(f'win.{name}' for name in RATING_ACTIONS), 'win.item-add-to-playlist',
             'win.item-new-playlist',
             'win.item-move-to-folder', 'win.item-move-to-folder',
-            'win.item-open-in-browser', 'win.item-rename', 'win.item-delete'])
+            'win.item-open-in-browser', 'win.item-add-songs', 'win.item-duplicate',
+            'win.item-rename', 'win.item-delete'])
         self.assertIsNotNone(submenu_of(menu, 'Add to Pla_ylist'))
         self.assertIsNotNone(submenu_of(menu, 'Mov_e to Folder'))
         # Apple's own and Favourite Songs: played, never renamed or deleted.
@@ -1178,7 +1205,7 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
             'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue',
             'item-move-in-queue', 'item-move-in-playlist', 'item-undo-reorder',
-            'item-view-credits', 'item-undo-remove']))
+            'item-view-credits', 'item-undo-remove', 'item-duplicate', 'item-add-songs']))
         self.assertEqual(
             self.window.actions['item-move-in-queue'].get_parameter_type().dup_string(),
             '(iis)')
@@ -2258,6 +2285,61 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.toasts, ['Created “Fresh”'])
         self.assertEqual(self.window.selected, ['playlist:p.new'])
 
+    async def test_duplicate_copies_the_songs_beside_it_and_shows_the_copy(self):
+        new = Item({'id': 'p.new', 'kind': 'playlist', 'title': 'Road Trip Copy'})
+
+        def start_sync(quick=False, playlists=False, videos=False, tracks_of=()):
+            self.app.library.items[('playlist', 'p.new')] = new  # the pass brought it
+
+        self.app.start_sync = start_sync
+        self.app.engine.items[('playlist', 'p.pl1')] = PLAYLIST_ANSWER  # its songs, read
+        await self.run_action('item-duplicate', 'playlist', 'p.pl1')
+        # In its folder, its songs in its own order, its page shown once Apple lists it.
+        self.assertEqual(self.writes(), [
+            ('item', 'playlist', 'p.pl1'),
+            ('create_playlist', 'Road Trip Copy', '', (('song', 'i.song1'),), 'p.fd1')])
+        self.assertEqual(self.app.toasts, ['Added 1 song to the new playlist “Road Trip Copy”'])
+        self.assertEqual(self.window.selected, ['playlist:p.new'])
+
+    async def test_an_empty_playlist_is_duplicated_empty(self):
+        empty = Item({'id': 'p.pl3', 'kind': 'playlist', 'title': 'Quiet', 'description': '',
+                      'groups': [{'name': 'Tracks', 'entries': []}]})
+        self.actions.duplicate(empty)
+        await self.settle()
+        self.assertEqual(self.writes(), [('create_playlist', 'Quiet Copy', '', (), 'root')])
+        self.assertEqual(self.app.toasts, ['Created “Quiet Copy”'])
+        # Not a catalog playlist, and nothing in the demo.
+        self.assertIsNone(self.actions.duplicate(
+            Item({'id': 'pl.1000000003', 'kind': 'playlist', 'title': 'Harbour Mix'})))
+        self.assertEqual(self.app.toasts[-1], 'This cannot be duplicated')
+        self.app.demo = True
+        self.assertIsNone(self.actions.duplicate(empty))
+        self.assertEqual(len(self.writes()), 1)
+
+    async def test_add_songs_opens_its_dialog_for_a_playlist_of_the_users(self):
+        made = []
+
+        class Dialog:
+            def __init__(self, app, library, title, done):
+                made.append((title, done))
+
+            def present(self, parent):
+                made.append(parent)
+
+        module = types.ModuleType('applemusic.dialogs.add_songs')
+        module.AddSongsDialog = Dialog
+        with mock.patch.dict(sys.modules, {'applemusic.dialogs.add_songs': module}):
+            await self.run_action('item-add-songs', 'playlist', 'p.pl1')
+            self.assertIsNone(self.actions.ask_add_songs(READ_ONLY))
+        self.assertEqual(self.app.toasts, ['Songs cannot be added to this playlist'])
+        (title, done), parent = made
+        self.assertEqual((title, parent), ('Road Trip', self.window))
+        # What it picks goes in at the end of the playlist, in one write.
+        done([LIBRARY_TRACK, CATALOG_TRACK])
+        await self.settle()
+        self.assertIn(('add_tracks_to_playlist', 'p.pl1',
+                       (('song', 'i.song1'), ('song', '1000000009'))), self.writes())
+
     async def test_the_demo_shows_the_dialog_and_writes_nothing(self):
         self.app.demo = True
         await self.run_action('item-new-playlist', 'folder', 'root')
@@ -2791,6 +2873,15 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
         self.window.actions['item-undo-remove'].activate(GLib.Variant('s', 'p.pl5'))
         await self.settle()
         self.assertEqual(len(self.calls('put_back_playlist_entries')), 1)
+
+    async def test_one_song_removed_is_named(self):
+        # Delete on a song (DetailPage.remove_focused()): the same write and Undo.
+        self.actions.remove_entries(self.mix, self.mix_tracks()[3:])
+        await self.settle()
+        self.assertEqual(self.calls('remove_playlist_entries'), [
+            ('remove_playlist_entries', 'p.pl5', ('i.m1', 'i.m2', 'i.m1', 'i.m3'), (3,))])
+        self.assertEqual(self.app.toasts, ['Removed “Third” from “Mix”'])
+        self.assertEqual(self.app.buttons, [('Undo', 'win.item-undo-remove', 'p.pl5')])
 
     async def test_remove_from_playlist_only_from_the_users_and_not_in_the_demo(self):
         self.assertIsNone(self.actions.remove_entries(READ_ONLY, self.mix_tracks()))

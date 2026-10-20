@@ -41,10 +41,18 @@ Apple's) a song moves within the list: dragged (the row's own drag, widgets/dnd.
 here as a MOVE: an insertion line where it would go, the list scrolling near its edges, a
 drop written at once) or with Alt+Up and Alt+Down on the focused song (keyboard.move_step(),
 the focus following it), as the row's menu's Move Up and Move Down do; all through
-ItemActions.move_in_playlist(), which announces where it went. The page lists the playlist in
-its own order only, so every order shown is one that can be changed. A click without a drag
+ItemActions.move_in_playlist(), which announces where it went. A click without a drag
 still plays the song: the drag starts only past GTK's drag threshold, and then cancels the
-row's click.
+row's click. Delete on the focused song takes it out of the playlist (remove_focused():
+keyboard.remove_key(), ItemActions.remove_entries()'s one write with Undo; in the selection
+mode, the songs selected), one removal at a time, the focus going to the row in its place
+once the songs show again; an empty playlist of the user's offers Add Songs… in its status.
+
+A playlist's Sort By (sort_button, the header bar's, beside the filter's: PLAYLIST_SORTS,
+either way round) orders what the page shows, never the playlist: each group's store passes
+through a Gtk.SortListModel of playlist_sorter() before the filter, a text's descending
+order shown backwards (ShownModel), as the grids sort. It lasts for the page's life; in any
+order but Playlist Order, first to last, no song moves (can_reorder()).
 
 A playlist's songs (Favourite Songs' too) have the library pages' filter bar
 (widgets/filter_bar.py: Filter Songs, Ctrl+F through focus_filter(), typing on the page,
@@ -77,14 +85,14 @@ import logging
 from gettext import gettext as _
 from gettext import ngettext
 
-from gi.repository import Adw, Gdk, Gio, GObject, Graphene, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango
 
 from ..backend.api import is_library_id
 from .. import keyboard
 from ..backend.errors import EngineError
 from ..library import (HELD_KINDS, TRACK_REF_KINDS, Item, ItemRefs, ShelfModel, Track,
                        drop_index)
-from ..actions import is_manageable
+from ..actions import adds_to, is_manageable
 from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
 from ..release import (album_artist, album_shelves, album_target, curator, footer_lines,
@@ -115,6 +123,43 @@ REVEAL_FRAMES = 10
 # The songs a playlist's filter gives the list at a frame as it grows back (ShownModel): a
 # row about 1.5 ms to make, bind and lay out (twelve made frames of 17-21 ms).
 GROW_TRACKS = 5
+
+# A playlist's Sort By, the order its page shows (never the playlist's own: Duplicate, Play
+# and a reorder keep that): key -> (its menu label, the Track properties compared in turn;
+# none, the playlist's order). Labels are looked up when a page is built; their mnemonics
+# differ from one another's and from grid.sort_labels()' directions, as they share a menu.
+PLAYLIST_SORTS = {
+    'playlist': (lambda: _('_Playlist Order'), ()),
+    'title': (lambda: _('_Title'), ('title', 'artist', 'album')),
+    'artist': (lambda: _('_Artist'), ('artist', 'album', 'disc-number', 'track-number')),
+    'album': (lambda: _('Al_bum'), ('album', 'disc-number', 'track-number')),
+    'time': (lambda: _('T_ime'), ('duration-ms', 'title')),
+}
+# The Track properties compared as numbers; the rest are text.
+TRACK_NUMBERS = frozenset({'disc-number', 'track-number', 'duration-ms'})
+# Playlist Order, first to last: the one order a playlist's songs can be moved in.
+OWN_ORDER = ('playlist', False)
+
+
+def playlist_sorter(key, descending=False):
+    """The Gtk.Sorter that shows a playlist's songs by PLAYLIST_SORTS[key] (None for its own
+    order), and whether that order is shown backwards (ShownModel), as grid.make_sorter()
+    does: a number first (Time) is sorted the other way, its ties as they are; a text's or
+    the playlist's own order is shown last to first."""
+    names = PLAYLIST_SORTS[key][1]
+    if not names:
+        return None, descending
+    sorter = Gtk.MultiSorter()
+    for name in names:
+        expression = Gtk.PropertyExpression.new(Track, None, name)
+        if name in TRACK_NUMBERS:
+            down = descending and name == names[0]
+            sorter.append(Gtk.NumericSorter(
+                expression=expression,
+                sort_order=Gtk.SortType.DESCENDING if down else Gtk.SortType.ASCENDING))
+        else:
+            sorter.append(Gtk.StringSorter(expression=expression))
+    return sorter, descending and names[0] not in TRACK_NUMBERS
 
 
 def playing_ordinal(tracks, ids, index):
@@ -430,6 +475,16 @@ class DetailPage(Adw.NavigationPage):
         self._reveal_wanted = False  # Go to Current Song asked for the playing song's row
         self._reveal_task = None
         self._adding = None  # the Item whose add to the library is under way (Add)
+        self._status = None  # what the status box shows ('empty': No Songs, Add Songs…)
+        # A playlist's Sort By (PLAYLIST_SORTS key, descending), for the page's life, and the
+        # Item it was chosen for; the groups' Gtk.SortListModels of it.
+        self._order = OWN_ORDER
+        self._ordered_for = None
+        self._sorted = []
+        # Delete's removal under way (one at a time: a second would be made on a list Apple
+        # has changed), and where the focus goes once the songs show again: (Item, position).
+        self._removing = None
+        self._refocus = None
         # The songs Apple suggests (wants_suggestions): the Item they were asked for, what
         # is shown of them (a Suggestions), the requests under way, and the section that
         # shows them, made when there are some (_suggestions_widget()).
@@ -521,6 +576,32 @@ class DetailPage(Adw.NavigationPage):
         self.selection_mode.set_filter_bar(self.filter_bar)
         connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
         self.filter_bar.set_focus_return(self._focus_tracks)
+        # A playlist's Sort By, beside the filter's button: radio items of the stateful
+        # tracks.sort and tracks.sort-order actions (the view's order only).
+        self._sort_action = Gio.SimpleAction.new_stateful(
+            'sort', GLib.VariantType.new('s'), GLib.Variant('s', OWN_ORDER[0]))
+        self._order_action = Gio.SimpleAction.new_stateful(
+            'sort-order', GLib.VariantType.new('s'), GLib.Variant('s', 'ascending'))
+        connect_weak(self._sort_action, 'change-state', self._on_sort_chosen)
+        connect_weak(self._order_action, 'change-state', self._on_order_chosen)
+        sort_actions = Gio.SimpleActionGroup()
+        sort_actions.add_action(self._sort_action)
+        sort_actions.add_action(self._order_action)
+        self.insert_action_group('tracks', sort_actions)
+        keys_menu = Gio.Menu()
+        for key, (label, _names) in PLAYLIST_SORTS.items():
+            keys_menu.append(label(), f'tracks.sort::{key}')
+        directions = Gio.Menu()
+        directions.append(_('Asc_ending'), 'tracks.sort-order::ascending')
+        directions.append(_('Desce_nding'), 'tracks.sort-order::descending')
+        sort_menu = Gio.Menu()
+        sort_menu.append_section(None, keys_menu)
+        sort_menu.append_section(None, directions)
+        self.sort_button = Gtk.MenuButton(icon_name='view-sort-descending-symbolic',
+                                          tooltip_text=_('Sort By'), menu_model=sort_menu,
+                                          visible=False)
+        self.sort_button.update_property([Gtk.AccessibleProperty.LABEL], [_('Sort By')])
+        self.header_bar.pack_end(self.sort_button)
         # Tab from the hero's last button goes on into the tracks (_on_list_key_pressed).
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         connect_weak(keys, 'key-pressed', self._on_list_key_pressed)
@@ -673,17 +754,26 @@ class DetailPage(Adw.NavigationPage):
         groups = [group for group in item.groups if group.entries.get_n_items()]
         # New groups (or another item): what each text matched is not known for them.
         self._text.forget()
-        if filters_songs(item):  # through the filter bar's text
-            # Shown through a ShownModel, which a filter's change recycles the rows for, and
-            # which gives the list a few a frame when it grows back (the sections after it
-            # placed again as it does).
-            self._filtered = [Gtk.FilterListModel(model=group.entries, filter=self._text.filter)
-                              for group in groups]
+        if filters_songs(item):  # in the Sort By's order, through the filter bar's text
+            if self._ordered_for is not item:  # another playlist: in its own order
+                self._ordered_for = item
+                self._set_order_state(OWN_ORDER)
+            sorter, backwards = playlist_sorter(*self._order)
+            # Sorted, then filtered (a filter's change never sorts again). Shown through a
+            # ShownModel, which a filter's change recycles the rows for, and which gives the
+            # list a few a frame when it grows back (the sections after it placed again as
+            # it does).
+            self._sorted = [Gtk.SortListModel(model=group.entries, sorter=sorter)
+                            for group in groups]
+            self._filtered = [Gtk.FilterListModel(model=model, filter=self._text.filter)
+                              for model in self._sorted]
             self._track_models = [ShownModel(model, self.list_view, GROW_TRACKS)
                                   for model in self._filtered]
             for model in self._track_models:
+                model.set_backwards(backwards)
                 connect_weak(model, 'items-changed', self._place_sections)
         else:
+            self._sorted = []
             self._filtered = []
             self._track_models = [group.entries for group in groups]
         self._starts = []
@@ -742,6 +832,7 @@ class DetailPage(Adw.NavigationPage):
             self._ask_album()
             if self._reveal_wanted:
                 self._start_reveal()  # the tracks Go to Current Song waited for
+        self._take_refocus(item)
 
     # A playlist's filter.
 
@@ -786,6 +877,7 @@ class DetailPage(Adw.NavigationPage):
         self.filter_bar.set_available(offered, self)
         if not offered:
             self.filter_bar.close()
+        self._update_sort_button()
         none = offered and bool(self.filter_bar.search) and not self._shown_tracks()
         if none:
             self._show_status('no-results', _('No Results Found'), _('Try a different filter'),
@@ -813,6 +905,51 @@ class DetailPage(Adw.NavigationPage):
                 break
         focus_position(self.list_view, self._starts[0] if position is None else position)
         return True
+
+    # A playlist's Sort By: the order shown, not the playlist's.
+
+    @property
+    def order(self):
+        """The order the songs show in: (PLAYLIST_SORTS key, descending)."""
+        return self._order
+
+    def _update_sort_button(self):
+        """Sort By while a playlist's songs show, and not while selecting (Cancel takes its
+        room, as on Songs)."""
+        self.sort_button.set_visible(filters_songs(self.item) and bool(self._track_models)
+                                     and not self.selection_mode.active)
+
+    def _set_order_state(self, order):
+        self._order = order
+        self._sort_action.set_state(GLib.Variant('s', order[0]))
+        self._order_action.set_state(GLib.Variant('s', 'descending' if order[1]
+                                                  else 'ascending'))
+
+    def _on_sort_chosen(self, _action, value):
+        self.sort(value.get_string(), self._order[1])
+
+    def _on_order_chosen(self, _action, value):
+        self.sort(self._order[0], value.get_string() == 'descending')
+
+    def sort(self, key, descending=False):
+        """Show the songs by `key` (PLAYLIST_SORTS), `descending` or not: the view's order
+        only, from the top. In any order but the playlist's own, first to last, no song
+        moves (can_reorder())."""
+        if key not in PLAYLIST_SORTS:
+            return
+        order = (key, bool(descending))
+        if order == self._order:
+            return
+        self._set_order_state(order)
+        sorter, backwards = playlist_sorter(*order)
+        # One change of the same items each (a list keeps their rows), then the backwards.
+        for model in self._sorted:
+            model.set_sorter(sorter)
+        for model in self._track_models:
+            if isinstance(model, ShownModel):
+                model.set_backwards(backwards)
+        if self._track_models:
+            self._scroll_top()
 
     # What the catalog shows under an album's tracks: the footer and the shelves.
 
@@ -1226,12 +1363,18 @@ class DetailPage(Adw.NavigationPage):
             self._show(item)
 
     def _show_empty(self):
+        """No Songs; on a playlist of the user's, with Add Songs…."""
         self._engine_status.clear()
-        self._show_status('empty', _('No Songs'), '', None)
+        if adds_to(self.item):
+            self._show_status('empty', _('No Songs'),
+                              _('Add songs from your library or Apple Music'), _('Add Songs…'))
+        else:
+            self._show_status('empty', _('No Songs'), '', None)
 
     def _show_status(self, status, title, description, button):
         """The status box: EngineStatus's states or 'empty' (no tracks at all), or for
         'loading' the spinner alone, as every page's loading state is."""
+        self._status = status
         loading = status == 'loading'
         self.status_spinner.set_visible(loading)
         self.status_icon.set_visible(not loading)
@@ -1246,6 +1389,10 @@ class DetailPage(Adw.NavigationPage):
         self._update_buttons()
 
     def _on_status_clicked(self, _button):
+        actions = getattr(self.get_root(), 'item_actions', None)
+        if self._status == 'empty' and adds_to(self.item) and actions is not None:
+            actions.ask_add_songs(self.item)  # an empty playlist's Add Songs…
+            return
         self._engine_status.activate()
 
     def _heading(self, item, group, number):
@@ -1347,17 +1494,19 @@ class DetailPage(Adw.NavigationPage):
         after the focused item (tab-behavior item), and the hero and the suggestions are
         its first and last items, so the tracks would otherwise be reached only with Down,
         the hero's buttons backwards only with Up, and the suggestions only with Down from
-        the last track."""
+        the last track. Before them, the focused song's own keys: Alt+Up and Alt+Down move
+        it (keyboard.move_step()), Delete takes it out of the playlist (remove_key())."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
         root = self.get_root()
         focused = root.get_focus() if root is not None else None
         get_dialog = getattr(root, 'get_visible_dialog', None)
-        step = keyboard.move_step(keyval, mods, type(focused),
-                                  get_dialog is not None and get_dialog() is not None,
-                                  focused is not None
-                                  and focused.get_ancestor(Gtk.Popover) is not None)
+        dialog_open = get_dialog is not None and get_dialog() is not None
+        in_popover = focused is not None and focused.get_ancestor(Gtk.Popover) is not None
+        step = keyboard.move_step(keyval, mods, type(focused), dialog_open, in_popover)
         if step is not None:
             return self._move_focused(focused, step)
+        if keyboard.remove_key(keyval, mods, type(focused), dialog_open, in_popover):
+            return self.remove_focused(focused)
         forward = keyval in (Gdk.KEY_Tab, Gdk.KEY_KP_Tab) and not mods
         backward = (keyval == Gdk.KEY_ISO_Left_Tab
                     or (keyval in (Gdk.KEY_Tab, Gdk.KEY_KP_Tab)
@@ -1514,6 +1663,7 @@ class DetailPage(Adw.NavigationPage):
         for header in list(self._table_headers):
             if header.get_child() is not None:
                 header.get_child().set_selecting(selection.active)
+        self._update_sort_button()
 
     def _on_narrow(self, breakpoint, applied):
         """A narrow breakpoint applied or not: the selection bar's narrow layout while either
@@ -1534,9 +1684,9 @@ class DetailPage(Adw.NavigationPage):
 
     def can_reorder(self):
         """Whether the songs shown can be moved: a playlist of the user's with its one list
-        (PlaylistOrder.can_reorder()), shown in its own order (the page has no other), and
-        all of it (no filter), and not while its selection mode is on."""
-        return (self._groups == 1 and not self.filter_bar.search
+        (PlaylistOrder.can_reorder()), shown in its own order, first to last (no Sort By),
+        and all of it (no filter), and not while its selection mode is on."""
+        return (self._groups == 1 and self._order == OWN_ORDER and not self.filter_bar.search
                 and not self.selection_mode.active and PlaylistOrder.can_reorder(self.item))
 
     def _move(self, from_index, to_index, at_once=False):
@@ -1559,6 +1709,88 @@ class DetailPage(Adw.NavigationPage):
             self.list_view.scroll_to(self._starts[0] + index + step, Gtk.ListScrollFlags.FOCUS,
                                      None)
         return True
+
+    # Delete: a song taken out of the playlist.
+
+    def removes_songs(self):
+        """Whether Delete takes songs out of the playlist shown: one of the user's (not
+        Favourite Songs, nor one of Apple's), in whatever order and filter it shows."""
+        item = self.item
+        return item is not None and item.kind == 'playlist' and is_manageable(item)
+
+    def remove_focused(self, focus):
+        """Delete on a song: Remove from Playlist (ItemActions.remove_entries(): one write,
+        Undo on its toast) of the focused song or, in the selection mode, of the songs
+        selected (the bar's Remove from Playlist); the focus goes to the row in its place
+        once the songs show again. False (the key not taken) when the focus is on no song or
+        the playlist is not the user's; True otherwise, while a removal is under way too,
+        when nothing more is asked (one at a time: a second would be made on a list Apple
+        has changed meanwhile)."""
+        row = _row_of(focus) if focus is not None else None
+        track = row.track_row.context_item if row is not None else None
+        actions = getattr(self.get_root(), 'item_actions', None)
+        if not isinstance(track, Track) or not self.removes_songs() or actions is None:
+            return False
+        if self._removing is not None and not self._removing.done():
+            return True
+        position = self._shown_position(track)
+        if self.selection_mode.active:
+            tracks = self.selection_mode.selection.ordered(self._selectable())
+            if not tracks:
+                return True
+            self.selection_mode.leave()
+        else:
+            tracks = [track]
+        task = actions.remove_entries(self.item, tracks)
+        if task is None:
+            return True  # the demo library, which says so
+        self._removing = task
+        self._refocus = (self.item, position) if position is not None else None
+        done = weak_method(self._on_removed)
+        task.add_done_callback(lambda finished: done(finished))
+        return True
+
+    def _shown_position(self, track):
+        """The list position of the row showing `track` (among the tracks shown), or None."""
+        for start, model in zip(self._starts, self._track_models, strict=True):
+            index = model.find(track) if isinstance(model, ShownModel) else None
+            if index is not None:
+                return start + index
+        return None
+
+    def _on_removed(self, task):
+        """Delete's removal ended: when it failed (reported already), the focus stays as it
+        is; either way, no later showing of the songs moves it."""
+        if self._removing is task:
+            self._removing = None
+        self._refocus = None
+
+    def _take_refocus(self, item):
+        """The songs show again after Delete's removal: the focus, lost with its row, goes to
+        the row now in its place (the last when it was the last), while it is nowhere else."""
+        refocus, self._refocus = self._refocus, None
+        if refocus is None or refocus[0] is not item or not self._starts:
+            return
+        app().spawn(self._refocus_at(refocus[1]))
+
+    async def _refocus_at(self, position):
+        """_take_refocus()'s work, from the next frame (the list makes the new rows at its
+        layout, and drops the one that had the focus), a frame apart until the row has it
+        (REVEAL_FRAMES at most)."""
+        for _attempt in range(REVEAL_FRAMES):
+            await next_frame(self.list_view)
+            root = self.get_root()
+            focus = root.get_focus() if root is not None else None
+            if focus is not None and not (focus is self.list_view
+                                          or focus.is_ancestor(self.list_view)):
+                return  # the focus went elsewhere meanwhile: left there
+            end = self._track_end()
+            if not self._starts or end <= self._starts[0] or not self.list_view.get_mapped():
+                return
+            target = min(position, end - 1)
+            if self._has_focus_at(target):
+                return
+            focus_position(self.list_view, target)
 
     def dragged_index(self):
         """The index of the song the in-app drag in progress carries (dnd.current()) when it

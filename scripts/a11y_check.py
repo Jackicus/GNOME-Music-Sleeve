@@ -706,6 +706,95 @@ async def selecting_songs(window):
     del window.announce
 
 
+async def playlist_actions(window):
+    """Step 17: on a playlist of the user's, Delete on the focused song removes it (the item
+    actions' Remove from Playlist, recorded: the demo writes nothing); Sort By in the header
+    bar, named, opened with Space, an order chosen by its mnemonic (no song moves in it);
+    the playlist's menu offers Add Songs… and Duplicate, whose dialog takes the focus in its
+    search, Enter moving to the first song and picking it, Escape closing it with the focus
+    back on the page."""
+    from applemusic.dialogs.add_songs import AddSongsDialog
+
+    page = window.navigation_view.get_visible_page()
+    actions = window.item_actions
+    found = context_menu.find(page.list_view, window.get_focus())
+    song = found[1] if found is not None else None
+    check('the focus is on a song of the playlist', song is not None,
+          describe(window.get_focus()))
+    if song is None:
+        return
+    removed = []
+    actions.remove_entries = lambda playlist, tracks: removed.append((playlist, list(tracks)))
+    await key(window, 'Delete', 0.4)
+    del actions.remove_entries
+    check('Delete removes the focused song', removed == [(page.item, [song])],
+          [(playlist.id, [each.title for each in tracks]) for playlist, tracks in removed])
+
+    print("-- a playlist's Sort By")
+    button = page.sort_button
+    check('Sort By is in the header bar, named', button.get_visible()
+          and button.get_tooltip_text() == 'Sort By')
+    button.grab_focus()
+    await key(window, 'space', 0.6)
+    shown = [each for each in harness.popovers(button) if isinstance(each, Gtk.PopoverMenu)
+             and each.get_visible()]
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check('Space opens it: the orders, then the directions', labels[:2] == [
+        '_Playlist Order', '_Title'] and 'Desce_nding' in labels, labels)
+    if keyboard is not None:
+        await key(window, 't', 0.6)  # Title's mnemonic
+    else:
+        for each in shown:
+            each.popdown()
+        page.activate_action('tracks.sort', GLib.Variant('s', 'title'))
+        await asyncio.sleep(0.3)
+    check('T sorts by title, and no song moves while it does',
+          page.order == ('title', False) and not page.can_reorder(), page.order)
+    page.sort('playlist')
+    check('Playlist Order moves songs again', page.can_reorder())
+
+    print('-- Add Songs… and Duplicate')
+    labels = menu_labels(actions.menu_for(page.item))
+    check("the playlist's menu offers Add Songs… and Duplicate",
+          'Add Son_gs…' in labels and 'Dupl_icate' in labels, labels)
+    added = []
+    actions.add_items_to_playlist = lambda playlist_id, objects: added.append(objects)
+    window.activate_action('win.item-add-songs', GLib.Variant('(ss)', ('playlist',
+                                                                       page.item.id)))
+    await until(lambda: dialog_shown(window, AddSongsDialog) is not None
+                and dialog_shown(window, AddSongsDialog).get_mapped())
+    dialog = dialog_shown(window, AddSongsDialog)
+    check('Add Songs… opens its dialog', dialog is not None)
+    if dialog is None:
+        del actions.add_items_to_playlist
+        return
+    toplevel = dialog.get_root()
+    await until(lambda: inside(toplevel.get_focus(), dialog.search_entry))
+    check('the focus is in its search', inside(toplevel.get_focus(), dialog.search_entry),
+          describe(toplevel.get_focus()))
+    # The library's songs, built for it when no page has asked for them yet; and the keys
+    # the dialog's own window's once it is active (a dialog of its own window).
+    await until(lambda: dialog.stack.get_visible_child_name() == 'library', 5)
+    await until(toplevel.is_active)
+    await key(toplevel, 'Return', 0.4)
+    focus = toplevel.get_focus()
+    check('Enter moves to the first song', inside(focus, dialog.library_view),
+          describe(focus))
+    await key(toplevel, 'Return', 0.4)
+    check('Enter picks it: the header bar counts it, its row says so',
+          dialog.picks.count == 1
+          and dialog.window_title.get_subtitle() == '1 song selected'
+          and any(item.get_accessible_description() == 'Selected'
+                  for item in dialog._bound), dialog.picks.count)
+    await key(toplevel, 'Escape', 0)
+    await until(lambda: dialog_shown(window, AddSongsDialog) is None)
+    await until(window.is_active)
+    check('Escape closes it, nothing added, the focus back on the page',
+          dialog_shown(window, AddSongsDialog) is None and added == []
+          and inside(window.get_focus(), page), describe(window.get_focus()))
+    del actions.add_items_to_playlist
+
+
 async def playing_keys(window):
     """Step 13: Go to Current Song (Ctrl+L) from a page, Now Playing and the full-screen
     player, the focus on the song's row each time; the volume keys (Ctrl+Up, Ctrl+Down) on
@@ -1671,6 +1760,8 @@ async def walkthrough(window):
     await moving_songs(window)
     print("-- a playlist's songs selected")
     await selecting_songs(window)
+    print("-- a playlist's song removed")
+    await playlist_actions(window)
     print('-- Preferences')
     await key(window, '<primary>comma', 1.0)
     dialog = app._preferences
@@ -2241,6 +2332,24 @@ async def names(window):
     if renamed is not None:
         renamed.force_close()
         await asyncio.sleep(0.5)
+    from applemusic.dialogs.add_songs import AddSongsDialog
+
+    window.activate_action('win.item-add-songs',
+                           GLib.Variant('(ss)', ('playlist', first_playlist().id)))
+    await asyncio.sleep(1.5)
+    adding = dialog_shown(window, AddSongsDialog)
+    if adding is not None:
+        adding.library_view.emit('activate', 0)  # a song picked: its row and the count
+        await asyncio.sleep(0.5)
+        total += await unnamed('Add Songs')
+        adding.scope_toggle.set_active_name('catalog')
+        adding.search_entry.set_text('tide')
+        await asyncio.sleep(1.5)
+        total += await unnamed("Add Songs, Apple Music's")
+        adding.force_close()
+        await asyncio.sleep(0.5)
+    else:
+        check('Add Songs… opens its dialog', False)
     album = app.library.albums.get_item(0)
     song = album.groups[0].entries.get_item(0)
     window.item_actions.menu_for(song)  # the menu names the song its action finds

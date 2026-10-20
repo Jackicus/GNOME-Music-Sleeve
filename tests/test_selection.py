@@ -8,8 +8,8 @@ import unittest
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.library import Track
-from applemusic.selection import Selection
+from applemusic.library import Item, Track
+from applemusic.selection import Picks, Selection
 
 
 def tracks(count):
@@ -93,6 +93,38 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(self.selection.ordered(shown), [shown[0], shown[4]])
         self.assertEqual(self.selection.ordered(list(reversed(shown))), [shown[4], shown[0]])
         self.assertEqual(Selection().ordered(shown), [])
+
+
+class PicksTest(unittest.TestCase):
+    """Add Songs…'s picks: songs from the library's list and a search's, each once by its
+    kind and id, in the order picked."""
+
+    def test_picked_once_wherever_it_shows(self):
+        picks = Picks()
+        changes = []
+        picks.connect('changed', lambda picks: changes.append(picks.count))
+        library = Track({'id': 'i.s1', 'title': 'Harbour Lights', 'type': 'library-songs'})
+        again = Track({'id': 'i.s1', 'title': 'Harbour Lights', 'type': 'library-songs'})
+        catalog = Item({'id': '1000000001', 'kind': 'song', 'title': 'Tidewater'})
+        video = Item({'id': '1000000002', 'kind': 'video', 'title': 'Lantern'})
+        self.assertTrue(picks.toggle(catalog))
+        self.assertTrue(picks.toggle(library))
+        self.assertTrue(picks.toggle(video))
+        self.assertTrue(picks.has(again))  # the same song in another list
+        self.assertEqual(picks.objects(), [catalog, library, video])
+        self.assertEqual(Picks.key(video), ('video', '1000000002'))
+        self.assertTrue(picks.toggle(again))  # unpicked from there
+        self.assertFalse(picks.has(library))
+        self.assertEqual(picks.objects(), [catalog, video])
+        self.assertEqual(changes, [1, 2, 3, 2])
+
+    def test_only_songs_and_videos(self):
+        picks = Picks()
+        album = Item({'id': 'l.alb1', 'kind': 'album', 'title': 'Tidewater'})
+        self.assertFalse(picks.toggle(album))
+        self.assertFalse(picks.toggle(Track({'title': 'No Id'})))
+        self.assertFalse(picks.has(album))
+        self.assertEqual(picks.count, 0)
 
 
 if __name__ == '__main__':

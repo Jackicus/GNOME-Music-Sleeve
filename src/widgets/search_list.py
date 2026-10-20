@@ -145,9 +145,12 @@ class SearchList(Gtk.ScrolledWindow):
     shorter than the window fills it; a pager cancel()ed is asked no more until the list is
     shown again (mapped), which resume()s it. Activating a hit emits `item-activated` (the
     page opens it and remembers it), activating the footer, or its Try Again, asks again
-    after a failure. Every signal of a child is connected weakly: a pushed page drops the list."""
+    after a failure. Every signal of a child is connected weakly: a pushed page drops the list.
+    A subclass may show its hits in rows of its own (`row_type`, a ResultRow's subclass)."""
 
     __gtype_name__ = 'AppleMusicSearchList'
+
+    row_type = ResultRow
 
     __gsignals__ = {
         'item-activated': (GObject.SignalFlags.RUN_FIRST, None, (Item,)),
@@ -276,7 +279,7 @@ class SearchList(Gtk.ScrolledWindow):
     # Rows.
 
     def _on_setup(self, _factory, list_item):
-        list_item.set_child(ResultRow())
+        list_item.set_child(self.row_type())
 
     def _on_bind(self, _factory, list_item):
         item = list_item.get_item()
@@ -289,8 +292,8 @@ class SearchList(Gtk.ScrolledWindow):
             self._footer_item = list_item
             self._show_footer()
             return
-        if not isinstance(row, ResultRow):
-            row = ResultRow()
+        if not isinstance(row, self.row_type):
+            row = self.row_type()
             list_item.set_child(row)
         list_item.set_activatable(True)
         row.bind(item)

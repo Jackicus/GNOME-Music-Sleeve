@@ -23,6 +23,8 @@ actions, the menus that offer them, and what a drop on the sidebar or the player
     actions.remove_entries(playlist, tracks)    # a selection's Remove from Playlist, Undo
     actions.ask_remove_from_library(tracks)     # one confirmation, then all of them
     actions.new_playlist_of(tracks)             # New Playlist… holding them
+    actions.duplicate(playlist)                 # a copy, "<name> Copy", beside it, shown
+    actions.ask_add_songs(playlist)             # Add Songs…: songs picked, added in one write
 
 The actions, each on the window (win.*) with a GLib.Variant target "(ss)", the (kind, id) of
 what it acts on (an Item's kind and id, or 'song' and a Track's id):
@@ -51,7 +53,7 @@ and item-add-to-playlist, "(sss)" (playlist id, kind, id): a song or a music vid
 library playlist, or every song of an album or a playlist (tracks_of(): the library's, else
 the engine's read of them), in order, in batches, with one toast that counts them; the same
 add is not made twice while it runs. The playlists' own, each through a dialog
-(dialogs/playlist.py):
+(dialogs/playlist.py, dialogs/add_songs.py) but Duplicate:
 
     item-new-playlist    a playlist named in a dialog: holding the song or video of the
                          target (an album's or a playlist's songs, named after it), or in
@@ -60,6 +62,11 @@ add is not made twice while it runs. The playlists' own, each through a dialog
     item-delete          a playlist, or a folder with what is in it, once a dialog confirms
     item-new-folder      a folder named in a dialog, in the folder the target names
                          ('folder', 'root': the top level)
+    item-duplicate       a library playlist copied into a new playlist of the user's, named
+                         "<name> Copy" (duplicate_name()), in its folder, its page shown
+    item-add-songs       a playlist of the user's: songs of the library and of Apple Music's
+                         catalogue picked in a dialog (dialogs/add_songs.py), added in one
+                         write (add_items_to_playlist())
 
 and item-remove-from-playlist, "(ssi)" (playlist id, track id, the track's index): one entry
 of a playlist taken out; item-move-to-folder, "(sss)" (folder id, kind, id): a playlist (or
@@ -114,8 +121,9 @@ move_targets(); in neither is a folder a submenu: playlist_submenu()), Remove fr
 Playlist and, where it can go, Move Up and Move Down (a track shown in a playlist of the
 user's: `container`); Open in Browser, Copy Link (only an address anyone can open: not
 the web player's library routes; a library artist's is the catalog artist's page, which
-the engine finds through their songs); Rename… and Delete Playlist… or Delete Folder… (a
-playlist of the user's, Item.editable; a folder of theirs),
+the engine finds through their songs); Add Songs… (a playlist of the user's: adds_to()),
+Duplicate (a library playlist: duplicates()), Rename… and Delete Playlist… or Delete
+Folder… (a playlist of the user's, Item.editable; a folder of theirs),
 Remove from Library… (what the library holds: removal_target; a playlist of Apple's, which
 cannot be deleted as the user's own are; a catalog album or playlist held, as the library's
 own it was found as, Library.held_item()); a folder's menu starts with New Playlist… and New
@@ -243,6 +251,8 @@ def action_labels():
         'item-move-up': _('_Move Up'),
         'item-move-down': _('Move _Down'),
         'item-view-credits': _('Vi_ew Credits'),
+        'item-duplicate': _('Dupl_icate'),
+        'item-add-songs': _('Add Son_gs…'),
     }
 
 
@@ -414,9 +424,11 @@ def added_message(count, playlist='', new=False):
                     count).format(count=count)
 
 
-def removed_message(count, playlist=''):
-    """The toast after `count` songs (a selection's) were taken out of the playlist named
-    `playlist`."""
+def removed_message(count, playlist='', title=''):
+    """The toast after `count` songs (a selection's, or Delete's) were taken out of the
+    playlist named `playlist`; one song by its `title`, when it has one."""
+    if count == 1 and title and playlist:
+        return _('Removed “{title}” from “{playlist}”').format(title=title, playlist=playlist)
     if playlist:
         return ngettext('Removed {count} song from “{playlist}”',
                         'Removed {count} songs from “{playlist}”',
@@ -694,13 +706,41 @@ def queue_move_items(queue_entry, steps):
     return items
 
 
+def adds_to(obj):
+    """Whether Add Songs… applies to obj: a playlist of the user's (Item.editable: not
+    Favourite Songs, nor one of Apple's), whose songs are picked in a dialog
+    (dialogs/add_songs.py)."""
+    return isinstance(obj, Item) and obj.kind == 'playlist' and obj.editable
+
+
+def duplicates(obj):
+    """Whether Duplicate applies to obj: a playlist of the library's (the user's, Favourite
+    Songs, one of Apple's added), copied into a new playlist of the user's. A catalog
+    playlist is added to the library instead."""
+    return (isinstance(obj, Item) and obj.kind == 'playlist' and bool(obj.id)
+            and is_library_id(obj.id))
+
+
+def duplicate_name(name):
+    """The name of a playlist's copy (Duplicate), as GNOME's Files names a copy."""
+    # Translators: the name Duplicate gives a copy of a playlist: {name} is its name
+    # ("Road Trip Copy").
+    return _('{name} Copy').format(name=name) if name else _('Untitled Playlist Copy')
+
+
 def manage_items(obj):
-    """Rename… and Delete Playlist… (or Delete Folder…) for obj, when it is manageable."""
-    if not is_manageable(obj):
-        return []
-    target = GLib.Variant('(ss)', (obj.kind, obj.id))
-    return [menu_item('item-rename', target),
-            menu_item('item-delete', target, label=delete_label(obj.kind))]
+    """Add Songs… (a playlist of the user's), Duplicate (a library playlist), then Rename…
+    and Delete Playlist… (or Delete Folder…) for obj, when it is manageable."""
+    target = GLib.Variant('(ss)', (obj.kind, obj.id)) if describe(obj) is not None else None
+    items = []
+    if adds_to(obj):
+        items.append(menu_item('item-add-songs', target))
+    if duplicates(obj):
+        items.append(menu_item('item-duplicate', target))
+    if is_manageable(obj):
+        items += [menu_item('item-rename', target),
+                  menu_item('item-delete', target, label=delete_label(obj.kind))]
+    return items
 
 
 def is_apple_music_url(url):
@@ -1145,6 +1185,8 @@ class ItemActions:
             'item-remove-from-library': self._on_remove_from_library,
             'item-create-station': self._on_create_station,
             'item-view-credits': self._on_view_credits,
+            'item-duplicate': self._on_duplicate,
+            'item-add-songs': self._on_add_songs,
         }
         self.actions = {}
         for name, handler in handlers.items():
@@ -1820,10 +1862,11 @@ class ItemActions:
                                                            show=True))
 
     def remove_entries(self, playlist, tracks):
-        """A selection's Remove from Playlist: the entries `tracks` (Tracks of the playlist
-        Item `playlist`, one of the user's, by their places in it: Track.index) taken out
-        in one write (Engine.remove_playlist_entries()), the order pending written first; a
-        toast that counts them, with Undo (item-undo-remove), then the playlist read again.
+        """A selection's Remove from Playlist, or Delete on a song (DetailPage's
+        remove_focused()): the entries `tracks` (Tracks of the playlist Item `playlist`, one
+        of the user's, by their places in it: Track.index) taken out in one write
+        (Engine.remove_playlist_entries()), the order pending written first; a toast that
+        counts them (names one), with Undo (item-undo-remove), then the playlist read again.
         The task, whose result says whether they went, or None (the demo library, or not a
         playlist of the user's)."""
         if not is_manageable(playlist) or playlist.kind != 'playlist':
@@ -1850,8 +1893,9 @@ class ItemActions:
             gone = set(positions)
             kept = [entry['id'] for place, entry in enumerate(before) if place not in gone]
             self._removed[playlist.id] = (kept, before, len(positions))
-            self.app.toast(removed_message(len(positions), playlist.title or ''), _('Undo'),
-                           'win.item-undo-remove', GLib.Variant('s', playlist.id))
+            title = tracks[0].title if len(tracks) == 1 else ''
+            self.app.toast(removed_message(len(positions), playlist.title or '', title),
+                           _('Undo'), 'win.item-undo-remove', GLib.Variant('s', playlist.id))
             await self._follow_tracks(playlist.id)
             return True
 
@@ -2059,6 +2103,45 @@ class ItemActions:
                 self.window.select_page(f'playlist:{new_id}')  # sidebar.playlist_key
 
         return self.app.spawn(run())
+
+    def _on_duplicate(self, _action, parameter):
+        return self.duplicate(self._unpack(parameter)[0])
+
+    def duplicate(self, playlist):
+        """Duplicate: a new playlist of the user's named duplicate_name(), with the
+        playlist's description and its songs in its own order (whatever order its page
+        shows: a sort is the view's), beside it (in its folder), its page shown once Apple
+        lists it (create_playlist()). An empty playlist's copy is made empty. The task, or
+        None."""
+        if not duplicates(playlist):
+            self.app.toast(_('This cannot be duplicated'))
+            return None
+        name = duplicate_name(playlist.title or '')
+        folder_id = self._parent_of(playlist)
+        description = playlist.summary or ''
+        if playlist.groups and not container_tracks(playlist):
+            return self.create_playlist(name, description, (), folder_id, show=True)
+        return self.create_playlist(name, description, folder_id=folder_id, show=True,
+                                    objects=[playlist])
+
+    def _on_add_songs(self, _action, parameter):
+        return self.ask_add_songs(self._unpack(parameter)[0])
+
+    def ask_add_songs(self, playlist):
+        """Add Songs…: the dialog (dialogs/add_songs.py) that picks songs from the library
+        and Apple Music's catalogue for a playlist of the user's, added in one write once
+        chosen (add_items_to_playlist(): one POST of up to api.PLAYLIST_BATCH). The dialog, or
+        None."""
+        if not adds_to(playlist):
+            self.app.toast(_('Songs cannot be added to this playlist'))
+            return None
+        from .dialogs.add_songs import AddSongsDialog
+
+        playlist_id = playlist.id
+        dialog = AddSongsDialog(self.app, self.library, playlist.title or '', lambda objects:
+                                self.add_items_to_playlist(playlist_id, objects))
+        dialog.present(self.window)
+        return dialog
 
     def _on_rename(self, _action, parameter):
         obj = self._unpack(parameter)[0]

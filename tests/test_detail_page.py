@@ -854,6 +854,206 @@ class ReorderTest(PageTestCase):
         self.assertEqual(self.window.item_actions.moved, [])
 
 
+class PlaylistSortTest(PageTestCase):
+    """A playlist's Sort By: the order shown, never the playlist's (no song moves in any
+    other); Playlist Order first to last is the playlist's own."""
+
+    async def show(self, kind='playlist'):
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        data = album(1, tracks=4, kind=kind)
+        for entry, (title, by, on, ms) in zip(data['groups'][0]['entries'], [
+                ('Delta', 'Bravo Band', 'Zulu', 200000), ('Alpha', 'Delta Duo', 'Kilo', 90000),
+                ('Charlie', 'Alpha Act', 'Kilo', 300000), ('Bravo', 'Alpha Act', 'Echo', 150000)],
+                strict=True):
+            entry.update(title=title, artist=by, album=on, durationMs=ms)
+        self.item = Item(data)
+        page = await self.push(DetailPage(self.library, self.item))
+        self.assertTrue(await self.until(lambda: len(page._bound) == 4, timeout=2))
+        return page
+
+    def titles(self, page):
+        from applemusic.library import Track
+
+        rows = page.list_view.get_model()
+        return [rows.get_item(n).title for n in range(rows.get_n_items())
+                if isinstance(rows.get_item(n), Track)]
+
+    async def test_each_order(self):
+        page = await self.show()
+        self.assertTrue(page.sort_button.get_visible())
+        self.assertEqual(self.titles(page), ['Delta', 'Alpha', 'Charlie', 'Bravo'])
+        page.sort('title')
+        self.assertEqual(self.titles(page), ['Alpha', 'Bravo', 'Charlie', 'Delta'])
+        self.assertFalse(page.can_reorder())  # not the playlist's order
+        page.sort('title', descending=True)
+        self.assertEqual(self.titles(page), ['Delta', 'Charlie', 'Bravo', 'Alpha'])
+        page.sort('artist')  # by artist, then album
+        self.assertEqual(self.titles(page), ['Bravo', 'Charlie', 'Delta', 'Alpha'])
+        page.sort('album')
+        self.assertEqual(self.titles(page), ['Bravo', 'Alpha', 'Charlie', 'Delta'])
+        page.sort('time', descending=True)
+        self.assertEqual(self.titles(page), ['Charlie', 'Delta', 'Bravo', 'Alpha'])
+        page.sort('playlist', descending=True)  # last to first: still no move
+        self.assertEqual(self.titles(page), ['Bravo', 'Charlie', 'Alpha', 'Delta'])
+        self.assertFalse(page.can_reorder())
+        page.sort('playlist')
+        self.assertEqual(self.titles(page), ['Delta', 'Alpha', 'Charlie', 'Bravo'])
+        self.assertTrue(page.can_reorder())
+        # The playlist itself kept its order throughout.
+        self.assertEqual([track_id.rsplit('.', 1)[1] for track_id in self.item.track_ids()],
+                         ['0', '1', '2', '3'])
+
+    async def test_the_menus_actions_and_what_keeps_the_order(self):
+        from gi.repository import GLib
+
+        page = await self.show()
+        page.activate_action('tracks.sort', GLib.Variant('s', 'time'))
+        self.assertEqual(self.titles(page), ['Alpha', 'Bravo', 'Delta', 'Charlie'])
+        page.activate_action('tracks.sort-order', GLib.Variant('s', 'descending'))
+        self.assertEqual(page.order, ('time', True))
+        self.assertEqual(self.titles(page), ['Charlie', 'Delta', 'Bravo', 'Alpha'])
+        # A filter, and a reload of the songs, keep it.
+        page.filter_bar.set_text('a')
+        self.assertEqual(self.titles(page), ['Charlie', 'Delta', 'Bravo', 'Alpha'])
+        page.filter_bar.set_text('')
+        page._show(self.item)
+        self.assertEqual(self.titles(page), ['Charlie', 'Delta', 'Bravo', 'Alpha'])
+        # Selecting leaves it out of the header bar (Cancel takes its room).
+        page.selection_mode.start()
+        self.assertFalse(page.sort_button.get_visible())
+        page.selection_mode.leave()
+        self.assertTrue(page.sort_button.get_visible())
+
+    async def test_an_album_has_no_sort(self):
+        page = await self.show(kind='album')
+        self.assertFalse(page.sort_button.get_visible())
+
+    def test_the_labels_mnemonics_differ(self):
+        from applemusic.pages.detail import PLAYLIST_SORTS
+
+        labels = [label() for label, _names in PLAYLIST_SORTS.values()]
+        labels += ['Asc_ending', 'Desce_nding']
+        letters = [label[label.index('_') + 1].lower() for label in labels]
+        self.assertEqual(len(letters), len(set(letters)), labels)
+
+
+class DeleteTest(PageTestCase):
+    """Delete on a playlist's focused song: Remove from Playlist (the item actions' one
+    write, with Undo), the focus on the row in its place once the songs show again; in the
+    selection mode, the songs selected."""
+
+    async def show(self, **attributes):
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        data = album(1, tracks=4, kind='playlist')
+        if attributes:
+            data['attributes'] = attributes
+        self.data = data
+        self.item = Item(data)
+        page = await self.push(DetailPage(self.library, self.item))
+        self.assertTrue(await self.until(
+            lambda: len(page._bound) == 4 and page._row_at(3) is not None
+            and page._row_at(3).get_height() > 0, timeout=2))
+        return page
+
+    def songs(self):
+        entries = self.item.groups[0].entries
+        return [entries.get_item(n) for n in range(entries.get_n_items())]
+
+    def keys(self, page):
+        from gi.repository import Gtk
+
+        return next(controller for controller in _controllers(page.list_view)
+                    if isinstance(controller, Gtk.EventControllerKey))
+
+    async def focus(self, page, index):
+        page._row_at(index).get_parent().grab_focus()
+        self.assertTrue(await self.until(
+            lambda: self.window.get_focus() is not None
+            and self.window.get_focus().is_ancestor(page.list_view)))
+
+    def delete(self, page):
+        from gi.repository import Gdk
+
+        return self.keys(page).emit('key-pressed', Gdk.KEY_Delete, 0, Gdk.ModifierType(0))
+
+    def focused(self, page):
+        from applemusic.pages.detail import _row_of
+
+        focus = self.window.get_focus()
+        row = _row_of(focus) if focus is not None else None
+        return row.track_row.context_item.id if row is not None else None
+
+    async def test_delete_removes_the_focused_song_and_the_focus_takes_the_next(self):
+        page = await self.show()
+        actions = self.window.item_actions
+        actions.removal = asyncio.get_running_loop().create_future()  # under way
+        await self.focus(page, 1)
+        song = self.songs()[1]
+        self.assertTrue(self.delete(page))
+        self.assertEqual(actions.batches, [('remove-from-playlist', [song], self.item.id)])
+        # One at a time: a second Delete meanwhile asks nothing.
+        self.assertTrue(self.delete(page))
+        self.assertEqual(len(actions.batches), 1)
+        # Apple's answer: the playlist read again without it, its rows made again.
+        entries = [dict(entry) for entry in self.data['groups'][0]['entries']
+                   if entry['index'] != 1]
+        for place, entry in enumerate(entries):
+            entry['index'] = place
+        self.item.merge({'groups': [dict(self.data['groups'][0], entries=entries)]})
+        self.assertTrue(await self.until(lambda: self.focused(page) == 'l.playlist001.t1.2'))
+        actions.removal.set_result(True)
+        await self.turn()
+        self.assertIsNone(page._removing)
+
+    async def test_in_the_selection_mode_delete_removes_the_songs_selected(self):
+        page = await self.show()
+        await self.focus(page, 0)
+        mode = page.selection_mode
+        mode.key('toggle', self.songs()[2])
+        mode.key('toggle', self.songs()[0])
+        self.assertTrue(self.delete(page))
+        self.assertEqual(self.window.item_actions.batches[-1],
+                         ('remove-from-playlist', [self.songs()[0], self.songs()[2]],
+                          self.item.id))
+        self.assertFalse(mode.active)
+        await self.turn()
+        # Nothing selected: the key taken, nothing asked.
+        mode.start()
+        self.assertTrue(self.delete(page))
+        self.assertEqual(len(self.window.item_actions.batches), 1)
+
+    async def test_not_on_favourite_songs_apples_or_a_button(self):
+        for attributes in ({'isFavourites': True}, {'canEdit': False}):
+            page = await self.show(**attributes)
+            await self.focus(page, 0)
+            self.assertFalse(self.delete(page))
+        page = await self.show()
+        page.play_button.grab_focus()
+        self.assertFalse(self.delete(page))
+        self.assertEqual(self.window.item_actions.batches, [])
+
+    async def test_an_empty_playlist_offers_add_songs(self):
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        data = album(2, tracks=0, kind='playlist')
+        data['groups'] = [{'name': '', 'play': data['play'], 'entries': []}]  # none in it
+        empty = Item(data)
+        page = await self.push(DetailPage(self.library, empty))
+        self.assertTrue(page.status_button.get_visible())
+        self.assertEqual(page.status_button.get_label(), 'Add Songs…')
+        page.status_button.emit('clicked')
+        self.assertEqual(self.window.item_actions.add_songs, [empty])
+        # Favourite Songs: No Songs alone.
+        favourites = Item(dict(data, id='l.playlist003', attributes={'isFavourites': True}))
+        other = await self.push(DetailPage(self.library, favourites))
+        self.assertFalse(other.status_button.get_visible())
+
+
 def _controllers(widget):
     model = widget.observe_controllers()
     return [model.get_item(position) for position in range(model.get_n_items())]

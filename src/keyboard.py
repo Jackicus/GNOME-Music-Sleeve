@@ -17,16 +17,19 @@ field) are the window's own for the same reason, and tab_action() decides them a
     name = playback_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
     name = tab_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
     step = move_step(keyval, mods, type(focus), dialog_open, in_popover)   # -1, 1 or None
+    remove = remove_key(keyval, mods, type(focus), dialog_open, in_popover)  # True or False
     step = volume_step(keyval, mods, type(focus), dialog_open, in_popover)  # -1, 1 or None
     name = selection_key(keyval, mods, type(focus), dialog_open, in_popover, active, on_row)
 
 move_step() is a playlist page's (pages/detail.py) and Up Next's (widgets/queue.py): Alt+Up
 or Alt+Down (shortcuts.MOVE_UP, MOVE_DOWN) moves the focused song or entry one place, on the
-same terms. volume_step() is the
-window's: Ctrl+Up or Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN) steps the volume, except
-where those keys are the focused widget's own (VOLUME_OWNERS). selection_key() is a track
-list's selection mode's (widgets/selection_mode.py), asked by the window before the playback
-keys, so that in the mode Space on a song selects it rather than playing or pausing.
+same terms, and remove_key() is a playlist page's Delete (shortcuts.REMOVE_SONG): Remove from
+Playlist of the focused song (in the selection mode, of the songs selected). volume_step() is
+the window's: Ctrl+Up or Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN) steps the volume,
+except where those keys are the focused widget's own (VOLUME_OWNERS). selection_key() is a
+track list's selection mode's (widgets/selection_mode.py), asked by the window before the
+playback keys, so that in the mode Space on a song selects it rather than playing or
+pausing.
 
     target = search_target(page)   # 'filter' or 'search': where Ctrl+F goes
 
@@ -60,6 +63,9 @@ TAB_KEYS = parse_keys(shortcuts.NOW_PLAYING_TABS)
 # -> the step (the keypad's arrows too).
 MOVE_KEYS = parse_keys({-1: (shortcuts.MOVE_UP, '<alt>KP_Up'),
                         1: (shortcuts.MOVE_DOWN, '<alt>KP_Down')})
+
+# The keys that remove a playlist's focused song (the keypad's Delete too).
+REMOVE_KEYS = frozenset(parse_keys({True: (shortcuts.REMOVE_SONG, 'KP_Delete')}))
 
 # The volume keys, by (keyval, modifiers) -> the step (the keypad's arrows too).
 VOLUME_KEYS = parse_keys({-1: (shortcuts.VOLUME_DOWN, '<primary>KP_Down'),
@@ -137,6 +143,14 @@ def move_step(keyval, mods, focus_type, dialog_open, in_popover):
     if step is None or dialog_open or in_popover or issubclass(focus_type, TYPING):
         return None
     return step
+
+
+def remove_key(keyval, mods, focus_type, dialog_open, in_popover):
+    """Whether a key press is a playlist page's Remove from Playlist (Delete, no modifier):
+    not while the focus is typed into (Delete deletes a character there), a dialog is open or
+    the focus is in a popover, as for move_step()."""
+    return ((keyval, int(mods)) in REMOVE_KEYS and not dialog_open and not in_popover
+            and not issubclass(focus_type, TYPING))
 
 
 def volume_step(keyval, mods, focus_type, dialog_open, in_popover):
