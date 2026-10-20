@@ -67,7 +67,9 @@ paths:
   station's queue); while restored they change the session alone and drop its `source`.
   `apply_autoplay()` sets the `autoplay` setting on MusicKit as the engine comes up, after a
   `bridgeReset`, and when the setting changes (main.py); `autoplay` and `can_autoplay` are
-  MusicKit's, and `NowPlaying.autoplay` marks an entry autoplay added. tests/test_player.py's
+  MusicKit's, and `NowPlaying.autoplay` marks an entry autoplay added. `undo_clear()` orders
+  the store as the bridge orders MusicKit's queue (`undone_tail()`: autoplay's refill after
+  a Clear dropped when Clear took autoplay entries, so one Autoplay batch). tests/test_player.py's
   QueueDiffTest, QueueEditTest and AutoplayTest.
 - The last session (`src/session.py`'s `SessionKeeper`, `app.session`, not in demo mode):
   `<cache>/session.json`, written 2 s after a change and every 30 s while playing, at quit

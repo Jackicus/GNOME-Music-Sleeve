@@ -54,6 +54,36 @@ class FakeQueue {
         return this._queueItems.filter(entry => entry.isAutoplay).map(entry => entry.item);
     }
 
+    get unplayedAutoplayItems() {
+        return this._queueItems.slice(this.position + 1)
+            .filter(entry => entry.isAutoplay).map(entry => entry.item);
+    }
+
+    get isInitiated() {
+        return this.position >= 0;
+    }
+
+    get isEmpty() {
+        return this._queueItems.length === 0;
+    }
+
+    get currentQueueItem() {
+        return this._queueItems[this.position];
+    }
+
+    appendQueueItems(items = []) {
+        this.spliceQueueItems(this._queueItems.length, 0, items);
+    }
+
+    // MusicKit's: every queue item `predicate(queueItem, index)` accepts, from the end, one
+    // splice (and one event) each.
+    removeQueueItems(predicate) {
+        for (let index = this._queueItems.length - 1; index >= 0; index--) {
+            if (predicate(this._queueItems[index], index))
+                this.spliceQueueItems(index, 1);
+        }
+    }
+
     // MusicKit's own, in the page (playback/AppleMusic-2642.7.0-external):
     //   spliceQueueItems(e, t, r = [], s = !0) { r = r.filter(a => cn(a?.item, …)); … }
     // The entries to put in are one array of queue items ({item, isAutoplay}): spread out as
@@ -84,10 +114,156 @@ class FakeQueue {
 }
 globalThis.FakeQueue = FakeQueue;
 
+// Apple's servers as autoplay meets them: every request answers after `TURNS` turns of the
+// job queue, in the order sent (gjs runs no timers here). `paths` records what was asked.
+const NETWORK_TURNS = 8;
+
+async function later(value) {
+    for (let turn = 0; turn < NETWORK_TURNS; turn++)
+        await null;
+    return value;
+}
+
+// Let what is on its way land: enough turns for a request and what it starts.
+async function settle() {
+    for (let turn = 0; turn < NETWORK_TURNS * 12; turn++)
+        await null;
+}
+globalThis.settle = settle;
+
+// MusicKit v3's SerialPlaybackController and its autoplay, line for line where it matters,
+// from the page's bundle (playback/AppleMusic-2642.7.0-external; src/backend/README.md,
+// "Autoplay across queues"). `serialController(mk)` gives an instance one, as
+// mk.playbackControllers.serial and mk._playbackController; its setQueue then replaces the
+// queue as MusicKit's does. A request to the station (/v1/me/stations/continuous, then
+// /v1/me/stations/next-tracks/<id>) answers through later(); `rejections` holds what its
+// handlers threw, as the page's unhandled rejections.
+class FakeSerialController {
+    constructor(instance) {
+        this.instance = instance;
+        this._autoplayStation = undefined;
+        this.loadingAutoplayStation = false;
+        this.loadingAutoplayTracks = false;
+        this.isActive = true;
+        this.paths = [];
+        this.log = [];
+        this.rejections = [];
+        this.stations = 0;
+        this.tracks = 0;
+        // MusicKit's dispatcher reaches the controller before the page's listeners.
+        instance.subscribe('queueItemsDidChange', () => this.onQueueChange());
+        instance.subscribe('autoplayEnabledDidChange', on => {
+            const run = on === true ? this.startAutoplay() : this.stopAutoplay();
+            run.catch(error => this.rejections.push(String(error)));
+        });
+    }
+
+    get autoplayStation() {
+        return this._autoplayStation;
+    }
+
+    get queue() {
+        return this.instance.queue;
+    }
+
+    // MusicKit's replaceQueue: the old item stopped, a new queue (at `startWith`, when
+    // given: initiated, as MusicKit's Fl starts it) posted with queueItemsDidChange, then
+    // its autoplay stopped and started again.
+    async replaceQueue(items, startWith) {
+        await null;
+        const queue = new FakeQueue(this.instance, items, -1);
+        if (startWith !== undefined) {
+            const at = parseInt(`${startWith}`, 10);
+            queue.position = at >= 0 && at < items.length ? at : -1;
+        }
+        this.instance.queue = queue;
+        this.instance.fire('queueItemsDidChange', {});
+        await this.stopAutoplay();
+        await this.startAutoplay();
+    }
+
+    // onQueueChange: an initiated queue asks for more autoplay songs, one not yet started
+    // stops and starts autoplay. Not awaited by the dispatcher.
+    onQueueChange() {
+        const run = async () => {
+            if (this.queue.isInitiated) {
+                if (!this.queue.isEmpty) await this.queueAutoplayTracks();
+            } else {
+                this.stopAutoplay();
+                this.startAutoplay();
+            }
+        };
+        run().catch(error => this.rejections.push(String(error)));
+    }
+
+    async stopAutoplay() {
+        this._autoplayStation = undefined;
+        this.queue.hasAutoplayStation = false;
+        if (this.queue.isInitiated) {
+            this.queue.removeQueueItems((entry, index) =>
+                index > this.queue.position && entry.isAutoplay === true);
+        }
+    }
+
+    async startAutoplay() {
+        if (!this.isActive || !this.instance._autoplayEnabled || this.instance.repeatMode !== 0)
+            return;
+        if (this._autoplayStation !== undefined || this.loadingAutoplayStation)
+            return;
+        if (this.queue.items.length === 0)
+            return;
+        this.loadingAutoplayStation = true;
+        this.paths.push('/v1/me/stations/continuous');
+        const station = await later({ id: 'ra.cp-' + ++this.stations });
+        this._autoplayStation = station;
+        this.queue.hasAutoplayStation = true;
+        this.loadingAutoplayStation = false;
+        await this.queueAutoplayTracks();
+    }
+
+    async queueAutoplayTracks() {
+        if (this._autoplayStation === undefined || this.loadingAutoplayTracks)
+            return;
+        const current = this.queue.currentQueueItem;
+        const wanted = 10 - this.queue.unplayedAutoplayItems.length + (current && current.isAutoplay ? 1 : 0);
+        if (wanted <= 0)
+            return;
+        this.loadingAutoplayTracks = true;
+        const from = this._autoplayStation.id;
+        this.paths.push('/v1/me/stations/next-tracks/' + from);
+        const songs = await later(Array.from({ length: wanted }, () => ({
+            id: `${from}.t${++this.tracks}`, type: 'songs', attributes: { name: 'autoplay' },
+        })));
+        // MusicKit's own next line, a log message: it reads the station's id again, which
+        // throws when the station went meanwhile, and loadingAutoplayTracks stays true.
+        this.log.push(`Queueing ${songs.length} tracks from Autoplay station ${this._autoplayStation.id}`);
+        this.queue.appendQueueItems(songs.map(item => ({ item, isAutoplay: true })));
+        this.loadingAutoplayTracks = false;
+    }
+}
+
+globalThis.serialController = function (mk) {
+    const controller = new FakeSerialController(mk);
+    mk.playbackControllers = { serial: controller };
+    mk._playbackController = controller;
+    return controller;
+};
+
+// The songs of a queue a fake setQueue makes: `mk.queueLength` of them, named after what
+// it was asked to play.
+function queueSongs(instance, options) {
+    const name = options.album || options.playlist || options.station || 'songs';
+    return Array.from({ length: instance.queueLength }, (_, n) => ({
+        id: `${name}.${n + 1}`, type: 'songs', attributes: { name: `${name} ${n + 1}` },
+    }));
+}
+
 class FakeInstance {
     constructor() {
         this.calls = [];        // [method, ...args] of everything the bridge asked
         this.listeners = {};    // event name -> [handler]
+        this.subscribers = {};  // event name -> [handler]: MusicKit's own (its controller)
+        this.queueLength = 3;   // the songs a setQueue over a controller queues
         this.failures = {};     // method -> what it rejects with
         this.apiAnswers = {};   // path -> the body mk.api.music(path) answers
         this.writeStatus = 204; // what a write's request answers
@@ -152,8 +328,15 @@ class FakeInstance {
         this.listeners[name] = (this.listeners[name] || []).filter(h => h !== handler);
     }
 
-    // MusicKit firing `name` at every listener.
+    // MusicKit's dispatcher, inside MusicKit: its subscribers hear an event first.
+    subscribe(name, handler) {
+        (this.subscribers[name] = this.subscribers[name] || []).push(handler);
+    }
+
+    // MusicKit firing `name` at its own subscribers, then every listener.
     fire(name, event) {
+        for (const handler of (this.subscribers[name] || []).slice())
+            handler(event);
         for (const handler of (this.listeners[name] || []).slice())
             handler(event);
     }
@@ -174,7 +357,18 @@ class FakeInstance {
             throw this.failures[method];
     }
 
-    setQueue(...args) { return this._call('setQueue', args); }
+    // With a controller (serialController()), MusicKit's setQueue: the songs loaded, the
+    // queue replaced, then played when `startPlaying`.
+    async setQueue(...args) {
+        await this._call('setQueue', args);
+        const controller = this._playbackController;
+        if (!controller)
+            return;
+        const options = args[0] || {};
+        await controller.replaceQueue(queueSongs(this, options), options.startWith);
+        if (options.startPlaying === true)
+            await this.play();
+    }
     play(...args) { return this._call('play', args); }
     pause(...args) { return this._call('pause', args); }
     stop(...args) { return this._call('stop', args); }

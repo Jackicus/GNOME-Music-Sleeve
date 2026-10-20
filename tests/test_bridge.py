@@ -839,6 +839,176 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(value['events'], [{'autoplay': True}, {'autoplay': False},
                                            {'autoplay': False}])
 
+    # -- autoplay across queues (MusicKit's serial controller, as the harness fakes it) -----
+
+    @scenario("""
+        const controller = serialController(mk);
+        mk.autoplayEnabled = true;
+        const added = () => mk.queue.autoplayItems.length;
+        const out = {};
+        // MusicKit alone, as the web player plays an album (no startWith): autoplay again
+        // for every queue, MusicKit's setQueue stopping and starting it.
+        await mk.setQueue({album: 'l.one', startPlaying: true});
+        await settle();
+        out.first = added();
+        await mk.setQueue({album: 'l.two', startPlaying: true});
+        await settle();
+        out.second = added();
+        // As the bridge asked before (startWith: 0, a queue initiated at once): the new
+        // queue asks the old station for more, its answer throws once that station is gone,
+        // and the controller loads nothing again, for that queue or the next.
+        await mk.setQueue({album: 'l.three', startWith: 0, startPlaying: true});
+        await settle();
+        out.third = added();
+        await mk.setQueue({album: 'l.four', startWith: 0, startPlaying: true});
+        await settle();
+        out.fourth = added();
+        out.stuck = controller.loadingAutoplayTracks;
+        out.station = controller.autoplayStation !== undefined;
+        out.rejections = controller.rejections;
+        return out;
+    """)
+    def test_the_fake_controller_loses_autoplay_as_musickit_does(self, value):
+        self.assertEqual((value['first'], value['second']), (10, 10))
+        self.assertEqual((value['third'], value['fourth']), (0, 0))
+        self.assertIs(value['stuck'], True)
+        self.assertIs(value['station'], True)
+        self.assertEqual(len(value['rejections']), 1)
+        self.assertIn('TypeError', value['rejections'][0])
+
+    @scenario("""
+        const controller = serialController(mk);
+        bridge.subscribe();
+        mk.autoplayEnabled = true;
+        const added = () => mk.queue.autoplayItems.length;
+        const out = {counts: []};
+        for (const album of ['l.one', 'l.two', 'l.three']) {
+            const answer = await bridge.play('album', album, {startWith: 1});
+            await settle();
+            out.counts.push([answer.ok, mk.queue.items[0].id, mk.queue.position, added()]);
+        }
+        // A controller left stuck (by a queue before the fix, or autoplay turned off while
+        // it loaded): the next play clears it.
+        controller.loadingAutoplayTracks = true;
+        await bridge.play('album', 'l.four');
+        await settle();
+        out.counts.push([mk.queue.items[0].id, added()]);
+        out.rejections = controller.rejections;
+        out.stations = controller.paths.filter(path => path.endsWith('continuous')).length;
+        // Each next-tracks request asked the station of its own queue.
+        out.asked = controller.paths.filter(path => path.includes('next-tracks'));
+        const last = posted.filter(event => event.name === 'queueItemsDidChange').pop();
+        out.posted = last.data.items.filter(track => track.autoplay).length;
+        return out;
+    """)
+    def test_every_queue_gets_autoplays_songs(self, value):
+        self.assertEqual(value['counts'], [[True, 'l.one.1', 1, 10], [True, 'l.two.1', 1, 10],
+                                           [True, 'l.three.1', 1, 10], ['l.four.1', 10]])
+        self.assertEqual(value['rejections'], [])
+        self.assertEqual(value['stations'], 4)
+        self.assertEqual(value['asked'], [f'/v1/me/stations/next-tracks/ra.cp-{n}'
+                                          for n in range(1, 5)])
+        self.assertEqual(value['posted'], 10)
+
+    @scenario("""
+        serialController(mk);
+        mk.autoplayEnabled = true;
+        await bridge.play('album', 'l.one');
+        await settle();
+        mk.failures.setQueue = new Error('refused');
+        const out = {answer: await bridge.play('album', 'l.two')};
+        await settle();
+        // The queue that stays has autoplay's songs again.
+        out.queue = mk.queue.items[0].id;
+        out.added = mk.queue.autoplayItems.length;
+        return out;
+    """)
+    def test_a_queue_musickit_refuses_keeps_the_old_ones_autoplay(self, value):
+        self.assertIn('refused', value['answer']['error'])
+        self.assertEqual((value['queue'], value['added']), ('l.one.1', 10))
+
+    @scenario("""
+        const controller = serialController(mk);
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b')], 0);
+        controller.loadingAutoplayTracks = true;   // left stuck while autoplay was off
+        const answer = bridge.autoplay(true);
+        await settle();
+        return {answer, added: mk.queue.autoplayItems.length};
+    """)
+    def test_autoplay_turned_on_clears_a_stuck_load(self, value):
+        self.assertEqual(value['answer'], {'autoplay': True, 'canAutoplay': True})
+        self.assertEqual(value['added'], 10)
+
+    @scenario("""
+        serialController(mk);
+        bridge.subscribe();
+        mk.autoplayEnabled = true;
+        mk.queueLength = 4;
+        await bridge.play('album', 'l.one');
+        await settle();
+        const view = () => mk.queue._queueItems.map(entry => [entry.item.id, entry.isAutoplay]);
+        const out = {before: view()};
+        out.cleared = bridge.queueClear();
+        await settle();                                 // autoplay's refill lands
+        out.refilled = view();
+        out.undone = bridge.queueUndoClear();
+        await settle();
+        out.after = view();
+        // Undo before the refill lands: it is taken out as it comes, unseen by the app.
+        posted.length = 0;
+        bridge.queueClear();
+        out.early = bridge.queueUndoClear();
+        await settle();
+        out.afterEarly = view();
+        out.most = Math.max(...posted.filter(event => event.name === 'queueItemsDidChange')
+            .map(event => event.data.items.filter(track => track.autoplay).length));
+        return out;
+    """)
+    def test_undo_after_clear_leaves_one_autoplay_batch(self, value):
+        before = value['before']
+        self.assertEqual(len(before), 14)
+        self.assertEqual(sum(1 for _id, autoplay in before if autoplay), 10)
+        self.assertEqual(len(value['refilled']), 11)       # the item and ten new entries
+        self.assertTrue(all(autoplay for _id, autoplay in value['refilled'][1:]))
+        self.assertEqual(value['undone'], {'ok': True, 'restored': 13})
+        self.assertEqual(value['after'], before)
+        self.assertEqual(value['early'], {'ok': True, 'restored': 13})
+        self.assertEqual(value['afterEarly'], before)
+        self.assertEqual(value['most'], 10)
+
+    @scenario("""
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        const entry = (id, isAutoplay) => ({item: song(id), isAutoplay});
+        const view = () => mk.queue._queueItems.map(e => [e.item.id, e.isAutoplay]);
+        // What follows the item when Undo comes: a song queued, then autoplay's refill.
+        const since = () => [entry('i.x', false), entry('ra.1', true), entry('ra.2', true)];
+        const out = {};
+        // Clear took only the user's songs: autoplay's refill stays, after them, and a song
+        // queued since (Play Later puts it before autoplay's) after them too.
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b'), song('i.c')], 0);
+        bridge.queueClear();
+        mk.queue.spliceQueueItems(1, 0, since());
+        out.userOnly = [bridge.queueUndoClear(), view()];
+        // Clear took autoplay's entries too: the refill goes, the song queued since stays
+        // before autoplay's.
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b'), song('ra.0')], 0, [2]);
+        bridge.queueClear();
+        mk.queue.spliceQueueItems(1, 0, since());
+        out.withAutoplay = [bridge.queueUndoClear(), view()];
+        out.calls = mk.calls.filter(call => call[0] === 'queue.spliceQueueItems').slice(-1);
+        return out;
+    """)
+    def test_undo_puts_songs_queued_since_before_autoplays(self, value):
+        answer, queue = value['userOnly']
+        self.assertEqual(answer, {'ok': True, 'restored': 2})
+        self.assertEqual(queue, [['i.a', False], ['i.b', False], ['i.c', False], ['i.x', False],
+                                 ['ra.1', True], ['ra.2', True]])
+        answer, queue = value['withAutoplay']
+        self.assertEqual(answer, {'ok': True, 'restored': 2})
+        self.assertEqual(queue, [['i.a', False], ['i.b', False], ['i.x', False], ['ra.0', True]])
+        self.assertEqual(value['calls'], [['queue.spliceQueueItems', 1, 3, 3]])  # one splice
+
     # -- lyrics ----------------------------------------------------------------------------
 
     @scenario("""

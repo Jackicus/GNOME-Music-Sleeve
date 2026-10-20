@@ -475,9 +475,110 @@
         };
     }
 
+    // MusicKit's serial playback controller (every queue but a station's), which runs
+    // autoplay: mk.playbackControllers.serial, else the controller playing, when it has
+    // autoplay's state (loadingAutoplayTracks); null when there is none to be had.
+    function autoplayController(mk) {
+        const controllers = mk && mk.playbackControllers;
+        const candidates = [controllers && controllers.serial, mk && mk._playbackController];
+        for (const controller of candidates) {
+            if (controller && typeof controller === 'object' && 'loadingAutoplayTracks' in controller) {
+                return controller;
+            }
+        }
+        return null;
+    }
+
+    // MusicKit's autoplay let go of before a new queue (play()): its station dropped and a
+    // stuck loadingAutoplayTracks cleared. The controller, or null when autoplay is off or
+    // has no controller to stop. MusicKit's setQueue replaces the station itself, but only
+    // after the new queue's first queueItemsDidChange has asked the old station for more;
+    // that answer, landing once the station is gone, throws (MusicKit reads the station's
+    // id after the await) before it clears loadingAutoplayTracks, and from then on the
+    // controller loads no autoplay songs until the page reloads (#471). With the station
+    // gone first, the new queue asks nothing until its own station is made.
+    function releaseAutoplay(mk) {
+        if (!mk || !mk.autoplayEnabled) return null;
+        const controller = autoplayController(mk);
+        if (!controller || typeof controller.stopAutoplay !== 'function') return null;
+        // MusicKit's is async but does its work before its first await; should it fail,
+        // MusicKit's own setQueue stops it again.
+        try {
+            Promise.resolve(controller.stopAutoplay()).catch(function () {});
+        } catch {
+            // As above.
+        }
+        controller.loadingAutoplayTracks = false;
+        return controller;
+    }
+
+    // Autoplay started again for the queue that stays when a new one could not be set up
+    // (releaseAutoplay took its station). Best effort.
+    function resumeAutoplay(mk, controller) {
+        if (!controller || mk._playbackController !== controller) return;
+        if (typeof controller.startAutoplay !== 'function') return;
+        try {
+            Promise.resolve(controller.startAutoplay()).catch(function () {});
+        } catch {
+            // No autoplay for that queue: the next play makes its own.
+        }
+    }
+
     // The entries Clear took (queueClear), for its Undo (queueUndoClear): the queue items
     // after the item playing then, and that item's id.
     let cleared = null;
+
+    // What follows the item once Clear is undone: the queue items Clear took, in their
+    // order, with those queued since (Play Next, Play Later; not autoplay's) before the
+    // first autoplay entry among them. What autoplay added since the Clear (it refills the
+    // queue about 2 s after) goes when Clear took autoplay entries of its own, so Up Next
+    // has one Autoplay batch (#473); else it stays, after the rest.
+    function undoneTail(taken, now) {
+        const isAutoplay = function (entry) { return !!(entry && entry.isAutoplay); };
+        const tookAutoplay = taken.some(isAutoplay);
+        const queued = now.filter(function (entry) { return !isAutoplay(entry); });
+        const added = tookAutoplay ? [] : now.filter(isAutoplay);
+        let at = taken.findIndex(isAutoplay);
+        if (at < 0) at = taken.length;
+        return taken.slice(0, at).concat(queued, taken.slice(at), added);
+    }
+
+    // An Undo made while autoplay's refill was still on its way (queueUndoClear): the
+    // queue items there were then ({kept: Set, until}), so the refill's entries can be
+    // taken out as they land (dropLateRefill). Null when none is awaited.
+    let lateRefill = null;
+
+    // How long an Undo waits for the refill it came before (ms).
+    const LATE_REFILL_MS = 15000;
+
+    // The autoplay entries a refill added after an Undo that came first, taken out as the
+    // queueItemsDidChange that brings them is posted (so the app never sees two Autoplay
+    // batches): one splice per run of them, from the end. Once only.
+    function dropLateRefill(mk) {
+        const watch = lateRefill;
+        if (!watch) return;
+        if (Date.now() > watch.until) {
+            lateRefill = null;
+            return;
+        }
+        const queue = mk && mk.queue;
+        const entries = queue && Array.isArray(queue._queueItems) ? queue._queueItems : null;
+        if (!entries || typeof queue.spliceQueueItems !== 'function') return;
+        const position = typeof queue.position === 'number' ? queue.position : -1;
+        const fresh = [];
+        entries.forEach(function (entry, index) {
+            if (index > position && entry && entry.isAutoplay && !watch.kept.has(entry)) fresh.push(index);
+        });
+        if (!fresh.length) return;
+        lateRefill = null;
+        let end = fresh.length - 1;
+        while (end >= 0) {
+            let start = end;
+            while (start > 0 && fresh[start - 1] === fresh[start] - 1) start--;
+            queue.spliceQueueItems(fresh[start], end - start + 1);
+            end = start - 1;
+        }
+    }
 
     // Whether the queue's entry at `index` may be edited as the entry `id`: an error
     // answer ({error, code}) when not, else null.
@@ -627,6 +728,8 @@
         let mk = null;
         try {
             mk = getMusicKit();
+            // A refill an Undo came before goes before the app hears of it.
+            if (name === 'queueItemsDidChange' && lateRefill) dropLateRefill(mk);
             data = mk ? EVENT_DATA[name](mk, event) : null;
         } catch (err) {
             data = { error: describeError(err) };
@@ -803,8 +906,14 @@
             const startId = options.startId ? String(options.startId) : null;
             let moved = null;
             let sought = false;
+            // A new queue gets autoplay's songs of its own (releaseAutoplay); an Undo's wait
+            // for a refill ends with the queue it was for.
+            lateRefill = null;
+            const autoplay = releaseAutoplay(mk);
+            let queued = false;
             try {
                 await mk.setQueue(queueObj);
+                queued = true;
                 if (startId && !paused) {
                     const items = (mk.queue && mk.queue.items) || [];
                     const position = mk.queue ? mk.queue.position : -1;
@@ -825,6 +934,7 @@
                     if (startTime && atItem(mk, startId)) sought = await resumeAt(mk, startTime);
                 }
             } catch (err) {
+                if (!queued) resumeAutoplay(mk, autoplay);
                 return { error: describeError(err), code: errorCode(err) };
             }
             const answer = { ok: true };
@@ -1028,16 +1138,20 @@
                 id: items[position] ? items[position].id : null,
                 items: kept
             };
+            lateRefill = null;
             queue.clearAfterCurrent();
             return { ok: true, cleared: Math.max(0, items.length - position - 1) };
         },
 
         // Clear's entries put back after the item playing, while it is still the item it
-        // was: queue.spliceQueueItems(start, 0, queueItems), the entries as ONE array of
-        // queue items, as MusicKit takes them (spread out, MusicKit throws a TypeError), so
-        // each keeps its isAutoplay. What Clear took is kept until the splice is done, so
-        // an Undo that throws may be tried again. {ok: true, restored: n}, or {error, code}:
-        // STALE (nothing to put back, or another item plays now), NOT_EDITABLE.
+        // was, as undoneTail() orders them with what MusicKit holds after it now (autoplay's
+        // refill dropped when Clear took autoplay entries): one queue.spliceQueueItems(start,
+        // count, queueItems), the entries as ONE array of queue items, as MusicKit takes them
+        // (spread out, MusicKit throws a TypeError), so each keeps its isAutoplay. A refill
+        // still on its way is taken out as it lands (dropLateRefill). What Clear took is
+        // kept until the splice is done, so an Undo that throws may be tried again.
+        // {ok: true, restored: n}, or {error, code}: STALE (nothing to put back, or another
+        // item plays now), NOT_EDITABLE.
         queueUndoClear: function () {
             const mk = getMusicKit();
             if (!mk || !mk.queue) throw new Error('MusicKit not initialized');
@@ -1052,19 +1166,34 @@
             if (!queueCapabilities(mk).editable) {
                 return { error: 'this queue cannot be edited', code: 'NOT_EDITABLE' };
             }
-            queue.spliceQueueItems(position + 1, 0, taken.items.slice());
+            const now = Array.isArray(queue._queueItems) ? queue._queueItems.slice(position + 1) : [];
+            const tail = undoneTail(taken.items, now);
+            const tookAutoplay = taken.items.some(function (entry) { return !!(entry && entry.isAutoplay); });
+            queue.spliceQueueItems(position + 1, now.length, tail);
             cleared = null;
-            // What MusicKit put in: its filter drops an entry it cannot play now.
-            const restored = (queue.items || []).length - items.length;
+            const controller = autoplayController(mk);
+            lateRefill = null;
+            if (tookAutoplay && controller && controller.loadingAutoplayTracks === true) {
+                const kept = Array.isArray(queue._queueItems) ? queue._queueItems : [];
+                lateRefill = { kept: new Set(kept), until: Date.now() + LATE_REFILL_MS };
+            }
+            // What MusicKit put in of Clear's: its filter drops an entry it cannot play now.
+            const left = items.length - now.length + (tail.length - taken.items.length);
+            const restored = (queue.items || []).length - left;
             return { ok: true, restored: Math.max(0, restored) };
         },
 
         // Autoplay on or off (mk.autoplayEnabled; null leaves it): {autoplay, canAutoplay}.
         // The page's own switch, which the web player sets from its local storage as it
-        // loads; the app sets its own at every start.
+        // loads; the app sets its own at every start. Turned on, a load left stuck while it
+        // was off (releaseAutoplay) is cleared first, so it adds songs again.
         autoplay: function (on) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
+            if (on === true && !mk.autoplayEnabled) {
+                const controller = autoplayController(mk);
+                if (controller && controller.autoplayStation === undefined) controller.loadingAutoplayTracks = false;
+            }
             if (typeof on === 'boolean' && mk.autoplayEnabled !== on) mk.autoplayEnabled = on;
             return { autoplay: !!mk.autoplayEnabled, canAutoplay: queueCapabilities(mk).canAutoplay };
         },

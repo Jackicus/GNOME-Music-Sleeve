@@ -1493,7 +1493,9 @@ class Player(GObject.Object):
     async def undo_clear(self):
         """Put back what the last clear_up_next() took, after the entry playing, while that
         is still the entry it was (and MusicKit's, or the session's, as the Clear was): into
-        the store at once, then MusicKit's queue (engine.queue_undo_clear). Once only. How
+        the store at once, then MusicKit's queue (engine.queue_undo_clear), as undone_tail()
+        orders them with what follows the entry now (autoplay's refill dropped when Clear
+        took autoplay entries, as the bridge drops it in the page). Once only. How
         many came back. An Undo that cannot be done now (another entry plays, or MusicKit's
         queue changed meanwhile) says so in a toast; one the engine fails reads MusicKit's
         queue again and raises, as every edit does."""
@@ -1504,9 +1506,11 @@ class Player(GObject.Object):
             return 0
         cleared, self._cleared = self._cleared, None
         at = self.queue_index + 1
-        self.queue.splice(at, 0, [NowPlaying(dict(data, index=at + offset))
-                                  for offset, data in enumerate(cleared['entries'])])
-        self._renumber(at + len(cleared['entries']))
+        now = [self.queue.get_item(position) for position in range(at, self.queue.get_n_items())]
+        back = [NowPlaying(dict(data, index=at + offset))
+                for offset, data in enumerate(cleared['entries'])]
+        self.queue.splice(at, len(now), undone_tail(back, now))
+        self._renumber(at)
         if self.restored:
             return len(cleared['entries'])
         if not await self._send_edit(self._engine.queue_undo_clear()):
@@ -1571,6 +1575,21 @@ class Player(GObject.Object):
         """The repeat mode after this one in the cycle none → one → all → none."""
         position = REPEAT_MODES.index(self.repeat) if self.repeat in REPEAT_MODES else 0
         return REPEAT_MODES[(position + 1) % len(REPEAT_MODES)]
+
+
+def undone_tail(cleared, now):
+    """What follows the entry playing once Clear is undone, as the bridge's undoneTail()
+    puts it in MusicKit's queue: `cleared` (the entries Clear took, in their order) with
+    those of `now` (what follows the entry now) queued since, not autoplay's, before the
+    first autoplay entry among them. What autoplay added since the Clear (MusicKit refills
+    the queue about 2 s after it) goes when Clear took autoplay entries of its own, so Up
+    Next has one Autoplay batch; else it stays, after the rest. Entries are anything with
+    an `autoplay` attribute (NowPlaying)."""
+    took_autoplay = any(entry.autoplay for entry in cleared)
+    queued = [entry for entry in now if not entry.autoplay]
+    added = [] if took_autoplay else [entry for entry in now if entry.autoplay]
+    at = next((index for index, entry in enumerate(cleared) if entry.autoplay), len(cleared))
+    return cleared[:at] + queued + cleared[at:] + added
 
 
 def playback_error_text(code):
