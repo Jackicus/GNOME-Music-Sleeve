@@ -51,8 +51,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `pages.PAGES`. Its module is imported by its factory, never at the top of window.py or main.py
   (startup time). Playlist and folder root pages are kept only for the last few shown
   (`window.ROOT_LIMIT`). Sign-out forgets the pages that show the account's things
-  (`Window.forget_account_pages()`: the pushed pages, New, Made for You, Search and every
-  playlist and folder root), to be built again on the next visit.
+  (`Window.forget_account_pages()`: the pushed pages, New, Radio, Made for You, Search and
+  every playlist and folder root), to be built again on the next visit.
 - Pages listen to `app.library` (and anything else that outlives them) only while mapped:
   they declare the handlers once, in `__init__`, on a `widgets.util.MappedHandlers(self)`,
   which connects them (weakly) on map and disconnects them on unmap; `do_map` catches up with
@@ -73,7 +73,12 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   bar, and a folder's page its More Options menu (`pages.add_folder_buttons()`); their tiles
   drag onto the sidebar's folders (`GridPage(drag=True)`). The playlists' dialogs (the name, the confirmation
   before a delete) are `dialogs/playlist.py`'s, presented by the item actions.
-- New, Made for You and a search category are `ShelvesPage`s over the engine's answers. They,
+- New, Made for You, Radio and a search category are `ShelvesPage`s over the engine's
+  answers. Radio's has an `arrange` of its own (pages/radio.py over src/radio.py's pure
+  functions): the library's stations as Recently Played after Apple's live stations, each
+  live station subtitled with the programme on air as the page is shown, and Recently Played
+  alone in place of the status page while Apple cannot answer; `follow(library, 'changed')`
+  arranges again. They,
   Search and the album and artist pages show what the engine's failure means through one
   `widgets.engine_status.EngineStatus` (no widget; tests/test_engine_status.py): the spinner
   while it starts, Sign In when signed out, Start Engine (through `app.start_engine()`, whose

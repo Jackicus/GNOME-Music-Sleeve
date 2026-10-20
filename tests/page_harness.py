@@ -119,6 +119,9 @@ def classes():
         async def made_for_you(self, refresh=False):
             return await self._answer('made_for_you', refresh)
 
+        async def radio(self, refresh=False):
+            return await self._answer('radio', refresh)
+
         async def category(self, category_id, refresh=False):
             return await self._answer('category', category_id, refresh)
 

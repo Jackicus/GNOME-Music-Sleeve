@@ -827,6 +827,36 @@ async def walkthrough(window):
     check('Space on a tile plays or pauses',
           actions == ['play-pause'] and by(handled, 'key controller'),
           (actions, handled, describe(window.get_focus())))
+    print('-- radio')
+    window.select_page('radio')
+    await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound
+    radio = window.navigation_view.get_visible_page()
+    shelves = radio._column.widgets
+    live = shelves[0] if shelves else None
+    check('Radio shows the live stations as large cards, then Recently Played',
+          live is not None and live.props.hero and len(shelves) > 1
+          and shelves[1].shelf.items is app.library.radio,
+          [widget.shelf.key for widget in shelves])
+    if live is not None:
+        await key(window, '<primary>2', 0.6)
+        check('Ctrl+2 puts the focus in the live stations', inside(window.get_focus(), live),
+              describe(window.get_focus()))
+        for _ in range(3):  # the shelf's paging arrows and See All, then its cards
+            if inside(window.get_focus(), live.list_view):
+                break
+            await key(window, 'Tab')
+        check('Tab reaches the first live station', inside(window.get_focus(), live.list_view),
+              describe(window.get_focus()))
+        requests = []
+        play_request = window.play_request
+        window.play_request = lambda play, start_with=None, shuffle=None, start_id=None: (
+            requests.append(play))
+        await key(window, 'Right')
+        await key(window, 'Return')
+        window.play_request = play_request
+        second = live.shelf.items.get_item(1)
+        check('Right, Enter plays the second live station', requests == [second.play],
+              requests)
     print('-- folders')
     tree = app.library.playlist_tree()
     folder = next(node for node in tree.flat if node.kind == 'folder' and node.children)

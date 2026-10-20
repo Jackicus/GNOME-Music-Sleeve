@@ -36,7 +36,10 @@ shelves, made of the demo's own albums, videos and playlists and an invented
 edition or two), which the demo engine answers
 from, and each playlist the songs Apple would suggest adding to it
 (suggestions/<playlist id>.json, normalize.playlist_suggestions()'s shape:
-twenty-four of the demo's own songs it does not hold). Last it writes .demo-stamp, the
+twenty-four of the demo's own songs it does not hold), and the Radio page's answer
+(radio.json, normalize.radio_shelves()'s shape: invented live stations, shows, episodes
+and genre stations beside the demo's own albums and videos, each show's page in
+categories/). Last it writes .demo-stamp, the
 record of what made it (demo_stamp.py), by which the harness and demo.sh know an out-of-date
 build/demo and write it again. The other keys the app's sync adds
 (sections.songs, artUrl) are optional and left out: the demo has no loose
@@ -142,6 +145,19 @@ SUGGESTIONS = 24  # a playlist's suggested songs: twelve shown at most, and spar
 DEMO_LABELS = ['Lowtide Recordings', 'Paper Lantern Records', 'Driftwood Audio',
                'Quiet Harbour Music', 'Northlight Sound']
 DEMO_EDITIONS = ['{title} (Deluxe)', '{title} (Remastered)']
+# The Radio page's invented live stations (the first is the library's own first station),
+# each with the programme it is shown airing (the demo's answer has no times, so no
+# `events`: the subtitle stands for what is on air), its radio shows (each with its host)
+# and its genre stations.
+DEMO_LIVE = [('Lighthouse One', 'The Morning Tide with Mara Quinn'),
+             ('Lighthouse Hits', 'Evergreen Requests with Theo Marsh'),
+             ('Lighthouse Country', 'Back Roads with June Calloway'),
+             ('Lighthouse Club', 'After Hours with DJ Selkie')]
+DEMO_RADIO_SHOWS = [('The Morning Tide', 'Mara Quinn'), ('Evergreen Requests', 'Theo Marsh'),
+                    ('Back Roads', 'June Calloway'), ('The Long Play', 'Ines Varga')]
+DEMO_GENRE_STATIONS = [('Coastal Indie', 'Indie & Alternative'), ('Night Jazz', 'Jazz'),
+                       ('Harbour Folk', 'Folk'), ('Deep Focus', 'Ambient'),
+                       ('Northern Soul Kitchen', 'R&B/Soul'), ('Tape Hiss Classics', 'Rock')]
 
 MOTIFS = [
     'sun_horizon',
@@ -2153,6 +2169,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     build_album_pages(out_dir, artists_data[:len(ARTISTS_DATA)], artists, artist_albums_map,
                       albums[:len(ALBUMS_DATA)], videos, playlists, draw_cover, thumb_for,
                       cover_size, library['generated'])
+    build_radio_page(out_dir, radio_stations, albums[:len(ALBUMS_DATA)], videos, draw_cover,
+                     thumb_for, cover_size, library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
 
@@ -2430,6 +2448,92 @@ def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums,
         with open(os.path.join(pages_dir, f"{album['catalogId']}.json"), 'w',
                   encoding='utf-8') as f:
             json.dump(page, f, indent=2)
+
+
+def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, cover_size,
+                     generated):
+    """Write radio.json, the Radio page's answer (normalize.radio_shelves()'s shape, kept as
+    the engine keeps it, stamped `cached` with the library's date): the invented live
+    stations first (`live`), then the latest episodes of the invented shows, the shows
+    themselves (category tiles, as Apple's curators are), genre stations, albums and music
+    videos from the library. Each show also gets the page its tile opens
+    (categories/<id>.json, normalize.category_page()'s shape: its episodes). No `events`
+    and no `expires`: a demo built once cannot know what is on air when it is shown."""
+    art_dir = os.path.join(out_dir, 'art')
+    categories_dir = os.path.join(out_dir, 'categories')
+    os.makedirs(categories_dir, exist_ok=True)
+
+    def cover(item_id, title, subtitle, palette_index, badge=None):
+        path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
+        draw_cover(out_path=path, title=title, subtitle=subtitle, badge=badge,
+                   palette=PALETTES[palette_index % len(PALETTES)],
+                   motif=MOTIFS[palette_index % len(MOTIFS)], is_artist=False, size=cover_size)
+        return path
+
+    def station(item_id, title, subtitle, genre, palette_index, badge=None, art=None):
+        art = art or cover(item_id, title, subtitle, palette_index, badge=badge)
+        return {'id': item_id, 'kind': 'station', 'title': title, 'subtitle': subtitle,
+                'year': None, 'genre': genre, 'summary': None, 'art': art,
+                'thumb': thumb_for(art), 'artColor': PALETTES[palette_index % len(PALETTES)][1],
+                'explicit': False, 'catalogId': None,
+                'url': f'https://music.apple.com/us/station/{slug(title)}/{item_id}',
+                'play': {'kind': 'station', 'id': item_id}, 'groups': []}
+
+    def brief(item):
+        return dict(item, groups=[])
+
+    live = []
+    for number, (title, programme) in enumerate(DEMO_LIVE):
+        if number == 0:  # the library's own first station: the same id and cover
+            first = stations[0]
+            live.append(dict(brief(first), title=title, subtitle=programme))
+        else:
+            live.append(station(f'ra.live{number:02d}', title, programme, 'Various',
+                                number * 5 + 2, badge='LIVE'))
+
+    shows, episodes = [], []
+    for number, (show, host) in enumerate(DEMO_RADIO_SHOWS):
+        show_id = f'demo.show{number:02d}'
+        art = cover(show_id, show, host, number * 4 + 9, badge='SHOW')
+        palette = PALETTES[(number * 4 + 9) % len(PALETTES)]
+        shows.append({'id': show_id, 'kind': 'category', 'title': show, 'subtitle': host,
+                      'art': art, 'thumb': thumb_for(art), 'artColor': palette[1],
+                      'url': f'https://music.apple.com/us/curator/{slug(show)}/{show_id}'})
+        own = []
+        for part in range(3):
+            album = albums[(number * 3 + part) % len(albums)]
+            words = DEMO_EPISODES[(number + part) % len(DEMO_EPISODES)].format(
+                artist=album['subtitle'], album=album['title'], genre=album['genre'])
+            own.append(station(f'ra.ep{number:02d}{part}', words, show, album['genre'],
+                               number * 4 + part + 3))
+        episodes.extend(own[:2])
+        page = {'id': show_id, 'title': show,
+                'shelves': [{'key': f'cat-{show_id}-episodes', 'title': 'Episodes',
+                             'items': own}],
+                'cached': generated,
+                'demo': True}  # invented: the demo engine answers only these
+        with open(os.path.join(categories_dir, f'{show_id}.json'), 'w', encoding='utf-8') as f:
+            json.dump(page, f, indent=2)
+
+    genres = [station(f'ra.genre{number:02d}', f'{name} Station', 'Apple Music', genre,
+                      number * 3 + 7)
+              for number, (name, genre) in enumerate(DEMO_GENRE_STATIONS)]
+    answer = {
+        'shelves': [
+            {'key': 'radio-live', 'title': 'Live Radio', 'items': live, 'live': True},
+            {'key': 'radio-episodes', 'title': 'Latest Episodes', 'items': episodes},
+            {'key': 'radio-shows', 'title': 'Radio Shows', 'items': shows},
+            {'key': 'radio-genres', 'title': 'Genre Stations', 'items': genres},
+            {'key': 'radio-albums', 'title': 'Heard on the Shows',
+             'items': [brief(album) for album in albums[::5]]},
+            {'key': 'radio-videos', 'title': 'Music Videos',
+             'items': [brief(video) for video in videos]},
+        ],
+        'cached': generated,
+        'demo': True,  # invented: the demo engine answers only these
+    }
+    with open(os.path.join(out_dir, 'radio.json'), 'w', encoding='utf-8') as f:
+        json.dump(answer, f, indent=2)
 
 
 # ---------------------------------------------------------------------------

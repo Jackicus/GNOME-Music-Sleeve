@@ -23,7 +23,7 @@ class HeroTile(Gtk.Box):
     whichever reads better on it (artwork.is_dark), the colour made deeper (or lighter) where
     the dimmed subtitle would not read on it at WCAG's AA contrast (artwork.band_colour);
     without one, on the card colour. Apple's "Top Picks for You" cards, for the first shelf
-    of Home and Radio's first stations.
+    of Home and the shelves pages (New's banners, Radio's live stations).
 
     bind(item) and unbind() are called by a list factory, as for AppleMusicTile, and the card
     follows its Item's notify signals while bound, as a tile does. The cover is an

@@ -15,7 +15,7 @@ page, and importing every page module (their templates and widgets) cost about 2
 Pages reach the application through app(), and the window through get_root() and its seams
 (open_item, open_shelf, open_songs, play_request, add_toast, item_actions).
 
-A library page's empty state (Home's, Radio's, the grids', Songs', Favourite Songs') offers
+A library page's empty state (Home's, the grids', Songs', Favourite Songs') offers
 the way out while the account is signed out: SignInOffer puts Sign In… on its status page.
 """
 
@@ -150,9 +150,9 @@ def _made_for_you(destination, library):
 
 
 def _radio(destination, library):
-    from .radio import RadioPage
+    from . import radio
 
-    return RadioPage(library, destination.title, icon_name=destination.icon_name)
+    return radio.create(destination, library)
 
 
 def _albums(destination, library):

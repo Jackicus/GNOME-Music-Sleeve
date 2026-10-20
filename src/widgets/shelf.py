@@ -125,7 +125,7 @@ class Shelf(PagedRow, Gtk.Box):
     goes on to the page's scrolled window, and a horizontal one (a touchpad, a tilting wheel,
     Shift and the wheel) moves the row. A row that fits scrolls neither way.
 
-    GtkBuilder builds some (radio.blp, search.blp): it calls __init__ without arguments and
+    GtkBuilder builds some (search.blp): it calls __init__ without arguments and
     sets the properties after it, where a Python caller's are set before __init__'s body
     runs, so the state the property setters read starts as class attributes.
     """

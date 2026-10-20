@@ -70,6 +70,11 @@ APPLE_ROOT_FOLDER = 'p.playlistsroot'
 
 BROWSE_ENDPOINT = '/v1/editorial/{storefront}/groupings'
 BROWSE_PARAMS = {'name': 'music', 'platform': 'web', 'extend': 'editorialArtwork'}
+# The Radio page: the grouping behind music.apple.com's own Radio page, asked as New's is, with
+# what the web player adds for the stations: their programmes (`events`, on air now and next)
+# and an episode's show (`radio-show`).
+RADIO_PARAMS = {'name': 'radio', 'platform': 'web', 'tabs': 'subscriber',
+                'extend': 'editorialArtwork', 'include[stations]': 'events,radio-show'}
 # Made for You: the recommendations, of which the mixes and stations are kept.
 RECOMMENDATIONS_ENDPOINT = '/v1/me/recommendations'
 RECOMMENDATIONS_PARAMS = {'limit': 25}

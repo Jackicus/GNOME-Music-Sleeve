@@ -144,10 +144,10 @@ changes, change it here, with the date. The plan they came from is in
   button and plain `pill` ones beside it. A link in text (an album's artist, a row's artist
   and album) is the text's own colour, underlined under the pointer, never a `link` button's
   blue. A grid's first column sits on the page's 24 px margin, the tiles at the start of
-  cells that grow with the page, as Radio's flow box has them, where the grids' tiles were
-  centred in theirs and drifted (28 px wide, 13 at 360); under 400sp the margins shrink to
-  the 14 px that still fit two tiles, Radio's the same, the grid never centred (a centred
-  scrollable has GTK measure its width for its height, which warns) (#243).
+  cells that grow with the page, where the grids' tiles were centred in theirs and drifted
+  (28 px wide, 13 at 360); under 400sp the margins shrink to the 14 px that still fit two
+  tiles, the grid never centred (a centred scrollable has GTK measure its width for its
+  height, which warns) (#243).
 - **A tile's title and subtitle keep to one line each; music videos are 16:9** (2026-10-20),
   as Apple Music's grids have them. A title or subtitle too long for its tile ends in an
   ellipsis, so every tile in a row is as tall as the next and the subtitles line up; the
@@ -518,6 +518,23 @@ changes, change it here, with the date. The plan they came from is in
   not the page. They live inside the track list, in rows of its own (a `Gtk.ListView`
   recycles only as its scrolled window's child), each shelf a horizontal list as the artist
   page's are. The demo library invents an answer for each hand-written album.
+- **Radio is Apple's radio page, with Recently Played as one shelf** (2026-10-20, #336).
+  The page is the editorial grouping behind music.apple.com's own Radio page
+  (`groupings?name=radio`, asked as New's is, with the stations' programmes and shows),
+  shaped by New's own grouping parser (`normalize._grouping_shelves`) and kept a day, as
+  New is: the live stations first, as large cards, then Apple's shelves in Apple's order.
+  The stations the user played (`library.radio`, which the sync keeps) are one shelf,
+  Recently Played, after the live stations, bound to the library's store itself so a sync
+  reaches it, and shown alone while Apple cannot be asked and nothing is kept (with the
+  status page's button still behind Refresh), so the page is never empty for a library that
+  has stations. A live station's subtitle is the programme on air when the page is shown,
+  worked out from the answer's `events` then rather than when it was fetched, and an answer
+  whose programmes have all run out for a station is not fresh, whatever its age
+  (`expires`). A radio show is an Apple curator: its tile opens its page (the category
+  page, which a curator's grouping already makes), never Play. The hero row's stations
+  that the live row shows are left out of it; Apple's links (More to Explore, the genres)
+  wait for #370. The page is a `ShelvesPage` with an `arrange` of its own rather than a
+  class of its own: PyGObject refuses a subclass of a `Gtk.Template` class.
 - **An artist of the library is shown as the library holds them** (2026-10-03). Apple Music
   has two pages of an artist: the catalog's, and its library's (Library › Artists: a list
   of artists beside the one chosen, their albums in the library under the name, Play and

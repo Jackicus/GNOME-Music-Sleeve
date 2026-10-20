@@ -64,6 +64,7 @@ UI awaits.
     await engine.category(id)    # {id, title, shelves}: a category's page
     await engine.browse()        # {shelves}: the New page (the editorial groupings)
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
+    await engine.radio()         # {shelves[, expires]}: the Radio page (the radio grouping)
     await engine.artist_page(id) # {id, artist, latest, topSongs, shelves}: a catalog artist's
                                  # page, every view of it at once
     await engine.album_page(id, song_id=None)   # {id, artistId, artistName, release,
@@ -73,12 +74,13 @@ UI awaits.
                                       previewed=())
                                  # {items}: the songs Apple suggests adding to a library
                                  # playlist, none of `offered`; more=True: a few more, unkept
-    # The last seven are kept under the cache for a day (landing.json, categories/,
-    # browse.json, made-for-you.json, artists/, albums/, suggestions/) and answered from
-    # there without the engine; refresh=True asks again. Each answer carries `cached`, when
-    # it was fetched; one older than a day, answered when Apple cannot be asked, carries
-    # `stale: True` too. The suggestions are kept with `basis`, what the playlist held, and
-    # asked again once it holds something else.
+    # The last eight are kept under the cache for a day (landing.json, categories/,
+    # browse.json, made-for-you.json, radio.json, artists/, albums/, suggestions/) and
+    # answered from there without the engine; refresh=True asks again. Each answer carries
+    # `cached`, when it was fetched; one older than a day, answered when Apple cannot be
+    # asked, carries `stale: True` too. The suggestions are kept with `basis`, what the
+    # playlist held, and asked again once it holds something else; Radio's until its live
+    # programmes run out (`expires`), whatever its age.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
@@ -1811,7 +1813,8 @@ class Engine(GObject.Object):
         marked `stale: True`; with none, or on a refresh, the error. With a `basis` (what the
         answer was asked about, as a string), the answer is kept with it, and one kept with
         another is not fresh, whatever its age: Apple is asked again (and the old one is
-        still answered, stale, when Apple cannot be asked). Demo mode has none of
+        still answered, stale, when Apple cannot be asked). Nor is one whose `expires` has
+        passed (normalize.answer_expired: Radio's live programmes). Demo mode has none of
         Apple's answers: only an invented one the demo library wrote there (marked `demo`), at
         any age, else 'engine-down'."""
         if self.demo:
@@ -1823,7 +1826,8 @@ class Engine(GObject.Object):
         generation = store.cache_generation()
         if not refresh:
             kept = await asyncio.to_thread(cache.read_kept, path)
-            if kept is not None and (basis is None or kept.get('basis') == basis):
+            if (kept is not None and (basis is None or kept.get('basis') == basis)
+                    and not normalize.answer_expired(kept)):
                 return kept
         try:
             client = await self._require_signed_in('browse')
@@ -1836,6 +1840,8 @@ class Engine(GObject.Object):
                 raise
             if basis is not None and stale.get('basis') != basis:
                 stale['stale'] = True  # young, but for what the playlist held before
+            if normalize.answer_expired(stale):
+                stale['stale'] = True  # young, but its programmes are over
             log.info('answering a kept answer no longer fresh: %s', error)
             return stale
         return await asyncio.to_thread(_shape_and_keep, shaper, raw, path,
@@ -1882,6 +1888,21 @@ class Engine(GObject.Object):
                                    api.BROWSE_PARAMS, timeout=BROWSE_TIMEOUT)
         return await self._kept_answer(normalize.browse_cache_path(str(self.cache_dir)),
                                        refresh, fetch, normalize.editorial_shelves)
+
+    async def radio(self, refresh=False):
+        """The Radio page: {shelves: [{key, title, items}], expires?}, the editorial grouping
+        behind music.apple.com's own Radio page (api.BROWSE_ENDPOINT with api.RADIO_PARAMS:
+        name=radio, the stations' programmes and shows) as normalize.radio_shelves shapes
+        it: the live stations first (`live`, each with its `events`), then the hero's
+        others, the shows, episodes and genre stations in Apple's order. From
+        <cache>/radio.json for a day or until `expires` (the live programmes run out), else
+        fetched and kept."""
+        async def fetch(client):
+            storefront = await self._current_storefront()
+            return await self._api(client, api.BROWSE_ENDPOINT.format(storefront=storefront),
+                                   api.RADIO_PARAMS, timeout=BROWSE_TIMEOUT)
+        return await self._kept_answer(normalize.radio_cache_path(str(self.cache_dir)),
+                                       refresh, fetch, normalize.radio_shelves)
 
     async def artist_page(self, artist_id, refresh=False):
         """A catalog artist's page: {id, artist, latest, topSongs, shelves}

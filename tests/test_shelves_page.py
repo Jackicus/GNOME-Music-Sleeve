@@ -37,6 +37,11 @@ class ShelvesPageTest(PageTestCase):
         self.assertFalse(expired({'cached': stamp(timedelta(hours=1))}))
         self.assertFalse(expired({}))
         self.assertFalse(expired({'cached': 'not a time'}))
+        # Radio's: young, but its live programmes have run out.
+        self.assertTrue(expired({'cached': stamp(timedelta(hours=1)),
+                                 'expires': stamp(timedelta(minutes=1))}))
+        self.assertFalse(expired({'cached': stamp(timedelta(hours=1)),
+                                  'expires': stamp(timedelta(minutes=-10))}))
 
     async def test_the_title_is_in_the_header_while_the_page_has_no_shelves(self):
         self.app.engine.answers['browse'] = EngineError('timeout')
@@ -49,6 +54,18 @@ class ShelvesPageTest(PageTestCase):
         await self.settle()
         self.assertEqual(page.stack.get_visible_child_name(), 'items')
         self.assertTrue(await self.until(lambda: not page.header_bar.get_show_title()))
+
+    async def test_a_focus_left_on_the_scrolled_window_goes_into_the_first_shelf(self):
+        # As the stack leaves it when the shelves replace the spinner, before their rows exist.
+        self.app.engine.answers['browse'] = answer()
+        page = await self.show_root(self.page(self.app.engine.browse))
+        await self.settle()
+        page.scrolled_window.grab_focus()
+        self.assertIs(self.window.get_focus(), page.scrolled_window)
+        page._present()
+        first = page._column.widgets[0]
+        self.assertTrue(await self.until(lambda: self.window.get_focus() is not None
+                                         and self.window.get_focus().is_ancestor(first)))
 
     async def test_refresh_does_nothing_while_a_request_runs(self):
         waiting = asyncio.get_running_loop().create_future()

@@ -63,7 +63,7 @@ ROOT_LIMIT = 8
 PAGE_KINDS = ('album', 'playlist', 'artist', 'folder', 'category')
 # The fixed destinations whose pages show the engine's answers for the account signed in,
 # forgotten at sign-out (forget_account_pages).
-ACCOUNT_PAGES = ('new', 'made-for-you', 'search')
+ACCOUNT_PAGES = ('new', 'radio', 'made-for-you', 'search')
 
 
 def sign_in_title(expired):

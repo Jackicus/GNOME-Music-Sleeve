@@ -41,7 +41,7 @@ LYRICS_MAX_AGE = 30 * 24 * 60 * 60
 REMOTE_ART_BUDGET = 32 * 1024 * 1024
 LYRICS_KEEP = 2000
 # The day-long answers in the cache's top folder, beside categories/.
-KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json')
+KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -1403,6 +1403,171 @@ def editorial_shelves(raw, cache_dir):
     return {'shelves': shelves}
 
 
+# The Radio grouping's elements the page puts apart (README.md, "The editorial pages"): the
+# hero row and the live stations, each made of children holding one item.
+RADIO_HERO_KIND = '316'
+RADIO_LIVE_KIND = '488'
+# The least time a Radio answer is fresh for, whatever its programmes say: one whose
+# programmes have all ended is not asked for again at every visit.
+RADIO_MIN_AGE = 5 * 60
+STAMP_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+
+def radio_shelves(raw, cache_dir, now=None):
+    """`radio`'s answer from the editorial grouping behind Apple Music's own
+    Radio page (`/v1/editorial/<storefront>/groupings` with `name=radio`,
+    asked as New's is, with the stations' `events` and `radio-show`):
+    `shelves` as editorial_shelves has them (_grouping_shelves, keyed
+    `radio-<element id>`), but for
+
+    - the live stations (the element of kind 488): their shelf first, keyed
+      as the rest and titled as Apple titles it, marked `live`; the hero row
+      (316, the featured shelf) after it, less the stations it already
+      shows, and left out when that leaves nothing;
+    - a station with programmes (a live one): `events`, [{title, start,
+      end}] in order, the times UTC stamps (`cached`'s format): what is on
+      air and next, for the page to pick from as it is shown. Its own
+      subtitle stays the station's;
+    - an episode of a show (a station with `radio-show`): subtitled with
+      the show's name;
+    - a show (an Apple curator of kind Show): a category tile, as every
+      curator on a shelf is (its page is its grouping), subtitled with its
+      host.
+
+    With live programmes, `expires`: when the first live station's last
+    programme known ends (at least RADIO_MIN_AGE from `now`), after which
+    the answer is not fresh (answer_expired()), whatever its age."""
+    groupings = [grouping for grouping in (raw or {}).get('data') or []
+                 if isinstance(grouping, dict)]
+    shelves = []
+    for grouping in groupings:
+        shelves.extend(_grouping_shelves(grouping, cache_dir, 'radio', featured=True))
+    kinds, resources = _radio_elements(groupings)
+    for shelf in shelves:
+        for item in shelf['items']:
+            _radio_item(item, resources)
+    live = next((shelf for shelf in shelves if kinds.get(shelf['key']) == RADIO_LIVE_KIND),
+                None)
+    if live is not None:
+        live['live'] = True
+        shelves.remove(live)
+        hero = next((shelf for shelf in shelves if shelf.get('featured')), None)
+        if hero is not None:
+            shown = {(item['kind'], item['id']) for item in live['items']}
+            hero['items'] = [item for item in hero['items']
+                             if (item['kind'], item['id']) not in shown]
+            if not hero['items']:
+                shelves.remove(hero)
+        shelves.insert(0, live)
+    answer = {'shelves': shelves}
+    expires = _radio_expiry(shelves, now)
+    if expires is not None:
+        answer['expires'] = expires
+    return answer
+
+
+def _radio_elements(groupings):
+    """The Radio grouping's shelves' element kinds, by the key _grouping_shelves gives
+    them (`radio-<element id or place>`), and every resource its elements hold, by (type,
+    id): the first copy of it with relationships (the stations' events and shows), where
+    the hero's copy of a live station may have none."""
+    kinds = {}
+    resources = {}
+    for grouping in groupings:
+        tabs = ((grouping.get('relationships') or {}).get('tabs') or {}).get('data') or []
+        for tab in tabs:
+            if not isinstance(tab, dict):
+                continue
+            children = ((tab.get('relationships') or {}).get('children') or {}).get('data') or []
+            for index, element in enumerate(children):
+                if not isinstance(element, dict):
+                    continue
+                kind = (element.get('attributes') or {}).get('editorialElementKind')
+                kinds[f"radio-{element.get('id') or index}"] = str(kind or '')
+                for resource in _element_contents(element):
+                    key = (resource.get('type'), str(resource.get('id') or ''))
+                    known = resources.get(key)
+                    if known is None or (resource.get('relationships')
+                                         and not known.get('relationships')):
+                        resources[key] = resource
+    return kinds, resources
+
+
+def _radio_item(item, resources):
+    """Add to a Radio shelf's item what its resource says beyond the shelf item's shape: a
+    station's programmes and an episode's show, a show's host."""
+    if item.get('kind') == 'station':
+        raw = resources.get(('stations', item['id'])) or {}
+        rel = raw.get('relationships') or {}
+        events = _station_events(rel.get('events'))
+        if events:
+            item['events'] = events
+        show = next((entry for entry in (rel.get('radio-show') or {}).get('data') or []
+                     if isinstance(entry, dict)), None)
+        name = str(((show or {}).get('attributes') or {}).get('name') or '').strip()
+        if name:
+            item['subtitle'] = name
+    elif item.get('kind') == 'category':
+        attrs = (resources.get(('apple-curators', item['id'])) or {}).get('attributes') or {}
+        host = str(attrs.get('showHostName') or '').strip()
+        if attrs.get('kind') == 'Show' and host:
+            item['subtitle'] = host
+
+
+def _station_events(relationship):
+    """A station's `events` (station-events) as [{title, start, end}] by start time, the
+    times UTC stamps; one without a title or either time is left out."""
+    events = []
+    for event in (relationship or {}).get('data') or []:
+        if not isinstance(event, dict):
+            continue
+        attrs = event.get('attributes') or {}
+        title = str(attrs.get('title') or '').strip()
+        start, end = _utc_stamp(attrs.get('startTime')), _utc_stamp(attrs.get('endTime'))
+        if title and start and end and start < end:
+            events.append({'title': title, 'start': start, 'end': end})
+    events.sort(key=lambda event: event['start'])
+    return events
+
+
+def _utc_stamp(value):
+    """An ISO 8601 time ('2026-10-20T14:00:00Z', with or without its fraction or offset) as
+    a UTC stamp in STAMP_FORMAT, which compares as text in time order; None for anything
+    else."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        when = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return when.astimezone(UTC).strftime(STAMP_FORMAT)
+
+
+def _radio_expiry(shelves, now=None):
+    """When the first live station runs out of programmes known: the earliest of the
+    stations' last programmes' ends, at least RADIO_MIN_AGE after `now`; None without
+    programmes."""
+    ends = [item['events'][-1]['end'] for shelf in shelves for item in shelf['items']
+            if item.get('events')]
+    if not ends:
+        return None
+    now = now or datetime.now(UTC)
+    floor = datetime.fromtimestamp(now.timestamp() + RADIO_MIN_AGE, UTC).strftime(STAMP_FORMAT)
+    return max(min(ends), floor)
+
+
+def answer_expired(answer, now=None):
+    """Whether a kept answer's `expires` stamp (a Radio answer's: radio_shelves) has passed:
+    it is not fresh then, whatever its age. False without one."""
+    stamp = answer.get('expires') if isinstance(answer, dict) else None
+    if not isinstance(stamp, str):
+        return False
+    now = now or datetime.now(UTC)
+    return now.strftime(STAMP_FORMAT) >= stamp
+
+
 def _is_made_for_you(raw_item):
     """A personal mix (Favourites Mix, Chill Mix, New Music Mix…, playlists
     of `playlistType` personal-mix) or a station: what Made for You holds."""
@@ -2095,6 +2260,12 @@ def browse_cache_path(cache_dir):
 def made_for_you_cache_path(cache_dir):
     """Where the Made for You shelves (made_for_you_shelves) are kept for a day."""
     return os.path.join(cache_dir, 'made-for-you.json')
+
+
+def radio_cache_path(cache_dir):
+    """Where the Radio page's shelves (radio_shelves) are kept: a day, or until their
+    programmes run out (`expires`)."""
+    return os.path.join(cache_dir, 'radio.json')
 
 
 def write_answer(path, answer, cache_dir, generation=None):

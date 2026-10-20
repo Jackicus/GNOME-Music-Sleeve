@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """AppleMusicShelvesPage: a page of shelves the engine answers with: New (engine.browse()),
-Made for You (engine.made_for_you()) and a search category (engine.category(id)).
+Made for You (engine.made_for_you()), Radio (engine.radio(), with a shelf of the library's
+own: pages/radio.py) and a search category (engine.category(id)).
 
 Unlike Home, whose shelves are the library's, these pages own their Items: the engine's
 shelf dicts are wrapped (remote.remote_shelves), their artwork pointed at <cache>/remote-art/
@@ -20,11 +21,11 @@ from gettext import gettext as _
 from gi.repository import Adw, Gtk
 
 from ..backend.errors import EngineError
-from ..backend.normalize import ANSWER_MAX_AGE
+from ..backend.normalize import ANSWER_MAX_AGE, answer_expired
 from ..remote import fetch_shelf_art, remote_shelves
 from ..widgets.engine_status import EngineStatus
 from ..widgets.shelf import ShelfColumn
-from ..widgets.util import HeaderTitle, connect_weak
+from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, next_frame
 from . import app
 
 log = logging.getLogger(__name__)
@@ -32,8 +33,11 @@ log = logging.getLogger(__name__)
 
 def expired(answer, now=None):
     """Whether an answer the page shows was fetched longer than a day ago (its `cached`
-    stamp, normalize.ANSWER_MAX_AGE): the page asks again as it is shown. An answer without
-    a stamp never expires."""
+    stamp, normalize.ANSWER_MAX_AGE), or its `expires` has passed (Radio's live programmes:
+    normalize.answer_expired): the page asks again as it is shown. An answer without a
+    stamp never expires."""
+    if answer_expired(answer, now):
+        return True
     stamp = answer.get('cached') if isinstance(answer, dict) else None
     if not isinstance(stamp, str):
         return False
@@ -61,6 +65,14 @@ class ShelvesPage(Adw.NavigationPage):
     Refresh is never made insensitive (the focus would be lost): it does nothing while a
     request is under way, and what the status page's button does while the engine is down or
     the account signed out. The demo has no engine: no Refresh.
+
+    `arrange(shelves)`, when given, makes the shelves shown out of the engine's (ShelfModels;
+    [] while it has not answered), for a page with shelves of its own beside Apple's (Radio's
+    Recently Played). It is asked again as the page is shown, and by rearrange(), which
+    `follow(obj, signal)` runs whenever obj emits signal while the page is shown. What it
+    makes of [] is shown in place of the status page when the engine cannot answer (Refresh
+    and the engine coming up still do what the status page's button would), and the spinner
+    gives way to it while a request is under way.
     """
 
     __gtype_name__ = 'AppleMusicShelvesPage'
@@ -75,7 +87,7 @@ class ShelvesPage(Adw.NavigationPage):
     title_label = Gtk.Template.Child()
 
     def __init__(self, title, fetch, root=True, icon_name=None, hero=True, empty_title=None,
-                 empty_description=None):
+                 empty_description=None, arrange=None):
         super().__init__(title=title)
         self.item = None  # a category page's category, for the window's double-push guard
         self._fetch = fetch
@@ -83,10 +95,14 @@ class ShelvesPage(Adw.NavigationPage):
         self._hero = hero
         self._icon_name = icon_name or 'view-grid-symbolic'
         self._empty = (empty_title or _('Nothing Here'), empty_description or '')
+        self._arrange = arrange
         self._answer = None  # the answer shown
         self._task = None  # the fetch running
-        self._art_task = None  # the thumbnails being fetched for the shelves shown
-        self._shelves = []  # the ShelfModel objects shown
+        self._art_task = None  # the thumbnails being fetched for the engine's shelves
+        self._remote = []  # the engine's shelves, as ShelfModel objects
+        self._shelves = []  # the shelves shown (the engine's, arranged)
+        self._status = None  # the failure the status page shows (_show_status's arguments)
+        self._handlers = MappedHandlers(self)
         # What the page says when the engine cannot answer, and what its button does.
         self._engine_status = EngineStatus(app(), self._show_status, self.load, {
             'engine-down': _('Start the engine to load this page'),
@@ -108,8 +124,9 @@ class ShelvesPage(Adw.NavigationPage):
         self._engine_status.watch()  # may load again: the engine came up meanwhile
         if not self._loading() and (self._answer is None or expired(self._answer)):
             self.load()
-        elif self._shelves and self._art_task is None:
-            self._art_task = app().spawn(fetch_shelf_art(self._shelves))
+        elif self._remote and self._art_task is None:
+            self._art_task = app().spawn(fetch_shelf_art(self._remote))
+        self.rearrange()
 
     def do_unmap(self):
         self._engine_status.unwatch()
@@ -131,6 +148,21 @@ class ShelvesPage(Adw.NavigationPage):
     def _loading(self):
         return self._task is not None and not self._task.done()
 
+    def follow(self, obj, signal):
+        """Arrange the shelves again (rearrange()) whenever `obj` emits `signal` while the
+        page is shown (weakly: obj may outlive the page)."""
+        self._handlers.add(obj, signal, self.rearrange)
+
+    def rearrange(self, *_args):
+        """Show again what `arrange` makes of the engine's shelves, or of none while the
+        status page would show (nothing without `arrange`)."""
+        if self._arrange is None:
+            return
+        if self._answer is not None:
+            self._present()
+        elif self._status is not None:
+            self._show_status(*self._status)
+
     def load(self, refresh=False):
         """Ask for the shelves (again, past the cache, with `refresh`)."""
         if self._loading():
@@ -144,33 +176,74 @@ class ShelvesPage(Adw.NavigationPage):
             answer = await self._fetch(refresh)
         except EngineError as error:
             log.info('%s: %s', self.get_title(), error)
-            if self._shelves:
+            if self._remote:
                 app().report(error)  # a refresh that failed keeps what is shown
             else:
+                if refresh and self._shelves:
+                    app().report(error)  # the shelves of the page's own stay
                 self._engine_status.fail(error)
             return
         self._answer = answer if isinstance(answer, dict) else {}
         self._show(self._answer.get('shelves'))
 
     def _show(self, dicts):
-        shelves = remote_shelves(dicts)
+        remote = remote_shelves(dicts)
         if self._art_task is not None and not self._art_task.done():
             self._art_task.cancel()
+        self._remote = remote
+        self._status = None
+        self._engine_status.clear()
+        self._present()
+        if remote:
+            self._art_task = app().spawn(fetch_shelf_art(remote))
+
+    def _arranged(self, shelves):
+        return list(shelves) if self._arrange is None else list(self._arrange(list(shelves)))
+
+    def _present(self, shelves=None):
+        """Show the engine's shelves as `arrange` places them (or `shelves`), or the empty
+        state when there are none."""
+        shelves = self._arranged(self._remote) if shelves is None else shelves
         self._column.show(shelves, hero_first=self._hero)
         self._shelves = shelves
-        self._engine_status.clear()
         if shelves:
             self.stack.set_visible_child_name('items')
-            self._art_task = app().spawn(fetch_shelf_art(shelves))
+            app().spawn(self._focus_shelves())
         else:
             title, description = self._empty
             self._show_status('empty', title, description, None)
 
+    async def _focus_shelves(self):
+        """A focus the shelves' showing left on the scrolled window itself, into the first
+        shelf once it is laid out. The stack moves the focus it held (the spinner's, the
+        status page's button's) into its new child at once, before the shelves' rows exist,
+        and a shelf hidden for another (a new answer) loses it: either way the scrolled window
+        takes it, where no key reaches a tile and Ctrl+2 finds it in the content already."""
+        for _frame in range(3):
+            await next_frame(self.shelves_box)
+            root = self.get_root()
+            widgets = self._column.widgets
+            if root is None or root.get_focus() is not self.scrolled_window or not widgets:
+                return
+            if widgets[0].child_focus(Gtk.DirectionType.TAB_FORWARD):
+                return
+
     def _show_status(self, status, title, description, button):
-        """The spinner ('loading'), or the status page: EngineStatus's states, or 'empty'."""
+        """The spinner ('loading'), or the status page: EngineStatus's states, or 'empty'. A
+        failure shows what `arrange` makes of no shelves instead, when it makes some, and
+        the spinner leaves them be."""
         if status == 'loading':
-            self.stack.set_visible_child_name('loading')
+            if not self._shelves:
+                self.stack.set_visible_child_name('loading')
             return
+        if status != 'empty':
+            self._status = (status, title, description, button)
+            own = self._arranged([]) if self._arrange is not None else []
+            if own:
+                self._present(own)
+                return
+            self._column.show([])
+            self._shelves = []
         self.status_page.set_icon_name(self._icon_name)
         self.status_page.set_title(title)
         self.status_page.set_description(description)
