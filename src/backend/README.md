@@ -451,9 +451,11 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 ## library.json
 
 `<cache>/library.json`, written by `src/sync.py` (and `scripts/demo_library.py`), read by
-`src/library.py`. Version 3: Items carry `added` and the file `favourites`; version 2: an
-album's track `index` counts on across its discs. The app syncs an older file again at once
-(an older one still reads: no dates, no hearts, Recently Added Apple's shelf).
+`src/library.py`. Version 4: the shape of 3, written by a full sync (a short pass keeps the
+version of the file it kept from, and 1.0.0's could stamp 3 on a file without 3's keys);
+version 3: Items carry `added` and the file `favourites`; version 2: an album's track
+`index` counts on across its discs. The app syncs an older file again at once (an older one
+still reads: no dates, no hearts, Recently Added Apple's shelf).
 
 ```jsonc
 {

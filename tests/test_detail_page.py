@@ -658,6 +658,40 @@ class PlaylistFilterTest(PageTestCase):
         self.item.merge(data, replace=True)  # groups-changed: shown again
         self.assertEqual(self.titles(page), ['Harbour Lights', 'Night Harbour'])
 
+    async def test_go_to_current_song_on_a_filtered_playlist(self):
+        """Go to Current Song with the filter on: the song's row within it when it matches,
+        else the filter cleared and the song's row focused; nothing left waiting either way
+        (#443)."""
+        page = await self.show()
+        bar = page.filter_bar
+        rows = page.list_view.get_model()
+
+        async def reveal():
+            page.reveal_playing()
+            self.assertTrue(await self.until(lambda: page._reveal_task.done(), timeout=2))
+            self.assertIsNone(page._reveal_task.exception())
+            self.assertFalse(page._reveal_wanted)
+
+        bar.set_text('harbour')  # Harbour Lights and Night Harbour
+        self.app.player.track = playing(self.item.groups[0].entries.get_item(2).raw)
+        await reveal()
+        self.assertEqual(bar.search, 'harbour')  # it matches: the filter stays
+        self.assertTrue(page._has_focus_at(2))
+        self.assertEqual(rows.get_item(2).title, 'Night Harbour')
+        # A song the filter hides: the filter cleared, the song's row focused.
+        self.app.player.track = playing(self.item.groups[0].entries.get_item(1).raw)
+        await reveal()
+        self.assertEqual(bar.search, '')
+        self.assertFalse(bar.get_search_mode())
+        self.assertEqual(len(self.titles(page)), 4)
+        self.assertTrue(page._has_focus_at(2))
+        self.assertEqual(rows.get_item(2).title, 'Dawn')
+        # A song the playlist does not hold: the filter kept, nothing moves.
+        bar.set_text('harbour')
+        self.app.player.track = playing(track('l.album009', 0))
+        await reveal()
+        self.assertEqual(bar.search, 'harbour')
+
     async def test_an_albums_tracks_have_no_filter(self):
         from applemusic import keyboard
         from applemusic.library import Item

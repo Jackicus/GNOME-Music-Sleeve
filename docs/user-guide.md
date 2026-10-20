@@ -246,7 +246,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Sleeve among the providers: turn it off there to keep your library out of the overview.
 - <kbd>Ctrl</kbd>+<kbd>L</kbd> (Go to Current Song) shows the album or playlist the song
   playing is played from (else the song's album), the focus on the song, from Now Playing
-  and the full-screen player too. <kbd>Ctrl</kbd>+<kbd>↑</kbd> and
+  and the full-screen player too; a filter on the playlist that hides the song is cleared.
+  <kbd>Ctrl</kbd>+<kbd>↑</kbd> and
   <kbd>Ctrl</kbd>+<kbd>↓</kbd> turn the volume up and down while something plays (not while
   you type, or on the sidebar or a slider, where those keys are theirs).
 - <kbd>Ctrl</kbd>+<kbd>?</kbd> lists every keyboard shortcut.

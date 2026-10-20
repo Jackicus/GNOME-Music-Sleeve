@@ -121,6 +121,9 @@ them before changing either. What matters most:
   comes up or is authorized, when the library has been read. After a failure it waits
   `RETRY_DELAY`; failed thumbnails are retried once. A change to library.json's shape that
   old files lack bumps `LIBRARY_VERSION` (and demo_library.py's), so they are synced again.
+  Only a full pass writes `LIBRARY_VERSION`: the short passes below keep the version of the
+  file they kept the rest from (#437), so an older file stays due. Version 4 has 3's shape;
+  it marks a file a full sync wrote, since 1.0.0's short passes could stamp 3 on a 2.
 - Home's Refresh runs a **shelves pass**, `app.start_sync(shelves=True)`: the Home shelves
   alone (recommendations, Heavy Rotation, Recently Added), everything else kept from last
   time's file; a full sync instead while `library_ok()` is false. No last-sync, no toast. A
@@ -150,7 +153,7 @@ them before changing either. What matters most:
   the sync first (revoking the session would fail it), then revokes, bumps, stops the engine
   and wipes, and bumps and clears once more at the end for what a page fetched meanwhile.
   Both hold the sync (`LibrarySync.hold()`) so none starts meanwhile.
-- Favourites and dates (#347, library.json version 3): the sync asks its listings for
+- Favourites and dates (#347, library.json version 3, now 4): the sync asks its listings for
   `inFavorites` and keeps `dateAdded` as an Item's `added`; the file's `favourites` is
   {section: ids}, a song by its catalog id (else its library id), anything else by both.
   The Library keeps them as one set: `Item.favourite` (notified when a load or

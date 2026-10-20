@@ -167,7 +167,8 @@ changes, change it here, with the date. The plan they came from is in
 - **Apple's playback keys, GNOME's terms** (2026-10-20). Go to Current Song is Ctrl+L, as on
   Apple's players: the album or playlist of the library's the queue came from, else the
   song's album, the focus on the song's row, from Now Playing and the full-screen player too
-  (they close). The volume is Ctrl+Up and Ctrl+Down, a tenth a press, announced, and the
+  (they close). A playlist's filter that hides the song is cleared for it (#443), one that
+  shows it is kept: the key asks for the song, so the page shows it. The volume is Ctrl+Up and Ctrl+Down, a tenth a press, announced, and the
   window's own key (`keyboard.volume_step()`): they are editing chords, a text view's
   paragraph keys, a slider's page step and, on the sidebar's rows, the move of the focus
   without selecting, all left to those. The grids and lists select nothing, so there the
@@ -226,6 +227,13 @@ changes, change it here, with the date. The plan they came from is in
   goes without a layout: an image shown by its opacity in a row, a CSS background in room a
   tile's subtitle line always keeps (an image more a tile cost 12 ms a grid's first build); Favourites Only is a check item in the
   sort menu (Sort and Filter, as Nautilus puts Show Hidden Files beside its sort orders).
+  The format bump (library.json version 3) makes an older file resync as soon as the engine
+  is up; only a full pass writes the current version, a short pass (quick, playlists,
+  shelves) the version of the file it kept the rest from (2026-10-20, #437), since one that
+  stamped the current version on a file it had not rebuilt put the upgrade's full sync off
+  until the interval. 1.0.0's short passes did that, so 1.0.1 writes version 4, the same
+  shape, and every 3 is synced once more: one full sync on the upgrade, rather than guessing
+  from a file's contents whether its hearts and dates were ever read.
 - **A filter on the library's lists** (2026-10-20). Albums, Artists, Music Videos, Songs
   and a playlist's songs (Favourite Songs' too) have one filter bar (`widgets/filter_bar.py`),
   as GNOME's apps put one over a list: the header's search button, Ctrl+F, or typing on the

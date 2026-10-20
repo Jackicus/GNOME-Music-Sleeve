@@ -57,7 +57,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
         self.assertEqual(stamp.returncode, 0)
 
     def test_top_level_schema(self):
-        self.assertEqual(self.data.get('version'), 3)  # sync.LIBRARY_VERSION
+        self.assertEqual(self.data.get('version'), 4)  # sync.LIBRARY_VERSION
         self.assertEqual(self.data.get('storefront'), 'us')
         self.assertIn('generated', self.data)
         self.assertTrue(isinstance(self.data['generated'], str))

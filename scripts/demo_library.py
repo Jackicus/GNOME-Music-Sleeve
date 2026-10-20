@@ -2299,7 +2299,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                                           favourite_tracks)
 
     library = {
-        'version': 3,  # sync.LIBRARY_VERSION
+        'version': 4,  # sync.LIBRARY_VERSION
         'generated': '2026-09-25T12:00:00Z',
         'storefront': 'us',
         'sections': {
