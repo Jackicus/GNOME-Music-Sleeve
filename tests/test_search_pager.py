@@ -142,8 +142,12 @@ class SearchPagerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
         self.assertEqual((pager.state, pager.items.get_n_items(), pager.next), ('idle', 20, 20))
+        # Stopped: its state back to 'idle' is not a reason to ask for the page again.
+        self.assertIsNone(pager.request())
+        self.assertEqual(len(catalog.calls), 1)
         catalog.gate = None
-        await pager.request()  # asked for again when wanted
+        pager.resume()
+        await pager.request()  # asked for again when wanted (the list shown again)
         self.assertEqual(pager.items.get_n_items(), 45)
 
     async def test_nothing_to_page_is_done_at_once(self):

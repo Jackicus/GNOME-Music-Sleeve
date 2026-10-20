@@ -17,7 +17,9 @@ way, the page done, or nothing more: more() asks `search(term, kind=, offset=, l
 offsets shift as its catalog changes) and starts fetching their thumbnails. A page that adds
 nothing but names a next is followed at once, EMPTY_PAGES pages at most (a page of Apple's
 curators may hold no radio show), and that many with nothing new end it. cancel() stops a
-fetch under way, the state back to 'idle', so a page that is left stops asking.
+fetch under way, the state back to 'idle', and stops the pager: request() fetches nothing
+(`stopped`) until resume() (SearchList's, when it is shown again), so a page that is left, or
+has moved on while the list still shows, stops asking.
 """
 
 import asyncio
@@ -60,6 +62,7 @@ class SearchPager(GObject.Object):
         self._search = search
         self._spawn = spawn
         self._task = None
+        self.stopped = False  # cancel()'s, until resume()
         self._seen = set()
         self._add(items)
         self.state = 'idle' if next_offset is not None else 'done'
@@ -82,17 +85,25 @@ class SearchPager(GObject.Object):
 
     def request(self):
         """Fetch the next page (more()) as a task, unless one is under way or there is none
-        to fetch; answers the task, or None."""
-        if self.busy or self.state not in ('idle', 'failed') or self.next is None:
+        to fetch, or the pager is stopped; answers the task, or None."""
+        if (self.stopped or self.busy or self.state not in ('idle', 'failed')
+                or self.next is None):
             return None
         self._task = self._spawn(self.more())
         return self._task
 
     def cancel(self):
-        """Stop the fetch under way, if any (its state goes back to 'idle')."""
+        """Stop the fetch under way, if any (its state goes back to 'idle'), and the pager:
+        request() fetches nothing until resume(). The state's change back to 'idle' would
+        otherwise have the list that shows it ask for the same page again at once."""
+        self.stopped = True
         if self.busy:
             self._task.cancel()
         self._task = None
+
+    def resume(self):
+        """Let request() fetch again after a cancel() (the list shown again)."""
+        self.stopped = False
 
     async def more(self):
         """Fetch the next page now (see the module)."""
