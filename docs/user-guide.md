@@ -371,7 +371,8 @@ development build uses `~/.local/share/apple-music/chrome-devel/` and
 
 - **Sign Out** (in the account menu at the bottom of the sidebar) signs out of Apple Music,
   asking Apple to end the session too, stops Chrome and deletes both the Chrome profile and
-  the cache.
+  the cache. Nothing of the account stays on screen either: the next account signed in
+  starts with its own Recently Played, favourites and Recently Searched.
 - **Preferences › General › Cache › Clear** deletes only the cache.
 - To remove everything by hand, quit the app first, then run:
 

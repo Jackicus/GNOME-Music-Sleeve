@@ -41,7 +41,9 @@ the cover the bar fetched) in a thread, and fetches the thumbnail of what is not
 a few at a time (never in the demo); it looks only at the URLs of rows still bound, at most
 every ART_DELAY_MS, so a fast scroll through a long queue asks for nothing it has passed. A
 row binds with the path known for its URL (a dictionary lookup) and its Cover decodes it as
-any row's does (artwork.ArtworkSlot: on map, after the frame, let go of on unmap).
+any row's does (artwork.ArtworkSlot: on map, after the frame, let go of on unmap). What it
+found is forgotten when the cache is cleared (Clear Cache, a sign-out: the cache's generation
+moves), and a look under way then is dropped: the files are looked for again.
 """
 
 import asyncio
@@ -52,7 +54,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from .. import shortcuts
 from ..actions import now_playing_track
-from ..backend import config, normalize
+from ..backend import config, normalize, store
 from ..player import NowPlaying, format_time
 from ..remote import fetch_remote, on_disk, remote_art_path, sized_url
 from . import context_menu
@@ -247,7 +249,8 @@ class EntryArt:
     bound now) are looked for on disk in a thread (`find`), and those not there fetched
     (`fetch`, an async function of the URL answering a path or None; None: never), ART_FETCHES
     at a time; `on_found(url, path)` tells the view a file is there. A URL that has none is not
-    asked about again."""
+    asked about again, until the cache is cleared (its generation moves): then nothing found
+    before is known, and what a look under way finds is dropped."""
 
     def __init__(self, spawn, bound, on_found, fetch=None, find=find_art):
         self._spawn = spawn
@@ -260,12 +263,26 @@ class EntryArt:
         self._wanted = {}     # the URLs noted since the last look, in order
         self._source = 0
         self._gate = None
+        self._generation = store.cache_generation()  # the cache's that _paths names files of
+
+    def _current(self):
+        """Whether the cache is the one the paths were found in; else they are forgotten."""
+        generation = store.cache_generation()
+        if generation == self._generation:
+            return True
+        self._generation = generation
+        self._paths.clear()
+        self._asked.clear()
+        return False
 
     def paths(self, url):
-        path = self._paths.get(url) if url else None
+        if not url or not self._current():
+            return ()
+        path = self._paths.get(url)
         return (path,) if path else ()
 
     def want(self, url):
+        self._current()
         if not url or url in self._paths or url in self._asked:
             return
         self._wanted[url] = None
@@ -282,11 +299,12 @@ class EntryArt:
         urls = [url for url in self._wanted if url in bound]
         self._wanted.clear()
         if urls:
+            self._current()
             self._asked.update(urls)
-            self._spawn(self._resolve(urls))
+            self._spawn(self._resolve(urls, self._generation))
         return GLib.SOURCE_REMOVE
 
-    async def _resolve(self, urls):
+    async def _resolve(self, urls, generation):
         try:
             found = await asyncio.to_thread(self._find, urls)
         except BaseException:
@@ -295,26 +313,28 @@ class EntryArt:
         for url in urls:
             path = found.get(url)
             if path:
-                self._found(url, path)
+                self._found(url, path, generation)
         missing = [url for url in urls if url not in found]
         if self._fetch is None:
             for url in missing:
-                self._found(url, '')
+                self._found(url, '', generation)
             return
         if self._gate is None:
             self._gate = asyncio.Semaphore(ART_FETCHES)
-        await asyncio.gather(*(self._fetch_one(url) for url in missing))
+        await asyncio.gather(*(self._fetch_one(url, generation) for url in missing))
 
-    async def _fetch_one(self, url):
+    async def _fetch_one(self, url, generation):
         try:
             async with self._gate:
                 path = await self._fetch(url)
         except BaseException:
             self._asked.discard(url)
             raise
-        self._found(url, path or '')
+        self._found(url, path or '', generation)
 
-    def _found(self, url, path):
+    def _found(self, url, path, generation):
+        if not self._current() or generation != self._generation:
+            return  # found in a cache cleared since: looked for again when a row wants it
         self._asked.discard(url)
         self._paths[url] = path
         if path:

@@ -1787,6 +1787,29 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.actions.menu_for(LIBRARY_ALBUM)
         self.assertEqual(self.loved_shown(), (True, False))
 
+    async def test_a_sign_out_forgets_what_the_engine_said(self):
+        # The ratings and artist favourites heard are the account's: after a sign-out
+        # (the window's forget_account_pages()) a menu and the artist page's star take
+        # theirs from the library and the engine only.
+        self.actions.menu_for(LIBRARY_TRACK)
+        await self.run_action('item-love', 'song', 'i.song1')
+        self.actions.menu_for(CATALOG_ARTIST)
+        await self.run_action('item-love', 'artist', '1000000005')
+        self.assertEqual(self.actions.known_rating(('song', '1000000001')), 1)
+        self.assertEqual(self.actions.known_rating(('artist', '1000000005')), 1)
+        self.actions.forget_account()
+        self.app.engine.state = 'down'
+        self.app.engine.authorized = False
+        self.assertIsNone(self.actions.known_rating(('song', '1000000001')))
+        self.assertIsNone(self.actions.known_rating(('artist', '1000000005')))
+        self.actions.menu_for(LIBRARY_TRACK)
+        self.assertEqual(self.loved_shown(), (True, False))
+        self.actions.menu_for(CATALOG_ARTIST)
+        self.assertEqual(self.loved_shown(), (True, False))
+        # Nor are the objects its menus were built for remembered.
+        self.actions.forget_account()
+        self.assertIsNone(self.actions._resolve('song', 'i.song1'))
+
     def test_the_menu_shows_the_librarys_favourite_at_once(self):
         # library.json's favourites (Library.is_favourite), before the engine has said.
         self.app.engine.state = 'down'

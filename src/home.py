@@ -77,6 +77,10 @@ class Throttle:
         """Apple answered: the next ask waits only for the answer's age."""
         self._failed_at = None
 
+    def reset(self):
+        """The account signed out: its failures hold the next account's asks back no more."""
+        self._failed_at = None
+
     def failed(self, error):
         """Apple could not answer (an EngineError): no ask for RETRY_DELAY, unless the engine
         was down or the account signed out (the page asks again once the engine is up or

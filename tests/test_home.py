@@ -76,6 +76,9 @@ class ThrottleTest(unittest.TestCase):
         throttle.failed(EngineError('api'))
         throttle.answered()
         self.assertTrue(throttle.due(old, NOW))
+        throttle.failed(EngineError('timeout'))
+        throttle.reset()  # a sign-out
+        self.assertTrue(throttle.due(old, NOW))
 
     def test_the_engine_down_or_signed_out_does_not_count(self):
         throttle = home.Throttle(Clock())
@@ -382,6 +385,41 @@ class HomePageTest(PageTestCase):
         await self.settle()
         self.assertNotIn('recently-played', self.shown(page))
         self.assertIsNone(page._answer)
+
+    async def test_a_sign_out_while_hidden_forgets_the_answer(self):
+        # The window forgets Home's account state at sign-out (forget_account_pages()):
+        # another account signed in, Home shows nothing of the old answer and asks Apple.
+        engine = self.app.engine
+        self.up()
+        engine.answers['recently_played'] = answer([1, 2], now=datetime.now(UTC))
+        page = await self.home_page()
+        self.assertEqual(self.recent_ids(page), ['900000501', '900000502'])
+        self.assertEqual(engine.recent_requests, [False])  # under a minute old: kept
+        self.window.navigation_view.push(covering := self.pushed())
+        self.assertTrue(await self.until(covering.get_mapped))
+        self.app.settings.set_boolean('signed-in', False)
+        page.forget_account()
+        self.app.settings.set_boolean('signed-in', True)
+        engine.answers['recently_played'] = (
+            lambda refresh: answer([7, 8], now=datetime.now(UTC)) if refresh else {})
+        self.assertEqual(self.recent_ids(page), [])
+        self.window.navigation_view.pop()
+        self.assertTrue(await self.until(page.get_mapped))
+        await self.settle()
+        self.assertEqual(engine.recent_requests, [False, False, True])
+        self.assertEqual(self.recent_ids(page), ['900000507', '900000508'])
+
+    async def test_a_failure_before_the_sign_out_does_not_hold_the_next_account_back(self):
+        self.up()
+        self.app.engine.answers['recently_played'] = EngineError('timeout')
+        page = await self.home_page()
+        self.assertEqual(self.app.engine.recent_requests, [False])
+        page.forget_account()
+        self.app.engine.answers['recently_played'] = answer([3], now=datetime.now(UTC))
+        page.unmap()
+        page.map()
+        await self.settle()
+        self.assertEqual(self.recent_ids(page), ['900000503'])
 
     async def test_the_demo_shows_its_invented_answer_and_refresh_reads_it_again(self):
         self.app.demo = True

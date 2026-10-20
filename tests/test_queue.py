@@ -234,6 +234,45 @@ class EntryArtTest(unittest.TestCase):
         art.want('b')
         self.assertEqual(art.pending(), 0)
 
+    def test_a_cleared_cache_is_looked_in_again(self):
+        # Clear Cache or a sign-out deletes the files found: each is looked for again (on
+        # disk, else fetched), never named from before.
+        from applemusic.backend import store
+
+        art = self.make()
+        self.on_disk['a'] = '/disk/a'
+        self.bound.update({'a', 'b', 'broken'})
+        for url in ('a', 'b', 'broken'):
+            art.want(url)
+        self.look(art)
+        self.assertEqual(art.paths('a'), ('/disk/a',))
+        store.bump_cache_generation()
+        self.on_disk.clear()
+        self.assertEqual(art.paths('a'), ())
+        self.assertEqual(art.paths('b'), ())
+        for url in ('a', 'b', 'broken'):
+            art.want(url)
+        self.look(art)
+        self.assertEqual(sorted(self.fetched[2:]), ['a', 'b', 'broken'])
+        self.assertEqual(art.paths('a'), ('/fetched/a',))
+
+    def test_a_look_under_way_as_the_cache_is_cleared_is_not_kept(self):
+        from applemusic.backend import store
+
+        art = self.make()
+        self.on_disk['a'] = '/disk/a'
+        self.bound.add('a')
+        art.want('a')
+        self.remove_source(art)
+        art._look()
+        store.bump_cache_generation()  # while the look runs
+        while self.spawned:
+            asyncio.run(self.spawned.pop(0))
+        self.assertEqual(art.paths('a'), ())
+        self.assertEqual(self.found, [])
+        art.want('a')
+        self.assertEqual(art.pending(), 1)  # asked about again
+
     def test_the_candidates_and_the_first_on_disk(self):
         from applemusic.backend import config
         from applemusic.remote import remote_art_path
