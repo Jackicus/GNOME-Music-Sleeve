@@ -98,13 +98,29 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 
 ## Known limitations
 
+Music Sleeve plays your music through Apple's web player, music.apple.com, running in Chrome:
+Apple Music's streams are protected with Widevine, and a browser that has it is the only
+way to play them on Linux. So what the web player cannot do, the app cannot do either:
+
+- No Lossless, Hi-Res Lossless or Dolby Atmos (Spatial Audio): the web player streams AAC
+  at up to 256 kbps, in stereo, and that is what you hear. For the same reason, albums carry
+  no Lossless or Dolby Atmos badges.
+- No equaliser, crossfade, AutoMix or Sound Check: the web player has none of them. An
+  equaliser for the whole system, such as EasyEffects, can work on the sound instead (the
+  system lists it as Chrome's).
+- No offline listening or downloads: the app streams, as the web player does.
+- No Apple Music Sing, lyrics share cards, profiles or friends, collaborative playlists,
+  making smart playlists, or artwork of your own for a playlist: the web player offers no
+  way to them, so they stay in Apple's own apps.
+
+Other limits:
+
 - Songs play only in a browser with Widevine: Google Chrome has it. Microsoft Edge, Brave
   and Vivaldi can fetch it (Brave and Vivaldi may ask first, in their own window: turn off
   Preferences › Engine › Run Browser Hidden to see it), and Chromium needs its
   distribution's Widevine package. Only Google Chrome is tested. A snap cannot be the
   engine. Changing browser may mean signing in again.
 - Music videos play as audio only: the engine has no window to show them in.
-- No offline listening or downloads: the app streams, as the web player does.
 - Reordering a playlist's songs, making playlist folders and moving playlists between them
   happen in Apple's own apps.
 - One Apple Account per build: a release install and a development build each have their own
