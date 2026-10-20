@@ -489,32 +489,54 @@ day.
 
 ### Replay (#365)
 
-`Engine.replay()` asks two reads, both to confirm live (the web player loads its Replay
-page from a module of its own, `replay.esm.js`, which the bundles read here do not hold):
+`Engine.replay()` asks three reads, their shapes checked live on 2026-10-20 (the web player
+loads its Replay page from a module of its own, `replay.esm.js`, which the bundles read here
+do not hold):
 
-- the summary, `GET /v1/me/music-summaries?filter[year]=latest&views=top-songs,top-artists,top-albums`
-  (`api.REPLAY_ENDPOINT`, `api.replay_params()`), Apple's documented "Get the user's replay
-  data": `data` one `music-summaries` resource `{id, attributes: {year}, views: {top-songs,
-  top-artists, top-albums}}`, each view `{href, next, attributes: {title}?, data}`, `data`
-  the catalog resources in rank order. A past year is asked as `filter[year]=<year>`
-  (`api.is_replay_year()`, four digits; anything else is `usage`), which the documentation
-  does not offer: a 400 or a 404 for either is taken as no summary (no listening history,
-  or a year Apple does not answer by), anything else is the command's;
+- the summary (`api.replay_request()`): the latest year's as
+  `GET /v1/me/music-summaries?filter[year]=latest&views=top-songs,top-artists,top-albums`
+  (`api.REPLAY_ENDPOINT`), a past year's as its own resource,
+  `GET /v1/me/music-summaries/year-<YYYY>?views=…` (`api.REPLAY_YEAR_ENDPOINT`;
+  `api.is_replay_year()`, four digits, anything else is `usage`), since Apple answers
+  `filter[year]=<YYYY>` with a 400 (`?ids=year-<YYYY>&views=…` answers too). `data` is one
+  `music-summaries` resource `{id: 'year-<YYYY>', attributes: {name, period: 'year',
+  topSongCount, year}, relationships: {playlist: {data: [{id, type, href}], meta: {title}}},
+  meta: {views: {order}}, views}`, `year` a number; the latest answer's `meta.filters.year
+  .latest[0]` names its resource. Each view (`top-songs`, `top-artists`, `top-albums`) is
+  `{href, attributes: {title, shortTitle, subtitle, highlights}, meta: {count, types}, data}`
+  with every item in the one page (no `next`; up to a hundred songs, some fifteen albums and
+  twenty artists). An item is a **period summary**, not the song, album or artist:
+  `{id, type: 'song-period-summaries' | 'album-period-summaries' | 'artist-period-summaries',
+  attributes: {playCount, firstPlayed, lastPlayed, year, listenTimeInMinutes?},
+  relationships: {song | album | artist: {data: [resource]}}}`, in rank order. An album or
+  artist there is the whole catalog resource, with its attributes; a song is
+  `{id, type: 'songs', href}` alone, its catalog id. A 400 or a 404 is taken as no summary
+  (no listening history for the year), anything else is the command's;
+- the top songs, `GET /v1/catalog/<storefront>/songs?ids=…` (`api.REPLAY_SONGS_ENDPOINT`,
+  `api.replay_songs_params()`): the summary's song ids (`normalize.replay_song_ids()`, in
+  rank order, each once, catalog ids only), up to a hundred in one read, which Apple answers
+  in an order of its own. A 404 is none of them (no Top Songs), anything else is the
+  command's; without songs to ask for it is not asked;
 - the years, `GET /v1/me/music-summaries/search?period=year&fields[music-summaries]=period,year&include[music-summaries]=playlist`
-  (`api.REPLAY_YEARS_ENDPOINT`, `api.REPLAY_YEARS_PARAMS`), the web player's Replay listing
-  as remembered: a `music-summaries` resource a year, `{attributes: {period: 'year', year},
-  relationships: {playlist: {data: [playlist]}}}`, the playlist that year's Replay playlist.
-  Its failing (but for `engine-down`) is no years.
+  (`api.REPLAY_YEARS_ENDPOINT`, `api.REPLAY_YEARS_PARAMS`), the web player's Replay listing:
+  a `music-summaries` resource a year, newest first, `{id: 'year-<YYYY>', attributes:
+  {period: 'year', year}, relationships: {playlist: {data: [playlist]}}}`, the playlist that
+  year's Replay playlist, inline with its attributes (nothing in `included`). Its failing
+  (but for `engine-down`) is no years.
 
-`normalize.replay_page()` makes `{year, years, shelves}` of them: `year` the summary's (else
-the year asked), `years` every year the listing has, newest first, as strings
-(`normalize.replay_years()`); a shelf of each view with something in it, in
-`normalize.REPLAY_VIEWS`' order, keyed `replay-<chart>` (`songs`, `artists`, `albums`), with
-`chart`, `ranked` and Apple's view title ('' without one: the app names it,
-`remote.CHART_TITLES`), Top Songs `form: 'songs'`, a song with its `album`, as a chart's;
-then the years' playlists, newest first (`replay-playlists`, untitled). The latest year's is
-kept as `replay.json`, a past year's as `replay/<year>.json`, a day each. Not read: the
-minutes listened and the milestones the web player shows.
+`normalize.replay_page()` makes `{year, years, shelves}` of them: `year` the summary's (its
+`attributes.year`, else its id's, else the year asked), `years` every year the listing has,
+newest first, as strings (`normalize.replay_years()`); a shelf of each view with something
+in it, in `normalize.REPLAY_VIEWS`' order, keyed `replay-<chart>` (`songs`, `artists`,
+`albums`), with `chart`, `ranked` and Apple's view title ('' without one: the app names it,
+`remote.CHART_TITLES`), its items the resources the period summaries hold, a song the
+catalog read's (one it did not answer left out), Top Songs `form: 'songs'`, a song with its
+`album`, as a chart's; then the years' playlists, newest first (`replay-playlists`,
+untitled). The latest year's is kept as `replay.json`, a past year's as
+`replay/<year>.json`, a day each, with `normalize.REPLAY_SHAPE` as their `basis`: one kept in
+an older shape (without it, as before the period summaries were read) is asked again. Not
+read: the play counts and minutes listened, the highlights and the milestones the web
+player shows.
 
 ### Live radio (#343)
 
@@ -821,7 +843,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `replay.json`, `replay/`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `replay.json`, `replay/`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Replay only in its shape, `normalize.REPLAY_SHAPE`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 | `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
 | `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |

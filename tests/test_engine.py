@@ -3434,46 +3434,93 @@ class SearchTest(EngineFixture):
         await self.engine.stop()
         self.assertEqual(len((await self.engine.made_for_you())['shelves']), 1)
 
+    REPLAY_SONGS = '/v1/catalog/us/songs'
+
+    @staticmethod
+    def replay_summary(year):
+        """An invented summary of `year`, in the shape Apple answers it: each view's items
+        period summaries, a top song its id alone, an album the whole resource."""
+        def songs(*ids):
+            return [{'id': f'inv-song-summary-{song_id}', 'type': 'song-period-summaries',
+                     'attributes': {'playCount': 5, 'year': str(year)},
+                     'relationships': {'song': {'data': [
+                         {'id': song_id, 'type': 'songs',
+                          'href': f'/v1/catalog/us/songs/{song_id}'}]}}} for song_id in ids]
+        album = {'id': 'inv-album-summary', 'type': 'album-period-summaries',
+                 'attributes': {'playCount': 9, 'listenTimeInMinutes': 30, 'year': str(year)},
+                 'relationships': {'album': {'data': [{
+                     'id': '900000401', 'type': 'albums',
+                     'attributes': {'name': 'Invented Album', 'artistName': 'Invented'}}]}}}
+        return {'data': [{
+            'id': f'year-{year}', 'type': 'music-summaries',
+            'attributes': {'year': year, 'period': 'year', 'name': 'Invented'},
+            'views': {'top-songs': {'data': songs('900000302', '900000301')},
+                      'top-albums': {'data': [album]}}}]}
+
     def replay_answers(self):
-        """An invented summary of 2026 and a listing of three years, each with its Replay
-        playlist."""
-        song = {'id': '900000301', 'type': 'songs', 'attributes': {
-            'name': 'Invented Song', 'artistName': 'Invented Artist',
-            'albumName': 'Invented Album'}}
-        self.page.api_answers[api.REPLAY_ENDPOINT] = {'data': [{
-            'id': 'inv-2026', 'type': 'music-summaries', 'attributes': {'year': 2026},
-            'views': {'top-songs': {'data': [song]}}}]}
+        """An invented summary of 2026 and of 2025, the catalog's songs they name and a
+        listing of three years, each with its Replay playlist."""
+        self.page.api_answers[api.REPLAY_ENDPOINT] = self.replay_summary(2026)
+        self.page.api_answers['/v1/me/music-summaries/year-2025'] = self.replay_summary(2025)
+        self.page.api_answers[self.REPLAY_SONGS] = {'data': [
+            {'id': song_id, 'type': 'songs', 'attributes': {
+                'name': f'Invented Song {song_id}', 'artistName': 'Invented Artist',
+                'albumName': 'Invented Album'}} for song_id in ('900000301', '900000302')]}
         self.page.api_answers[api.REPLAY_YEARS_ENDPOINT] = {'data': [
-            {'id': f'inv-{year}', 'type': 'music-summaries',
+            {'id': f'year-{year}', 'type': 'music-summaries',
              'attributes': {'period': 'year', 'year': year},
              'relationships': {'playlist': {'data': [{
                  'id': f'pl.inv{year}', 'type': 'playlists',
                  'attributes': {'name': f'Invented Replay {year}'}}]}}}
             for year in (2026, 2025, 2024)]}
 
-    async def test_replay_is_the_summary_and_the_years_kept_a_day(self):
+    async def test_replay_is_the_summary_its_songs_and_the_years_kept_a_day(self):
         await self.up()
         self.replay_answers()
         answer = await self.engine.replay()
         self.assertEqual(self.page.api_calls,
-                         [api.REPLAY_ENDPOINT, api.REPLAY_YEARS_ENDPOINT])
+                         [api.REPLAY_ENDPOINT, self.REPLAY_SONGS, api.REPLAY_YEARS_ENDPOINT])
         self.assertEqual(self.page.api_params, [
             {'filter[year]': 'latest', 'views': 'top-songs,top-artists,top-albums'},
+            {'ids': '900000302,900000301'},
             {'period': 'year', 'fields[music-summaries]': 'period,year',
              'include[music-summaries]': 'playlist'}])
         self.assertEqual((answer['year'], answer['years']), ('2026', ['2026', '2025', '2024']))
         self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['replay-songs', 'replay-playlists'])
+                         ['replay-songs', 'replay-albums', 'replay-playlists'])
+        self.assertEqual([item['title'] for item in answer['shelves'][0]['items']],
+                         ['Invented Song 900000302', 'Invented Song 900000301'])  # its rank
+        self.assertEqual(answer['basis'], normalize.REPLAY_SHAPE)
         self.assertTrue((self.cache / 'replay.json').is_file())
         await self.engine.stop()
         self.assertEqual((await self.engine.replay())['year'], '2026')  # kept
-        self.assertEqual(len(self.page.api_calls), 2)
+        self.assertEqual(len(self.page.api_calls), 3)
 
-    async def test_a_past_years_replay_is_asked_by_its_year_and_kept_apart(self):
+    async def test_a_replay_kept_in_an_older_shape_is_asked_again(self):
         await self.up()
         self.replay_answers()
-        await self.engine.replay(year='2025')
-        self.assertEqual(self.page.api_params[0]['filter[year]'], '2025')
+        path = normalize.replay_cache_path(str(self.cache))
+        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
+                               str(self.cache))
+        answer = await self.engine.replay()
+        self.assertEqual(self.page.api_calls[0], api.REPLAY_ENDPOINT)
+        self.assertEqual(answer['shelves'][0]['key'], 'replay-songs')
+        # Apple out of reach, the older one is still the answer, as no longer fresh.
+        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
+                               str(self.cache))
+        await self.engine.stop()
+        answer = await self.engine.replay()
+        self.assertIs(answer.get('stale'), True)
+
+    async def test_a_past_years_replay_is_asked_by_its_resource_and_kept_apart(self):
+        await self.up()
+        self.replay_answers()
+        answer = await self.engine.replay(year='2025')
+        self.assertEqual(self.page.api_calls[0], '/v1/me/music-summaries/year-2025')
+        self.assertEqual(self.page.api_params[0],
+                         {'views': 'top-songs,top-artists,top-albums'})
+        self.assertEqual(answer['year'], '2025')
+        self.assertEqual(len(answer['shelves'][0]['items']), 2)
         self.assertTrue((self.cache / 'replay' / '2025.json').is_file())
         self.assertFalse((self.cache / 'replay.json').exists())
         for bad in ('../x', '25', 'latest'):
@@ -3487,15 +3534,32 @@ class SearchTest(EngineFixture):
         answer = await self.engine.replay()
         self.assertEqual(answer['shelves'], [])
         self.assertEqual((answer['year'], answer['years']), ('', []))
-        # A past year Apple does not answer by: its playlist alone.
+        self.assertNotIn(self.REPLAY_SONGS, self.page.api_calls)  # no songs to ask for
+        # A past year Apple has no summary of: its playlist alone.
         self.replay_answers()
-        self.page.api_answers[api.REPLAY_ENDPOINT] = {
-            'errors': [{'status': '400', 'title': 'Bad Request'}]}
+        self.page.api_answers['/v1/me/music-summaries/year-2024'] = {
+            'errors': [{'status': '404', 'title': 'Not Found'}]}
         answer = await self.engine.replay(year='2024')
         self.assertEqual(answer['year'], '2024')
         self.assertEqual([shelf['key'] for shelf in answer['shelves']], ['replay-playlists'])
         # Any other failure of the summary is the command's.
         self.page.api_answers[api.REPLAY_ENDPOINT] = {
+            'errors': [{'status': '403', 'title': 'Forbidden'}]}
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.replay(refresh=True)
+        self.assertEqual(raised.exception.status, 403)
+
+    async def test_replays_songs_the_catalog_lacks_are_left_out(self):
+        await self.up()
+        self.replay_answers()
+        # A 404: none of them in the catalog; the albums still show.
+        self.page.api_answers[self.REPLAY_SONGS] = {
+            'errors': [{'status': '404', 'title': 'Not Found'}]}
+        answer = await self.engine.replay(refresh=True)
+        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
+                         ['replay-albums', 'replay-playlists'])
+        # Another failure of the songs read is the command's.
+        self.page.api_answers[self.REPLAY_SONGS] = {
             'errors': [{'status': '403', 'title': 'Forbidden'}]}
         with self.assertRaises(EngineError) as raised:
             await self.engine.replay(refresh=True)

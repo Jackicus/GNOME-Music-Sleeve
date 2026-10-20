@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """Replay: Apple's music summaries shaped into the page's answer (normalize.replay_page,
-replay_years, api.replay_params), the year menu's choices and the page's title
+replay_years, api.replay_request), the year menu's choices and the page's title
 (src/replay.py), the link to it (explore.replay_item, replay_sections), and the page itself
 (pages/replay.py) over the stand-in engine: its shelves in their forms, its year menu, its
 states, and the ways to it, Made for You's and Home's More for You and the window's
@@ -37,24 +37,59 @@ def resource(kind, number, **attributes):
             'type': kind, 'attributes': attrs}
 
 
+def period_summary(kind, number, year=2026, plays=10):
+    """An invented period summary, as a Replay view's items are: the play counts of one
+    song, artist or album, which it holds as its relationship. A song is its id alone (no
+    attributes), an artist or album the whole catalog resource."""
+    one = kind.removesuffix('s')
+    held = resource(kind, number)
+    if kind == 'songs':
+        held = {'id': held['id'], 'type': 'songs', 'href': f'/v1/catalog/zz/songs/{held["id"]}'}
+    attrs = {'playCount': plays, 'year': str(year), 'firstPlayed': f'{year}-01-02',
+             'lastPlayed': f'{year}-03-04'}
+    if kind != 'songs':
+        attrs['listenTimeInMinutes'] = plays * 3
+    return {'id': f'inv-{one}-summary-{number}', 'type': f'{one}-period-summaries',
+            'attributes': attrs, 'relationships': {one: {'data': [held]}}}
+
+
 def summary(year=2026, songs=3, artists=2, albums=2, titles=False):
-    """An invented music summary, as `/v1/me/music-summaries?views=…` answers it."""
+    """An invented music summary, as `/v1/me/music-summaries?filter[year]=latest&views=…` and
+    `/v1/me/music-summaries/year-<YYYY>?views=…` answer it: each view's items period
+    summaries, in rank order."""
     def view(name, kind, count, start):
-        entry = {'href': f'/v1/me/music-summaries/x/view/{name}',
-                 'data': [resource(kind, start + n) for n in range(count)]}
+        entry = {'href': f'/v1/me/music-summaries/year-{year}/view/{name}',
+                 'meta': {'count': count, 'types': [f'{kind.removesuffix("s")}-period-summaries']},
+                 'data': [period_summary(kind, start + n, year) for n in range(count)]}
         if titles:
-            entry['attributes'] = {'title': f'Invented {name}'}
+            entry['attributes'] = {'title': f'Invented {name}', 'shortTitle': 'Invented',
+                                   'subtitle': 'Invented', 'highlights': []}
         return entry
-    return {'data': [{'id': f'inv-{year}', 'type': 'music-summaries',
-                      'attributes': {'year': year},
+    return {'data': [{'id': f'year-{year}', 'type': 'music-summaries',
+                      'href': f'/v1/me/music-summaries/year-{year}',
+                      'attributes': {'year': year, 'period': 'year', 'name': 'Invented',
+                                     'topSongCount': songs},
+                      'meta': {'views': {'order': ['top-artists', 'top-songs', 'top-albums']}},
+                      'relationships': {'playlist': {'data': [{
+                          'id': f'pl.inv{year}', 'type': 'playlists',
+                          'href': f'/v1/catalog/zz/playlists/pl.inv{year}'}]}},
                       'views': {'top-songs': view('top-songs', 'songs', songs, 0),
                                 'top-artists': view('top-artists', 'artists', artists, 100),
-                                'top-albums': view('top-albums', 'albums', albums, 200)}}]}
+                                'top-albums': view('top-albums', 'albums', albums, 200)}}],
+            'meta': {'filters': {'year': {'latest': [{
+                'id': f'year-{year}', 'type': 'music-summaries',
+                'href': f'/v1/me/music-summaries/year-{year}'}]}}}}
+
+
+def catalog_songs(*numbers):
+    """An invented catalog read of songs by id, as `/v1/catalog/<storefront>/songs?ids=…`
+    answers it (not in the order asked)."""
+    return {'data': [resource('songs', number) for number in sorted(numbers, reverse=True)]}
 
 
 def years(*numbers, playlists=True):
     """An invented years listing, as `/v1/me/music-summaries/search?period=year` answers."""
-    return {'data': [{'id': f'inv-{year}', 'type': 'music-summaries',
+    return {'data': [{'id': f'year-{year}', 'type': 'music-summaries',
                       'attributes': {'period': 'year', 'year': year},
                       'relationships': {'playlist': {'data': (
                           [resource('playlists', year)] if playlists else [])}}}
@@ -73,7 +108,8 @@ class ReplayShapeTest(unittest.TestCase):
         return normalize.replay_page(raw, self.cache)
 
     def test_the_views_in_the_pages_order_then_the_playlists(self):
-        answer = self.shape(summary=summary(), years=years(2024, 2026, 2025), year='')
+        answer = self.shape(summary=summary(), songs=catalog_songs(0, 1, 2),
+                            years=years(2024, 2026, 2025), year='')
         self.assertEqual(answer['year'], '2026')
         self.assertEqual(answer['years'], ['2026', '2025', '2024'])
         shelves = answer['shelves']
@@ -89,11 +125,55 @@ class ReplayShapeTest(unittest.TestCase):
         self.assertEqual(songs[0]['album'], 'Invented Album 0')
         self.assertEqual(songs[0]['groups'], [])
         self.assertEqual([item['kind'] for item in shelves[1]['items']], ['artist', 'artist'])
+        self.assertEqual([item['title'] for item in shelves[1]['items']],
+                         ['Invented Artist 100', 'Invented Artist 101'])
+        self.assertEqual([(item['kind'], item['title']) for item in shelves[2]['items']],
+                         [('album', 'Invented Album 200'), ('album', 'Invented Album 201')])
         self.assertEqual([item['id'] for item in shelves[3]['items']],
                          ['pl.inv2026', 'pl.inv2025', 'pl.inv2024'])  # newest first
 
+    def test_the_songs_are_the_catalogs_in_the_summarys_order(self):
+        # Apple names a top song by its id alone: its title and artwork are the catalog
+        # read's, whatever order that answers in; a song it did not answer is left out.
+        answer = self.shape(summary=summary(songs=4), songs=catalog_songs(3, 0, 1), year='')
+        songs = answer['shelves'][0]['items']
+        self.assertEqual([item['id'] for item in songs], ['900000', '900001', '900003'])
+        self.assertEqual(songs[2]['album'], 'Invented Album 3')
+        self.assertTrue(songs[0]['art'] or songs[0]['thumb'] or songs[0].get('artUrl'),
+                        songs[0])
+        # Without the catalog read, no song can be shown: Top Songs is left out.
+        answer = self.shape(summary=summary(), songs=None, year='')
+        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
+                         ['replay-artists', 'replay-albums'])
+
+    def test_the_song_ids_the_catalog_is_asked_for(self):
+        raw = summary(songs=3)
+        data = raw['data'][0]['views']['top-songs']['data']
+        data.append(dict(data[0]))  # the same song again
+        data.append({'type': 'song-period-summaries', 'relationships': {'song': {'data': []}}})
+        data.append(period_summary('songs', 7) | {'relationships': {'song': {'data': [
+            {'id': 'i.inv7', 'type': 'library-songs'}]}}})  # no catalog id
+        self.assertEqual(normalize.replay_song_ids(raw), ['900000', '900001', '900002'])
+        for junk in (None, {}, {'data': 'x'}, {'data': [{'views': {'top-songs': 'x'}}]}):
+            self.assertEqual(normalize.replay_song_ids(junk), [])
+        self.assertEqual(api.replay_songs_params(['900000', '900001', '900000', 'i.x', None]),
+                         {'ids': '900000,900001'})
+        self.assertIsNone(api.replay_songs_params([]))
+        many = [str(900000 + n) for n in range(150)]
+        self.assertEqual(len(api.replay_songs_params(many)['ids'].split(',')),
+                         api.REPLAY_SONGS_LIMIT)
+
+    def test_the_year_from_the_summarys_id(self):
+        raw = summary(year=2025)
+        del raw['data'][0]['attributes']['year']
+        self.assertEqual(self.shape(summary=raw, year='')['year'], '2025')
+        listing = years(2024)
+        del listing['data'][0]['attributes']['year']
+        self.assertEqual([entry['year'] for entry in normalize.replay_years(listing)], ['2024'])
+
     def test_apples_titles_are_kept(self):
-        answer = self.shape(summary=summary(titles=True), years=None, year='')
+        answer = self.shape(summary=summary(titles=True), songs=catalog_songs(0, 1, 2),
+                            years=None, year='')
         self.assertEqual([shelf['title'] for shelf in answer['shelves']],
                          ['Invented top-songs', 'Invented top-artists', 'Invented top-albums'])
         self.assertEqual(answer['years'], [])
@@ -108,8 +188,14 @@ class ReplayShapeTest(unittest.TestCase):
     def test_empty_views_and_junk_are_left_out(self):
         raw = summary(songs=0, artists=0, albums=1)
         raw['data'][0]['views']['top-songs'] = 'junk'
-        raw['data'][0]['views']['top-albums']['data'].append({'type': 'albums'})  # no name
-        answer = self.shape(summary=raw, years={'data': ['junk']}, year='')
+        albums = raw['data'][0]['views']['top-albums']['data']
+        albums.append({'type': 'album-period-summaries', 'relationships': {
+            'album': {'data': [{'id': '900299', 'type': 'albums'}]}}})  # no name
+        albums.append({'type': 'album-period-summaries', 'relationships': {'album': 'junk'}})
+        albums.append({'type': 'album-period-summaries'})
+        albums.append('junk')
+        answer = self.shape(summary=raw, songs={'data': 'junk'}, years={'data': ['junk']},
+                            year='')
         self.assertEqual([shelf['key'] for shelf in answer['shelves']], ['replay-albums'])
         self.assertEqual(len(answer['shelves'][0]['items']), 1)
         for junk in (None, {}, [], 'x', {'summary': 'x', 'years': 3, 'year': '../x'}):
@@ -135,9 +221,13 @@ class ReplayShapeTest(unittest.TestCase):
         self.assertIn('replay', normalize.ANSWER_FOLDERS)
 
     def test_what_a_year_is_asked_with(self):
-        self.assertEqual(api.replay_params(), {
-            'filter[year]': 'latest', 'views': 'top-songs,top-artists,top-albums'})
-        self.assertEqual(api.replay_params('2025')['filter[year]'], '2025')
+        # The latest year by filter[year]=latest; a past year by its own resource, since
+        # Apple answers filter[year]=<YYYY> with a 400.
+        views = {'views': 'top-songs,top-artists,top-albums'}
+        self.assertEqual(api.replay_request(), (
+            '/v1/me/music-summaries', {'filter[year]': 'latest', **views}))
+        self.assertEqual(api.replay_request('2025'),
+                         ('/v1/me/music-summaries/year-2025', views))
         self.assertTrue(api.is_replay_year('2025'))
         for bad in ('', '25', '20255', '../x', 2025, None, '3025'):
             self.assertFalse(api.is_replay_year(bad), bad)
