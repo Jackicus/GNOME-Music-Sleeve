@@ -14,7 +14,7 @@ from unittest import mock
 
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
-from gi.repository import Gio, GObject
+from gi.repository import Gio, GLib, GObject
 
 from applemusic import main
 from applemusic.backend import config
@@ -249,6 +249,84 @@ class BackgroundTest(AppTestCase):
         self.assertEqual(sent, [main.BACKGROUND_NOTIFICATION])
         app._release_background()  # the window is back
         self.assertEqual((withdrawn, released), ([main.BACKGROUND_NOTIFICATION], [True]))
+
+    def notify(self, *args):
+        """The buttons the notification for app.toast(*args) is given, with the window
+        closed for background playback: [(method, label, action, target)]."""
+        app = self.app
+        del app.toast
+        app.background = mock.Mock(active=True)
+        app.send_notification = mock.Mock()
+        with mock.patch.object(main.Gio, 'Notification') as notification:
+            app.toast(*args)
+        app.send_notification.assert_called_once()
+        made = notification.new.return_value
+        return ([('with-target', *call.args) for call in made.add_button_with_target.call_args_list]
+                + [('plain', *call.args) for call in made.add_button.call_args_list])
+
+    def test_a_window_actions_button_runs_through_an_app_action(self):
+        # A notification's button can only run app.* actions: win.item-undo-reorder's Undo
+        # did nothing (and GLib warned).
+        buttons = self.notify('Moved', 'Undo', 'win.item-undo-reorder', GLib.Variant('s', 'p.1'))
+        self.assertEqual(len(buttons), 1)
+        method, label, action, target = buttons[0]
+        self.assertEqual((method, label, action), ('with-target', 'Undo', 'app.window-action'))
+        self.assertEqual(target.unpack(), ('item-undo-reorder', 'p.1'))
+        self.assertIsNotNone(self.app.lookup_action('window-action'))
+
+    def test_an_app_actions_button_is_kept(self):
+        self.assertEqual(self.notify('Could not sync', 'Retry', 'app.sync'),
+                         [('plain', 'Retry', 'app.sync')])
+
+    def test_an_action_of_neither_gets_no_button(self):
+        self.assertEqual(self.notify('Something', 'Do', 'page.do'), [])
+
+
+class WindowActionTest(AppTestCase):
+    def window_with(self, name, parameter_type):
+        """A stand-in window with one action, recording its targets; the app's windows."""
+        window = Gio.SimpleActionGroup()
+        action = Gio.SimpleAction.new(name, parameter_type)
+        ran = []
+        action.connect('activate', lambda _action, target: ran.append(
+            None if target is None else target.unpack()))
+        window.add_action(action)
+        self.app.get_windows = lambda: [object(), window]
+        return ran
+
+    def test_runs_the_windows_action_with_its_target(self):
+        ran = self.window_with('item-move-to-folder', GLib.VariantType.new('(sss)'))
+        name, target = main.app_action('win.item-move-to-folder',
+                                       GLib.Variant('(sss)', ('p.fd1', 'playlist', 'p.pl1')))
+        self.assertEqual(name, 'app.window-action')
+        self.app.lookup_action('window-action').activate(target)
+        self.assertEqual(ran, [('p.fd1', 'playlist', 'p.pl1')])
+
+    def test_runs_an_action_without_a_target(self):
+        ran = self.window_with('refresh', None)
+        self.app.lookup_action('window-action').activate(main.app_action('win.refresh')[1])
+        self.assertEqual(ran, [None])
+
+    def test_no_window_with_it_is_only_logged(self):
+        self.app.get_windows = lambda: []
+        with self.assertLogs('applemusic.main', 'WARNING'):
+            self.app.lookup_action('window-action').activate(main.app_action('win.refresh')[1])
+
+    def test_app_actions_are_left_as_they_are(self):
+        target = GLib.Variant('s', 'x')
+        self.assertEqual(main.app_action('app.sync', target), ('app.sync', target))
+        self.assertEqual(main.app_action(None), (None, None))
+
+    def test_a_toast_in_preferences_runs_the_windows_action_through_the_app(self):
+        # Preferences shown as a window of its own has only the app's actions.
+        app = self.app
+        del app.toast
+        toasts = []
+        app._preferences = mock.Mock(add_toast=toasts.append)
+        app.toast('Moved', 'Undo', 'win.item-undo-reorder', GLib.Variant('s', 'p.1'))
+        (toast,) = toasts
+        self.assertEqual(toast.get_action_name(), 'app.window-action')
+        self.assertEqual(toast.get_action_target_value().unpack(), ('item-undo-reorder', 'p.1'))
 
 
 class RatedTest(AppTestCase):

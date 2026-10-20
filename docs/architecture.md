@@ -194,8 +194,9 @@ touches widgets.
   way, the kernel sends Chrome SIGTERM (`setpriv --pdeathsig`), and the next start ends a Chrome
   that still holds the profile. With background playback on (it is off by default), closing the
   window while music plays hides it instead (`background.py`): what the app has to say
-  meanwhile comes as a notification, and the app quits once playback has stayed stopped for 10
-  seconds.
+  meanwhile comes as a notification (whose button, Undo among them, runs a window action
+  through `app.window-action`, a notification running only `app.*` ones), and the app quits
+  once playback has stayed stopped for 10 seconds.
 - **Demo mode.** `--demo` reads an invented library from build/demo (a release build lists no
   `--demo` and needs `APPLE_MUSIC_CACHE` for it), and its engine is inert (starting it does
   nothing, every command answers `engine-down`), so every page and screenshot works without

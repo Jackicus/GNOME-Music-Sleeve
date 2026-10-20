@@ -90,6 +90,15 @@ SIGN_OUT_WAIT = 10.0
 SERVICE_LINGER_MS = 30_000
 
 
+def app_action(action_name, action_target=None):
+    """A button's action (its name and target, a GLib.Variant or None) as one that runs
+    where only app.* actions can: a win.* action becomes app.window-action, which runs it on
+    the window with its target; any other is answered as it is."""
+    if action_name and action_name.startswith('win.'):
+        return 'app.window-action', GLib.Variant('(smv)', (action_name[4:], action_target))
+    return action_name, action_target
+
+
 class Application(Adw.Application):
     """The app. `demo_dir` is where --demo finds its invented library: the development
     launcher passes the source tree's build/demo, where scripts/demo_library.py writes it; a
@@ -166,6 +175,12 @@ class Application(Adw.Application):
         # Up Next's Clear toast's Undo: what Clear took, back after the item playing.
         self._add_action('undo-clear-up-next',
                          lambda *_: self.player_command(self.player.undo_clear()))
+        # A toast's button that runs one of the window's actions where only app.* ones can
+        # run (toast(): a background notification, Preferences shown as a window of its
+        # own), as app_action() makes it: the window action's name and its target.
+        window_action = Gio.SimpleAction.new('window-action', GLib.VariantType.new('(smv)'))
+        window_action.connect('activate', self._on_window_action)
+        self.add_action(window_action)
         # Playback, enabled while something plays (the bar's buttons follow; Next and
         # Previous while MusicKit allows them). Their keys
         # (Space, Ctrl+Right, Ctrl+Left) are the window's (shortcuts.PLAYBACK), not
@@ -575,17 +590,27 @@ class Application(Adw.Application):
         a GLib.Variant, when the action takes one: Undo's move back). The one way the
         app makes a toast; its title is plain text, never markup. With the window closed for
         background playback, a notification instead (the last one only), withdrawn when the
-        window is back."""
+        window is back. A win.* button runs through app.window-action (app_action()) where
+        the window's actions cannot be reached: in the notification, and in Preferences."""
         if self.background is not None and self.background.active:
             notification = Gio.Notification.new(title)
-            if button_label and action_name and action_target is not None:
-                notification.add_button_with_target(button_label, action_name, action_target)
-            elif button_label and action_name:
-                notification.add_button(button_label, action_name)
+            # A notification's button runs app.* actions only: the window's go through
+            # app.window-action.
+            action_name, action_target = app_action(action_name, action_target)
+            if button_label and action_name and action_name.startswith('app.'):
+                if action_target is not None:
+                    notification.add_button_with_target(button_label, action_name,
+                                                        action_target)
+                else:
+                    notification.add_button(button_label, action_name)
             self.send_notification(BACKGROUND_NOTIFICATION, notification)
             return
         target = self._preferences
-        if target is None:
+        if target is not None:
+            # Preferences shown as a window of its own has the app's actions, not the
+            # window's.
+            action_name, action_target = app_action(action_name, action_target)
+        else:
             target = self.get_active_window()
         if target is None:
             return
@@ -596,6 +621,21 @@ class Application(Adw.Application):
             if action_target is not None:
                 toast.set_action_target_value(action_target)
         target.add_toast(toast)
+
+    def _on_window_action(self, _action, parameter):
+        """app.window-action: the window action app_action() named, run with its target on
+        the window that has it (hidden for background playback, or under Preferences)."""
+        name = parameter.get_child_value(0).get_string()
+        target = parameter.get_child_value(1).get_maybe()
+        if target is not None:
+            target = target.get_variant()
+        for window in self.get_windows():
+            lookup = getattr(window, 'lookup_action', None)
+            action = lookup(name) if lookup is not None else None
+            if action is not None:
+                action.activate(target)
+                return
+        log.warning('no window has the action win.%s', name)
 
     def report(self, error):
         """An EngineError for the user: the sentence and the button errors.error_message()
