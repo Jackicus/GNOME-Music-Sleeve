@@ -67,7 +67,8 @@ class Tile(Gtk.Box):
     ones on screen plus the Artwork cache; in an idle after the frame, not as the tile is
     mapped or bound (a grid creates and maps over a hundred tiles at once and unmaps all but
     the visible dozen in its first layout, and a tile scrolling past is rebound many times a
-    second); and decoded at the size drawn (ART_SIZE times the scale factor, the shorter edge).
+    second); and decoded at the size drawn, the shorter edge times the scale factor: ART_SIZE
+    for a cover or a portrait, the frame's height for a video, whatever `video_size` is.
     """
 
     __gtype_name__ = 'AppleMusicTile'
@@ -90,9 +91,9 @@ class Tile(Gtk.Box):
         self._handler = None  # the bound Item's notify handler
         self.avatar = None  # the artist shape's portrait, made when first wanted
         self.play_symbol = None  # the video shape's play symbol, made when first wanted
-        # Decoded by the shorter edge, so at the frame's height for a video (no taller than
-        # a cover: a grid's tile is only ever a video, a shelf's as tall as a cover).
-        self._slot = artwork.ArtworkSlot(self._set_art, min(ART_SIZE, video_size[1]))
+        # Sized by the shape (set_shape()): a cover or a portrait at ART_SIZE, a video's
+        # frame by its shorter edge, its height.
+        self._slot = artwork.ArtworkSlot(self._set_art, ART_SIZE)
         self._slot.follow_scale(self)
         # A handler on the tile itself, which holds no reference back through C.
         self.connect('query-tooltip', self._on_query_tooltip)
@@ -138,6 +139,9 @@ class Tile(Gtk.Box):
         if self.play_symbol is not None:
             self.play_symbol.set_visible(video)
         self.art_box.set_size_request(*(self._video_size if video else (ART_SIZE, ART_SIZE)))
+        # Decoded at the size drawn, by the shorter edge: a cover at ART_SIZE whatever
+        # video_size the tile was made with (a grid page makes all its tiles with one).
+        self._slot.set_size(self._video_size[1] if video else ART_SIZE)
         # An artist's name, centred under the portrait, has no line under it.
         self.title_label.set_xalign(0.5 if artist else 0)
         self.subtitle_label.set_visible(not artist)

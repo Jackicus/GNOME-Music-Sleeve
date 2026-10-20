@@ -667,6 +667,29 @@ class TileShapeTest(WidgetTestCase):
         self.assertEqual(self.loader.requests[-1],
                          ('/cache/thumb/mv1.jpg', GRID_VIDEO_SIZE[1] * self.scale(tile)))
 
+    def test_a_cover_in_a_video_grid_is_decoded_at_its_own_size(self):
+        # A grid page makes every tile with GRID_VIDEO_SIZE: a square cover is still decoded
+        # at ART_SIZE, the size drawn, not at a video frame's height (#399).
+        from applemusic.widgets.tile import ART_SIZE, GRID_VIDEO_SIZE, Tile
+
+        tile = self.show(Tile(video_size=GRID_VIDEO_SIZE))
+        tile.bind(Item(dict(ALBUM)))
+        pump()
+        self.assertEqual(self.loader.requests[-1], (ALBUM['thumb'], ART_SIZE * self.scale(tile)))
+        # A tile switching shapes (a shelf's) asks at each shape's size.
+        tile.unbind()
+        tile.set_shape('video')
+        tile.bind(Item({'id': 'i.mv1', 'kind': 'video', 'title': 'Invented Video',
+                        'thumb': '/cache/thumb/mv1.jpg'}))
+        pump()
+        self.assertEqual(self.loader.requests[-1],
+                         ('/cache/thumb/mv1.jpg', GRID_VIDEO_SIZE[1] * self.scale(tile)))
+        tile.unbind()
+        tile.set_shape('cover')
+        tile.bind(Item(dict(ALBUM)))
+        pump()
+        self.assertEqual(self.loader.requests[-1], (ALBUM['thumb'], ART_SIZE * self.scale(tile)))
+
     def test_a_shelf_tile_switches_shape(self):
         from applemusic.widgets.tile import ART_SIZE, Tile
 
