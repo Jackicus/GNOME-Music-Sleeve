@@ -237,6 +237,29 @@ def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None,
     return state
 
 
+def invented_live_state(app):
+    """A Player.apply() dict of a live radio station playing (#343), as the bridge gives
+    one: the demo library's first station as the item (type radioStation, isLive, no length
+    of its own, its cover as the artwork), the position a place in the stream's window as
+    MusicKit reports it (112 s of 160), and nothing allowed: no seek, pause or skip."""
+    if not app.demo:
+        sys.exit('harness: an invented playing state needs the demo library')
+    station = app.library.radio.get_item(0)
+    if station is None:
+        sys.exit('harness: the demo library has no station')
+    track = {'id': station.id, 'type': 'radioStation', 'isLive': True,
+             'catalogId': station.id, 'title': station.title, 'artist': '', 'album': '',
+             'trackNumber': 1, 'discNumber': 1, 'durationMs': 0, 'durationLabel': '0:00',
+             'explicit': False, 'artUrl': demo_art_url(station), 'index': 0}
+    return {
+        'state': 'playing', 'track': track, 'position': 112, 'duration': 160,
+        'shuffle': 'off', 'repeat': 'none', 'volume': 0.7,
+        'queue': {'index': 0, 'items': [track], 'editable': False},
+        'capabilities': dict.fromkeys(('canSeek', 'canPause', 'canSkipToNextItem',
+                                       'canSkipToPreviousItem'), False),
+    }
+
+
 AUTOPLAY_AFTER = 4   # the album's tracks an invented queue with autoplay keeps
 AUTOPLAY_COUNT = 5   # and the entries autoplay added after them
 HISTORY_ALBUMS = 3   # an invented queue with history: the albums played before

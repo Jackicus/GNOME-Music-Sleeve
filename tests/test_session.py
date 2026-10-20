@@ -19,7 +19,7 @@ from gi.events import GLibEventLoop  # noqa: E402
 from applemusic import session  # noqa: E402
 from applemusic.backend import store  # noqa: E402
 from applemusic.backend.errors import EngineError  # noqa: E402
-from tests.test_player import QUEUE, SESSION, TRACK, make_player  # noqa: E402
+from tests.test_player import LIVE, QUEUE, SESSION, TRACK, make_player  # noqa: E402
 
 NOW = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.UTC)
 
@@ -49,7 +49,8 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual([entry['id'] for entry in data['queue']],
                          ['i.demo0003', 'i.demo0002', 'i.demo0001'])
         # Every key the entry has (`autoplay` only on one autoplay added).
-        self.assertEqual(set(data['queue'][2]), set(session.TRACK_KEYS) - {'type', 'autoplay'})
+        self.assertEqual(set(data['queue'][2]), set(session.TRACK_KEYS) - {'type', 'autoplay',
+                                                                     'isLive'})
         self.assertIsNone(data['source'])
         self.assertEqual(data['repeat'], 'none')
         self.assertNotIn('shuffle', data)  # comes back off, the queue in its order
@@ -92,6 +93,23 @@ class SnapshotTest(unittest.TestCase):
             self.assertEqual(data['source'], {'kind': 'station', 'id': 'ra.1'})
             self.assertEqual((data['position'], len(data['queue'])), (0.0, 1))
         asyncio.run(go())
+
+    def test_a_live_station_keeps_its_item_live_and_no_position(self):
+        """A live station (#343) is its own station when nothing of the app's queued it
+        (the engine came up with it playing), and its item keeps isLive: LIVE again at the
+        next launch."""
+        player, engine, app = make_player()
+        engine.event('nowPlayingItemDidChange', {'track': LIVE, 'index': 0})
+        player._set_position(130.0, 160.0)
+        data = session.snapshot(player, now=NOW)
+        self.assertEqual(data['source'], {'kind': 'station', 'id': 'ra.live01'})
+        self.assertEqual((data['position'], data['duration'], len(data['queue'])),
+                         (0.0, 0.0, 1))
+        self.assertIs(data['queue'][0]['isLive'], True)
+        parsed = session.parse(json.loads(json.dumps(data)))
+        self.assertIs(parsed['queue'][0]['isLive'], True)
+        data['queue'][0]['isLive'] = 'yes'  # not a boolean: no entry, no session
+        self.assertIsNone(session.parse(data))
 
     def test_an_item_that_is_neither_song_nor_video_is_not_kept(self):
         player, engine, app = make_player()

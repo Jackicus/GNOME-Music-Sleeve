@@ -1988,6 +1988,192 @@ class AutoplayTest(unittest.TestCase):
         self.assertEqual([entry.autoplay for entry in player.queue], [False, False, True])
 
 
+# An invented live radio station playing, as the bridge's formatTrack shapes MusicKit's
+# item (#343, src/backend/README.md: type radioStation, isLive, no length of its own).
+LIVE = {
+    'id': 'ra.live01', 'type': 'radioStation', 'isLive': True, 'catalogId': 'ra.live01',
+    'title': 'Harbour One', 'artist': '', 'album': '', 'trackNumber': 1, 'discNumber': 1,
+    'durationMs': 0, 'durationLabel': '0:00', 'explicit': False,
+    'artUrl': 'https://example.invalid/live/256x256bb.jpg', 'index': 0,
+}
+# What MusicKit allows on a live station: nothing.
+NOTHING = {'canSeek': False, 'canPause': False, 'canSkipToNextItem': False,
+           'canSkipToPreviousItem': False}
+EVERYTHING = dict.fromkeys(NOTHING, True)
+CONTROLS = ('can_seek', 'can_pause', 'can_go_next', 'can_go_previous')
+
+
+def controls(player):
+    return {name: player.get_property(name) for name in CONTROLS}
+
+
+def live_playing(engine):
+    """A live station playing, as MusicKit was seen to report it: its item, playing, and a
+    position inside the stream's window as its duration (160 s)."""
+    engine.event('nowPlayingItemDidChange', {'track': LIVE, 'index': 0, 'capabilities': NOTHING})
+    engine.event('playbackStateDidChange', {'state': 'playing', 'position': 112,
+                                            'duration': 160, 'capabilities': NOTHING})
+    engine.event('playbackTimeDidChange', {'position': 113, 'duration': 160})
+
+
+class LiveTest(unittest.TestCase):
+    """A live radio station: told by its item, not its duration; nothing may be done with
+    it but Stop, and Play plays the station again."""
+
+    def test_a_live_station_is_told_by_its_item(self):
+        player, engine, app = make_player()
+        notified = []
+        player.connect('notify::can-seek', lambda p, _pspec: notified.append(p.can_seek))
+        live_playing(engine)
+        self.assertTrue(player.live)
+        self.assertTrue(player.track.live)
+        self.assertEqual(player.track.kind, '')  # nothing to love
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, False))
+        self.assertEqual(notified, [False])  # once, with the item
+        # A song after it: everything again.
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2,
+                                                 'capabilities': EVERYTHING})
+        self.assertFalse(player.live)
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, True))
+        # A track with no isLive, or one not true, is no live station.
+        self.assertFalse(NowPlaying(dict(LIVE, isLive=None)).live)
+        self.assertFalse(NowPlaying(dict(TRACK, isLive='yes')).live)
+
+    def test_a_live_item_allows_nothing_whatever_musickit_says(self):
+        player, engine, app = make_player()
+        engine.event('nowPlayingItemDidChange', {'track': LIVE, 'index': 0,
+                                                 'capabilities': EVERYTHING})
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, False))
+        # And without capabilities at all (an older bridge).
+        player, engine, app = make_player()
+        player.apply({'track': LIVE, 'state': 'playing', 'position': 112, 'duration': 160})
+        self.assertTrue(player.live)
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, False))
+
+    def test_the_controls_follow_musickits_capabilities(self):
+        player, engine, app = make_player()
+        engine.event('nowPlayingItemDidChange', {
+            'track': TRACK, 'index': 2,
+            'capabilities': dict(EVERYTHING, canSkipToNextItem=False,
+                                 canSkipToPreviousItem=False)})
+        # Previous still restarts an item that can be sought.
+        self.assertEqual(controls(player), {'can_seek': True, 'can_pause': True,
+                                            'can_go_next': False, 'can_go_previous': True})
+        engine.event('capabilitiesChanged', {'capabilities': dict(NOTHING, canPause=True)})
+        self.assertEqual(controls(player), {'can_seek': False, 'can_pause': True,
+                                            'can_go_next': False, 'can_go_previous': False})
+        # A state with an item loaded tells them again; the moments between items do not.
+        engine.event('playbackStateDidChange', {'state': 'stopped', 'capabilities': EVERYTHING})
+        self.assertFalse(player.can_seek)
+        engine.event('nowPlayingItemDidChange', {'track': None, 'index': -1,
+                                                 'capabilities': EVERYTHING})
+        self.assertIsNone(player.track)
+        engine.event('playbackStateDidChange', {'state': 'playing', 'capabilities': EVERYTHING})
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, True))
+        # An event without them keeps them; the engine going down forgets them.
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+        engine.event('capabilitiesChanged', {'capabilities': {'canSkipToNextItem': False}})
+        engine.event('playbackStateDidChange', {'state': 'playing'})
+        self.assertFalse(player.can_go_next)
+        player.apply(None)
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, True))
+
+    def test_seek_next_and_previous_do_nothing_on_a_live_station(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            live_playing(engine)
+            engine.calls.clear()
+            await player.seek(30)
+            await player.next()
+            await player.previous()  # 113 s in: a song would restart
+            self.assertEqual(engine.calls, [])
+        asyncio.run(go())
+
+    def test_stop_keeps_the_station_and_play_plays_it_again(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await player.play({'kind': 'station', 'id': 'ra.live01'})
+            live_playing(engine)
+            engine.calls.clear()
+            await player.toggle()  # the play button's Stop: it cannot be paused
+            self.assertEqual(engine.calls, [('control', 'stop')])
+            # MusicKit's stop: no item, stopped. The station stays, stopped.
+            engine.event('playbackStateDidChange', {'state': 'stopped', 'position': 0,
+                                                    'duration': 0})
+            engine.event('nowPlayingItemDidChange', {'track': None, 'index': -1})
+            self.assertTrue(player.restored)
+            self.assertEqual(player.track.id, 'ra.live01')
+            self.assertTrue(player.live)
+            self.assertEqual((player.state, player.position, player.duration),
+                             ('stopped', 0.0, 0.0))
+            self.assertFalse(player.active)
+            self.assertTrue(player.stopped)
+            self.assertEqual([entry.id for entry in player.queue], ['ra.live01'])
+            self.assertEqual(player.source, {'kind': 'station', 'id': 'ra.live01'})
+            self.assertEqual(controls(player), dict.fromkeys(CONTROLS, False))
+            # Play: the station again, from now.
+            engine.calls.clear()
+            await player.toggle()
+            self.assertIn(('play', 'station', 'ra.live01', None, False), engine.calls)
+            self.assertEqual(engine.play_options[-1], {'start_id': None})
+            self.assertFalse(player.restored)
+        asyncio.run(go())
+
+    def test_pause_stops_a_live_station(self):
+        """MusicKit leaves a live station playing on a pause: MPRIS's Pause stops it."""
+        async def go():
+            player, engine, app = make_player(state='up')
+            live_playing(engine)
+            engine.calls.clear()
+            await player.pause()
+            self.assertEqual(engine.calls, [('control', 'stop')])
+            # Without a play request of the app's, the station is the item itself.
+            self.assertEqual(player.source, {'kind': 'station', 'id': 'ra.live01'})
+            self.assertTrue(player.restored)
+        asyncio.run(go())
+
+    def test_stop_keeps_nothing_when_another_item_came_meanwhile(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            live_playing(engine)
+            gate = engine.gate('control')
+            stop = asyncio.ensure_future(player.stop())
+            await asyncio.sleep(0)
+            engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+            gate.set()
+            await stop
+            self.assertFalse(player.restored)
+            self.assertEqual(player.track.id, 'i.demo0001')
+        asyncio.run(go())
+
+    def test_a_song_pauses_and_stops_as_it_did(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            player.apply({'track': TRACK, 'state': 'playing', 'position': 10, 'duration': 214})
+            engine.calls.clear()
+            await player.toggle()
+            await player.stop()
+            self.assertEqual(engine.calls, [('control', 'pause'), ('control', 'stop')])
+            self.assertFalse(player.restored)
+        asyncio.run(go())
+
+    def test_a_live_station_restored_shows_live(self):
+        """The last session a live station: its item alone, no position (session.py), and
+        LIVE again (the item keeps its isLive)."""
+        player, engine, app = make_player()
+        entry = {key: value for key, value in LIVE.items() if key != 'index'}
+        self.assertTrue(player.restore(session(queue=[entry], index=0, position=0.0,
+                                               duration=0.0,
+                                               source={'kind': 'station', 'id': 'ra.live01'})))
+        self.assertTrue(player.live)
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, False))
+        self.assertEqual((player.position, player.duration), (0.0, 0.0))
+        # A session of songs restored allows everything: its commands are the Player's.
+        player, engine, app = make_player()
+        player.restore(session())
+        self.assertEqual(controls(player), dict.fromkeys(CONTROLS, True))
+
+
 class FormatTimeTest(unittest.TestCase):
     def test_formats(self):
         self.assertEqual(format_time(0), '0:00')

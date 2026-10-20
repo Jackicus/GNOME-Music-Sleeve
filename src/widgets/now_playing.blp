@@ -223,19 +223,44 @@ template $AppleMusicNowPlayingSheet: Adw.Bin {
                   ]
                 }
 
-                Scale seek_scale {
+                // The scale, or the LIVE badge in its place for a live radio station (SeekControl):
+                // one stack, so the row keeps its height.
+                Stack seek_stack {
                   hexpand: true;
                   valign: center;
-                  draw-value: false;
-                  adjustment: Adjustment seek_adjustment {
-                    lower: 0;
-                    upper: 1;
-                    step-increment: 5;
-                    page-increment: 30;
-                  };
+                  transition-type: crossfade;
 
-                  accessibility {
-                    label: _("Position");
+                  Scale seek_scale {
+                    hexpand: true;
+                    valign: center;
+                    draw-value: false;
+                    adjustment: Adjustment seek_adjustment {
+                      lower: 0;
+                      upper: 1;
+                      step-increment: 5;
+                      page-increment: 30;
+                    };
+
+                    accessibility {
+                      label: _("Position");
+                    }
+                  }
+
+                  Label live_label {
+                    // Translators: the badge in place of the position slider while a live radio station plays
+                    label: C_("live badge", "LIVE");
+                    tooltip-text: _("Live Radio");
+                    halign: center;
+                    valign: center;
+
+                    accessibility {
+                      label: _("Live Radio");
+                    }
+
+                    styles [
+                      "caption-heading",
+                      "live-badge",
+                    ]
                   }
                 }
 

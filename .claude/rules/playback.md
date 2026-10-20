@@ -90,6 +90,19 @@ paths:
   `play()`, every `control()` and MusicKit playing). Only `player.preview` (the song's
   catalog id, from `previewDidChange`) says a clip plays; it is cleared with the rest when
   the engine goes down or the page is reloaded.
+- A live radio station (`player.live`, the Track's `isLive`: told by its item, never by its
+  times, its duration being the stream's window) allows only Stop: `can_seek`, `can_pause`,
+  `can_go_next` and `can_go_previous` are False (otherwise MusicKit's capabilities, taken
+  from an item event, a state with an item loaded and `capabilitiesChanged`; Previous also
+  while the item can be sought: it restarts it). seek(), next() and previous() do nothing,
+  toggle() and pause() stop it, and `_keep_station()` then shows the station as a session
+  restored, stopped, so Play tunes in again. The bar, the sheet and the full screen show
+  `SeekControl`'s LIVE badge (the scale's sibling in a `Gtk.Stack`, so the row keeps its
+  height) and `play_button_look()`'s Stop; app.next and app.previous follow `can_go_*`, and
+  their keys stay the window's while an item plays (they do nothing rather than move the
+  focus). MPRIS: no `mpris:length`, Position 0, no Seeked, Pause, PlayPause and Stop stop it;
+  Discord: no timestamps; no lyrics are asked. tests/test_player.py's LiveTest, test_mpris's
+  live sequence; `scripts/screenshot.py --demo --playing --live` shows it.
 - `player.stopped` means no item, or `none`, `stopped`, `ended` or `completed` (paused is not).
   MusicKit passes through `ended` and `stopped` between items, so anything acting on "stopped"
   waits a moment (background playback waits 10 s before quitting).

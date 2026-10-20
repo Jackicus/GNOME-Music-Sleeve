@@ -166,7 +166,8 @@ class Application(Adw.Application):
         # Up Next's Clear toast's Undo: what Clear took, back after the item playing.
         self._add_action('undo-clear-up-next',
                          lambda *_: self.player_command(self.player.undo_clear()))
-        # Playback, enabled while something plays (the bar's buttons follow). Their keys
+        # Playback, enabled while something plays (the bar's buttons follow; Next and
+        # Previous while MusicKit allows them). Their keys
         # (Space, Ctrl+Right, Ctrl+Left) are the window's (shortcuts.PLAYBACK), not
         # accelerators, which GTK 4 would fire before a focused entry gets them.
         self._playback_actions = [
@@ -270,7 +271,8 @@ class Application(Adw.Application):
         self.engine.connect('notify::widevine', self._on_engine_widevine)
         self.engine.connect('rated', self._on_rated)
         self.player = Player(self)
-        self.player.connect('notify::track', self._on_track_changed)
+        for name in ('track', 'can-go-next', 'can-go-previous'):
+            self.player.connect(f'notify::{name}', self._on_track_changed)
         self.player.connect('error', self._on_playback_error)
         # The autoplay setting (Up Next's toggle, Preferences) goes to MusicKit at once.
         self.settings.connect('changed::autoplay',
@@ -442,9 +444,13 @@ class Application(Adw.Application):
     # -- playback ------------------------------------------------------------------------
 
     def _on_track_changed(self, player, _pspec):
+        """Play/pause while there is an item; Next and Previous while MusicKit allows them
+        too (never on a live station)."""
         playing = player.track is not None
-        for action in self._playback_actions:
-            action.set_enabled(playing)
+        play_pause, following, before = self._playback_actions
+        play_pause.set_enabled(playing)
+        following.set_enabled(playing and player.can_go_next)
+        before.set_enabled(playing and player.can_go_previous)
 
     def _on_playback_error(self, _player, message):
         self.toast(message)  # the Player's sentence for MusicKit's code (playback_error_text)

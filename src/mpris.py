@@ -19,14 +19,19 @@ playing, so nothing polls), Metadata from `track` (mpris:trackid an object path 
 queue index and the id, so the same song twice in a row is two tracks; mpris:length the
 track's own length, else MusicKit's; mpris:artUrl the file:// URL of the cached remote art
 once remote.fetch_remote has it; xesam:title, xesam:artist as a list, xesam:album,
-xesam:trackNumber and xesam:discNumber), CanGoNext/CanGoPrevious/CanPlay/CanPause/CanSeek
-true while a track exists (CanPlay is what GNOME Shell shows the player by, so "Not Playing"
-shows nothing). The methods are the Player's commands, spawned through app.player_command
-(an EngineError is toasted): Stop pauses and returns to the start, keeping the item, as the
-spec asks (Play then starts it again from the top); PlayPause with no track answers
-NotSupported; Seek past the end is Next and before the start the start; SetPosition
-ignores a stale trackid and a position outside the track. Setting LoopStatus, Shuffle and
-Volume ask the Player; Rate 0 pauses; OpenUri does nothing.
+xesam:trackNumber and xesam:discNumber), CanPlay true while a track exists (it is what GNOME
+Shell shows the player by, so "Not Playing" shows nothing), and CanGoNext, CanGoPrevious,
+CanPause and CanSeek while one exists and the Player says MusicKit allows it (can_go_next…).
+A live radio station (player.live) has no mpris:length, Position 0 and no Seeked, and
+CanGoNext, CanGoPrevious, CanPause and CanSeek false: it can only be stopped, so Pause,
+PlayPause and Stop stop it (the bar's Stop; Play plays the station again). The methods are
+the Player's commands, spawned through app.player_command (an EngineError is toasted): Stop
+pauses and returns to the start, keeping the item, as the spec asks (Play then starts it
+again from the top); PlayPause with no track answers NotSupported; Next, Previous, Seek and
+SetPosition do nothing while their Can* is false; Seek past the end is Next and before the
+start the start; SetPosition ignores a stale trackid and a position outside the track.
+Setting LoopStatus, Shuffle and Volume ask the Player; Rate 0 pauses; OpenUri does
+nothing.
 
 PropertiesChanged is emitted from the Player's notify signals with only the keys whose value
 differs from what was last put on the bus; a new item's own properties (ITEM_PROPERTIES:
@@ -195,8 +200,9 @@ def art_url(path):
 def track_length(track, duration=None):
     """A track's length in seconds: its own (Apple's duration_ms), else `duration` (what
     MusicKit reports, standing in for a track without one), else None when neither is
-    known. What mpris:length publishes and what SetPosition and Seek measure against."""
-    if track is None:
+    known, and for a live station, whose duration is only the stream's window. What
+    mpris:length publishes and what SetPosition and Seek measure against."""
+    if track is None or getattr(track, 'live', False):
         return None
     if track.duration_ms:
         return track.duration_ms / 1000
@@ -261,11 +267,11 @@ PLAYER_GETTERS = {
     'Position': lambda service: GLib.Variant('x', service._position()),
     'MinimumRate': lambda service: GLib.Variant('d', 1.0),
     'MaximumRate': lambda service: GLib.Variant('d', 1.0),
-    'CanGoNext': lambda service: GLib.Variant('b', service._can()),
-    'CanGoPrevious': lambda service: GLib.Variant('b', service._can()),
+    'CanGoNext': lambda service: GLib.Variant('b', service._can('can_go_next')),
+    'CanGoPrevious': lambda service: GLib.Variant('b', service._can('can_go_previous')),
     'CanPlay': lambda service: GLib.Variant('b', service._can()),
-    'CanPause': lambda service: GLib.Variant('b', service._can()),
-    'CanSeek': lambda service: GLib.Variant('b', service._can()),
+    'CanPause': lambda service: GLib.Variant('b', service._can('can_pause')),
+    'CanSeek': lambda service: GLib.Variant('b', service._can('can_seek')),
     'CanControl': lambda service: GLib.Variant('b', True),
 }
 GETTERS = {ROOT_INTERFACE: ROOT_GETTERS, PLAYER_INTERFACE: PLAYER_GETTERS}
@@ -313,7 +319,8 @@ class Mpris:
             player.connect('notify::shuffle', self._on_shuffle),
             player.connect('notify::repeat', self._on_repeat),
             player.connect('notify::volume', self._on_volume),
-        ]
+        ] + [player.connect(f'notify::{name}', self._on_capabilities)
+             for name in ('can-seek', 'can-pause', 'can-go-next', 'can-go-previous')]
         self._status = self._playback_status()
         self._shown = player.track
         self._follow_art()
@@ -393,10 +400,18 @@ class Mpris:
         return track_path(track.id, track.index) if track is not None else None
 
     def _position(self):
-        return microseconds(self._player.estimated_position()) if self._player.track else 0
+        """The position in microseconds; 0 without a track, and on a live station (where
+        MusicKit's is a place in the stream's window)."""
+        if self._player.track is None or self._player.live:
+            return 0
+        return microseconds(self._player.estimated_position())
 
-    def _can(self):
-        return self._player.track is not None
+    def _can(self, allowed=None):
+        """Whether there is a track and, when `allowed` names one of the Player's can_*
+        properties, MusicKit allows that with it."""
+        if self._player.track is None:
+            return False
+        return allowed is None or bool(self._player.get_property(allowed))
 
     def properties(self, interface):
         """Every property of an interface, name → Variant (what GetAll answers)."""
@@ -462,6 +477,12 @@ class Mpris:
         if self._player.track is self._shown:
             self._changed('Metadata')
 
+    def _on_capabilities(self, *_args):
+        """What MusicKit allows changed; with a new item, the item's own notify sends them
+        with it, once."""
+        if self._player.track is self._shown:
+            self._changed('CanGoNext', 'CanGoPrevious', 'CanPause', 'CanSeek')
+
     def _on_shuffle(self, *_args):
         self._changed('Shuffle')
 
@@ -478,6 +499,8 @@ class Mpris:
         ones arrive."""
         if self._player.track is not self._shown:
             return  # a new item's 0: its notify follows, and notes it
+        if self._player.live:
+            return  # a place in the stream's window: Position stays 0, nothing is sought
         position = self._player.position
         expected = self._expected()
         self._note(position)
@@ -625,8 +648,10 @@ class Mpris:
         return {
             (ROOT_INTERFACE, 'Raise'): self.raise_window,
             (ROOT_INTERFACE, 'Quit'): self.quit,
-            (PLAYER_INTERFACE, 'Next'): lambda: self._control(self._player.next),
-            (PLAYER_INTERFACE, 'Previous'): lambda: self._control(self._player.previous),
+            (PLAYER_INTERFACE, 'Next'): lambda: self._control(self._player.next,
+                                                              allowed='can_go_next'),
+            (PLAYER_INTERFACE, 'Previous'): lambda: self._control(self._player.previous,
+                                                                  allowed='can_go_previous'),
             (PLAYER_INTERFACE, 'Pause'): lambda: self._control(self._player.pause),
             (PLAYER_INTERFACE, 'PlayPause'): lambda: self._control(self._player.toggle,
                                                                    required=True),
@@ -640,13 +665,14 @@ class Mpris:
     def _command(self, coro):
         return self._app.player_command(coro)
 
-    def _control(self, command, required=False):
+    def _control(self, command, required=False, allowed=None):
         """A transport command, when there is a track (CanPlay and the rest are false
         without one: the spec says a call then has no effect, and for PlayPause, which is
-        `required`, an error too)."""
-        if self._can():
+        `required`, an error too) and the Can* it needs (`allowed`, the Player's can_*
+        property) is true."""
+        if self._can(allowed):
             self._command(command())
-        elif required:
+        elif required and not self._can():
             raise NotSupported('nothing is playing')
 
     def raise_window(self):
@@ -665,6 +691,9 @@ class Mpris:
         music plays again or the item changes."""
         if not self._can():
             return
+        if self._player.live:
+            self._command(self._player.stop())  # MusicKit's stop: the Player keeps the station
+            return
         self._stopped = True
         self._status = 'Stopped'
         self._note()
@@ -678,7 +707,7 @@ class Mpris:
     def seek(self, offset):
         """Seek: `offset` microseconds from the position now; past the end is Next, before
         the start the start."""
-        if not self._can():
+        if not self._can('can_seek'):
             return
         seconds = max(0.0, self._player.estimated_position() + offset / 1_000_000)
         length = self._length()
@@ -691,7 +720,7 @@ class Mpris:
         """SetPosition: to `position` microseconds, when `track_id` is the track playing
         and the position is within it (a stale call for the entry before, a negative
         position and one past the length are dropped, as the spec asks)."""
-        if not self._can() or track_id != self._track_path() or position < 0:
+        if not self._can('can_seek') or track_id != self._track_path() or position < 0:
             return
         seconds = position / 1_000_000
         length = self._length()

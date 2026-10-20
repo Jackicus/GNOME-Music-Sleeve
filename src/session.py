@@ -18,7 +18,8 @@ item's index in it, `offset` (where that slice begins in the queue MusicKit had)
 position and duration, the repeat mode, and `source`: the album, playlist or station the
 queue came from, only while the queue was still that (Player.source), so it is queued again
 as itself. A station keeps only its
-item and no position (it plays live). Shuffle is not kept: the queue comes back in its order,
+item and no position (it plays live; a live radio station's item keeps its `isLive`, so it
+shows LIVE again). Shuffle is not kept: the queue comes back in its order,
 shuffle off. An item that is neither a song nor a video (a station's segment, without the
 station) is not kept, and nothing (the engine gone, a request pending) never replaces what is.
 The file is the account's: library ids and titles, in the cache (0600), which Clear Cache and
@@ -57,7 +58,7 @@ POSITION_EVERY = 30   # seconds between writes of the position while playing
 # What is kept of each queue entry (the bridge's formatTrack): what the bar, the sheet, Up
 # Next and MPRIS show, and what queues it again.
 TRACK_KEYS = ('id', 'type', 'catalogId', 'title', 'artist', 'album', 'trackNumber',
-              'discNumber', 'durationMs', 'explicit', 'artUrl', 'autoplay')
+              'discNumber', 'durationMs', 'explicit', 'artUrl', 'autoplay', 'isLive')
 TEXT_KEYS = ('id', 'type', 'catalogId', 'title', 'artist', 'album')
 NUMBER_KEYS = ('trackNumber', 'discNumber', 'durationMs')
 SOURCE_KINDS = ('album', 'playlist', 'station')
@@ -76,6 +77,8 @@ def snapshot(player, now=None):
     if track is None or player.pending:
         return None
     source = player.source
+    if source is None and getattr(track, 'live', False):
+        source = {'kind': 'station', 'id': track.id}  # a live station's item is the station
     saved = (now or datetime.datetime.now(datetime.UTC)).isoformat(timespec='seconds')
     data = {'version': VERSION, 'saved': saved, 'repeat': player.repeat}
     if source is not None and source['kind'] == 'station':
@@ -116,7 +119,7 @@ def _entry(raw):
             return None
         if key in NUMBER_KEYS and _number(value) is None:
             return None
-        if key in ('explicit', 'autoplay') and not isinstance(value, bool):
+        if key in ('explicit', 'autoplay', 'isLive') and not isinstance(value, bool):
             return None
         if key == 'artUrl' and not (isinstance(value, str) and value.startswith('https://')):
             return None

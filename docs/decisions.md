@@ -383,7 +383,14 @@ changes, change it here, with the date. The plan they came from is in
   capability for the other kinds): no Remove, Clear or reorder in Up Next while one plays. A live station cannot be
   paused, sought or skipped: MusicKit ignores the seek and the pause and only `stop()` ends
   it, so its controls are Stop and LIVE, not Pause and a slider; its reported duration is
-  the stream's window, not a length to show. Autoplay is the page's own switch, not the
+  the stream's window, not a length to show. It is told by its item (`isLive`), never by
+  its times. Every Pause there is (the bar's button, Space, MPRIS's Pause and PlayPause)
+  stops it, though MPRIS says `CanPause` false: a Shell card or a media key that cannot
+  pause should still end the music. Stopped, MusicKit holds nothing; the app keeps the
+  station shown, stopped, as a session restored (`Player._keep_station`), so Play tunes in
+  again, as Apple's players do. Ctrl+Right and Ctrl+Left stay the window's while it plays
+  and do nothing, rather than move the focus. MPRIS publishes no `mpris:length`, Position 0
+  and no Seeked; Discord no timestamps. Autoplay is the page's own switch, not the
   account's: the web player keeps it in its page's local storage for the account's token, so
   an Autoplay toggle in the app is the app's setting and does not follow the account to
   Apple's other players.

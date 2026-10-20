@@ -434,6 +434,79 @@ class VolumeStepTest(unittest.TestCase):
         asyncio.run(go())
 
 
+class Widget:
+    """The surface SeekControl uses of a label, a scale, an adjustment and a stack."""
+
+    def __init__(self, parent=None):
+        self.visible = True
+        self.sensitive = True
+        self.label = None
+        self.shown = None  # a stack's visible child
+        self.parent = parent
+
+    def connect(self, *_args):
+        pass
+
+    def set_visible(self, visible):
+        self.visible = visible
+
+    def set_sensitive(self, sensitive):
+        self.sensitive = sensitive
+
+    def set_label(self, label):
+        self.label = label
+
+    def set_upper(self, _value):
+        pass
+
+    def set_value(self, _value):
+        pass
+
+    def update_property(self, *_args):
+        pass
+
+    def get_parent(self):
+        return self.parent
+
+    def set_visible_child(self, child):
+        self.shown = child
+
+
+class SeekLiveTest(unittest.TestCase):
+    """A live station (#343): the LIVE badge in the slider's place, no times; a song
+    shows the slider again, insensitive while MusicKit allows no seek."""
+
+    def test_the_badge_takes_the_sliders_place(self):
+        from applemusic.widgets.transport import SeekControl
+        from tests.test_player import LIVE, NOTHING
+
+        stack = Widget()
+        scale, live, elapsed, remaining = Widget(stack), Widget(stack), Widget(), Widget()
+        seek = SeekControl(scale, Widget(), elapsed, remaining, live)
+        player, engine, app = make_player()
+        seek.attach(player, app)
+        self.assertIs(stack.shown, scale)
+        engine.event('nowPlayingItemDidChange', {'track': LIVE, 'index': 0,
+                                                 'capabilities': NOTHING})
+        self.assertIs(stack.shown, live)
+        self.assertEqual((elapsed.visible, remaining.visible, scale.sensitive),
+                         (False, False, False))
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+        self.assertIs(stack.shown, scale)
+        self.assertEqual((elapsed.visible, remaining.visible, scale.sensitive),
+                         (True, True, True))
+        engine.event('capabilitiesChanged', {'capabilities': {'canSeek': False}})
+        self.assertFalse(scale.sensitive)
+        # The bar's compact layout hides the times for good, live or not.
+        seek.set_times_shown(False)
+        self.assertEqual((elapsed.visible, remaining.visible), (False, False))
+        engine.event('nowPlayingItemDidChange', {'track': LIVE, 'index': 0})
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+        self.assertEqual((elapsed.visible, remaining.visible), (False, False))
+        seek.set_times_shown(True)
+        self.assertEqual((elapsed.visible, remaining.visible), (True, True))
+
+
 class PlayButtonTest(unittest.TestCase):
     def test_the_icons_are_the_bundled_ones(self):
         """Play and Pause draw the app's own icons: an icon theme's 24 px
@@ -443,6 +516,7 @@ class PlayButtonTest(unittest.TestCase):
         class Player:
             active = False
             pending = False
+            live = False
 
             def connect(self, *_args):
                 pass
@@ -452,9 +526,10 @@ class PlayButtonTest(unittest.TestCase):
         player = Player()
         play = PlayButton(button)
         play.attach(player)
-        for active, tooltip in ((False, 'Play'), (True, 'Pause')):
-            with self.subTest(active=active):
-                player.active = active
+        for active, live, tooltip in ((False, False, 'Play'), (True, False, 'Pause'),
+                                      (True, True, 'Stop'), (False, True, 'Play')):
+            with self.subTest(active=active, live=live):
+                player.active, player.live = active, live
                 play.update()
                 self.assertIn(button.icon, bundled)
                 self.assertEqual(button.tooltip, tooltip)

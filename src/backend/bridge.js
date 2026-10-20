@@ -140,7 +140,7 @@
         // MusicKit v3 reports playbackDuration in milliseconds already (a 30 s preview is 30000).
         const durationMs = attrs.durationInMillis || Math.round(item.playbackDuration || 0);
 
-        return {
+        const track = {
             id: id,
             // The API type ('songs', 'library-songs', 'music-videos',
             // 'library-music-videos', 'stations'…), or MusicKit's own name for an
@@ -160,6 +160,31 @@
             artUrl: (attrs.artwork && attrs.artwork.url)
                 ? attrs.artwork.url.replace('{w}', '256').replace('{h}', '256') : null,
             index: typeof index === 'number' ? index : 0
+        };
+        // Only when true, as autoplay's flag: every other item's Track stays as it was.
+        if (isLiveItem(item)) track.isLive = true;
+        return track;
+    }
+
+    // Whether a MediaItem is a live radio station (Apple Music 1 and the others): MusicKit
+    // plays one as a single item, typed 'radioStation', with isLiveRadioStation and its
+    // attributes' isLive true, and a duration that is only the stream's window.
+    function isLiveItem(item) {
+        const attrs = item.attributes || {};
+        return item.isLiveRadioStation === true
+            || (item.type === 'radioStation' && attrs.isLive === true);
+    }
+
+    // What MusicKit allows with the item playing now (mk.capabilities): every one false on a
+    // live station, which cannot be sought, paused or skipped. An instance without
+    // capabilities allows them all.
+    function playbackCapabilities(mk) {
+        const capabilities = (mk && mk.capabilities) || {};
+        return {
+            canSeek: capabilities.canSeek !== false,
+            canPause: capabilities.canPause !== false,
+            canSkipToNextItem: capabilities.canSkipToNextItem !== false,
+            canSkipToPreviousItem: capabilities.canSkipToPreviousItem !== false
         };
     }
 
@@ -529,6 +554,8 @@
     // the event object, whose shape has varied between MusicKit versions.
     // The playback state is its PlaybackStates name ('playing', 'paused',
     // 'stopped', 'loading', 'ended', 'seeking', 'waiting', 'stalled'…).
+    // A state, an item and capabilitiesChanged carry what MusicKit allows now
+    // (playbackCapabilities), which changes with the item.
     const EVENT_DATA = {
         authorizationStatusDidChange: function (mk, e) {
             return {
@@ -541,13 +568,21 @@
             return {
                 state: playbackStateName(state),
                 position: mk.currentPlaybackTime || 0,
-                duration: mk.currentPlaybackDuration || 0
+                duration: mk.currentPlaybackDuration || 0,
+                capabilities: playbackCapabilities(mk)
             };
         },
         nowPlayingItemDidChange: function (mk) {
             const item = mk.nowPlayingItem;
             const index = mk.nowPlayingItemIndex ?? 0;
-            return { track: item ? formatTrack(item, index) : null, index: index };
+            return {
+                track: item ? formatTrack(item, index) : null,
+                index: index,
+                capabilities: playbackCapabilities(mk)
+            };
+        },
+        capabilitiesChanged: function (mk) {
+            return { capabilities: playbackCapabilities(mk) };
         },
         playbackTimeDidChange: function (mk) {
             return {
@@ -936,7 +971,8 @@
                 duration: mk.currentPlaybackDuration || 0,
                 shuffle: shuffleModeToString(mk.shuffleMode),
                 repeat: repeatModeToString(mk.repeatMode),
-                volume: typeof mk.volume === 'number' ? mk.volume : 1
+                volume: typeof mk.volume === 'number' ? mk.volume : 1,
+                capabilities: playbackCapabilities(mk)
             };
         },
 

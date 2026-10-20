@@ -52,8 +52,10 @@ list and the script together.
    in GNOME; on a tile, a list item, the seek slider or nothing, it plays or pauses, but never
    in an entry, in a menu or in a dialog. Ctrl+Right and Ctrl+Left skip. Menu or Shift+F10
    opens the item playing's menu (Go to Album, Go to Artist…); Escape closes it, the focus
-   back on the button. When the music stops and the bar goes, a focus it held moves into the
-   page. The walkthrough does step 13 here.
+   back on the button. A live radio station shows LIVE in place of the slider (a screen
+   reader hears "Live Radio") and its play button is Stop: Space stops it, and Ctrl+Right
+   and Ctrl+Left do nothing. When the music stops and the bar goes, a focus it held moves
+   into the page. The walkthrough does step 13 here.
 5. Ctrl+Shift+N opens Now Playing with the focus on its play button; Tab goes through the controls,
    the Lyrics and Up Next toggle (Left and Right move between the two, Space or Enter
    switches), on Up Next its History toggle, Autoplay toggle and Clear, and into the list

@@ -10,7 +10,7 @@
                           [--now-playing [lyrics|localized|syllable|queue]]
                           [--fullscreen-player [lyrics|localized|syllable|none]]
                           [--idle] [--position SECONDS] [--playing] [--restored]
-                          [--autoplay] [--history] [--album N]
+                          [--autoplay] [--history] [--album N] [--live]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
                            [--see-all KEY]] [--filter TEXT]
                           [--context-menu [KIND] [--submenu NAME]]
@@ -74,6 +74,9 @@ another colour. Each album's entries have their own artwork.
 With --demo only.
 --position SECONDS puts the invented item that many seconds in (65 by default: a
 line of each lyrics fixture is current), say mid-word, or inside a break.
+--live, with --now-playing, --playing or --fullscreen-player, plays an invented live radio
+station instead (the demo's first station, as MusicKit reports one: no length, nothing
+allowed but Stop): LIVE in place of the seek slider and the times, Stop in place of Pause.
 --playing puts the same item on the Player and leaves the sheet closed: the player
 bar in its playing state. --restored shows it as the last session restored at launch
 (Player.restore): paused at --position, its queue the album, MusicKit not asked. With
@@ -183,6 +186,9 @@ parser.add_argument('--history', action='store_true',
 parser.add_argument('--album', metavar='N', type=int, default=0,
                     help='with --now-playing, --playing or --fullscreen-player: the demo '
                          "library's Nth album playing (0: the first)")
+parser.add_argument('--live', action='store_true',
+                    help='with --now-playing, --playing or --fullscreen-player: an invented '
+                         'live radio station playing')
 parser.add_argument('--search', metavar='TERM',
                     help='the Search page in Your Library mode with TERM typed')
 parser.add_argument('--search-in', choices=['music', 'library'], default='library',
@@ -243,6 +249,8 @@ if args.position is not None and not (args.now_playing or args.playing or args.r
                                       or args.fullscreen_player):
     parser.error('--position needs --now-playing, --playing, --restored or '
                  '--fullscreen-player')
+if args.live and not (args.now_playing or args.playing or args.fullscreen_player):
+    parser.error('--live needs --now-playing, --playing or --fullscreen-player')
 if args.idle and not args.fullscreen_player:
     parser.error('--idle needs --fullscreen-player')
 width, height = (int(n) for n in args.size.split('x'))
@@ -313,16 +321,22 @@ artwork_quiet = 0
 def open_now_playing(window):
     """--now-playing: the invented item on the Player (the demo's first album playing, with
     the lyrics fixture) and the sheet open on the tab; --playing: the item only, for the
-    player bar; --restored: the item as the last session restored, paused."""
+    player bar; --restored: the item as the last session restored, paused; --live: a live
+    radio station in place of the item."""
     if args.restored:
         app.player.restore(harness.invented_session(app, position=args.position))
         return
     chosen = args.fullscreen_player or args.now_playing
     fixture = chosen if chosen in harness.LYRICS_FIXTURES else 'lyrics'
-    app.player.apply(harness.invented_playing_state(app, lyrics=chosen != 'none',
-                                                    fixture=fixture, position=args.position,
-                                                    autoplay=args.autoplay, album=args.album,
-                                                    history=args.history))
+    if args.live:
+        app.player.apply(harness.invented_live_state(app))
+    else:
+        app.player.apply(harness.invented_playing_state(app, lyrics=chosen != 'none',
+                                                        fixture=fixture,
+                                                        position=args.position,
+                                                        autoplay=args.autoplay,
+                                                        album=args.album,
+                                                        history=args.history))
     if args.fullscreen_player:
         window.activate_action('win.fullscreen-player', None)
         if args.idle:

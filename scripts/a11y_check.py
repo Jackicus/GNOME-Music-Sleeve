@@ -854,6 +854,39 @@ async def walkthrough(window):
           and window.get_focus() is window.player_bar.play_button, describe(window.get_focus()))
     print('-- Go to Current Song, the volume keys')
     await playing_keys(window)
+    print('-- a live station')
+    bar = window.player_bar
+    app.player.apply(harness.invented_live_state(app))
+    await until(bar.live_label.get_mapped)
+    check('a live station: LIVE in place of the slider, Stop on the play button, the focus '
+          'kept', bar.live_label.get_mapped() and not bar.seek_scale.get_mapped()
+          and bar.play_button.get_tooltip_text() == 'Stop'
+          and window.get_focus() is bar.play_button, describe(window.get_focus()))
+    actions = []
+    handlers = [(app.lookup_action(name), app.lookup_action(name).connect(
+        'activate', lambda action, _parameter: actions.append(action.get_name())))
+        for name in ('play-pause', 'next', 'previous')]
+    stopped = []
+
+    async def stop():  # the demo has no engine: its failure's toast would take Escape
+        stopped.append(True)
+    app.player.stop = stop
+    await key(window, 'space')
+    await until(lambda: actions and stopped)
+    handled = [await key(window, '<primary>Right'), await key(window, '<primary>Left')]
+    del app.player.stop
+    for action, handler in handlers:
+        action.disconnect(handler)
+    check('Space on Stop stops it (play-pause); Ctrl+Right and Ctrl+Left do nothing, the '
+          'focus kept', actions == ['play-pause'] and stopped == [True]
+          and not app.lookup_action('next').get_enabled()
+          and not app.lookup_action('previous').get_enabled()
+          and all(by(each, 'key controller') for each in handled)
+          and window.get_focus() is bar.play_button,
+          (actions, stopped, handled, describe(window.get_focus())))
+    # The demo's "not available" toasts of the playback keys above, queued one after the
+    # other: one still up when a later step presses Escape would take it.
+    window.toast_overlay.dismiss_all()
     app.player.apply(None)  # the music stops: the bar goes, with the focus on it
     await until(lambda: not window.player_bar.get_mapped())
     check('the item going hides the bar and moves the focus into the page',

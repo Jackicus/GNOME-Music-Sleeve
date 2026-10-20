@@ -12,7 +12,10 @@ the playback commands as thin coroutines over the engine.
     player.active, player.stopped              # playback under way (the bar shows Pause);
                                                # nothing playing or paused (no item, or ended)
     player.track       # a NowPlaying (id, catalog_id, title, artist, album, duration_ms,
-                       # artwork_url, index, explicit, kind), or None
+                       # artwork_url, index, explicit, kind, live), or None
+    player.live        # the item is a live radio station: no length, no seek, no pause
+    player.can_seek, player.can_pause           # what MusicKit allows with the item now
+    player.can_go_next, player.can_go_previous  # (mk.capabilities; all False while live)
     player.position, player.duration           # seconds, floats
     player.shuffle (bool), player.repeat ('none', 'one', 'all'), player.volume (0 to 1)
     player.position_updated_at                 # time.monotonic() when position last changed
@@ -37,7 +40,8 @@ the playback commands as thin coroutines over the engine.
     await player.clear_up_next()   # everything after the entry playing; undo_clear() puts
     await player.undo_clear()      # it back while that entry still plays
     await player.apply_autoplay()  # the `autoplay` setting to MusicKit (at every engine start)
-    await player.toggle()       # pause while active (playing, loading…), else play
+    await player.toggle()       # pause while active (playing, loading…), else play; a live
+                                # station stops instead
     await player.pause() / resume() / next() / stop()
     await player.previous()     # the item before, or this one again when a few seconds in
     await player.seek(seconds); await player.set_volume(level)
@@ -54,8 +58,8 @@ the playback commands as thin coroutines over the engine.
 The properties change only from the engine's events (playbackStateDidChange,
 nowPlayingItemDidChange, playbackTimeDidChange, playbackDurationDidChange,
 shuffleModeDidChange, repeatModeDidChange, playbackVolumeDidChange, queueItemsDidChange,
-queuePositionDidChange, autoplayEnabledDidChange), plus one now_playing() (and queue()) read
-when the engine comes up,
+queuePositionDidChange, autoplayEnabledDidChange, capabilitiesChanged), plus one now_playing()
+(and queue()) read when the engine comes up,
 so the bar follows what MusicKit does rather than what was asked; nothing here polls. A
 null item clears the track only after TRACK_GRACE_MS without a new one (`track_grace_ms`;
 MusicKit sends a null between queues, right before the next item), and the previous item's
@@ -99,6 +103,15 @@ unless MusicKit refused the queue (EngineError('api') with its code): then it is
 `session-dropped` is emitted (the file goes) and `error` says why. MusicKit playing anything
 of its own ends it too. `source` is what a queue came from ({kind, id}: an album, a playlist,
 a station) while the queue is still that, in order; None otherwise.
+A live radio station (the Track's `isLive`: MusicKit plays it as one item, and the duration
+it reports is only the stream's window) cannot be sought, paused or skipped (every
+mk.capabilities flag false; MusicKit ignores the seek and the pause): `live` is True, the
+can_* properties False, seek(), next() and previous() do nothing, and toggle() and pause()
+stop it, as the bar's Stop does. MusicKit then holds nothing, so the station is kept as a
+session restored (its item alone, stopped, its station the source): Play plays it again.
+The can_* properties follow the capabilities the state and item events carry otherwise
+(true when MusicKit says nothing, and while a session is restored, whose commands are the
+Player's own); Previous also restarts an item that can be sought.
 The commands raise EngineError as the engine does; play() starts a down engine first when the
 account is signed in (a toast says so) and raises EngineError('not-signed-in') when it is not,
 which the window turns into the sign-in flow. `error(message)` is emitted for MusicKit's
@@ -158,7 +171,14 @@ EVENTS = ('playbackStateDidChange', 'nowPlayingItemDidChange', 'playbackTimeDidC
           'playbackDurationDidChange', 'shuffleModeDidChange', 'repeatModeDidChange',
           'playbackVolumeDidChange', 'mediaPlaybackError', 'queueItemsDidChange',
           'queuePositionDidChange', 'previewDidChange', 'autoplayEnabledDidChange',
-          'bridgeReset')
+          'capabilitiesChanged', 'bridgeReset')
+
+# What a state, item or capabilitiesChanged event's (and a now_playing() answer's)
+# `capabilities` says MusicKit allows (the bridge's playbackCapabilities). They are taken
+# from an item event with an item, a state event in CAPABLE_STATES (an item loaded), and
+# capabilitiesChanged: never from the moments between items, when MusicKit holds none.
+CAPABILITIES = ('canSeek', 'canPause', 'canSkipToNextItem', 'canSkipToPreviousItem')
+CAPABLE_STATES = ('playing', 'paused', 'waiting', 'stalled')
 
 
 def _text(value):
@@ -226,7 +246,8 @@ class NowPlaying(GObject.Object):
     what the item is to the account's ratings: 'song' or 'video' (from the Track's `type`,
     the API's resource type or MusicKit's own name for it; a Track without one is a song),
     else '' (a station's segment, an ad: nothing to love). `autoplay`: an entry autoplay added
-    to the queue (the Track's `autoplay`). `key` is its data but the index, which apply_queue
+    to the queue (the Track's `autoplay`). `live`: a live radio station (the Track's
+    `isLive`), whose duration is no length. `key` is its data but the index, which apply_queue
     compares.
     """
 
@@ -243,6 +264,7 @@ class NowPlaying(GObject.Object):
     explicit = GObject.Property(type=bool, default=False)
     kind = GObject.Property(type=str, default='')
     autoplay = GObject.Property(type=bool, default=False)
+    live = GObject.Property(type=bool, default=False)
 
     def __init__(self, data):
         data = data if isinstance(data, dict) else {}
@@ -258,6 +280,7 @@ class NowPlaying(GObject.Object):
             explicit=bool(data.get('explicit')),
             kind=_kind_of(data),
             autoplay=data.get('autoplay') is True,
+            live=data.get('isLive') is True,
         )
         self.raw = data
         self.key = _entry_key(data)
@@ -296,6 +319,10 @@ class Player(GObject.Object):
     queue_editable = GObject.Property(type=bool, default=True)
     autoplay = GObject.Property(type=bool, default=False)
     can_autoplay = GObject.Property(type=bool, default=True)
+    can_seek = GObject.Property(type=bool, default=True)
+    can_pause = GObject.Property(type=bool, default=True)
+    can_go_next = GObject.Property(type=bool, default=True)
+    can_go_previous = GObject.Property(type=bool, default=True)
 
     def __init__(self, app):
         """`app` gives the engine (`app.engine`), the settings (`signed-in`), `toast()`,
@@ -322,6 +349,7 @@ class Player(GObject.Object):
         self._source_ids = None  # the ids of the source's queue as MusicKit first gave them
         self._volume_wanted = None  # a volume set while restored with the engine down
         self._cleared = None  # what the last Clear took, for its Undo ({id, entries, local})
+        self._capabilities = {}  # what MusicKit last said it allows (CAPABILITIES), if anything
         self._engine.connect('event', self._on_event)
         self._engine.connect('notify::state', self._on_engine_state)
         if self._engine.state == 'up':
@@ -408,10 +436,13 @@ class Player(GObject.Object):
             self._set_position(0.0, 0.0)
             self.apply_queue(None)
             self._cleared = None
+            self._take_capabilities_of({'capabilities': {}})
             return
         data = now_playing
         if 'queue' in data:  # before the track, which then finds itself in it
             self.apply_queue(data.get('queue'))
+        if isinstance(data.get('track'), dict):
+            self._take_capabilities_of(data, update=False)  # with the item, under its freeze
         if 'track' in data:
             self._set_track(data.get('track'), fetch_lyrics='lyrics' not in data)
         if 'lyrics' in data:
@@ -427,6 +458,7 @@ class Player(GObject.Object):
             self._set_repeat(data.get('repeat'))
         if 'volume' in data:
             self._set_volume(data.get('volume'))
+        self._update_controls()
 
     def apply_queue(self, snapshot):
         """Set the queue from a {index, items: [Track…], editable, canAutoplay, autoplay}
@@ -550,12 +582,21 @@ class Player(GObject.Object):
             self._set_state(data.get('state'))
             if 'position' in data:
                 self._take_position(data)
+            if data.get('state') in CAPABLE_STATES:
+                self._take_capabilities_of(data)
         elif name == 'nowPlayingItemDidChange':
             self._events += 1
             if isinstance(data.get('track'), dict):
+                # Taken first: they go out with the new item, under its freeze. An item
+                # without them (an older bridge's) forgets the item before's.
+                self._take_capabilities_of({'capabilities': data.get('capabilities') or {}},
+                                           update=False)
                 self._set_track(data['track'])
+                self._update_controls()
             else:
                 self._clear_track_soon()
+        elif name == 'capabilitiesChanged':
+            self._take_capabilities_of(data)
         elif name == 'bridgeReset':
             # A new document in the page: nothing plays in it, and MusicKit there says
             # nothing of what the old one was doing. Read what it holds.
@@ -643,6 +684,7 @@ class Player(GObject.Object):
                     self._track_since = time.monotonic()
                     self._reset_times(track.duration_ms / 1000)
                 self.track = track
+                self._update_controls()  # notified with the track, after it
             self._track_queued(track)
             if fetch_lyrics:
                 self._want_lyrics(track)
@@ -650,6 +692,7 @@ class Player(GObject.Object):
             with self.freeze_notify():
                 self._reset_times(0.0)
                 self.track = None
+                self._update_controls()
             self._set_queue_index(-1)
             self._cancel_lyrics()
             self._set_lyrics(None)
@@ -699,8 +742,9 @@ class Player(GObject.Object):
     def _want_lyrics(self, track):
         """Lyrics for the item playing: kept when they are the song's already (the same
         song again, or repeat one), else asked of the engine as a task; none for an item
-        without a catalog id (a station's ad, say)."""
-        catalog_id = track.catalog_id
+        without a catalog id (a station's ad, say), or for a live station (its id is the
+        station's)."""
+        catalog_id = track.catalog_id if not track.live else ''
         if self.lyrics is not None and self.lyrics.catalog_id == catalog_id:
             return
         if self._lyrics_task is not None and not self._lyrics_task.done():
@@ -787,6 +831,41 @@ class Player(GObject.Object):
         if volume != self.volume:
             self.volume = volume
 
+    # -- what may be done ------------------------------------------------------------------
+
+    def _take_capabilities_of(self, data, update=True):
+        """An event's or an answer's `capabilities` ({canSeek, canPause, canSkipToNextItem,
+        canSkipToPreviousItem}: MusicKit's now), when it has them; {} forgets them. `update`
+        False leaves the can_* properties to the caller (the item's change sets them)."""
+        capabilities = data.get('capabilities')
+        if not isinstance(capabilities, dict):
+            return
+        self._capabilities = {key: capabilities[key] is not False
+                              for key in CAPABILITIES if key in capabilities}
+        if update:
+            self._update_controls()
+
+    def _update_controls(self):
+        """can_seek, can_pause, can_go_next and can_go_previous from the item and what
+        MusicKit allows: nothing for a live station; everything for a session restored (its
+        commands are the Player's own) and where MusicKit says nothing; Previous also while
+        the item can be sought (it restarts it)."""
+        live = self.live
+        allowed = {key: not live and (self.restored or self._capabilities.get(key, True))
+                   for key in CAPABILITIES}
+        values = {'can_seek': allowed['canSeek'], 'can_pause': allowed['canPause'],
+                  'can_go_next': allowed['canSkipToNextItem'],
+                  'can_go_previous': allowed['canSkipToPreviousItem'] or allowed['canSeek']}
+        for name, value in values.items():
+            if self.get_property(name) != value:
+                self.set_property(name, value)
+
+    @property
+    def live(self):
+        """Whether the item is a live radio station (NowPlaying.live): it has no length (its
+        duration is the stream's window), and cannot be sought, paused or skipped."""
+        return self.track is not None and self.track.live
+
     # -- derived -------------------------------------------------------------------------
 
     @property
@@ -860,6 +939,7 @@ class Player(GObject.Object):
         self._source = session.get('source')
         self._source_ids = None
         self.restored = True
+        self._update_controls()
         self.apply_queue({'index': index, 'items': queue})
         self._set_track(dict(queue[index], index=index))
         self._set_state('paused')
@@ -888,6 +968,7 @@ class Player(GObject.Object):
             self._cleared = None
         if self.restored:
             self.restored = False
+            self._update_controls()
 
     def _take_restored(self):
         """A play request is about to reach MusicKit: the session restored, if any, is
@@ -921,6 +1002,7 @@ class Player(GObject.Object):
         self._session = session
         self._queue_offset = session.get('offset', 0)
         self.restored = True
+        self._update_controls()
         self._cancel_clear()  # a null item MusicKit sent meanwhile clears nothing
         self.apply_queue(held['queue'])
         self._set_state('paused')
@@ -1121,15 +1203,23 @@ class Player(GObject.Object):
         """Pause when playback is under way (ACTIVE_STATES: what the bar's button shows),
         play otherwise. Decided here, not by the bridge's toggle: MusicKit's isPlaying is
         false while an item loads, so a toggle then would ask it to play again. A session
-        restored plays (restore_session)."""
+        restored plays (restore_session). A live station playing cannot be paused: it
+        stops (stop())."""
         if self.restored:
             await self.restore_session()
+            return
+        if self.live and self.active:
+            await self.stop()
             return
         await self._engine.control('pause' if self.active else 'play')
 
     async def pause(self):
+        """Pause; a live station, which MusicKit would leave playing, stops (stop())."""
         if self.restored:
             return  # paused already, and MusicKit holds nothing
+        if self.live:
+            await self.stop()
+            return
         await self._engine.control('pause')
 
     async def resume(self):
@@ -1139,6 +1229,8 @@ class Player(GObject.Object):
         await self._engine.control('play')
 
     async def next(self):
+        if self.live:
+            return  # MusicKit skips nothing on a live station
         if self.restored:
             self._step_restored(1)
             return
@@ -1146,7 +1238,9 @@ class Player(GObject.Object):
 
     async def previous(self):
         """The item before, or this one from the top when it is PREVIOUS_RESTART seconds
-        in."""
+        in; nothing on a live station."""
+        if self.live:
+            return
         if self.estimated_position() > PREVIOUS_RESTART:
             await self.seek(0)
         elif self.restored:
@@ -1155,10 +1249,46 @@ class Player(GObject.Object):
             await self._engine.control('previous')
 
     async def stop(self):
+        """Stop. A live station's item goes with it in MusicKit (it holds nothing then), so
+        the station stays shown as a session restored, stopped (_keep_station): Play plays
+        it again."""
         if self.restored:
             self._seek_restored(0)
             return
+        station = self._station_playing()
         await self._engine.control('stop')
+        if station is not None:
+            self._keep_station(*station)
+
+    def _station_playing(self):
+        """(the item, its station's play target) while a live station plays, else None:
+        the station the queue came from, else the item's own id (a live station's item is
+        the station)."""
+        if not self.live:
+            return None
+        source = self._source
+        if source is None or source['kind'] != 'station':
+            source = {'kind': 'station', 'id': self.track.id}
+        return self.track, dict(source)
+
+    def _keep_station(self, track, source):
+        """A live station stopped: shown as a session restored (its item alone, stopped,
+        no position, the station its source), unless another item has come meanwhile."""
+        if self.track is not track or self.restored:
+            return
+        raw = {key: value for key, value in track.raw.items() if key != 'index'}
+        self._cancel_clear()  # the null item MusicKit sends after its stop clears nothing
+        self._session = {'queue': [raw], 'index': 0, 'offset': 0, 'position': 0.0,
+                         'duration': 0.0, 'repeat': self.repeat, 'source': source}
+        self._queue_offset = 0
+        self._source = source
+        self._source_ids = None
+        self.restored = True
+        self._update_controls()
+        self.apply_queue({'index': 0, 'items': [raw]})
+        self._set_state('stopped')
+        self._set_position(0.0, 0.0)
+        log.info('the live station stopped; Play plays it again')
 
     async def queue_jump(self, index):
         """Play the queue's entry at `index` (the Up Next list)."""
@@ -1292,6 +1422,8 @@ class Player(GObject.Object):
             log.info('autoplay: MusicKit kept it %s', 'on' if self.autoplay else 'off')
 
     async def seek(self, seconds):
+        if self.live:
+            return  # MusicKit ignores a seek on a live station
         if self.restored:
             self._seek_restored(seconds)
             return

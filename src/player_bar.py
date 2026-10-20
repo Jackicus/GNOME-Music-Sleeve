@@ -9,13 +9,15 @@ what the bar shows while hidden, and on its way out. Everything
 shown comes from the Player's properties: the play button's icon from `state`, the title,
 artist and artwork from `track` (the artwork fetched by remote.fetch_remote at the cover
 size, so the Now Playing sheet and MPRIS find the same file), the seek slider and the times
-from `position` and `duration`, the toggles from `shuffle` and `repeat`, the volume button
+from `position` and `duration` (a LIVE badge in their place for a live radio station, whose
+play button is Stop: transport.py), the toggles from `shuffle` and `repeat`, the volume button
 from `volume`, the heart from the engine's rating of the track (HeartControl). The previous,
 play and next buttons run the app's actions (app.previous, app.play-pause, app.next: enabled
-while something plays); the toggles and the sliders call the Player's coroutines, and a
-failure is toasted by the app. The play button, the seek slider, the toggles, the volume,
-the heart and the artwork are the pieces widgets/transport.py holds, shared with the Now
-Playing sheet. Lyrics and Up Next are toggle buttons over the window's win.show-lyrics and
+while something plays, Next and Previous while MusicKit allows them); the toggles and the
+sliders call the Player's coroutines, and a failure is toasted by the app. The play button,
+the seek slider, the toggles, the volume, the heart and the artwork are the pieces
+widgets/transport.py holds, shared with the Now Playing sheet. Lyrics and Up Next are
+toggle buttons over the window's win.show-lyrics and
 win.show-queue (widgets/now_playing.py's TabActions): they open the sheet on that tab, show
 pressed while it is in sight, and Lyrics is off for a song without lyrics; their tooltips
 name their keys (shortcuts.NOW_PLAYING_TABS). Below the window's 640sp breakpoint
@@ -78,6 +80,7 @@ class PlayerBar(Adw.Bin):
     seek_adjustment = Gtk.Template.Child()
     elapsed_label = Gtk.Template.Child()
     remaining_label = Gtk.Template.Child()
+    live_label = Gtk.Template.Child()
     controls_box = Gtk.Template.Child()
     heart_button = Gtk.Template.Child()
     shuffle_button = Gtk.Template.Child()
@@ -99,7 +102,7 @@ class PlayerBar(Adw.Bin):
                                    sensitive=(self.seek_box, self.shuffle_button,
                                               self.repeat_button, self.volume_button))
         self._seek = SeekControl(self.seek_scale, self.seek_adjustment, self.elapsed_label,
-                                 self.remaining_label)
+                                 self.remaining_label, self.live_label)
         self._modes = ModeControl(self.shuffle_button, self.repeat_button)
         self._heart = HeartControl(self.heart_button)
         self._art = RemoteCover(self.cover)
@@ -129,8 +132,8 @@ class PlayerBar(Adw.Bin):
         # Playing sheet, which the bar opens.
         self._compact = compact
         self.cover.props.size = COMPACT_COVER_SIZE if compact else COVER_SIZE
-        for widget in (self.controls_box, self.elapsed_label, self.remaining_label):
-            widget.set_visible(not compact)
+        self.controls_box.set_visible(not compact)
+        self._seek.set_times_shown(not compact)
         self._show_playing_controls()
 
     compact = GObject.Property(type=bool, default=False, getter=_get_compact, setter=_set_compact,

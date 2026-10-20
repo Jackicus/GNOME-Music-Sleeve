@@ -35,7 +35,12 @@ GJS = shutil.which('gjs')
 EVENTS = ('authorizationStatusDidChange', 'playbackStateDidChange', 'nowPlayingItemDidChange',
           'playbackTimeDidChange', 'playbackDurationDidChange', 'queueItemsDidChange',
           'queuePositionDidChange', 'shuffleModeDidChange', 'repeatModeDidChange',
-          'playbackVolumeDidChange', 'mediaPlaybackError', 'autoplayEnabledDidChange')
+          'playbackVolumeDidChange', 'mediaPlaybackError', 'autoplayEnabledDidChange',
+          'capabilitiesChanged')
+
+# What a state or item event says MusicKit allows when the instance has no capabilities.
+ALLOWED = {'canSeek': True, 'canPause': True, 'canSkipToNextItem': True,
+           'canSkipToPreviousItem': True}
 
 # Apple's TTML lyrics, as the catalog's /lyrics answers carry them (invented words): two
 # stanzas, entities, word-timed spans, a <br>, CDATA, the four time formats, a blank line.
@@ -298,9 +303,12 @@ class BridgeTest(unittest.TestCase):
         track = events[3][1]['track']
         self.assertEqual(events, [
             ('authorizationStatusDidChange', {'authorized': True, 'status': 3}),
-            ('playbackStateDidChange', {'state': 'playing', 'position': 3, 'duration': 30}),
-            ('playbackStateDidChange', {'state': 'paused', 'position': 3, 'duration': 30}),
-            ('nowPlayingItemDidChange', {'track': track, 'index': 1}),
+            ('playbackStateDidChange', {'state': 'playing', 'position': 3, 'duration': 30,
+                                        'capabilities': ALLOWED}),
+            ('playbackStateDidChange', {'state': 'paused', 'position': 3, 'duration': 30,
+                                        'capabilities': ALLOWED}),
+            ('nowPlayingItemDidChange', {'track': track, 'index': 1,
+                                         'capabilities': ALLOWED}),
             ('playbackTimeDidChange', {'position': 3, 'duration': 30}),
             ('playbackDurationDidChange', {'duration': 30}),
             ('queueItemsDidChange', {'index': 0, 'items': [dict(track, index=0)],
@@ -623,6 +631,48 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(value['none'], {'state': 'stopped', 'track': None, 'position': 0,
                                          'duration': 0, 'shuffle': 'off', 'repeat': 'none',
                                          'volume': 1})
+
+    @scenario("""
+        bridge.subscribe();
+        // A live station as MusicKit plays it (#343): one item, typed radioStation, live,
+        // with no length of its own, and every capability false.
+        const live = {id: 'ra.live01', type: 'radioStation', isLiveRadioStation: true,
+                      attributes: {name: 'Harbour One', isLive: true, kind: 'streaming'}};
+        mk.nowPlayingItem = live;
+        mk.nowPlayingItemIndex = 0;
+        mk.currentPlaybackTime = 112;
+        mk.currentPlaybackDuration = 160;   // the stream's window
+        mk.capabilities = {canSeek: false, canPause: false, canSkipToNextItem: false,
+                           canSkipToPreviousItem: false, canEditPlaybackQueue: false};
+        mk.fire('nowPlayingItemDidChange', {});
+        mk.fire('capabilitiesChanged', {});
+        const answer = bridge.nowPlaying();
+        // Told by the item, not its duration: isLiveRadioStation alone, or the type and
+        // isLive; a station that is not live, or a song, is not.
+        const told = [
+            {id: 'ra.a', type: 'radioStation', attributes: {isLive: true}},
+            {id: 'ra.b', type: 'radioStation', attributes: {isLive: false}},
+            {id: 'ra.c', type: 'stations', attributes: {isLive: false}},
+            {id: 'i.d', type: 'song', attributes: {name: 'Song'}},
+        ].map(item => {
+            mk.queue = {items: [item], position: 0};
+            return bridge.queue().items[0].isLive;
+        });
+        return {posted, answer, told};
+    """)
+    def test_a_live_station_is_live_and_allows_nothing(self, value):
+        nothing = dict.fromkeys(ALLOWED, False)
+        events = [(event['name'], event['data']) for event in value['posted']]
+        item = events[0][1]
+        self.assertEqual(item['capabilities'], nothing)
+        self.assertEqual((item['track']['type'], item['track']['isLive'],
+                          item['track']['durationMs'], item['track']['title']),
+                         ('radioStation', True, 0, 'Harbour One'))
+        self.assertEqual(events[1], ('capabilitiesChanged', {'capabilities': nothing}))
+        answer = value['answer']
+        self.assertEqual((answer['track']['isLive'], answer['position'], answer['duration'],
+                          answer['capabilities']), (True, 112, 160, nothing))
+        self.assertEqual(value['told'], [True, None, None, None])  # only when true
 
     # -- the queue: Up Next's edits and autoplay -------------------------------------------
 

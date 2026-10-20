@@ -16,6 +16,10 @@ starts, then what the engine's rating() answers (one read per item, nothing poll
 whatever its `rated` signal says after (the heart's own love, a context menu's); a click
 loves or unloves the item's catalog song, and puts the heart back when that fails.
 
+A live radio station (player.live) has no length and cannot be paused or sought: the play
+button is a Stop button while it plays, and SeekControl shows a LIVE badge in place of the
+slider and the times.
+
 The seek slider's decisions are a SeekGuard (no GTK, tested on its own): nothing incoming
 counts while a seek waits to be sent (SEEK_SETTLE after the last movement), and after it
 is sent until MusicKit reports a position near the target (SEEK_TOLERANCE) or SEEK_HOLD
@@ -183,12 +187,23 @@ class TrackTitles:
             widget.set_sensitive(self.playing)
 
 
+def play_button_look(active, live):
+    """(icon name, tooltip) of the play button: Pause while playback is under way, Stop
+    instead for a live station (it cannot be paused: app.play-pause stops it), else Play."""
+    if active and live:
+        return 'transport-stop-symbolic', _('Stop')
+    if active:
+        return 'transport-pause-symbolic', _('Pause')
+    return 'transport-play-symbolic', _('Play')
+
+
 class PlayButton:
-    """A play/pause button whose icon and tooltip follow the Player's state, with a spinner
-    in place of the icon while a play request is with the engine (`pending`); its action
-    (app.play-pause) is the template's. Its icons are the bundled transport-* ones, which no
-    icon theme replaces: a theme's 24 px media-playback-start can be a 16 px glyph in a larger
-    canvas, small and off-centre at the sheet's size."""
+    """A play/pause button whose icon and tooltip follow the Player's state
+    (play_button_look(): Stop for a live station playing), with a spinner in place of the
+    icon while a play request is with the engine (`pending`); its action (app.play-pause) is
+    the template's. Its icons are the bundled transport-* ones, which no icon theme replaces:
+    a theme's 24 px media-playback-start can be a 16 px glyph in a larger canvas, small and
+    off-centre at the sheet's size."""
 
     def __init__(self, button):
         self.button = button
@@ -199,31 +214,40 @@ class PlayButton:
         self._player = player
         player.connect('notify::state', lambda *_: self.update())
         player.connect('notify::pending', lambda *_: self.update())
+        player.connect('notify::track', lambda *_: self.update())
         self.update()
 
     def update(self):
         player = self._player
-        active = player is not None and player.active
+        icon, tooltip = play_button_look(player is not None and player.active,
+                                         player is not None and player.live)
         if player is not None and player.pending:
             if self._spinner is None:
                 self._spinner = Adw.Spinner()
             if self.button.get_child() is not self._spinner:
                 self.button.set_child(self._spinner)
         else:
-            self.button.set_icon_name(
-                'transport-pause-symbolic' if active else 'transport-play-symbolic')
-        self.button.set_tooltip_text(_('Pause') if active else _('Play'))
+            self.button.set_icon_name(icon)
+        self.button.set_tooltip_text(tooltip)
 
 
 class SeekControl:
     """A Gtk.Scale over an adjustment, with optional elapsed and remaining labels, following
-    the Player's position and duration and seeking when the user moves it."""
+    the Player's position and duration and seeking when the user moves it; insensitive while
+    MusicKit allows no seek (can_seek). For a live station `live_label` (the LIVE badge, the
+    scale's sibling in a Gtk.Stack) shows in the scale's place and the times hide, the
+    position being only a place in the stream's window. `set_times_shown(False)` hides the
+    times for good (the bar's compact layout)."""
 
-    def __init__(self, scale, adjustment, elapsed_label=None, remaining_label=None):
+    def __init__(self, scale, adjustment, elapsed_label=None, remaining_label=None,
+                 live_label=None):
         self.scale = scale
         self.adjustment = adjustment
         self.elapsed_label = elapsed_label
         self.remaining_label = remaining_label
+        self.live_label = live_label
+        self._times_shown = True  # the times wanted (live or not)
+        self._live = None  # whether the badge shows (None: not decided yet)
         # Looked up once: this runs often.
         # Translators: the position slider's value as a screen reader hears it: {position}
         # is the time played ("1:05"), {duration} the song's length ("3:40").
@@ -242,11 +266,34 @@ class SeekControl:
         player.connect('notify::position', lambda *_: self.update())
         player.connect('notify::duration', lambda *_: self.update())
         player.connect('notify::track', lambda *_: self._on_track())
+        player.connect('notify::can-seek', lambda *_: self._show_live())
         self._on_track()
 
     def _on_track(self):
         self.cancel()
+        self._show_live()
         self.update()
+
+    def set_times_shown(self, shown):
+        """Show the times (False: never, as the bar's compact layout has none)."""
+        self._times_shown = shown
+        self._live = None
+        self._show_live()
+
+    def _show_live(self):
+        """The LIVE badge in the slider's place and no times for a live station; the
+        slider and its times otherwise, the slider sensitive while MusicKit allows a seek."""
+        live = self._player is not None and self._player.live
+        self.scale.set_sensitive(self._player is None or self._player.can_seek)
+        if live == self._live:
+            return
+        self._live = live
+        if self.live_label is not None:
+            stack = self.live_label.get_parent()
+            stack.set_visible_child(self.live_label if live else self.scale)
+        for label in (self.elapsed_label, self.remaining_label):
+            if label is not None:
+                label.set_visible(self._times_shown and not live)
 
     def update(self):
         """Show the Player's position, unless a seek is about (SeekGuard): the positions
