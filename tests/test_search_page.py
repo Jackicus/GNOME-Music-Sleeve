@@ -8,7 +8,7 @@ the status pages offer Your Library."""
 import asyncio
 import unittest
 
-from tests.page_harness import PageTestCase, album, playing, track
+from tests.page_harness import PageTestCase, album, find_all, playing, track
 
 from applemusic.backend.errors import EngineError
 from applemusic.library import Item
@@ -276,6 +276,51 @@ class SearchPageTest(PageTestCase):
         # Your Library has no filter.
         page.set_mode('library')
         self.assertFalse(page.kind_dropdown.get_visible())
+
+    async def test_the_kinds_are_named_in_the_open_filter_and_its_button(self):
+        """Show Results Of names each kind for assistive technology, in its popup and in its
+        button, which GtkDropDown's default factories leave unnamed."""
+        from gi.repository import Gtk
+
+        from applemusic.pages.search import FILTER_KEYS, filter_labels
+
+        page = await self.search_page()
+        dropdown = page.kind_dropdown
+        dropdown.emit('activate')  # opens it
+        popover = find_all(dropdown, Gtk.Popover)[0]
+        self.assertTrue(await self.until(popover.get_mapped, 2))
+        list_view = find_all(popover, Gtk.ListView)[0]
+
+        def items():
+            return [child for child in find_all(list_view, Gtk.Widget)
+                    if child.get_accessible_role() == Gtk.AccessibleRole.LIST_ITEM]
+
+        self.assertTrue(await self.until(lambda: len(items()) == len(FILTER_KEYS)))
+        label = Gtk.AccessibleProperty.LABEL
+        self.assertTrue(all(Gtk.test_accessible_has_property(item, label) for item in items()))
+        # Each named its kind's label, as the factories bind them again (each set again).
+        named, button = {}, []
+        list_factory, factory = dropdown.get_list_factory(), dropdown.get_factory()
+        list_factory.connect(
+            'bind', lambda _factory, item: named.__setitem__(item.get_item().get_string(),
+                                                            item.get_accessible_label()))
+        factory.connect('bind', lambda _factory, item: button.append(item.get_accessible_label()))
+        dropdown.set_list_factory(None)  # the popup takes the button's factory meanwhile
+        dropdown.set_list_factory(list_factory)
+        button.clear()
+        dropdown.set_factory(None)
+        dropdown.set_factory(factory)
+        labels = filter_labels()
+        self.assertTrue(await self.until(lambda: len(named) == len(FILTER_KEYS)), named)
+        self.assertEqual(named, {labels[key]: labels[key] for key in FILTER_KEYS})
+        self.assertEqual(button, [labels['all']])
+        # The check mark is on the kind chosen alone.
+        checks = [image for image in find_all(popover, Gtk.Image)
+                  if image.get_icon_name() == 'object-select-symbolic']
+        self.assertEqual(sum(1 for image in checks if image.get_opacity() == 1), 1)
+        popover.popdown()
+        page.set_kind('artists')
+        self.assertTrue(await self.until(lambda: button[-1] == labels['artists']), button)
 
     async def test_a_kind_with_nothing_found(self):
         self.signed_in_engine()

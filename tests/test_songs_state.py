@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.page_harness import PageTestCase, playing, track
+from tests.page_harness import PageTestCase, find_all, playing, track
 
 
 def library_json(cache, tracks, favourites=None):
@@ -218,6 +218,40 @@ class SongsPageTest(PageTestCase):
         self.assertFalse(any(cell.playing for cell in cells.values()))
         self.assertEqual(rows['l.album001.t1.2'].get_accessible_description(), '3:00')
 
+
+    async def test_a_narrow_table_shows_the_artist_under_the_title(self):
+        """At 360 px the Artist column gives way to a line under the title, which keeps the
+        room a title needs beside its badge and heart; wider, the column is back."""
+        from gi.repository import Gtk
+
+        from applemusic.pages.songs import SongsPage
+
+        ids = [track('l.album001', n)['id'] for n in range(3)]
+        library_json(self.cache, 3, favourites=ids)
+        await self.library.load()
+        page = await self.show_at(SongsPage(self.library, 'Songs'), 360)
+        self.assertTrue(await self.until(lambda: len(page._title_cells) == 3, 2))
+        cells = [cell.get_child() for cell in page._title_cells]
+        self.assertTrue(await self.until(lambda: all(cell.artist_label.get_mapped()
+                                                     for cell in cells)))
+        self.assertFalse(page.artist_column.get_visible())
+        self.assertFalse(page.album_column.get_visible())
+        self.assertEqual({cell.artist_label.get_text() for cell in cells}, {'Invented Artist'})
+        # The title's line has room for "Analog Boulevard" and its badge (about 140 px) beside
+        # the heart, and the time is still shown whole, inside the window.
+        line = cells[0].label.get_parent()
+        self.assertTrue(await self.until(lambda: line.get_width() >= 150), line.get_width())
+        times = [label for label in find_all(page.column_view, Gtk.Inscription)
+                 if label.get_text() == '3:00' and label.get_mapped()]
+        self.assertEqual(len(times), 3)
+        for label in times:
+            bounds = label.compute_bounds(page)[1]
+            self.assertGreaterEqual(bounds.get_width(), 56)  # "1:02:03"
+            self.assertLessEqual(bounds.get_x() + bounds.get_width(), page.get_width())
+        # Wide again, the column is back and the line gone.
+        page.get_root().set_default_size(1000, 640)
+        self.assertTrue(await self.until(page.artist_column.get_visible, 2))
+        self.assertFalse(any(cell.artist_label.get_visible() for cell in cells))
 
     async def test_favourites_have_hearts_and_favourites_only_shows_them(self):
         ids = [track('l.album001', n)['id'] for n in range(5)]

@@ -141,6 +141,8 @@ def start():
         window.open_item(app.library.by_id(kind, item_id))
         GLib.timeout_add(1500, start)
         return GLib.SOURCE_REMOVE
+    if not args.sidebar:
+        window.split_view.set_show_content(True)  # a narrow window shows the page, not the sidebar
     page = window.sidebar if args.sidebar else window.navigation_view.get_visible_page()
     scrolled = list_scroller(page)
     if scrolled is not None and not scrolled.get_mapped():  # a status page shows meanwhile

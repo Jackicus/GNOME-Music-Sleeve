@@ -36,7 +36,9 @@ only a new sort or filter starts it again from the top. Activating a row (Enter,
 view's single-click-activate, docs/decisions.md) asks the window to play it; a right click, a
 long press or the Menu key opens its context menu, and a row drags onto a sidebar playlist
 (widgets/context_menu.py). The artist and the album are links to their pages
-(widgets/track_links.py). The table keeps no selection (a Gtk.NoSelection): GTK selects the
+(widgets/track_links.py); in a narrow window, the album's column hidden and the artist's
+too, the artist is a dimmed line under the title (SongTitle.set_stacked()), so that the title
+keeps its room. The table keeps no selection (a Gtk.NoSelection): GTK selects the
 hovered row of a single-click list, which would have followed the pointer around.
 
 The row of the song playing is marked (SongTitle's play icon and bold title, "Playing" as
@@ -124,6 +126,7 @@ class SongsPage(Adw.NavigationPage):
     artist_column = Gtk.Template.Child()
     album_column = Gtk.Template.Child()
     time_column = Gtk.Template.Child()
+    narrow_breakpoint = Gtk.Template.Child()
 
     def __init__(self, library, title, icon_name=None):
         super().__init__(title=title)
@@ -143,6 +146,7 @@ class SongsPage(Adw.NavigationPage):
         self._title_cells = set()  # the title cells bound: marked again as the item playing changes
         self._row_items = set()  # and the rows bound (their descriptions)
         self._favourites_restored = False  # Favourites Only as last chosen, once mapped
+        self._stacked = False  # the narrow table's: the artist under the title, not beside it
 
         self.title_label.set_label(title)
         self._header_title = HeaderTitle(self.header_bar, self.title_label)  # while loading
@@ -184,6 +188,10 @@ class SongsPage(Adw.NavigationPage):
         row_factory.connect('bind', self._bind_row)
         row_factory.connect('unbind', self._unbind_row)
         self.column_view.set_row_factory(row_factory)
+        # The narrow table has no Artist column: the title cells show the artist under the
+        # title while its breakpoint applies.
+        connect_weak(self.narrow_breakpoint, 'apply', self._set_stacked, True)
+        connect_weak(self.narrow_breakpoint, 'unapply', self._set_stacked, False)
 
         # Dragging a divider: GTK sets the column's fixed width to its allocated width, which
         # for an expanding column already holds its share of the spare room, then adds the
@@ -532,7 +540,7 @@ class SongsPage(Adw.NavigationPage):
         track = cell.get_item()
         self._title_cells.add(cell)
         cell.get_child().bind(track, self._playing.matches(track),
-                              self._library.is_favourite(track))
+                              self._library.is_favourite(track), self._stacked)
         if not self._bound:
             self._bound = True
             mark_bound(self)
@@ -540,6 +548,13 @@ class SongsPage(Adw.NavigationPage):
     def _unbind_title(self, _factory, cell):
         self._title_cells.discard(cell)
         cell.get_child().unbind()
+
+    def _set_stacked(self, _breakpoint, stacked):
+        """The narrow breakpoint applied (`stacked`) or not: the bound title cells show the
+        artist under the title, or not, and the cells bound from now on follow."""
+        self._stacked = stacked
+        for cell in self._title_cells:
+            cell.get_child().set_stacked(stacked)
 
     # Favourites.
 

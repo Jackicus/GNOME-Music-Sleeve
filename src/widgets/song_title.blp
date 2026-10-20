@@ -39,36 +39,55 @@ template $AppleMusicSongTitle: Box {
     }
   }
 
+  // The title and, in the narrow table (set_stacked()), the artist under it.
   Box {
-    spacing: 6;
+    orientation: vertical;
+    valign: center;
     hexpand: true;
 
-    // A label rather than a Gtk.Inscription, so the badge follows the title's text. One
-    // line only: measuring it again at every rebind is cheap, unlike a wrapping label.
-    Label label {
-      xalign: 0;
-      ellipsize: end;
-      single-line-mode: true;
+    Box {
+      spacing: 6;
 
-      styles [
-        "track-title",
-      ]
+      // A label rather than a Gtk.Inscription, so the badge follows the title's text. One
+      // line only: measuring it again at every rebind is cheap, unlike a wrapping label.
+      Label label {
+        xalign: 0;
+        ellipsize: end;
+        single-line-mode: true;
+
+        styles [
+          "track-title",
+        ]
+      }
+
+      Label explicit_badge {
+        // Translators: the badge marking a song with explicit lyrics, as Apple Music shows it
+        label: C_("explicit badge", "E");
+        tooltip-text: _("Explicit");
+        valign: center;
+        visible: false;
+
+        accessibility {
+          label: _("Explicit");
+        }
+
+        styles [
+          "caption",
+          "explicit-badge",
+        ]
+      }
     }
 
-    Label explicit_badge {
-      // Translators: the badge marking a song with explicit lyrics, as Apple Music shows it
-      label: C_("explicit badge", "E");
-      tooltip-text: _("Explicit");
-      valign: center;
+    // The artist, where the table has no column for them: an Inscription, sized by its
+    // one line rather than its text.
+    Inscription artist_label {
+      xalign: 0;
+      text-overflow: ellipsize_end;
       visible: false;
-
-      accessibility {
-        label: _("Explicit");
-      }
 
       styles [
         "caption",
-        "explicit-badge",
+        "dimmed",
       ]
     }
   }

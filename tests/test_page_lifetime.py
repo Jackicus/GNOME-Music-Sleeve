@@ -1049,6 +1049,33 @@ class HandlerTest(WidgetTestCase):
                 self.app.settings.reset('last-sync')
                 await self.asyncTearDown()  # the dialogs closed with the cache still patched
 
+    async def test_preferences_account_always_has_a_row(self):
+        """Signed out, signed in, or the demo (Sign In insensitive, as the Engine row's Start
+        is): the Account group shows a row, never an empty list under its description."""
+        from applemusic.dialogs.preferences import PreferencesDialog
+
+        def shown(dialog):
+            return [(row.get_title(), row.get_sensitive())
+                    for row in (dialog.sign_in_row, dialog.sign_out_row) if row.get_visible()]
+
+        self.addCleanup(self.app.settings.reset, 'signed-in')
+        with tempfile.TemporaryDirectory() as cache, \
+                mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+            try:
+                for demo, signed_in, rows in ((False, False, [('Sign _In…', True)]),
+                                              (False, True, [('Sign _Out…', True)]),
+                                              (True, False, [('Sign _In…', False)]),
+                                              (True, True, [('Sign _In…', False)])):
+                    self.app.demo = demo
+                    self.app.settings.set_boolean('signed-in', signed_in)
+                    dialog = await self.presented(PreferencesDialog(self.app))
+                    self.assertEqual(shown(dialog), rows, (demo, signed_in))
+                    dialog.force_close()
+                    del dialog
+                    await self.settle()
+            finally:
+                await self.asyncTearDown()  # the dialogs closed with the cache still patched
+
     async def test_sign_in_cancel(self):
         from applemusic.dialogs.signin import SignInDialog
 

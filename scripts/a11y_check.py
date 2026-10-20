@@ -1267,23 +1267,30 @@ async def walkthrough(window):
     await key(window, 'Return', 0.6)
     popover = grid.sort_button.get_popover()
     check('Return opens Sort and Filter', popover is not None and popover.get_visible())
+    labels = menu_labels(grid.sort_button.get_menu_model())
+    letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label]
+    check('Each of its items has a mnemonic of its own',
+          len(letters) == len(labels) == len(set(letters)), labels)
 
     def focused_text():
         focus = window.get_focus()
         focus = focus if popover is not None and inside(focus, popover) else None
         labels = [widget.get_label() for widget in descendants(focus)
                   if isinstance(widget, Gtk.Label)] if focus is not None else []
-        return labels[0] if labels else ''
+        return labels[0].replace('_', '') if labels else ''
 
     for _press in range(12):
         if focused_text() == 'Favourites Only':
             break
         await key(window, 'Down', 0.15)
     check('Down reaches Favourites Only', focused_text() == 'Favourites Only', focused_text())
+    await key(window, 'Escape', 0.4)
+    grid.sort_button.grab_focus()
     await key(window, 'Return', 0.6)
+    await key(window, 'f', 0.6)
     shown = grid.grid_view.get_model()
     shown = [shown.get_item(n) for n in range(shown.get_n_items())]
-    check('Return shows the favourite albums alone',
+    check('F, its mnemonic, shows the favourite albums alone',
           grid._favourites_action.get_state().get_boolean() and shown
           and all(item.favourite for item in shown), len(shown))
     grid.activate_action('page.favourites-only', None)  # every album again
@@ -1913,6 +1920,13 @@ async def names(window):
     search.search_entry.emit('activate')
     await asyncio.sleep(1.5)
     total += await unnamed("search's list of one kind")
+    search.kind_dropdown.emit('activate')  # Show Results Of open: its kinds, each named
+    await asyncio.sleep(1.0)
+    total += await unnamed("search's Show Results Of, open")
+    for widget in descendants(search.kind_dropdown):
+        if isinstance(widget, Gtk.Popover):
+            widget.popdown()
+    await asyncio.sleep(0.5)
     search.set_kind('all')
     await asyncio.sleep(1.5)
     window.open_shelf(next(shelf for shelf in search._column.shelves if shelf.key == 'songs'))

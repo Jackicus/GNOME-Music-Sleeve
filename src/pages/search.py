@@ -49,7 +49,7 @@ from ..widgets.cover import Cover
 from ..widgets.engine_status import EngineStatus
 from ..widgets.filter_bar import text_filter
 from ..widgets.shelf import Shelf, ShelfColumn  # Shelf is $AppleMusicShelf in the template
-from ..widgets.labels import accessible_label, flow_child, track_label
+from ..widgets.labels import accessible_label, flow_child, named_list_factory, track_label
 from ..widgets.search_list import SearchList  # noqa: F401  $AppleMusicSearchList
 from ..widgets.search_list import end_text
 from ..widgets.track_row import PlayingMark, TrackRow
@@ -189,6 +189,12 @@ class SearchPage(Adw.NavigationPage):
         self._pager = None  # the one kind shown (kind_list's SearchPager), or None
         labels = filter_labels()
         self.kind_dropdown.set_model(Gtk.StringList.new([labels[key] for key in FILTER_KEYS]))
+        # The default factories leave the kinds unnamed for assistive technology, in the popup
+        # and in the button.
+        self.kind_dropdown.set_factory(
+            named_list_factory(self.kind_dropdown, popup=False, drop_down=True))
+        self.kind_dropdown.set_list_factory(
+            named_list_factory(self.kind_dropdown, popup=True, drop_down=True))
         # What the page says when the engine cannot answer, and what its button does; its
         # retry asks again for what failed, in Apple Music mode only.
         texts = {
