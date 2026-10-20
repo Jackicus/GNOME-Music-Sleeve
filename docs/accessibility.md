@@ -151,9 +151,15 @@ list and the script together.
     hears the level ("Volume 80%"); on a sidebar row they are the row's (the focus moves,
     nothing is selected), on the seek slider the slider's, and in an entry the entry's.
 14. Home shows Recently Played after its first shelf, and Tab reaches its tiles. F5 refreshes
-    the page shown when it has a Refresh (Home, New, Made for You, Radio, Charts, a category, a room),
-    the focus staying where it was; the header bar's Refresh is named, and Space on it
-    refreshes too, the focus staying on it.
+    the page shown when it has a Refresh (Home, New, Made for You, Radio, Charts, Replay, a
+    category, a room), the focus staying where it was; the header bar's Refresh is named, and
+    Space on it refreshes too, the focus staying on it. Home ends with More for You's link to
+    Replay (Made for You does too): Enter on it opens Replay, Top Songs a numbered grid of
+    songs, then numbered tiles, and Ctrl+2 and Tab reach the first song. Its header bar's
+    year menu is named (Year) and shows the latest year; Enter opens its list, each year
+    named, and Down, Enter chooses the year before, whose Replay replaces the page's (titled
+    with it), the focus staying on the menu. Escape goes back to Home. `--names` looks at
+    Replay and its open year menu.
 15. Radio shows the live stations as large cards, then Recently Played: Ctrl+2 puts the
     focus in the live stations, Tab (past the shelf's arrows and See All) reaches the first,
     and Right, Enter plays the second. New opens with its banners as wide cards (Ctrl+2 and

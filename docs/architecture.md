@@ -87,7 +87,9 @@ touches widgets.
   old, `Throttle`; one shelf brought up to date in place, `RecentlyPlayed`, placed after the
   first shelf by `arrange()`; an update that would move the page or take the focus kept
   for the next visit, `hold_back()`). New, Made for You, Radio, Search, the Charts page
-  (pushed from New's More to Explore and Search's categories) and the pages New's links
+  (pushed from New's More to Explore and Search's categories), the Replay page (pushed from
+  More for You, the link that ends Made for You and Home: `pages/replay.py`, its year menu
+  over `src/replay.py`) and the pages New's links
   open (`pages/editorial.py`: a room's grid, a `GridPage` with a `fetch`, a grouping's or
   multiroom's shelves) ask the engine (all but
   Search's results keep its answers in the cache for a day; a search's kind, filtered or a

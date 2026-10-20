@@ -1115,6 +1115,21 @@ changes, change it here, with the date. The plan they came from is in
   View Credits (an upload has no credits at Apple). The answer is kept for a day, as the
   other catalog answers are, and the demo answers from invented credits.
 
+- **Replay is a pushed page, reached from Made for You and Home** (2026-10-20, #365). Apple
+  Music shows Replay as a shelf of its Home and Made for You, not as a destination, so the
+  app has none in the sidebar: More for You, a link card at the end of Made for You and of
+  Home (`explore.replay_sections()`), pushes one page (`pages/replay.py`, `window.open_item`
+  for kind `replay`), as Top Charts does. The page is a `ShelvesPage` over the music
+  summaries (`/v1/me/music-summaries`, the latest year's views), its rankings numbered as
+  the charts' are (Top Songs a grid of songs played as one queue, Top Artists and Top
+  Albums numbered tiles), then each year's Replay playlist, which opens its page. Its year
+  menu is the Charts page's genre menu again (a `Gtk.DropDown` in the header bar, the
+  choice the page's, never remembered), over the years Apple lists, the latest year's
+  asked without a year so one kept answer serves it whichever year it is; a past year
+  Apple answers nothing for shows its playlist alone. Kept a day as the other pages of
+  Apple's answers are. The minutes listened and milestones are left out: no documented
+  read gives them.
+
 ## Open
 
 - Nothing. The questions that were open here are settled above; what is left is in

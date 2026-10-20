@@ -125,7 +125,7 @@ paths:
   stale one is the offline answer, crash leftovers), once the library has loaded at
   startup and at the end of every sync. The day-long answers (the landing, a category, New,
   the rooms, groupings and multirooms New's links open, Made for You, Radio, Charts (a
-  genre's in charts/, the genres), Home's
+  genre's in charts/, the genres), Replay (a past year's in replay/), Home's
   Recently Played, an artist's page, an album's page, a catalog playlist's page, a
   playlist's suggested songs, a song's credits) all go through
   `Engine._kept_answer()`: the file while it is under a day old, else Apple, else (the engine

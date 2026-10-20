@@ -147,6 +147,9 @@ def classes():
         async def genres(self, refresh=False):
             return await self._answer('genres', refresh)
 
+        async def replay(self, year=None, refresh=False):
+            return await self._answer('replay', year, refresh)
+
         async def recently_played(self, refresh=False):
             # Each ask's refresh beside its name in `calls`.
             self.recent_requests.append(refresh)

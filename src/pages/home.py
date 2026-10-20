@@ -2,15 +2,17 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """AppleMusicHomePage: the library's shelves, one under another, as on music.apple.com's Home,
-with Recently Played asked of Apple each time the page is shown, and Refresh."""
+with Recently Played asked of Apple each time the page is shown, More for You's link to Replay
+after them, and Refresh."""
 
 import logging
 
 from gi.repository import Adw, Gtk
 
-from .. import home
+from .. import explore, home
 from ..backend.errors import EngineError
 from ..remote import fetch_shelf_art
+from ..widgets.explore import ExploreBox
 from ..widgets.shelf import ShelfColumn
 from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak
 from . import SignInOffer, app, signed_out
@@ -42,6 +44,9 @@ class HomePage(Adw.NavigationPage):
     window calls forget_account()), so the next account's is never shown the old one's. No
     failure is toasted: the shelf stays as it was.
 
+    The shelves end with More for You's link to Replay (explore.replay_sections(), the
+    window opening its page), whatever the account's state: the page says what it needs.
+
     Refresh (the header bar's button, and F5: refresh()) asks Apple for Recently Played past
     the throttle and has the sync read the library's shelves again (Application.start_sync's
     shelves pass, which starts the engine when it is down and says why when it fails). Signed
@@ -63,6 +68,11 @@ class HomePage(Adw.NavigationPage):
         super().__init__(title=title)
         self._library = library
         self._column = ShelfColumn(self.shelves_box, anchor=self.title_label)
+        # After the shelves (the column places them right after the title): More for You's
+        # link to Replay, the account's year in music (pages/replay.py), as Made for You ends.
+        self.explore_box = ExploreBox()
+        self.explore_box.show_sections(explore.replay_sections())
+        self.shelves_box.append(self.explore_box)
         self._recent = home.RecentlyPlayed()
         self._throttle = home.Throttle()
         self._answer = None  # the Recently Played answer in hand

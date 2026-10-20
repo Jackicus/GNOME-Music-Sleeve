@@ -17,8 +17,8 @@ a bare `Adw.ApplicationWindow`'s first frame (the app's own share of the start, 
 second from launch here: the bare window alone takes 0.8 s), page switches under 100 ms, no
 dropped frames while scrolling Albums and Songs, anonymous memory under 250 MB after every
 page has been browsed twice, and pages opened and closed (20 albums, 5 artists, 5 artist
-pages, 5 See All, 2 Charts and 2 of a search's See All a round, three rounds after a warm-up
-round) leaving at most 5 MB behind.
+pages, 5 See All, 2 Charts, 2 Replay and 2 of a search's See All a round, three rounds
+after a warm-up round) leaving at most 5 MB behind.
 bench.py checks all but scrolling. The numbers behind these rules are in docs/notes.md.
 
 ## Measure

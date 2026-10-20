@@ -97,6 +97,9 @@ UI awaits.
     await engine.charts(genre='21')   # {shelves}: one genre's charts (no Daily Top 100 or City
                                  # Charts)
     await engine.genres()        # {genres: [{id, title}]}: the genres the Charts page offers
+    await engine.replay()        # {year, years, shelves}: Replay, the latest year's top songs,
+                                 # artists and albums, and each year's Replay playlist
+    await engine.replay(year='2025')   # {year, years, shelves}: a past year's
     await engine.artist_page(id) # {id, artist, banner, latest, topSongs, shelves,
                                  # favourite}: a catalog artist's page, every view of it at
                                  # once, and whether they are a favourite
@@ -111,10 +114,10 @@ UI awaits.
                                  # playlist, none of `offered`; more=True: a few more, unkept
     await engine.credits(catalog_song_id)   # {categories: [{kind, title, people: [{name,
                                  # roles}]}]}: a song's credits (View Credits), in Apple's order
-    # The last seventeen are kept under the cache for a day (landing.json, categories/,
+    # The last nineteen are kept under the cache for a day (landing.json, categories/,
     # browse.json, rooms/, groupings/, multirooms/, made-for-you.json, radio.json,
-    # charts.json, charts/, genres.json, recent-played.json, artists/, albums/,
-    # playlists/, suggestions/, credits/) and
+    # charts.json, charts/, genres.json, replay.json, replay/, recent-played.json, artists/,
+    # albums/, playlists/, suggestions/, credits/) and
     # answered from there without the engine;
     # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
     # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
@@ -2744,6 +2747,41 @@ class Engine(GObject.Object):
         found = await asyncio.to_thread(normalize.related, answer, str(self.cache_dir))
         self._related[key] = found
         return found
+
+    async def replay(self, year=None, refresh=False):
+        """Replay, the account's year in music: {year, years, shelves} (normalize.replay_page:
+        the year's Top Songs, a list, then Top Artists and Top Albums, each ranked, then each
+        year's Replay playlist), the summary of the latest year (api.REPLAY_ENDPOINT with
+        api.replay_params()), or of `year` (four digits; anything else is 'usage'), beside
+        the years Apple has a Replay of (api.REPLAY_YEARS_ENDPOINT: the year menu's choice).
+        Apple refusing the summary (a 400 or a 404: no listening history for the year, or a
+        past year it does not answer by) is a summary of nothing, and the years failing are
+        none; anything else is the command's. From <cache>/replay.json (a past year's
+        replay/<year>.json) for a day, else fetched and kept."""
+        year = str(year or '')
+        if year and not api.is_replay_year(year):
+            raise EngineError('usage', 'replay needs a year')
+
+        async def fetch(client):
+            try:
+                summary = await self._api(client, api.REPLAY_ENDPOINT, api.replay_params(year),
+                                          timeout=BROWSE_TIMEOUT)
+            except EngineError as error:
+                if error.status not in (400, 404):
+                    raise
+                log.info('replay: no summary of %s (%s)', year or 'the latest year', error)
+                summary = None
+            try:
+                years = await self._api(client, api.REPLAY_YEARS_ENDPOINT,
+                                        api.REPLAY_YEARS_PARAMS, timeout=BROWSE_TIMEOUT)
+            except EngineError as error:
+                if error.code == 'engine-down':
+                    raise
+                log.info('replay: no years to choose from: %s', error)
+                years = None
+            return {'summary': summary, 'years': years, 'year': year}
+        return await self._kept_answer(normalize.replay_cache_path(str(self.cache_dir), year),
+                                       refresh, fetch, normalize.replay_page)
 
     async def made_for_you(self, refresh=False):
         """Made for You: {shelves: [{key, title, items}]}, the recommendations

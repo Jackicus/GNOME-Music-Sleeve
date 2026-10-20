@@ -40,6 +40,7 @@ src/pages/grid.py
 src/pages/grid.blp
 src/pages/home.blp
 src/pages/charts.py
+src/pages/replay.py
 src/pages/editorial.py
 src/pages/radio.py
 src/pages/search.py
@@ -79,4 +80,5 @@ src/home.py
 src/library.py
 src/radio.py
 src/remote.py
+src/replay.py
 src/release.py

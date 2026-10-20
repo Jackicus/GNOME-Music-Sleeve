@@ -1779,6 +1779,50 @@ async def walkthrough(window):
           refreshed == [True, True] and window.get_focus() is home.refresh_button,
           describe(window.get_focus()))
     home.refresh = refresh
+    print('-- replay')
+    from applemusic.widgets.explore import LinkChild
+
+    link = next((child for child in descendants(home.explore_box)
+                 if isinstance(child, LinkChild)), None)
+    check("Home ends with More for You's link to Replay",
+          link is not None and link.item.kind == 'replay', link and link.item.title)
+    if link is not None:
+        link.grab_focus()
+        await key(window, 'Return', 1.0)
+        replay = await shelves_shown(window)  # the demo's invented answer, then its shelves
+        shelves = replay._column.widgets
+        songs = shelves[0] if shelves else None
+        check('Enter opens Replay: Top Songs a numbered grid of songs, then numbered tiles',
+              getattr(replay, 'item', None) is link.item and isinstance(songs, SongShelf)
+              and songs.shelf.ranked and len(shelves) == 4 and shelves[1].shelf.ranked,
+              [widget.shelf.key for widget in shelves])
+        if isinstance(songs, SongShelf):
+            await key(window, '<primary>2', 0.6)
+            for _ in range(3):  # the shelf's paging arrows and See All, then its songs
+                if inside(window.get_focus(), songs.grid_view):
+                    break
+                await key(window, 'Tab')
+            check('Ctrl+2 and Tab reach the first song',
+                  inside(window.get_focus(), songs.grid_view), describe(window.get_focus()))
+        drop_down = replay.year_menu.drop_down
+        check('The header bar has the year menu, named, on the latest year',
+              drop_down.get_visible() and drop_down.get_tooltip_text() == 'Year'
+              and drop_down.get_selected() == 0, drop_down.get_selected())
+        if drop_down.get_visible():
+            drop_down.grab_focus()
+            await key(window, 'Return', 0.6)  # opens the menu
+            await key(window, 'Down')
+            await key(window, 'Return', 1.0)  # the year before: the page starts over on it
+            wanted = replay.year_menu._choices[1].id
+            check('Down, Enter chooses the year before: its Replay, the focus on the menu',
+                  replay.year_menu.year == wanted
+                  and replay.title_label.get_label() == f'Replay {wanted}'
+                  and inside(window.get_focus(), drop_down),
+                  (replay.year_menu.year, replay.title_label.get_label(),
+                   describe(window.get_focus())))
+        await key(window, 'Escape', 0.6)
+        check('Escape goes back to Home', window.navigation_view.get_visible_page() is home,
+              window.navigation_view.get_visible_page())
     print('-- folders')
     tree = app.library.playlist_tree()
     folder = next(node for node in tree.flat if node.kind == 'folder' and node.children)
@@ -2415,6 +2459,19 @@ async def names(window):
     drop_down.emit('activate')  # the genre menu open: its genres, each named
     await asyncio.sleep(1.0)
     total += await unnamed("Charts' genre menu, open")
+    for widget in descendants(drop_down):
+        if isinstance(widget, Gtk.Popover):
+            widget.popdown()
+    await asyncio.sleep(0.5)
+    from applemusic.pages.replay import replay_item
+
+    window.open_item(replay_item())
+    await asyncio.sleep(1.0)
+    total += await unnamed('Replay')
+    drop_down = window.navigation_view.get_visible_page().year_menu.drop_down
+    drop_down.emit('activate')  # the year menu open: its years, each named
+    await asyncio.sleep(1.0)
+    total += await unnamed("Replay's year menu, open")
     for widget in descendants(drop_down):
         if isinstance(widget, Gtk.Popover):
             widget.popdown()

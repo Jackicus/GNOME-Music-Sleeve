@@ -56,8 +56,18 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   showing the last one meanwhile; it comes in place, so the page does not move under you.
   The refresh button in the header bar, or <kbd>F5</kbd>, asks Apple Music for all of
   Home's shelves again at once. A recommendation that says why it is offered shows the
-  reason under its title. <kbd>F5</kbd> refreshes New, Made for You, Radio and Charts too,
-  and the pages New's links open.
+  reason under its title. <kbd>F5</kbd> refreshes New, Made for You, Radio, Charts and
+  Replay too, and the pages New's links open.
+- **Replay: Your Year in Music**, under **More for You** at the end of Home and of **Made for
+  You**, opens Apple Music Replay: the songs, artists and albums you played most this year,
+  from your listening history. **Top Songs** is a numbered list (click a song to play the
+  list from it), **Top Artists** and **Top Albums** are numbered tiles, and **Replay
+  Playlists** has Apple's Replay playlist of each year, which opens its page. The year menu
+  in its header bar shows an earlier year's Replay, when Apple Music lists more than one;
+  the page opens on the latest year again next time. Replay needs your sign-in and enough
+  listening history (with **Use Listening History** on in Apple Music's settings): without
+  them it says **No Replay Yet**, or what is missing. Each year's is kept for a day; the
+  refresh button asks Apple again.
 - Search shows what you opened from it lately under **Recently Searched**, above the browse
   categories; **Clear** empties it. The list stays on this computer, as music.apple.com keeps
   its own in the browser, and goes with the cache (Clear Cache, signing out).
@@ -400,6 +410,10 @@ Other limits:
 - The charts are your storefront's. Like New and the pages its links open, they need the
   engine and your sign-in (or the last copy of them); a genre you have not opened before
   needs them too, and without the list of genres the genre menu is not shown.
+- Replay shows the top songs, artists and albums Apple Music's own Replay page shows, not its
+  minutes listened or milestones. Whether Apple answers for a past year, and how it lists the
+  years, has not been checked against a real account yet: a year it gives nothing for shows
+  only its Replay playlist.
 - A playlist moves into a folder, but not yet out of every folder to the top level, and a
   folder does not move into another folder: Apple's service has not been seen to take those
   moves from the app yet, so it does not offer them. Apple's own apps can.

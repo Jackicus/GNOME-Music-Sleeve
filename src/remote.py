@@ -13,7 +13,8 @@ comes through `await fetch_remote(url, size)`: the URL re-sized to `size` px squ
 into <cache>/remote-art/ (named by the sized URL's hash; the sync trims that directory to a
 budget) and answered as its path.
 
-The engine's search, suggest, category, browse, radio, charts and made-for-you answers name a
+The engine's search, suggest, category, browse, radio, charts, replay and made-for-you answers
+name a
 catalog URL as an item's `art` when the sync has not fetched its cover (and no `thumb`):
 `remote_item(data)` gives such a dict the paths fetch_remote() would use (`thumb` at
 THUMB_SIZE, a video's that high and 16:9, `art` at COVER_SIZE, with `thumbUrl` and `artUrl`
@@ -68,11 +69,15 @@ SEARCH_TITLES = {
     'curators': N_('Curators'),
 }
 
-# The headings of the Charts page's shelves when Apple's answer names none, by the chart each
-# is (normalize.charts_shelves' `chart`).
+# The headings of the Charts page's and the Replay page's shelves when Apple's answer names
+# none, by the chart each is (normalize.charts_shelves' and normalize.replay_page's `chart`).
 CHART_TITLES = {
     'songs': N_('Top Songs'),
+    'artists': N_('Top Artists'),
     'albums': N_('Top Albums'),
+    # Translators: the Replay page's shelf of Apple's playlist of the songs the account
+    # played most in each year, one a year.
+    'replay-playlists': N_('Replay Playlists'),
     'playlists': N_('Top Playlists'),
     'music-videos': N_('Top Music Videos'),
     # Translators: the Charts page's shelf of Apple's daily playlists of the hundred songs

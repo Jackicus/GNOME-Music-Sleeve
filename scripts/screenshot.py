@@ -47,7 +47,9 @@ category:ID the page of a category the demo library invented (a radio show's,
 categories/<ID>.json), as its tile does; charts:top opens the Charts
 page, as its Top Charts tile does (the demo's invented charts.json), and
 charts:GENRE on a genre's charts, as a link to them does (charts/<GENRE>.json:
-9001 to 9007);
+9001 to 9007); replay:latest opens the Replay page, as More for You's link
+does (the demo's invented replay.json), and replay:YEAR on a past year's, as its
+year menu shows it (replay/<YEAR>.json: 2025, 2024);
 room:ID, grouping:ID and multiroom:ID the page a New page's More to Explore link opens
 (the demo's invented rooms/, groupings/, multirooms/: demo.room01, demo.grouping01,
 demo.multiroom01), as the link does. An
@@ -182,7 +184,8 @@ parser.add_argument('--demo', action='store_true', help='show the demo library i
 parser.add_argument('--open', metavar='KIND:ID',
                     help='open an item (ID an item id or "first") over the page; '
                          "artist-page:ID for Apple Music's page of an artist, charts:top "
-                         'for the Charts page (charts:GENRE on a genre), room:ID, '
+                         'for the Charts page (charts:GENRE on a genre), replay:latest for '
+                         'Replay (replay:YEAR on a past year), room:ID, '
                          "grouping:ID or multiroom:ID for a More to Explore link's page")
 parser.add_argument('--sidebar', action='store_true',
                     help='in the narrow layout, show the sidebar rather than the --page')
@@ -521,6 +524,15 @@ def open_item(window):
         else:  # a genre's, as a More to Explore link to it opens them
             window.open_item(link_item({'title': 'Top Charts', 'kind': 'charts',
                                         'id': 'charts', 'genre': item_id}))
+        return
+    if kind == 'replay':
+        from applemusic.pages.replay import replay_item
+
+        window.open_item(replay_item())
+        if item_id not in ('', 'latest'):  # a past year's, as its year menu shows it
+            page = window.navigation_view.get_visible_page()
+            page.year_menu.year = item_id
+            page.start_over()
         return
     catalog = kind == 'artist-page'  # Apple Music's page of the artist, as Go to Artist opens
     if catalog:
