@@ -30,7 +30,8 @@ class ShortcutsTest(unittest.TestCase):
             self.assertIn(action, keys, action)
         for key in (shortcuts.MAIN_MENU, shortcuts.CONTEXT_MENU, shortcuts.CLOSE,
                     shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.QUEUE_REMOVE,
-                    shortcuts.MOVE_UP, shortcuts.MOVE_DOWN):
+                    shortcuts.MOVE_UP, shortcuts.MOVE_DOWN, shortcuts.VOLUME_UP,
+                    shortcuts.VOLUME_DOWN):
             self.assertIn(key, keys, key)
 
     def test_titles_and_keys(self):
@@ -61,17 +62,32 @@ class ShortcutsTest(unittest.TestCase):
                 seen[parsed] = action
         for accel in (shortcuts.MAIN_MENU, *shortcuts.CONTEXT_MENU.split(), shortcuts.CLOSE,
                       shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.QUEUE_REMOVE,
-                      shortcuts.MOVE_UP, shortcuts.MOVE_DOWN):
+                      shortcuts.MOVE_UP, shortcuts.MOVE_DOWN, shortcuts.VOLUME_UP,
+                      shortcuts.VOLUME_DOWN):
             self.assertNotIn(Gtk.accelerator_parse(accel)[1:], seen, accel)
 
     def test_the_higs_standard_keys_stay_free(self):
         """The HIG's standard shortcuts the app has no such action for are not taken by
-        another: Ctrl+N (New), Ctrl+O (Open), Ctrl+S (Save), Ctrl+P (Print), Ctrl+Z (Undo)."""
+        another: Ctrl+O (Open), Ctrl+S (Save), Ctrl+P (Print), Ctrl+Z (Undo). Ctrl+N is its
+        "New": New Playlist, as on Apple's players; Now Playing is Ctrl+Shift+N."""
         taken = {Gtk.accelerator_parse(accel)[1:]
                  for accels in shortcuts.ACCELS.values() for accel in accels}
-        for accel in ('<primary>n', '<primary>o', '<primary>s', '<primary>p', '<primary>z'):
+        for accel in ('<primary>o', '<primary>s', '<primary>p', '<primary>z'):
             self.assertNotIn(Gtk.accelerator_parse(accel)[1:], taken, accel)
+        self.assertEqual(shortcuts.ACCELS['win.new-playlist'], ('<primary>n',))
         self.assertEqual(shortcuts.ACCELS['app.now-playing'], ('<primary><shift>n',))
+
+    def test_the_volume_keys_are_not_accelerators(self):
+        """Ctrl+Up and Ctrl+Down are editing chords (a text view's paragraphs, a slider's
+        page step, a boxed list's move without selecting): the window's own
+        (keyboard.volume_step), never accelerators GTK would run before the focus."""
+        taken = {Gtk.accelerator_parse(accel)[1:]
+                 for accels in shortcuts.ACCELS.values() for accel in accels}
+        for accel in (shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN):
+            self.assertNotIn(Gtk.accelerator_parse(accel)[1:], taken, accel)
+        self.assertEqual((shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN),
+                         ('<primary>Up', '<primary>Down'))
+        self.assertEqual(shortcuts.ACCELS['win.go-to-current-song'], ('<primary>l',))
 
     def test_the_now_playing_tab_keys_are_not_accelerators(self):
         """Ctrl+Shift+U is GTK's Unicode entry in a text field: as an application

@@ -21,12 +21,15 @@ counts while a seek waits to be sent (SEEK_SETTLE after the last movement), and 
 is sent until MusicKit reports a position near the target (SEEK_TOLERANCE) or SEEK_HOLD
 passes; a seek that fails releases the guard. The volume button sends one command at a
 time and the latest level after it (a Coalescer), and ignores the echoes of older levels
-meanwhile. The repeat button cycles none → one → all → none, showing the mode it asked for
-until MusicKit confirms. The artwork is fetched at the cover size (remote.fetch_remote into
-remote-art/), so the bar, the sheet and MPRIS share one file.
+meanwhile; Ctrl+Up and Ctrl+Down (the window's keys) step its level by VOLUME_STEP
+(volume_step(), from the level the button shows, so a run of presses adds up before MusicKit
+answers) and send it the same way. The repeat button cycles none → one → all → none,
+showing the mode it asked for until MusicKit confirms. The artwork is fetched at the cover
+size (remote.fetch_remote into remote-art/), so the bar, the sheet and MPRIS share one file.
 """
 
 import logging
+import math
 import time
 from gettext import gettext as _
 
@@ -42,6 +45,24 @@ log = logging.getLogger(__name__)
 SEEK_SETTLE = 0.25       # seconds after the last slider movement before the seek is sent
 SEEK_HOLD = 1.5          # seconds after a seek during which stale positions are ignored
 SEEK_TOLERANCE = 2.0     # a reported position this close to the seek's target is the seek's
+VOLUME_STEP = 0.1        # a volume key's step: ten from silence to full
+
+
+def volume_step(level, step):
+    """The level a volume key moves `level` (0 to 1) to, `step` 1 up or -1 down: the next
+    multiple of VOLUME_STEP that way (0.73 goes to 0.8 or 0.7), within 0 and 1."""
+    steps = level / VOLUME_STEP
+    if abs(steps - round(steps)) < 0.01:  # on a step already (0.7, give or take a rounding)
+        steps = round(steps)
+    target = math.floor(steps) + 1 if step > 0 else math.ceil(steps) - 1
+    return min(1.0, max(0.0, round(target * VOLUME_STEP, 2)))
+
+
+def volume_text(level):
+    """What a screen reader hears as a volume key sets the level (0 to 1): "Volume 70%"."""
+    # Translators: announced as the volume keys change the volume; {percent} is a whole
+    # number ("70").
+    return _('Volume {percent}%').format(percent=round(level * 100))
 
 
 class SeekGuard:
@@ -412,6 +433,13 @@ class VolumeControl:
             self.adjustment.set_value(volume)
         finally:
             self._syncing = False
+
+    def step(self, step):
+        """A volume key: the level shown a step up (1) or down (-1), volume_step(), sent
+        as a move of the slider is. The new level."""
+        level = volume_step(self.adjustment.get_value(), step)
+        self.button.set_value(level)
+        return level
 
     def _on_changed(self, _button, value):
         if self._syncing or self._player is None:

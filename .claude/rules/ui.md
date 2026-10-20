@@ -166,8 +166,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   leaves them out, only logged. Tab from a track enters the shelves, Shift+Tab from the first
   goes back to the last track (`_on_list_key_pressed`, as for a playlist's suggestions).
 - The window's keyed actions (`win.back`, `win.search`, `win.focus-*`,
-  `win.fullscreen-player`, and `win.show-lyrics` and `win.show-queue` through
-  `TabActions.set_free()`) are disabled while a dialog is open over the window
+  `win.fullscreen-player`, `win.new-playlist`, `win.go-to-current-song`, and
+  `win.show-lyrics` and `win.show-queue` through `TabActions.set_free()`) are disabled while a dialog is open over the window
   (`Window._update_actions`); add a new keyed window action there. `Window._close_sheet()`
   uncovers the pages (the full-screen player left, the sheet closed): anything that shows a
   page or moves the focus into them calls it.
@@ -229,10 +229,13 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `CONTEXT_MENU`, the sidebar's `FOLDER_OPEN` and `FOLDER_CLOSE` (sidebar_view.py binds
   them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it), a playlist page's `MOVE_UP`
   and `MOVE_DOWN` (Alt+Up, Alt+Down on the focused song: `keyboard.move_step()`, asked by the
-  page's own key controller) and `sections()` (the Keyboard Shortcuts dialog);
-  tests/test_shortcuts.py checks that the dialog lists every key, and that no accelerator is
-  a HIG standard one the app does not implement (Ctrl+N is "New"). `src/keyboard.py` decides which action a key runs
-  (`playback_action()`, `tab_action()`; tests/test_keyboard.py): Space belongs to a focused
-  button, switch, check box or boxed-list row (GTK's own binding presses it), and every key
-  to an entry, a popover or a dialog; `context_menu.MENU_KEYS` is built from
+  page's own key controller), the window's `VOLUME_UP` and `VOLUME_DOWN` (Ctrl+Up, Ctrl+Down:
+  `keyboard.volume_step()`, the bar's volume button stepped and announced) and `sections()`
+  (the Keyboard Shortcuts dialog); tests/test_shortcuts.py checks that the dialog lists every
+  key, and that no accelerator is a HIG standard one the app does not implement (Ctrl+N is
+  "New": New Playlist). `src/keyboard.py` decides which action a key runs
+  (`playback_action()`, `tab_action()`, `volume_step()`; tests/test_keyboard.py): Space
+  belongs to a focused button, switch, check box or boxed-list row (GTK's own binding presses
+  it), Ctrl+Up and Ctrl+Down to a slider or a boxed-list row (the sidebar's move without
+  selecting), and every key to an entry, a popover or a dialog; `context_menu.MENU_KEYS` is built from
   `shortcuts.CONTEXT_MENU`.

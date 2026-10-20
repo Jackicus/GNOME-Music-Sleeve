@@ -475,6 +475,85 @@ async def moving_songs(window):
     check('Escape closes it', not any(each.get_visible() for each in shown))
 
 
+async def playing_keys(window):
+    """Step 13: Go to Current Song (Ctrl+L) from a page, Now Playing and the full-screen
+    player, the focus on the song's row each time; the volume keys (Ctrl+Up, Ctrl+Down) on
+    a list's row and a button, announced, and not on a sidebar row or the seek slider."""
+    from applemusic.widgets import context_menu
+
+    state = harness.invented_playing_state(app)
+    items = state['queue']['items']
+    at = min(6, len(items) - 1)  # a song down the album, so the list has to scroll to it
+    state['track'], state['queue']['index'] = items[at], at
+    app.player.apply(state)
+    await asyncio.sleep(0.3)
+    album = app.library.albums.get_item(0)
+    before = window.navigation_view.get_visible_page()
+    levels, said = [], []
+
+    def set_volume(level):  # the demo has no engine: MusicKit's answer, at once
+        levels.append(level)
+        app.player._set_volume(level)
+        return asyncio.sleep(0)
+
+    app.player.set_volume = set_volume
+    window.announce = lambda text, _priority: said.append(text)
+
+    def on_song_row():
+        page = window.navigation_view.get_visible_page()
+        view = getattr(page, 'list_view', None)
+        found = (context_menu.find(view, window.get_focus())
+                 if view is not None and window.get_focus() is not None else None)
+        return (getattr(page, 'item', None) is album and found is not None
+                and found[1].id == items[at]['id'])
+
+    await key(window, '<primary>1', 0.6)
+    shown = window.shown
+    await key(window, '<primary>Down', 0.4)
+    check("Ctrl+Down on a sidebar row is the row's (the focus moves, nothing selected), not "
+          'the volume', not levels and window.shown == shown, (levels, window.shown))
+    await key(window, '<primary>l', 0.8)
+    await until(on_song_row)
+    check("Ctrl+L opens the album playing with the focus on the song's row", on_song_row(),
+          describe(window.get_focus()))
+    row = window.get_focus()
+    await key(window, '<primary>Up', 0.3)
+    check('Ctrl+Up on a row turns the volume up a step, announced',
+          levels == [0.8] and said[-1:] == ['Volume 80%'] and window.get_focus() is row,
+          (levels, said))
+    await key(window, '<primary>Down', 0.3)
+    await key(window, '<primary>KP_Down', 0.3)
+    check('Ctrl+Down twice turns it down two', levels == [0.8, 0.7, 0.6]
+          and said[-1:] == ['Volume 60%'], (levels, said))
+    await key(window, '<primary><shift>n', 0.8)
+    check('Ctrl+Shift+N opens Now Playing', window.bottom_sheet.get_open())
+    await key(window, '<primary>l', 0.8)
+    await until(lambda: not window.bottom_sheet.get_open() and on_song_row())
+    check("Ctrl+L there closes it, the focus on the song's row",
+          not window.bottom_sheet.get_open() and on_song_row(), describe(window.get_focus()))
+    await key(window, 'F11', 0.8)
+    check('F11 shows the full-screen player', window.fullscreen_host.shown)
+    await key(window, '<primary>l', 0.8)
+    await until(lambda: not window.fullscreen_host.shown and on_song_row())
+    check("Ctrl+L there leaves it, the focus on the song's row",
+          not window.fullscreen_host.shown and on_song_row(), describe(window.get_focus()))
+    await key(window, '<primary>3')
+    await key(window, '<primary>Up', 0.3)
+    check('Ctrl+Up on the play button turns the volume up',
+          levels[-1:] == [0.7] and window.get_focus() is window.player_bar.play_button, levels)
+    window.player_bar.seek_scale.grab_focus()
+    await key(window, '<primary>Up', 0.3)
+    check("Ctrl+Up on the seek slider is the slider's", len(levels) == 4, levels)
+    del app.player.set_volume
+    del window.announce
+    if window.navigation_view.get_visible_page() is not before:
+        window.navigation_view.pop_to_page(before)
+        await asyncio.sleep(0.6)
+    app.player.apply(harness.invented_playing_state(app, lyrics=True))
+    await asyncio.sleep(0.3)
+    await key(window, '<primary>3')
+
+
 async def walkthrough(window):
     narrow = window.split_view.get_collapsed()
     print('-- sidebar')
@@ -707,6 +786,8 @@ async def walkthrough(window):
     check('Escape closes it, the focus back on the play button',
           not any(each.get_visible() for each in popover)
           and window.get_focus() is window.player_bar.play_button, describe(window.get_focus()))
+    print('-- Go to Current Song, the volume keys')
+    await playing_keys(window)
     app.player.apply(None)  # the music stops: the bar goes, with the focus on it
     await until(lambda: not window.player_bar.get_mapped())
     check('the item going hides the bar and moves the focus into the page',
@@ -825,6 +906,16 @@ async def walkthrough(window):
     check("Ctrl+Shift+U in the entry is the entry's (Unicode entry), not Up Next",
           window.lookup_action('show-queue').get_enabled() and not window.bottom_sheet.get_open()
           and inside(window.get_focus(), search.search_entry), describe(window.get_focus()))
+    levels = []
+    restore = watch('set_volume', levels)
+    await key(window, '<primary>Up', 0.3)
+    restore()
+    # Not the volume; GTK's own (the window's move-focus) may take the focus up out of it.
+    check('Ctrl+Up in the entry leaves the volume alone',
+          app.player.track is not None and not levels,
+          (levels, app.player.track, describe(window.get_focus())))
+    search.search_entry.grab_focus()
+    await asyncio.sleep(0.2)
     await key(window, 'Tab')
     check("Tab from the entry reaches Apple Music's filter",
           inside(window.get_focus(), search.kind_dropdown), describe(window.get_focus()))
@@ -1211,6 +1302,18 @@ async def walkthrough(window):
         await until(lambda: dialog_shown(window, NameDialog) is None)
         check('Escape closes it, nothing renamed',
               dialog_shown(window, NameDialog) is None and playlist.title != 'Invented Name')
+    await until(window.is_active)  # the keyboard back on the window, the dialog gone
+    await key(window, '<primary>n', 0.8)
+    await until(lambda: dialog_shown(window, NameDialog) is not None)
+    shown = dialog_shown(window, NameDialog)
+    check('Ctrl+N opens New Playlist, the name with the focus',
+          shown is not None and shown.get_heading() == 'New Playlist'
+          and inside(shown.get_root().get_focus(), shown.name_row),
+          describe(shown.get_root().get_focus()) if shown is not None else None)
+    if shown is not None:
+        await key(shown.get_root(), 'Escape', 0)
+    await until(lambda: dialog_shown(window, NameDialog) is None)
+    check('Escape closes it', dialog_shown(window, NameDialog) is None)
     print('-- the confirmation before Remove from Library')
     album = app.library.albums.get_item(0)
     window.activate_action('win.item-remove-from-library',
@@ -1240,23 +1343,30 @@ async def walkthrough(window):
           dialog is not None and window.get_visible_dialog() is dialog)
     if dialog is not None:
         on = [name for name in ('back', 'search', 'focus-sidebar', 'focus-content',
-                                'focus-player', 'show-lyrics', 'show-queue')
+                                'focus-player', 'show-lyrics', 'show-queue', 'new-playlist',
+                                'go-to-current-song')
               if window.lookup_action(name).get_enabled()]
         check("the window's keyed actions are off", not on, on)
         before = (window.shown, window.navigation_view.get_visible_page())
         actions = []
         handler = app.lookup_action('play-pause').connect(
             'activate', lambda action, _parameter: actions.append(action.get_name()))
+        levels = []
+        restore = watch('set_volume', levels)
         for accel in ('<alt>Left', '<primary>f', '<primary>1', '<primary>2', '<primary>3',
-                      '<primary><shift>n', '<primary><shift>l', '<primary><shift>u', 'space'):
+                      '<primary><shift>n', '<primary><shift>l', '<primary><shift>u', 'space',
+                      '<primary>n', '<primary>l', '<primary>Up'):
             await key(window, accel, 0.3)
+        restore()
         app.lookup_action('play-pause').disconnect(handler)
         after = (window.shown, window.navigation_view.get_visible_page())
-        check('Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N, L and U and Space leave the page '
-              'alone',
+        check('Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N, L and U, Space, Ctrl+N, Ctrl+L '
+              'and Ctrl+Up leave the page alone',
               after == before and not window.bottom_sheet.get_open() and not actions
+              and not levels and window.get_visible_dialog() is dialog
               and inside(window.get_focus(), dialog),
-              (after[0], window.bottom_sheet.get_open(), actions, describe(window.get_focus())))
+              (after[0], window.bottom_sheet.get_open(), actions, levels,
+               describe(window.get_focus())))
         await key(window, 'Escape', 0)
         await until(lambda: app._preferences is None)
         check('Escape closes it', app._preferences is None)

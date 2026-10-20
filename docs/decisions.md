@@ -117,8 +117,17 @@ changes, change it here, with the date. The plan they came from is in
   Apple's. All Playlists offers no other order.
 - **Keys as GNOME has them** (2026-09-28). Space presses a focused button, switch, check box or
   list row, as everywhere in GTK; it plays or pauses only on a tile, a list item, the seek
-  slider or nothing. Now Playing is Ctrl+Shift+N, leaving Ctrl+N to the HIG's "New". Bare keys
-  and editing chords are never application accelerators (`src/keyboard.py` decides them).
+  slider or nothing. Now Playing is Ctrl+Shift+N, leaving Ctrl+N to the HIG's "New", which
+  is New Playlist (as on Apple's players). Bare keys and editing chords are never
+  application accelerators (`src/keyboard.py` decides them).
+- **Apple's playback keys, GNOME's terms** (2026-10-20). Go to Current Song is Ctrl+L, as on
+  Apple's players: the album or playlist of the library's the queue came from, else the
+  song's album, the focus on the song's row, from Now Playing and the full-screen player too
+  (they close). The volume is Ctrl+Up and Ctrl+Down, a tenth a press, announced, and the
+  window's own key (`keyboard.volume_step()`): they are editing chords, a text view's
+  paragraph keys, a slider's page step and, on the sidebar's rows, the move of the focus
+  without selecting, all left to those. The grids and lists select nothing, so there the
+  keys move the focus only as Up and Down do, and they take the volume.
 - **Lyrics and Up Next in the bar** (2026-10-20). Two toggle buttons at the bar's right, as
   Apple's players have them, open Now Playing on that tab and close it when it shows that
   tab; pressed while their tab is in sight, Lyrics off for a song without lyrics. Their keys

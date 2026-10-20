@@ -10,10 +10,11 @@ TAB_KEYS and MAIN_MENU into the window's F10, widgets/context_menu.py binds CONT
 and sidebar_view.py binds FOLDER_OPEN and FOLDER_CLOSE on the sidebar (keys for the focused
 row, only with the focus in the sidebar), as widgets/queue.py binds QUEUE_REMOVE on Up Next's
 list; a playlist's page runs MOVE_UP and MOVE_DOWN on its focused song (keyboard.move_step():
-Alt+Up and Alt+Down, as GNOME Text Editor moves a line). tests/test_shortcuts.py checks that
-the dialog lists every one of them. Keys that are none of
-these are listed as they are: Escape (the dialogs', the Now Playing sheet's, the full-screen
-player's), under General with the other keys that act on windows.
+Alt+Up and Alt+Down, as GNOME Text Editor moves a line), and keyboard.py parses VOLUME_UP and
+VOLUME_DOWN into its VOLUME_KEYS, the window's too. tests/test_shortcuts.py checks that the
+dialog lists every one of them. Keys that are none of these are listed as they are: Escape
+(the dialogs', the Now Playing sheet's, the full-screen player's), under General with the
+other keys that act on windows.
 
 F11 is the one accelerator without a modifier: a function key, which no GTK widget takes for
 its own, the HIG's Fullscreen key, set as an accelerator by GNOME's own apps; the window's
@@ -21,8 +22,12 @@ action does nothing while nothing plays (it is disabled).
 
 The playback keys are not accelerators: GTK 4 runs application accelerators in the window's
 capture phase, before the focus widget, so a bare Space would fire while typing in an entry
-and Ctrl+Left would skip a track instead of a word (see keyboard.playback_action). The
-accelerators keep off the HIG's standard ones the app has no use for (Ctrl+N is "New").
+and Ctrl+Left would skip a track instead of a word (see keyboard.playback_action). Nor are
+the volume keys (Ctrl+Up, Ctrl+Down: a text view's paragraph keys, a slider's page step, a
+boxed list's or the sidebar's way to move the focus without selecting; keyboard.volume_step).
+The accelerators keep off the HIG's standard ones the app has no use for, and Ctrl+N is the
+HIG's "New" here: New Playlist. Ctrl+L is Go to Current Song, as on Apple's players (no
+text field of GTK's has a Ctrl+L).
 Nor are the keys that open Now Playing on its Lyrics or Up Next tab (NOW_PLAYING_TABS):
 Ctrl+Shift+U is GTK's Unicode entry in a text field, so the window's key controller runs
 them only while the focus is not typed into (keyboard.tab_action), and Ctrl+Shift+L goes
@@ -38,6 +43,8 @@ ACCELS = {
     'app.preferences': ('<primary>comma',),
     'app.sync': ('<primary>r',),
     'app.now-playing': ('<primary><shift>n',),
+    'win.new-playlist': ('<primary>n',),
+    'win.go-to-current-song': ('<primary>l',),
     'window.close': ('<primary>w',),
     'win.back': ('<alt>Left',),
     'win.search': ('<primary>f',),
@@ -73,6 +80,10 @@ QUEUE_REMOVE = 'Delete'
 # On a focused song of a playlist of the user's: move it up or down one place.
 MOVE_UP = '<alt>Up'
 MOVE_DOWN = '<alt>Down'
+# Anywhere in the window while something plays (keyboard.volume_step): the volume up or down
+# a step (widgets/transport.VOLUME_STEP), announced.
+VOLUME_UP = '<primary>Up'
+VOLUME_DOWN = '<primary>Down'
 
 
 def accelerator(key):
@@ -103,6 +114,7 @@ def sections():
         ]),
         (_('Navigation'), [
             (_('Search or Filter'), 'win.search'),
+            (_('Go to Current Song'), 'win.go-to-current-song'),
             (_('Go Back'), 'win.back'),
             (_('Focus the Sidebar'), 'win.focus-sidebar'),
             (_('Focus the Page'), 'win.focus-content'),
@@ -115,6 +127,8 @@ def sections():
             (_('Play or Pause'), 'play-pause'),
             (_('Next'), 'next'),
             (_('Previous'), 'previous'),
+            (_('Volume Up'), VOLUME_UP),
+            (_('Volume Down'), VOLUME_DOWN),
             (_('Show or Hide Now Playing'), 'app.now-playing'),
             (_('Show or Hide Lyrics'), 'show-lyrics'),
             (_('Show or Hide Up Next'), 'show-queue'),
@@ -122,6 +136,7 @@ def sections():
             (_('Fullscreen Player'), 'win.fullscreen-player'),
         ]),
         (_('Playlists'), [
+            (_('New Playlist'), 'win.new-playlist'),
             (_('Move Song Up'), MOVE_UP),
             (_('Move Song Down'), MOVE_DOWN),
         ]),

@@ -13,6 +13,8 @@ song, a music video or an album is by.
     from_answer(library, answer, kind, name)   the Item to open from related()'s answer
     shows(here, obj, kind)            whether the page showing `here` is obj's album or artist
     same_page(here, item)             whether `item` is the page showing `here`
+    playing_from(library, source)     the library's album or playlist a queue came from
+                                      (Player.source): where Go to Current Song goes first
 
 For an album the library answers first, at once and without the engine (the demo's only
 answer): the album a track's group plays (an album page's, the Songs page's), else one of the
@@ -289,3 +291,14 @@ def same_page(here, target):
     if here is target or (here.id and here.id == target.id):
         return True
     return here.kind == 'artist' and is_artist(here, target.title)
+
+
+def playing_from(library, source):
+    """The library's album or playlist Item a queue came from (Player.source, {kind, id}),
+    which Go to Current Song opens; None for a station's queue (a station has no page: it
+    plays), a queue of its own (no source) or a source the library does not hold, where it
+    goes to the song's album instead."""
+    if not isinstance(source, dict) or source.get('kind') not in ('album', 'playlist'):
+        return None
+    item_id = source.get('id')
+    return library.by_id(source['kind'], str(item_id)) if item_id else None

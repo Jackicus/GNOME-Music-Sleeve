@@ -135,6 +135,51 @@ class MoveStepTest(unittest.TestCase):
         self.assertIsNone(self.step(shortcuts.MOVE_DOWN, in_popover=True))
 
 
+class VolumeStepTest(unittest.TestCase):
+    """Ctrl+Up and Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN): the volume a step, except
+    where the keys are the focused widget's own."""
+
+    def step(self, accel, focus_type=NO_FOCUS, dialog_open=False, in_popover=False):
+        _ok, keyval, mods = Gtk.accelerator_parse(accel)
+        return keyboard.volume_step(keyval, mods, focus_type, dialog_open, in_popover)
+
+    def test_the_keys(self):
+        self.assertEqual(self.step(shortcuts.VOLUME_UP), 1)
+        self.assertEqual(self.step(shortcuts.VOLUME_DOWN), -1)
+        self.assertEqual(self.step('<primary>KP_Up'), 1)
+        self.assertEqual(self.step('<primary>KP_Down'), -1)
+        for other in ('Up', 'Down', '<alt>Up', '<primary><shift>Up', '<primary>Right',
+                      '<primary>Page_Up'):
+            self.assertIsNone(self.step(other), other)
+
+    def test_a_grid_s_tile_a_list_s_row_or_a_button_lets_them_go(self):
+        # The grids and lists select nothing: there Ctrl+Up and Ctrl+Down only move the
+        # focus as Up and Down do.
+        for focus_type in (NO_FOCUS, ListItemWidget, Gtk.Button, Gtk.ToggleButton,
+                           Gtk.ScaleButton, Gtk.ListView, Gtk.GridView, Gtk.Widget):
+            with self.subTest(focus=focus_type.__name__):
+                self.assertEqual(self.step(shortcuts.VOLUME_UP, focus_type), 1)
+
+    def test_typing_a_slider_or_a_boxed_list_keeps_them(self):
+        # A text view's paragraph keys, a slider's page step (the seek slider), a boxed
+        # list's (the sidebar's) move of the focus without selecting.
+        for focus_type in (Gtk.Text, Gtk.Entry, Gtk.SearchEntry, Gtk.TextView, Gtk.Scale,
+                           Gtk.Range, Gtk.ListBoxRow):
+            with self.subTest(focus=focus_type.__name__):
+                self.assertIsNone(self.step(shortcuts.VOLUME_UP, focus_type))
+                self.assertIsNone(self.step(shortcuts.VOLUME_DOWN, focus_type))
+
+    def test_a_dialog_or_a_menu_keeps_them(self):
+        self.assertIsNone(self.step(shortcuts.VOLUME_UP, dialog_open=True))
+        self.assertIsNone(self.step(shortcuts.VOLUME_DOWN, in_popover=True))
+
+    def test_not_playback_tab_or_move_keys(self):
+        self.assertIsNone(route(shortcuts.VOLUME_UP))
+        self.assertIsNone(tab_route(shortcuts.VOLUME_DOWN))
+        _ok, keyval, mods = Gtk.accelerator_parse(shortcuts.VOLUME_UP)
+        self.assertIsNone(keyboard.move_step(keyval, mods, ListItemWidget, False, False))
+
+
 class KeysTest(unittest.TestCase):
     def test_the_playback_keys_are_the_shortcuts_tables(self):
         names = set(keyboard.PLAYBACK_KEYS.values())
@@ -150,6 +195,11 @@ class KeysTest(unittest.TestCase):
             for accel in accels:
                 _ok, keyval, mods = Gtk.accelerator_parse(accel)
                 self.assertEqual(keyboard.TAB_KEYS[(keyval, int(mods))], action)
+
+    def test_the_volume_keys_are_the_shortcuts_tables(self):
+        for accel, step in ((shortcuts.VOLUME_UP, 1), (shortcuts.VOLUME_DOWN, -1)):
+            _ok, keyval, mods = Gtk.accelerator_parse(accel)
+            self.assertEqual(keyboard.VOLUME_KEYS[(keyval, int(mods))], step)
 
     def test_the_main_menu_key(self):
         self.assertTrue(keyboard.is_main_menu(Gdk.KEY_F10, 0))
