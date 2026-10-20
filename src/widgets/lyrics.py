@@ -44,7 +44,7 @@ current row changes (a line, a break beginning or ending: lyrics.moment_at()): s
 brings the row on screen, and once the list's geometry has held still for a frame (a tick
 callback: the sheet's opening lays the list out over a few frames, and a break's dots a few
 more) the row glides to the middle of the view; before the first line it glides back to the
-top. Not while the list is the user's: scrolled by wheel, touch or scrollbar in the last
+top. Not while the list is the user's: scrolled by wheel, touchpad or touch in the last
 USER_SCROLL_PAUSE seconds, or with the focus on a line (a click or Enter on a line seeks
 there and hands the list back). What is current is found at the Player's
 estimated_position() (MusicKit reports whole seconds; the lines start at milliseconds), on
@@ -54,6 +54,16 @@ highlight moves as the line begins rather than up to a second after: the one clo
 step by.
 A duet's margins follow the list's width (its horizontal adjustment's page), set again on
 the rows bound when it changes, from an idle (not inside the list's allocation).
+
+Neither the list nor the text shows a scrollbar (EXTERNAL: they still scroll by wheel,
+touchpad, touch and keyboard); instead the view's top and bottom edges fade out, as Apple's
+own view does: the view draws its page through an alpha mask (do_snapshot), not a CSS
+gradient laid over it, so the lines fade into whatever is behind them, the sheet or the
+full-screen player's artwork-coloured backdrop. Each edge fades as far as the text goes on
+past it (edge_fades()), so the first line is whole at the top and the last at the end. In
+high contrast the edges stay hard, with the line libadwaita draws at a scrolled edge there
+(the view is `faded-edges` otherwise, which style.css takes that line away from). The mask
+is drawn again with each frame the view draws, a sweep's included.
 
 A word-timed line (Apple's syllable lyrics: lyrics.LyricLine.timed) lights its pieces as
 they are sung, on the current row only, as Apple's own view does: its main vocals, its
@@ -75,6 +85,7 @@ or a click on a line, takes them back. Word-timed rows carry `timed`: they becom
 without the box's fade, which would dim their unsung words further for a moment.
 """
 
+import functools
 import logging
 import time
 from collections import namedtuple
@@ -86,6 +97,9 @@ from .. import lyrics as lyrics_model
 
 log = logging.getLogger(__name__)
 
+FADE_HEIGHT = 64           # px: how far the view's top and bottom edges fade in...
+FADE_SHARE = 0.2           # ...or this share of its height, if less (a short view)
+FADE_STOPS = 6             # colour stops along each fade's curve
 USER_SCROLL_PAUSE = 4.0    # seconds after the user scrolls before the list follows again
 CENTRE_DURATION = 300      # ms, the glide bringing the current line to the middle
 SETTLE_FRAMES = 40         # frames to wait for the row's geometry to hold still, at most
@@ -164,11 +178,14 @@ class LyricsView(Gtk.Stack):
         self.list_view.add_css_class('lyrics-list')
         self.list_view.update_property([Gtk.AccessibleProperty.LABEL], [_('Lyrics')])
         self.list_view.connect('activate', self._on_activate)
+        # No scrollbar (EXTERNAL: none shown, the list still scrolls by wheel, touchpad,
+        # touch and keyboard): the faded edges say there is more.
         self.scrolled = Gtk.ScrolledWindow(child=self.list_view,
-                                           hscrollbar_policy=Gtk.PolicyType.NEVER)
+                                           hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                           vscrollbar_policy=Gtk.PolicyType.EXTERNAL)
         # The user scrolling the list, by any means, pauses the following: the wheel or a
-        # touchpad, a finger dragging the list, the scrollbar dragged, and the keyboard
-        # moving between lines (while the focus is on one, the list is the user's).
+        # touchpad, a finger dragging the list, and the keyboard moving between lines
+        # (while the focus is on one, the list is the user's).
         scroll = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.VERTICAL,
                                            propagation_phase=Gtk.PropagationPhase.CAPTURE)
         scroll.connect('scroll', self._on_user_scroll)
@@ -177,9 +194,6 @@ class LyricsView(Gtk.Stack):
                                 touch_only=True)
         touch.connect('drag-begin', self._on_user_drag)
         self.scrolled.add_controller(touch)
-        scrollbar = Gtk.GestureDrag(propagation_phase=Gtk.PropagationPhase.CAPTURE)
-        scrollbar.connect('drag-begin', self._on_user_drag)
-        self.scrolled.get_vscrollbar().add_controller(scrollbar)
         focus = Gtk.EventControllerFocus()
         focus.connect('enter', self._on_focus_enter)
         focus.connect('leave', self._on_focus_leave)
@@ -198,18 +212,21 @@ class LyricsView(Gtk.Stack):
         self.text_label.add_css_class('lyrics-text')
         self.text_label.update_property([Gtk.AccessibleProperty.LABEL], [_('Lyrics')])
         self.text_scrolled = Gtk.ScrolledWindow(child=self.text_label,
-                                                hscrollbar_policy=Gtk.PolicyType.NEVER)
+                                                hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                                vscrollbar_policy=Gtk.PolicyType.EXTERNAL)
         self.add_named(self.text_scrolled, 'text')
 
         # Word-timed lines sweep with animations on, light whole pieces with them off; the
-        # unsung text follows the high-contrast setting's dimming.
+        # unsung text follows the high-contrast setting's dimming, and the edges' fade its
+        # hard edges.
         settings = Gtk.Settings.get_default()
         if settings is not None:
             self._sweep = settings.get_property('gtk-enable-animations')
             settings.connect('notify::gtk-enable-animations',
                              lambda *_: self._on_animations_changed())
         Adw.StyleManager.get_default().connect('notify::high-contrast',
-                                               lambda *_: self._redraw_current())
+                                               lambda *_: self._on_high_contrast())
+        self._on_high_contrast()
 
     def set_player(self, player, app):
         self._player = player
@@ -234,6 +251,41 @@ class LyricsView(Gtk.Stack):
             self._disarm_next_change()
             self._stop_sweep()
             self._paint(self._current)     # a break's dots stop breathing while hidden
+
+    # -- the faded edges ---------------------------------------------------------------
+
+    def do_snapshot(self, snapshot):
+        """The page drawn through an alpha mask that fades its top and bottom edges out
+        (edge_fades()), so the lines scroll away softly over whatever is behind the view
+        (the sheet, the full-screen player's backdrop) rather than being cut."""
+        page = self.get_visible_child()
+        scrolled = page if page is self.scrolled or page is self.text_scrolled else None
+        fades = None
+        if scrolled is not None:
+            adjustment = scrolled.get_vadjustment()
+            fades = edge_fades(adjustment.get_value(), adjustment.get_lower(),
+                               adjustment.get_upper(), adjustment.get_page_size(),
+                               self.get_height(),
+                               high_contrast=not self.has_css_class('faded-edges'))
+        if fades is None:
+            Gtk.Stack.do_snapshot(self, snapshot)
+            return
+        snapshot.push_mask(Gsk.MaskMode.ALPHA)
+        _append_fade_mask(snapshot, self.get_width(), self.get_height(), fades)
+        snapshot.pop()
+        Gtk.Stack.do_snapshot(self, snapshot)
+        snapshot.pop()
+
+    def _on_high_contrast(self):
+        """The unsung text's dimming and the edges follow the high-contrast setting: faded
+        (`faded-edges`: no line drawn at a scrolled edge, style.css) or, in high contrast,
+        hard, with libadwaita's line."""
+        if Adw.StyleManager.get_default().get_high_contrast():
+            self.remove_css_class('faded-edges')
+        else:
+            self.add_css_class('faded-edges')
+        self._redraw_current()
+        self.queue_draw()
 
     # -- the lyrics --------------------------------------------------------------------
 
@@ -905,6 +957,65 @@ def _append_mask(snapshot, segments, sung, unsung, x, y, width, height):
             Graphene.Rect().init(x + left, y + top, abs(end - start) + 1, tall),
             Graphene.Point().init(x + start, y + top), Graphene.Point().init(x + end, y + top),
             stops)
+
+
+Fades = namedtuple('Fades', 'band top bottom')
+
+
+def edge_fades(value, lower, upper, page, height, high_contrast=False):
+    """How the lyrics view's edges fade, from its page's vertical adjustment and its height:
+    a Fades of the band each edge fades in (FADE_HEIGHT, or FADE_SHARE of the height if
+    less) and how far the top and the bottom edges fade out, 0 (not at all) to 1 (to
+    nothing at the very edge), each as far as the text goes on past that edge, up to a band:
+    at the top of the lyrics their first line is whole, at the end their last. None for no
+    fade: nothing past either edge, or high contrast, which keeps the hard edges and the
+    line libadwaita draws at a scrolled edge there."""
+    if high_contrast or height <= 0:
+        return None
+    band = min(FADE_HEIGHT, height * FADE_SHARE)
+    if band < 1:
+        return None
+    top = min(max(value - lower, 0.0) / band, 1.0)
+    bottom = min(max(upper - page - value, 0.0) / band, 1.0)
+    if top <= 0 and bottom <= 0:
+        return None
+    return Fades(band, top, bottom)
+
+
+def _append_fade_mask(snapshot, width, height, fades):
+    """The lyrics view's alpha mask: opaque, but for its edges' bands, which go from
+    opaque to what edge_fades() says at each edge. The opaque middle reaches a pixel into
+    each band (opaque there too), so no seam shows where they meet off the pixel grid."""
+    band, top, bottom = fades
+    middle_top = band - 1 if top > 0 else 0
+    middle_bottom = height - band + 1 if bottom > 0 else height
+    snapshot.append_color(_OPAQUE, Graphene.Rect().init(0, middle_top, width,
+                                                         middle_bottom - middle_top))
+    if top > 0:
+        snapshot.append_linear_gradient(
+            Graphene.Rect().init(0, 0, width, band), Graphene.Point().init(0, 0),
+            Graphene.Point().init(0, band), list(_fade_stops(top)))
+    if bottom > 0:
+        snapshot.append_linear_gradient(
+            Graphene.Rect().init(0, height - band, width, band),
+            Graphene.Point().init(0, height), Graphene.Point().init(0, height - band),
+            list(_fade_stops(bottom)))
+
+
+@functools.lru_cache(maxsize=8)
+def _fade_stops(strength):
+    """A fade's colour stops from its edge (1 - `strength` opaque) to opaque, along a
+    smoothstep: the alpha rises slowly from the edge, so no glyph looks cut off there, and
+    levels out into the opaque middle with no line where the two meet. Kept for a few
+    strengths (mostly 1: the text goes on well past the edge)."""
+    stops = []
+    for step in range(FADE_STOPS):
+        offset = step / (FADE_STOPS - 1)
+        stop = Gsk.ColorStop()
+        stop.offset = offset
+        stop.color = _rgba(1 - strength * (1 - offset * offset * (3 - 2 * offset)))
+        stops.append(stop)
+    return tuple(stops)
 
 
 # Where a row's box goes for each side of a duet (lyrics.side(); '' for the lines of a song

@@ -360,6 +360,14 @@ button.release-card {
   padding: 0;
 }
 
+/* The lyrics' top and bottom edges fade out (widgets/lyrics.py draws the view through a
+   mask), so the line libadwaita draws at a scrolled edge is not drawn there; in high
+   contrast the edges stay hard and keep it (the view is not `faded-edges`). */
+.lyrics-view.faded-edges > scrolledwindow > undershoot {
+  background: none;
+  box-shadow: none;
+}
+
 /* No padding on the list itself: GTK scrolls a list's CSS padding with its rows, so the
    adjustment's page would be the content box while the eye sees the padding box too, and
    the sheet's centring of the current line works from that page. */

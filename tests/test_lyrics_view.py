@@ -666,6 +666,84 @@ class LyricsViewTest(unittest.TestCase):
         self.assertEqual(self.view.text_label.get_text(),
                          '潮\nTide\n(潮)\n(tide)\n(Oh oh)\n風')
 
+    def test_no_scrollbar_but_the_lines_still_scroll(self):
+        """Neither page shows a scrollbar (EXTERNAL, not NEVER: the list is still taller
+        than its page, so the wheel, touch and the keyboard scroll it)."""
+        from gi.repository import Gtk
+
+        for scrolled in (self.view.scrolled, self.view.text_scrolled):
+            self.assertEqual(scrolled.get_policy(),
+                             (Gtk.PolicyType.NEVER, Gtk.PolicyType.EXTERNAL))
+        self.play(fixture('lyrics_syllable.json'))
+        adjustment = self.view.scrolled.get_vadjustment()
+        self.assertTrue(wait_for(lambda: adjustment.get_upper()
+                                 > adjustment.get_page_size() > 0))
+        self.assertFalse(self.view.scrolled.get_vscrollbar().get_mapped())
+
+    def test_the_edges_fade_through_a_mask(self):
+        """Lines past an edge: the view draws through a mask; none in high contrast (the
+        view not `faded-edges`), nor with nothing to scroll."""
+        from gi.repository import Gtk
+
+        def node_type():
+            snapshot = Gtk.Snapshot()
+            type(self.view).do_snapshot(self.view, snapshot)
+            node = snapshot.to_node()
+            return type(node).__name__ if node is not None else None
+
+        self.assertTrue(self.view.has_css_class('faded-edges'))
+        self.play({'synced': False, 'lines': [{'text': '潮'}]})
+        self.assertEqual(self.view.get_visible_child_name(), 'text')
+        self.assertTrue(wait_for(lambda: self.view.text_scrolled.get_height() > 0))
+        self.assertNotEqual(node_type(), 'MaskNode')
+        self.play(fixture('lyrics_syllable.json'))
+        adjustment = self.view.scrolled.get_vadjustment()
+        self.assertTrue(wait_for(lambda: adjustment.get_upper()
+                                 > adjustment.get_page_size() > 0))
+        self.assertEqual(node_type(), 'MaskNode')
+        self.view.remove_css_class('faded-edges')
+        self.assertNotEqual(node_type(), 'MaskNode')
+
+
+@requires_gtk
+class EdgeFadesTest(unittest.TestCase):
+    """How far the lyrics view's edges fade (edge_fades): as far as the text goes on past
+    each, up to the band; the band FADE_HEIGHT, less in a short view; none in high
+    contrast or with nothing past either edge."""
+
+    def test_the_fades(self):
+        from applemusic.widgets.lyrics import FADE_HEIGHT, Fades, edge_fades
+
+        band = FADE_HEIGHT
+        # The text fits: nothing to fade.
+        self.assertIsNone(edge_fades(0, 0, 400, 500, 500))
+        # At the top: only the bottom fades; at the end only the top.
+        self.assertEqual(edge_fades(0, 0, 2000, 500, 500), Fades(band, 0.0, 1.0))
+        self.assertEqual(edge_fades(1500, 0, 2000, 500, 500), Fades(band, 1.0, 0.0))
+        # Partway into the band: that far.
+        self.assertEqual(edge_fades(band / 4, 0, 2000, 500, 500), Fades(band, 0.25, 1.0))
+        self.assertEqual(edge_fades(1500 - band / 2, 0, 2000, 500, 500),
+                         Fades(band, 1.0, 0.5))
+        # A short view: a fifth of its height.
+        self.assertEqual(edge_fades(100, 0, 2000, 200, 200).band, 40)
+        # High contrast keeps the hard edges; a view not laid out yet has none.
+        self.assertIsNone(edge_fades(100, 0, 2000, 500, 500, high_contrast=True))
+        self.assertIsNone(edge_fades(0, 0, 0, 0, 0))
+
+    def test_the_fade_eases_from_the_edge(self):
+        """From the edge's alpha (none, scrolled well in) to opaque, rising slowly at the
+        edge and levelling out into the middle."""
+        from applemusic.widgets.lyrics import _fade_stops
+
+        alphas = [stop.color.alpha for stop in _fade_stops(1.0)]
+        self.assertAlmostEqual(alphas[0], 0.0)
+        self.assertAlmostEqual(alphas[-1], 1.0)
+        self.assertEqual(alphas, sorted(alphas))
+        steps = [alphas[n + 1] - alphas[n] for n in range(len(alphas) - 1)]
+        self.assertLess(steps[0], steps[len(steps) // 2])
+        self.assertLess(steps[-1], steps[len(steps) // 2])
+        self.assertAlmostEqual(_fade_stops(0.5)[0].color.alpha, 0.5)
+
 
 @requires_gtk
 class PieceGeometryTest(unittest.TestCase):

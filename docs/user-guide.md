@@ -88,7 +88,10 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   translation button (beside the volume) offers **Show Translations**, each line's meaning
   in your language under it, and **Show Pronunciations**, how a line in another script,
   such as Japanese or Korean, is pronounced, written in the script of your language (Latin
-  letters for English). Each stays on for the songs after until you turn it off.
+  letters for English). Each stays on for the songs after until you turn it off. The lyrics
+  have no scrollbar: scroll them with the mouse wheel, the touchpad or a finger, or move
+  from line to line with the arrow keys; they fade out at the top and the bottom where
+  there is more (with high contrast on, the edges stay sharp).
 - **Fullscreen** (the button beside the translation button in Now Playing, or <kbd>F11</kbd>
   while something plays) fills the screen with the song playing: its artwork large over its
   own colours, the controls, and the lyrics beside it, larger. When the pointer rests for a
