@@ -77,6 +77,8 @@ UI awaits.
     await engine.browse()        # {shelves}: the New page (the editorial groupings)
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.radio()         # {shelves[, expires]}: the Radio page (the radio grouping)
+    await engine.charts()        # {shelves}: the Charts page (the catalog's charts: Top Songs,
+                                 # Albums, Playlists, Music Videos, Daily Top 100, City Charts)
     await engine.artist_page(id) # {id, artist, banner, latest, topSongs, shelves,
                                  # favourite}: a catalog artist's page, every view of it at
                                  # once, and whether they are a favourite
@@ -87,13 +89,13 @@ UI awaits.
                                       previewed=())
                                  # {items}: the songs Apple suggests adding to a library
                                  # playlist, none of `offered`; more=True: a few more, unkept
-    # The last eight are kept under the cache for a day (landing.json, categories/,
-    # browse.json, made-for-you.json, radio.json, artists/, albums/, suggestions/) and
-    # answered from there without the engine; refresh=True asks again. Each answer carries
-    # `cached`, when it was fetched; one older than a day, answered when Apple cannot be
-    # asked, carries `stale: True` too. The suggestions are kept with `basis`, what the
-    # playlist held, and asked again once it holds something else; Radio's until its live
-    # programmes run out (`expires`), whatever its age.
+    # The last nine are kept under the cache for a day (landing.json, categories/,
+    # browse.json, made-for-you.json, radio.json, charts.json, artists/, albums/,
+    # suggestions/) and answered from there without the engine; refresh=True asks again.
+    # Each answer carries `cached`, when it was fetched; one older than a day, answered when
+    # Apple cannot be asked, carries `stale: True` too. The suggestions are kept with `basis`,
+    # what the playlist held, and asked again once it holds something else; Radio's until its
+    # live programmes run out (`expires`), whatever its age.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
@@ -2131,6 +2133,29 @@ class Engine(GObject.Object):
                                    api.RADIO_PARAMS, timeout=BROWSE_TIMEOUT)
         return await self._kept_answer(normalize.radio_cache_path(str(self.cache_dir)),
                                        refresh, fetch, normalize.radio_shelves)
+
+    async def charts(self, refresh=False):
+        """The Charts page: {shelves: [{key, title, items, chart[, ranked][, form]}]}, the
+        storefront's charts (api.CHARTS_ENDPOINT with api.CHARTS_PARAMS: every kind, most
+        played, with the Daily Top 100 and City Charts playlists) as normalize.charts_shelves
+        shapes them: Top Songs (ranked, a list), Top Albums, Top Playlists (ranked), the Daily
+        Top 100 and City Charts playlists, Top Music Videos (ranked). Apple refusing the
+        playlists' `with` (a 400) is asked again without it (api.CHARTS_PLAIN_PARAMS). From
+        <cache>/charts.json for a day, else fetched and kept."""
+        async def fetch(client):
+            storefront = await self._current_storefront()
+            endpoint = api.CHARTS_ENDPOINT.format(storefront=storefront)
+            try:
+                return await self._api(client, endpoint, api.CHARTS_PARAMS,
+                                       timeout=BROWSE_TIMEOUT)
+            except EngineError as error:
+                if error.status != 400:
+                    raise
+                log.info('charts: the daily and city charts refused (%s); without them', error)
+                return await self._api(client, endpoint, api.CHARTS_PLAIN_PARAMS,
+                                       timeout=BROWSE_TIMEOUT)
+        return await self._kept_answer(normalize.charts_cache_path(str(self.cache_dir)),
+                                       refresh, fetch, normalize.charts_shelves)
 
     async def artist_page(self, artist_id, refresh=False):
         """A catalog artist's page: {id, artist, banner, latest, topSongs, shelves}

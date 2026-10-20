@@ -1709,7 +1709,7 @@ class ArtistTest(EngineFixture):
         apple.write_text(json.dumps({'id': '1724049002', 'shelves': [],
                                      'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
         for coro in (demo.artist_page('1724049002'), demo.artist_page('1724049003'),
-                     demo.browse(), demo.radio(),
+                     demo.browse(), demo.radio(), demo.charts(),
                      demo.catalog_artist('Paper Parachutes', ['1']),
                      demo.related('song', '1724049201')):
             with self.assertRaises(EngineError) as raised:
@@ -2535,7 +2535,7 @@ class SearchTest(EngineFixture):
         await self.up(authorized=False)
         for coro in (self.engine.search('paper'), self.engine.suggest('pa'),
                      self.engine.landing(), self.engine.category('1'), self.engine.browse(),
-                     self.engine.made_for_you(), self.engine.radio()):
+                     self.engine.made_for_you(), self.engine.radio(), self.engine.charts()):
             with self.assertRaises(EngineError) as raised:
                 await coro
             self.assertEqual(raised.exception.code, 'not-signed-in')
@@ -2715,6 +2715,45 @@ class SearchTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'api')
         self.assertFalse((self.cache / 'browse.json').exists())
 
+    async def test_the_charts_are_asked_with_their_playlists_and_kept_a_day(self):
+        self.page.storefront = 'gb'
+        await self.up()
+        path = '/v1/catalog/gb/charts'
+        self.page.api_answers[path] = self.fixture('charts.json')
+        answer = await self.engine.charts()
+        self.assertEqual(self.page.api_params, [{
+            'types': 'songs,albums,playlists,music-videos', 'limit': api.CHARTS_LIMIT,
+            'with': 'dailyGlobalTopCharts,cityCharts'}])
+        self.assertEqual([shelf['key'] for shelf in answer['shelves']][:3],
+                         ['charts-songs', 'charts-albums', 'charts-playlists'])
+        await self.engine.charts()
+        self.assertEqual(self.page.api_calls, [path])  # kept
+        self.assertTrue((self.cache / 'charts.json').exists())
+
+    async def test_charts_refused_with_their_playlists_are_asked_without(self):
+        await self.up()
+        path = '/v1/catalog/us/charts'
+        refused = {'errors': [{'status': '400', 'title': 'Bad Request'}]}
+        answers = iter([refused, self.fixture('charts.json')])
+        page = self.page
+
+        def charts(message):
+            expression = message['params']['expression']
+            if expression.startswith(f'window.__appleMusicLibrary.api("{path}"'):
+                page.api_calls.append(path)
+                return value(next(answers))
+            return page(message)
+
+        self.chrome.responders['Runtime.evaluate'] = charts
+        answer = await self.engine.charts()
+        self.assertEqual(self.page.api_calls, [path, path])
+        self.assertEqual(answer['shelves'][0]['key'], 'charts-songs')
+        # Any other failure is the command's.
+        answers = iter([{'errors': [{'status': '403', 'title': 'Forbidden'}]}])
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.charts(refresh=True)
+        self.assertEqual(raised.exception.status, 403)
+
     async def test_radio_is_kept_until_its_live_programmes_run_out(self):
         self.page.storefront = 'gb'
         await self.up()
@@ -2756,6 +2795,7 @@ class SearchTest(EngineFixture):
             'browse': (self.engine.browse, self.cache / 'browse.json'),
             'made_for_you': (self.engine.made_for_you, self.cache / 'made-for-you.json'),
             'radio': (self.engine.radio, self.cache / 'radio.json'),
+            'charts': (self.engine.charts, self.cache / 'charts.json'),
         }
         for name, (_command, path) in commands.items():
             normalize.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))

@@ -376,6 +376,32 @@ class TestDemoLibrarySchema(unittest.TestCase):
                                   for shelf in page['shelves']], [{'station'}, {'playlist'}])
         self.assertEqual(hosts, [True, False])
 
+    def test_charts_page(self):
+        # The Charts page's answer, as the engine keeps it (normalize.charts_shelves' shape):
+        # every chart in the page's order, the rankings ranked, Top Songs a list of songs with
+        # their albums, and the Daily Top 100 and City Charts playlists with their tracks, so
+        # their pages open in the demo.
+        with open(os.path.join(self.out_dir, 'charts.json'), encoding='utf-8') as f:
+            answer = json.load(f)
+        self.assertIs(answer['demo'], True)
+        self.assertEqual(set(answer) - {'demo', 'cached'}, {'shelves'})
+        shelves = answer['shelves']
+        self.assertEqual([shelf['chart'] for shelf in shelves], list(normalize.CHART_ORDER))
+        for shelf in shelves:
+            self.assertEqual(shelf['key'], 'charts-' + shelf['chart'])
+            self.assertTrue(shelf['title'] and shelf['items'])
+            self.assertEqual(shelf.get('ranked', False),
+                             shelf['chart'] in normalize.RANKED_CHARTS)
+            self.assertEqual(shelf.get('form'), 'songs' if shelf['chart'] == 'songs' else None)
+        songs = shelves[0]['items']
+        self.assertEqual({item['kind'] for item in songs}, {'song'})
+        self.assertTrue(all(item['album'] and item['play']['kind'] == 'song' for item in songs))
+        for shelf in shelves[3:5]:  # the Daily Top 100 and City Charts
+            for item in shelf['items']:
+                self.assertEqual(item['kind'], 'playlist')
+                self.assertTrue(item['groups'][0]['entries'])
+                self.assertTrue(os.path.exists(item['thumb']))
+
     def test_one_favourites_playlist(self):
         # The flag the app looks for (applemusic.library.FAVOURITES) is on one playlist only, and
         # no other item carries attributes.

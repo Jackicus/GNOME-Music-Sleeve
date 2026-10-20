@@ -33,6 +33,7 @@ src/pages/detail.blp
 src/pages/grid.py
 src/pages/grid.blp
 src/pages/home.blp
+src/pages/charts.py
 src/pages/radio.py
 src/pages/search.py
 src/pages/search.blp

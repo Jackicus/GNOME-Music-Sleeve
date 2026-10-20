@@ -95,6 +95,24 @@ class SongLabelTest(unittest.TestCase):
         self.assertEqual(labels.song_caption(self.song(album='')), '2026')
 
 
+class RankedTest(unittest.TestCase):
+    """A chart's entry: its place in the chart before its words."""
+
+    def test_the_rank_comes_first(self):
+        self.assertEqual(labels.ranked(3, 'Invented Album, Invented Artist'),
+                         'Number 3, Invented Album, Invented Artist')
+        self.assertEqual(labels.ranked(None, 'Invented Album'), 'Invented Album')
+
+    def test_a_ranked_tile_keeps_its_rank_when_its_item_is_renamed(self):
+        album = Item({'id': 'l.a1', 'kind': 'album', 'title': 'Invented Album'})
+        list_item = _ListItem()
+        labels.bind_label(list_item, album, rank=1)
+        self.assertEqual(list_item.label, 'Number 1, Invented Album')
+        album.merge(dict(album.raw, title='Renamed Album'), replace=True)
+        self.assertEqual(list_item.label, 'Number 1, Renamed Album')
+        labels.unbind_label(list_item)
+
+
 class _ListItem:
     """What bind_label() names: a list item's accessible label."""
 

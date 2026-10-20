@@ -1,0 +1,194 @@
+{
+  "results": {
+    "albums": [
+      {
+        "chart": "most-played",
+        "name": "Top Albums",
+        "orderId": "most-played:albums",
+        "href": "/v1/catalog/zz/charts?chart=most-played&types=albums",
+        "next": "/v1/catalog/zz/charts?chart=most-played&types=albums&offset=2",
+        "data": [
+          {
+            "id": "1900000101",
+            "type": "albums",
+            "attributes": {
+              "name": "Harbour Lights",
+              "artistName": "The Lanternists",
+              "releaseDate": "2026-09-04",
+              "trackCount": 11,
+              "artwork": {"url": "https://is1-ssl.mzstatic.com/image/thumb/Invented/hl/{w}x{h}bb.jpg", "bgColor": "203040"},
+              "playParams": {"id": "1900000101", "kind": "album"}
+            }
+          },
+          {
+            "id": "1900000102",
+            "type": "albums",
+            "attributes": {
+              "name": "Paper Boats",
+              "artistName": "Mira Holt",
+              "releaseDate": "2026-08-21",
+              "trackCount": 9,
+              "playParams": {"id": "1900000102", "kind": "album"}
+            }
+          }
+        ]
+      }
+    ],
+    "songs": [
+      {
+        "chart": "most-played",
+        "name": "Top Songs",
+        "orderId": "most-played:songs",
+        "data": [
+          {
+            "id": "1900000201",
+            "type": "songs",
+            "attributes": {
+              "name": "Tidewater",
+              "artistName": "The Lanternists",
+              "albumName": "Harbour Lights",
+              "durationInMillis": 201000,
+              "contentRating": "explicit",
+              "releaseDate": "2026-09-04",
+              "artwork": {"url": "https://is1-ssl.mzstatic.com/image/thumb/Invented/hl/{w}x{h}bb.jpg", "bgColor": "203040"},
+              "playParams": {"id": "1900000201", "kind": "song"}
+            }
+          },
+          {
+            "id": "1900000202",
+            "type": "songs",
+            "attributes": {
+              "name": "Small Hours",
+              "artistName": "Mira Holt",
+              "durationInMillis": 187000,
+              "playParams": {"id": "1900000202", "kind": "song"}
+            }
+          },
+          {
+            "id": "1900000201",
+            "type": "songs",
+            "attributes": {
+              "name": "Tidewater",
+              "artistName": "The Lanternists",
+              "albumName": "Harbour Lights",
+              "playParams": {"id": "1900000201", "kind": "song"}
+            }
+          },
+          {
+            "id": "1900000203",
+            "type": "songs",
+            "attributes": {
+              "artistName": "Nameless"
+            }
+          }
+        ]
+      }
+    ],
+    "music-videos": [
+      {
+        "chart": "most-played",
+        "name": "Top Music Videos",
+        "data": [
+          {
+            "id": "1900000301",
+            "type": "music-videos",
+            "attributes": {
+              "name": "Tidewater (Live at the Pier)",
+              "artistName": "The Lanternists",
+              "durationInMillis": 240000,
+              "playParams": {"id": "1900000301", "kind": "musicVideo"}
+            }
+          },
+          {
+            "id": "1900000302",
+            "type": "uploaded-videos",
+            "attributes": {"name": "Behind the Boats"}
+          }
+        ]
+      }
+    ],
+    "playlists": [
+      {
+        "chart": "most-played",
+        "data": [
+          {
+            "id": "pl.invented-top-1",
+            "type": "playlists",
+            "attributes": {
+              "name": "Invented Today's Hits",
+              "curatorName": "Apple Music",
+              "playParams": {"id": "pl.invented-top-1", "kind": "playlist"}
+            }
+          }
+        ]
+      },
+      {
+        "chart": "most-played",
+        "name": "Empty Chart",
+        "data": []
+      }
+    ],
+    "cityCharts": [
+      {
+        "chart": "city-charts",
+        "name": "City Charts",
+        "data": [
+          {
+            "id": "pl.invented-city-1",
+            "type": "playlists",
+            "attributes": {
+              "name": "Top 25: Port Avery",
+              "curatorName": "Apple Music",
+              "playParams": {"id": "pl.invented-city-1", "kind": "playlist"}
+            }
+          },
+          {
+            "id": "pl.invented-city-2",
+            "type": "playlists",
+            "attributes": {
+              "name": "Top 25: Saltmere",
+              "curatorName": "Apple Music",
+              "playParams": {"id": "pl.invented-city-2", "kind": "playlist"}
+            }
+          }
+        ]
+      }
+    ],
+    "otherCharts": {
+      "chart": "invented",
+      "name": "Something Else",
+      "data": [
+        {
+          "id": "pl.invented-other",
+          "type": "playlists",
+          "attributes": {
+            "name": "Invented Other Chart",
+            "playParams": {"id": "pl.invented-other", "kind": "playlist"}
+          }
+        }
+      ]
+    },
+    "dailyGlobalTopCharts": [
+      {
+        "chart": "daily-global-top",
+        "name": "Daily Top 100",
+        "data": [
+          {
+            "id": "pl.invented-top100-global",
+            "type": "playlists",
+            "attributes": {
+              "name": "Top 100: Global",
+              "curatorName": "Apple Music",
+              "playParams": {"id": "pl.invented-top100-global", "kind": "playlist"}
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {
+    "results": {
+      "order": ["most-played:albums", "most-played:songs"]
+    }
+  }
+}

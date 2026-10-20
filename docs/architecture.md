@@ -66,10 +66,11 @@ touches widgets.
 - **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
   library pages bind the library's stores (Artists is a list beside the library's page of
   the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow); New,
-  Made for You and Search ask the engine (the first two, and Search's categories, keep its
-  answers in the cache for a day; a search's kind, filtered or a shelf's See All, is a list
-  that pages on as it is scrolled: `search_pager.py`, `widgets/search_list.py`,
-  `pages/search_all.py`); what is opened from Search is its Recently Searched
+  Made for You, Radio, Search and the Charts page (pushed from New's More to Explore and
+  Search's categories) ask the engine (all but Search's results keep its answers in the
+  cache for a day; a search's kind, filtered or a shelf's See All, is a list that pages on
+  as it is scrolled: `search_pager.py`, `widgets/search_list.py`, `pages/search_all.py`);
+  what is opened from Search is its Recently Searched
   (`recent_searches.py`, a file in the cache, as music.apple.com keeps its own in the browser). A playlist of the user's ends with the songs Apple
   suggests adding to it (`widgets/suggested_songs.py`, what is shown and asked for next in
   `suggestions.py`), kept for a day while the playlist holds the same songs; a song plays in

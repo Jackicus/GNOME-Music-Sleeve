@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""AppleMusicShelf: a titled, horizontally scrolling row of tiles; ShelfColumn: a page's
-shelves, one under another; PagedRow: the paging arrows and See All, which song_shelf.py's
-grid of songs shares."""
+"""AppleMusicShelf: a titled, horizontally scrolling row of tiles; RankedTile: a chart's
+tile, numbered; ShelfColumn: a page's shelves, one under another; PagedRow: the paging arrows
+and See All, which song_shelf.py's grid of songs shares."""
 
 from gi.repository import Adw, Gio, GObject, Gtk
 
@@ -102,6 +102,33 @@ class PagedRow:
             connect_weak(adjustment, signal, self._on_adjustment_changed)
 
 
+class RankedTile(Gtk.Overlay):
+    """A chart's tile (a shelf whose ShelfModel is `ranked`): an AppleMusicTile, `tile`, with
+    its place in the chart over its cover's corner (set_rank()). A Python class of its own
+    (its Python attributes stay with the widget) and not a template's: a template class
+    cannot be subclassed. The number is decoration: the list item's name says it
+    (labels.bind_label()'s `rank`)."""
+
+    def __init__(self):
+        super().__init__()
+        self.tile = Tile()
+        self.set_child(self.tile)
+        # Over the cover's top corner: the tile's margin, then a little in.
+        self.rank = Gtk.Label(halign=Gtk.Align.START, valign=Gtk.Align.START, margin_top=12,
+                              margin_start=6, can_target=False,
+                              accessible_role=Gtk.AccessibleRole.PRESENTATION,
+                              css_classes=['osd', 'chart-rank', 'numeric'])
+        self.add_overlay(self.rank)
+
+    @property
+    def context_item(self):
+        """The tile's Item, for its context menu (widgets/context_menu.py)."""
+        return self.tile.context_item
+
+    def set_rank(self, rank):
+        self.rank.set_label(str(rank))
+
+
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/shelf.ui')
 class Shelf(PagedRow, Gtk.Box):
     """A shelf of Items (a library.ShelfModel, or any object with `key`, `title` and `items`,
@@ -117,8 +144,9 @@ class Shelf(PagedRow, Gtk.Box):
     own child. It builds a tile for each of them, but only the tiles on screen are mapped and
     ask for their artwork. With `hero`, the tiles are 260 px AppleMusicHeroTiles, the cover
     over a band in its colour; otherwise 160 px AppleMusicTiles, round for artists and 16:9
-    for music videos (as tall as the rest). The shelf follows its ShelfModel's title and its
-    items as they change.
+    for music videos (as tall as the rest), each numbered (a RankedTile) when the ShelfModel
+    is `ranked` (a chart's: remote.remote_shelves). The shelf follows its ShelfModel's title
+    and its items as they change.
 
     Scrolling: the row's scrolled window scrolls only horizontally, and GtkScrolledWindow
     handles a scroll event only along an axis it can scroll, so a vertical wheel over the row
@@ -141,6 +169,7 @@ class Shelf(PagedRow, Gtk.Box):
 
     shelf = None  # the ShelfModel shown
     _hero = False
+    _ranked = False  # the tiles numbered: the shelf shown is a chart's
     _see_all = False
     _followed = ()  # (object, handler id) pairs on the shelf shown
 
@@ -166,8 +195,11 @@ class Shelf(PagedRow, Gtk.Box):
         if hero == self._hero:
             return
         self._hero = hero
-        # New rows, built with the other kind of tile (none before __init__ has made the
-        # factory, when a Python caller passes hero=True).
+        self._rebuild_rows()
+
+    def _rebuild_rows(self):
+        """New rows, built with the other kind of tile (none before __init__ has made the
+        factory, when a Python caller passes hero=True)."""
         factory = self.list_view.get_factory()
         if factory is not None:
             self.list_view.set_factory(None)
@@ -194,6 +226,10 @@ class Shelf(PagedRow, Gtk.Box):
             return
         self.clear()
         self.shelf = shelf
+        ranked = bool(getattr(shelf, 'ranked', False))
+        if ranked != self._ranked:
+            self._ranked = ranked
+            self._rebuild_rows()
         followed = [(shelf.items, connect_weak(shelf.items, 'items-changed',
                                                self._on_items_changed))]
         if isinstance(shelf, GObject.Object):
@@ -234,18 +270,27 @@ class Shelf(PagedRow, Gtk.Box):
             or getattr(self.shelf, 'library_artist', None) is not None)
 
     def _on_setup(self, _factory, list_item):
-        list_item.set_child(HeroTile() if self._hero else Tile())
+        if self._hero:
+            list_item.set_child(HeroTile())
+        else:
+            list_item.set_child(RankedTile() if self._ranked else Tile())
 
     def _on_bind(self, _factory, list_item):
         item = list_item.get_item()
-        tile = list_item.get_child()
+        child = list_item.get_child()
+        rank = None
+        if isinstance(child, RankedTile):
+            rank = list_item.get_position() + 1
+            child.set_rank(rank)
+            child = child.tile
         if not self._hero:
-            tile.set_shape(shape_for(item))
-        tile.bind(item)
-        bind_label(list_item, item)
+            child.set_shape(shape_for(item))
+        child.bind(item)
+        bind_label(list_item, item, rank=rank)
 
     def _on_unbind(self, _factory, list_item):
-        list_item.get_child().unbind()
+        child = list_item.get_child()
+        (child.tile if isinstance(child, RankedTile) else child).unbind()
         unbind_label(list_item)
 
     def _on_activate(self, list_view, position):
@@ -264,18 +309,36 @@ class Shelf(PagedRow, Gtk.Box):
 FIRST_SHELVES = 3
 
 
+# The forms a ShelfColumn shows a shelf in: a row of tiles, a row of large cards, or a grid of
+# songs (a ShelfModel whose `form` is 'songs': a chart's Top Songs).
+TILES = 'tiles'
+HEROES = 'heroes'
+SONGS = 'songs'
+
+
+def form_for(shelf, hero):
+    """The form a ShelfColumn shows `shelf` in: SONGS for a ShelfModel whose `form` is
+    'songs', else HEROES or TILES as `hero` says."""
+    if getattr(shelf, 'form', '') == SONGS:
+        return SONGS
+    return HEROES if hero else TILES
+
+
 class ShelfColumn:
     """The shelves of a page, one under another in `box` after `anchor` (a child of the box
-    before them, such as the page's title, or None), each an AppleMusicShelf.
+    before them, such as the page's title, or None), each an AppleMusicShelf, or an
+    AppleMusicSongShelf for a shelf whose `form` is 'songs' (form_for()).
 
     show(shelves, hero_first, heroes) shows ShelfModels in that order, the first as hero cards
     with `hero_first`, and those in `heroes` too (an artist's Essential Albums). A shelf shown
     before keeps its widget, moved into place (nothing rebuilt,
-    its row's scroll position kept); the others are bound to spare or new widgets, the first
-    FIRST_SHELVES at once and the rest one a frame (next_frame()), placed as they are bound,
-    so the column never shows a shelf twice or one that went. Widgets left over are hidden
-    and kept for the next show(). `make_shelf(hero)` makes a widget (a Shelf offering See
-    All by default).
+    its row's scroll position kept); the others are bound to spare or new widgets of their
+    form, the first FIRST_SHELVES at once and the rest one a frame (next_frame()), placed as
+    they are bound, so the column never shows a shelf twice or one that went. Widgets left
+    over are hidden and kept for the next show(). `make_shelf(hero)` makes a widget for a row
+    of tiles or cards (a Shelf offering See All by default); a grid of songs is a SongShelf.
+    Anything placed in the box after the anchor that the column did not make stays after
+    the shelves shown (a page's footer).
     """
 
     def __init__(self, box, anchor=None, make_shelf=None):
@@ -283,6 +346,7 @@ class ShelfColumn:
         self._anchor = anchor
         self._make_shelf = make_shelf or (lambda hero: Shelf(hero=hero, see_all=True))
         self._widgets = {}  # a ShelfModel shown -> its widget
+        self._forms = {}  # each widget made -> its form (TILES, HEROES, SONGS)
         self._spare = []  # widgets hidden, for later
         self._task = None  # the staged binding under way
         self.shelves = []  # what show() was last asked for, in order
@@ -297,10 +361,10 @@ class ShelfColumn:
             self._task.cancel()
         self._task = None
         shelves = list(shelves)
-        heroes = {shelf: (hero_first and position == 0) or shelf in heroes
-                  for position, shelf in enumerate(shelves)}
+        forms = {shelf: form_for(shelf, (hero_first and position == 0) or shelf in heroes)
+                 for position, shelf in enumerate(shelves)}
         for shelf, widget in list(self._widgets.items()):
-            if shelf not in heroes or widget.props.hero != heroes[shelf]:
+            if shelf not in forms or self._forms[widget] != forms[shelf]:
                 del self._widgets[shelf]
                 self._retire(widget)
         self.shelves = shelves
@@ -309,22 +373,30 @@ class ShelfColumn:
         spawn = getattr(app, 'spawn', None)
         now = pending if spawn is None else pending[:FIRST_SHELVES]
         for shelf in now:
-            self._bind(shelf, heroes[shelf])
+            self._bind(shelf, forms[shelf])
         self._arrange()
         rest = pending[len(now):]
         if rest:
-            self._task = spawn(self._bind_rest(rest, heroes))
+            self._task = spawn(self._bind_rest(rest, forms))
 
-    async def _bind_rest(self, shelves, heroes):
+    async def _bind_rest(self, shelves, forms):
         for shelf in shelves:
             await next_frame(self._box)
-            self._bind(shelf, heroes[shelf])
+            self._bind(shelf, forms[shelf])
             self._arrange()
 
-    def _bind(self, shelf, hero):
-        widget = next((spare for spare in self._spare if spare.props.hero == hero), None)
+    def _make(self, form):
+        if form == SONGS:
+            from .song_shelf import SongShelf  # song_shelf.py imports this module
+
+            return SongShelf()
+        return self._make_shelf(form == HEROES)
+
+    def _bind(self, shelf, form):
+        widget = next((spare for spare in self._spare if self._forms[spare] == form), None)
         if widget is None:
-            widget = self._make_shelf(hero)
+            widget = self._make(form)
+            self._forms[widget] = form
             self._box.append(widget)
         else:
             self._spare.remove(widget)

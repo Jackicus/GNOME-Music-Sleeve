@@ -139,6 +139,7 @@ install_data(
   'pages/__init__.py',
   'pages/artist.py',
   'pages/artists.py',
+  'pages/charts.py',
   'pages/detail.py',
   'pages/grid.py',
   'pages/home.py',

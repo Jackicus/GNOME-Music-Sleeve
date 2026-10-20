@@ -4,7 +4,8 @@
 """widgets/shelf.py: a Shelf follows its shelf and offers See All and the paging arrows only
 when the row does not show everything (no arrows in a narrow window); a ShelfColumn keeps the
 widgets of the shelves it keeps, and never shows a shelf twice while it binds the rest a frame
-apart."""
+apart, each in its form (a grid of songs for a chart's Top Songs); a chart's shelves number
+their tiles and songs."""
 
 import unittest
 
@@ -215,6 +216,75 @@ class ShelfColumnTest(PageTestCase):
         column.show(shelves)  # no longer a hero: a widget of the other kind
         self.assertEqual([widget.props.hero for widget in column.widgets],
                          [False, False, False])
+
+    async def test_a_shelf_of_the_songs_form_is_a_grid_of_songs(self):
+        from applemusic.widgets.shelf import Shelf
+        from applemusic.widgets.song_shelf import SongShelf
+
+        column = self.column()
+        shelves = [model(f's{n}', 2) for n in range(3)]
+        shelves[1].form = 'songs'  # a chart's Top Songs
+        column.show(shelves, hero_first=True)
+        self.assertEqual([type(widget) for widget in column.widgets], [Shelf, SongShelf, Shelf])
+        self.assertTrue(column.widgets[0].props.hero)
+        self.assertEqual(self.shown(), shelves)
+        songs = column.widgets[1]
+        # Shown again in another form, the shelf gets another widget; the grid is kept for
+        # the next shelf of songs.
+        shelves[1].form = ''
+        column.show(shelves)
+        self.assertEqual([type(widget) for widget in column.widgets], [Shelf, Shelf, Shelf])
+        other = model('other', 2)
+        other.form = 'songs'
+        column.show([other])
+        self.assertIs(column.widgets[0], songs)
+        self.assertEqual(self.shown(), [other])
+
+
+class RankedShelfTest(PageTestCase):
+    """A chart's shelves (a ShelfModel `ranked`): numbered tiles, numbered songs."""
+
+    async def test_a_ranked_shelf_numbers_its_tiles(self):
+        from applemusic.widgets.shelf import RankedTile, Shelf
+        from applemusic.widgets.tile import Tile
+        from tests.page_harness import find_all
+
+        ranked = model('ranked', 3)
+        ranked.ranked = True
+        shelf = Shelf(see_all=True)
+        shelf.bind_shelf(ranked)
+        self.window.root_box.append(shelf)
+        self.assertTrue(await self.until(lambda: len(find_all(shelf.list_view, RankedTile)) == 3))
+        tiles = find_all(shelf.list_view, RankedTile)
+        self.assertEqual([tile.rank.get_label() for tile in tiles], ['1', '2', '3'])
+        self.assertEqual([tile.context_item.id for tile in tiles],
+                         ['ranked.0', 'ranked.1', 'ranked.2'])
+        # A shelf that is no chart's: plain tiles again.
+        shelf.bind_shelf(model('plain', 2))
+        self.assertTrue(await self.until(lambda: len(find_all(shelf.list_view, Tile)) == 2
+                                         and not find_all(shelf.list_view, RankedTile)))
+
+    async def test_a_ranked_shelf_of_songs_numbers_them_and_plays_from_the_one_chosen(self):
+        from applemusic.library import Item, ShelfModel
+        from applemusic.widgets.song_shelf import SongRow, SongShelf
+        from tests.page_harness import find_all
+
+        songs = [Item({'id': f'190{n}', 'kind': 'song', 'title': f'Invented Song {n}',
+                       'subtitle': 'Invented Artist', 'album': 'Invented Album',
+                       'play': {'kind': 'song', 'id': f'190{n}'}}) for n in range(4)]
+        top = ShelfModel('charts-songs', 'Top Songs', songs)
+        top.ranked = True
+        shelf = SongShelf()
+        shelf.bind_shelf(top)
+        self.window.root_box.append(shelf)
+        self.assertTrue(await self.until(lambda: len(find_all(shelf.grid_view, SongRow)) == 4))
+        rows = sorted(find_all(shelf.grid_view, SongRow), key=lambda row: row.rank.get_text())
+        self.assertEqual([row.rank.get_text() for row in rows], ['1', '2', '3', '4'])
+        self.assertEqual(rows[0].caption.get_text(), 'Invented Artist · Invented Album')
+        shelf.grid_view.emit('activate', 2)
+        self.assertEqual(self.window.played, [({'kind': 'songs', 'id': '1900,1901,1902,1903'},
+                                               2, None)])
+        self.assertEqual(self.window.started_with, ['1902'])
 
 
 if __name__ == '__main__':

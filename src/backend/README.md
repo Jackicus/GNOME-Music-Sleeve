@@ -312,6 +312,25 @@ Link alone (`actions.curator_menu()`), and its tile opens its page:
   `curatorKind`; a third party's has no page the app can read (`category()` asks
   `apple-curators`), so it is a link to music.apple.com's (`curator_link()`).
 
+### The Charts page
+
+`Engine.charts()` asks `GET /v1/catalog/<sf>/charts` with `api.CHARTS_PARAMS`
+(`types=songs,albums,playlists,music-videos`, `limit=100`, and
+`with=dailyGlobalTopCharts,cityCharts` for the Daily Top 100 and City Charts playlists);
+a 400 is asked again without `with` (`api.CHARTS_PLAIN_PARAMS`, the documented request).
+Not checked live yet: the `with` values and the keys they answer under are the web
+player's as remembered, so the normaliser takes any key. The documented answer is
+`results`, one entry per type, each a list of charts `{chart, name, orderId, href, next,
+data}` (`chart` `most-played`, `name` Apple's title in the account's language, "Top Songs",
+`data` the resources in chart order); `genre=<id>` would narrow it to a genre (#404).
+`normalize.charts_shelves()` makes a shelf of each chart with something in it, in the
+page's order (`CHART_ORDER`: songs, albums, playlists, `dailyGlobalTopCharts`,
+`cityCharts`, music videos, then any other key), keyed `charts-<key>`, with `chart` (the
+key) and Apple's `name` as its title ('' without one: the app names it,
+`remote.CHART_TITLES`); the rankings (`RANKED_CHARTS`) are `ranked`, Top Songs
+`form: 'songs'`, and a song carries its `album`. The page is kept as `charts.json` for a
+day.
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -377,7 +396,7 @@ The links' URLs and what opens them (the web player's routes):
 | `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>` | `GET /v1/editorial/<sf>/rooms/<id>`: `rooms` with `title`, `sorts`, `contents` (up to 100) |
 | `…/viewGrouping?cc=<sf>&id=<id>` | `GET /v1/editorial/<sf>/groupings/<id>?platform=web`, the same shape as New; without `platform` a 400 ("A single platform must be supplied") |
 | `…/viewMultiRoom?cc=<sf>&fcId=<id>` | `GET /v1/editorial/<sf>/multirooms/<id>?extend=editorialArtwork,uber,lockupStyle`: `multirooms` with `title`, `uber` (`masterArt`, `name`, `description`, colours) and `children` (404 a header, 345 shelves with `contents` and `room`) |
-| `…/viewTop?genreId=<n>` | a chart page, by genre (not tried) |
+| `…/viewTop?genreId=<n>` | a chart page, by genre (not tried; the Charts page above, #404) |
 | `https://music.apple.com/concerts` (`target: 'external'`) | a web page |
 
 A live station's events also carry `heroArtwork`, and some an `editorialVideo` (the web
@@ -541,7 +560,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `charts.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 `normalize.prune_caches()` runs after the library's first load and after every sync; it also
 removes what older versions kept (`items/`) and temporary files over an hour old.

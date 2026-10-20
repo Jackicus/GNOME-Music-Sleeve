@@ -130,8 +130,17 @@ gridview.tile-grid.under-heading {
 }
 
 .tile:hover .tile-play,
-:focus-visible > .tile .tile-play {
+:focus-visible > .tile .tile-play,
+:focus-visible > overlay > .tile .tile-play {
   opacity: 1;
+}
+
+/* A chart's tile (widgets/shelf.py's RankedTile): its place in the chart over its cover's
+   corner, on the OSD's dark backing, so it reads on any artwork. */
+.chart-rank {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: bold;
 }
 
 /* The Songs table (pages/songs.blp): its outer cells and headers line up with the page title's
@@ -306,6 +315,11 @@ gridview.song-shelf > child {
   margin: 0 9px 0 0;
   padding: 6px;
   border-radius: 8px;
+}
+
+/* A chart's song (widgets/song_shelf.py's ranked SongRow): its place before the cover. */
+.song-row .chart-rank-number {
+  font-weight: bold;
 }
 
 /* A playlist's Suggested Songs (widgets/suggested_songs.py): each song a flat button with a

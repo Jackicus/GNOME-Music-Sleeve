@@ -35,6 +35,9 @@ def _format(name):
             # Translators: added to what a screen reader says for a song, album, playlist or
             # music video the user has marked as a favourite (the heart it shows).
             'favourite': _('{label}, favourite'),
+            # Translators: what a screen reader says for a chart's entry: its place in the
+            # chart, then the tile's or the song's words, e.g. "Number 1, Song, Artist".
+            'rank': _('Number {rank}, {label}'),
         })
     return _formats[name]
 
@@ -50,6 +53,12 @@ def accessible_label(item, artist=False):
     if item.favourite and not artist and item.kind != 'artist':
         label = _format('favourite').format(label=label)
     return label
+
+
+def ranked(rank, label):
+    """A chart entry's name: its place in the chart (`rank`, from 1) before `label`, the
+    words its tile or row has; `label` alone without a rank."""
+    return _format('rank').format(rank=rank, label=label) if rank else label
 
 
 def track_label(track, show_artist=True, show_album=True, favourite=False):
@@ -117,17 +126,19 @@ def flow_child(widget, label):
     return child
 
 
-def bind_label(list_item, item, artist=False):
-    """Name a recycled tile's list item accessible_label(item, artist), and name it again
-    whenever the Item's title, subtitle or favourite changes while it is bound: a reload merges new
-    values into the Item and a list does not rebind it (the tile follows its Item the same
-    way). unbind_label() in the factory's unbind stops it."""
+def bind_label(list_item, item, artist=False, rank=None):
+    """Name a recycled tile's list item accessible_label(item, artist), after its place in
+    a chart when it has one (`rank`: ranked()), and name it again whenever the Item's title,
+    subtitle or favourite changes while it is bound: a reload merges new values into the
+    Item and a list does not rebind it (the tile follows its Item the same way).
+    unbind_label() in the factory's unbind stops it."""
     unbind_label(list_item)
-    list_item.set_accessible_label(accessible_label(item, artist))
+    list_item.set_accessible_label(ranked(rank, accessible_label(item, artist)))
 
     def on_notify(notified, pspec):
         if pspec.name in ('title', 'subtitle', 'favourite'):
-            list_item.set_accessible_label(accessible_label(notified, artist))
+            list_item.set_accessible_label(
+                ranked(rank, accessible_label(notified, artist)))
 
     list_item.label_handler = (item, item.connect('notify', on_notify))
 

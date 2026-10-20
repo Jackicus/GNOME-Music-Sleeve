@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The backend's shaping of the New page and the Radio page (editorial groupings) and Made
-for You (recommendations) into shelves, over invented answers."""
+"""The backend's shaping of the New page and the Radio page (editorial groupings), Made for
+You (recommendations) and the Charts page (the catalog's charts) into shelves, over invented
+answers."""
 
 import json
 import os
@@ -306,6 +307,77 @@ class MadeForYouShelvesTest(unittest.TestCase):
         with open(FIXTURES / 'recommendations.json', encoding='utf-8') as file:
             raw = json.load(file)
         self.assertEqual(normalize.made_for_you_shelves(raw['data'], self.tmp.name), [])
+
+
+class ChartsShelvesTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        with open(FIXTURES / 'charts.json', encoding='utf-8') as f:
+            self.raw = json.load(f)
+
+    def shelves(self):
+        return normalize.charts_shelves(self.raw, self.tmp.name)['shelves']
+
+    def test_the_charts_come_in_the_pages_order_whatever_the_answers(self):
+        # Apple's order of `results` (and its meta order, which names only some) aside:
+        # songs, albums, playlists, the Daily Top 100, City Charts, videos, then the rest.
+        self.assertEqual([shelf['key'] for shelf in self.shelves()], [
+            'charts-songs', 'charts-albums', 'charts-playlists', 'charts-dailyGlobalTopCharts',
+            'charts-cityCharts', 'charts-music-videos', 'charts-otherCharts'])
+        self.assertEqual([shelf['chart'] for shelf in self.shelves()], [
+            'songs', 'albums', 'playlists', 'dailyGlobalTopCharts', 'cityCharts',
+            'music-videos', 'otherCharts'])
+
+    def test_the_rankings_are_ranked_and_top_songs_is_a_list(self):
+        shelves = {shelf['chart']: shelf for shelf in self.shelves()}
+        self.assertEqual({chart for chart, shelf in shelves.items() if shelf.get('ranked')},
+                         {'songs', 'albums', 'playlists', 'music-videos'})
+        self.assertEqual({chart for chart, shelf in shelves.items() if 'form' in shelf},
+                         {'songs'})
+        self.assertEqual(shelves['songs']['form'], 'songs')
+
+    def test_titles_are_apples_and_an_untitled_chart_is_the_apps_to_name(self):
+        shelves = {shelf['chart']: shelf for shelf in self.shelves()}
+        self.assertEqual(shelves['songs']['title'], 'Top Songs')
+        self.assertEqual(shelves['dailyGlobalTopCharts']['title'], 'Daily Top 100')
+        self.assertEqual(shelves['playlists']['title'], '')  # no name in the answer
+
+    def test_items_in_chart_order_each_once_with_a_songs_album(self):
+        shelves = {shelf['chart']: shelf for shelf in self.shelves()}
+        songs = shelves['songs']['items']
+        # The repeat and the song without a name are left out.
+        self.assertEqual([(item['id'], item['kind']) for item in songs],
+                         [('1900000201', 'song'), ('1900000202', 'song')])
+        self.assertEqual([item['album'] for item in songs], ['Harbour Lights', ''])
+        self.assertTrue(songs[0]['explicit'])
+        self.assertEqual(songs[0]['play'], {'kind': 'song', 'id': '1900000201'})
+        size = normalize.ART_SIZES['thumb']
+        self.assertEqual(songs[0]['art'], 'https://is1-ssl.mzstatic.com/image/thumb/Invented/'
+                                          f'hl/{size}x{size}bb.jpg')
+        self.assertEqual([item['id'] for item in shelves['albums']['items']],
+                         ['1900000101', '1900000102'])
+        # An uploaded video is not the app's to show.
+        self.assertEqual([(item['id'], item['kind'])
+                          for item in shelves['music-videos']['items']],
+                         [('1900000301', 'video')])
+        self.assertEqual([item['kind'] for item in shelves['cityCharts']['items']],
+                         ['playlist', 'playlist'])
+
+    def test_an_empty_chart_is_left_out_and_a_second_of_a_kind_keyed_apart(self):
+        playlists = self.raw['results']['playlists']
+        playlists[1]['data'] = playlists[0]['data']
+        keys = [shelf['key'] for shelf in self.shelves()]
+        self.assertEqual(keys[2:4], ['charts-playlists', 'charts-playlists-1'])
+
+    def test_nothing(self):
+        for raw in (None, {}, {'results': None}, {'results': {'songs': ['junk', {}]}},
+                    {'results': {'songs': [{'data': None}]}}, 'junk'):
+            self.assertEqual(normalize.charts_shelves(raw, self.tmp.name), {'shelves': []})
+
+    def test_cache_path(self):
+        self.assertEqual(normalize.charts_cache_path('/c'), os.path.join('/c', 'charts.json'))
+        self.assertIn('charts.json', normalize.KEPT_ANSWERS)
 
 
 if __name__ == '__main__':

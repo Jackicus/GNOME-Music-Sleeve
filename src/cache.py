@@ -27,15 +27,15 @@ log = logging.getLogger(__name__)
 
 # What the cache directory holds, all of it fetched again as needed: the library, its artwork
 # (covers, thumbnails, remote art), lyrics, the day-long answers (landing, categories, the
-# New page, Made for You, Radio, the artists' and albums' pages, the playlists' suggested
-# songs), Recently Searched (recent_searches.py) and the last session (session.py), which go
-# with the account's other traces. `items` and `library.lock` are what older versions kept there
-# (items' answers, the sync's lock), cleared with the rest; `demo-search.json` is only
-# ever in the demo's cache (the catalog its search answers from).
+# New page, Made for You, Radio, Charts, the artists' and albums' pages, the playlists'
+# suggested songs), Recently Searched (recent_searches.py) and the last session (session.py),
+# which go with the account's other traces. `items` and `library.lock` are what older versions
+# kept there (items' answers, the sync's lock), cleared with the rest; `demo-search.json` is
+# only ever in the demo's cache (the catalog its search answers from).
 CACHE_ENTRIES = ('library.json', 'art', 'thumb', 'remote-art', 'lyrics', 'landing.json',
-                 'categories', 'browse.json', 'made-for-you.json', 'radio.json', 'artists',
-                 'albums', 'suggestions', 'recent-searches.json', 'items', 'library.lock',
-                 'session.json', 'demo-search.json')
+                 'categories', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
+                 'artists', 'albums', 'suggestions', 'recent-searches.json', 'items',
+                 'library.lock', 'session.json', 'demo-search.json')
 
 
 def cache_size(path):
