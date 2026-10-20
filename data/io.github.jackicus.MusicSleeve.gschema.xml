@@ -122,7 +122,7 @@
     <key name="grid-sort" type="a{ss}">
       <default>{}</default>
       <summary>Sort order of each grid page</summary>
-      <description>The order last chosen in a grid page's Sort By menu (title, artist, year or added), by page: albums, artists or music-videos.</description>
+      <description>The order last chosen in a grid page's Sort By menu (title, artist, year or added), by page: albums, music-videos, or library-artist (an artist's albums in the library: year or title).</description>
     </key>
     <key name="favourites-only" type="as">
       <default>[]</default>

@@ -4,7 +4,7 @@ Releases are native: `meson install` with the release profile. **For now a relea
 tag and a GitHub release, and nothing else** — the AUR package is not published yet, so people
 install by building from source or by running `makepkg -si` over `build-aux/aur/PKGBUILD`
 themselves. Publishing to the AUR is a later step, whenever the maintainer is ready for it
-(#146). The Flatpak manifest is for development only, and Flathub is out of scope
+(#206). The Flatpak manifest is for development only, and Flathub is out of scope
 (`docs/decisions.md`).
 
 An agent may carry out a release end to end once the owner has said to release, and that

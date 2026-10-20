@@ -10,7 +10,7 @@ be agreed before the work. Everyone taking part is expected to follow the
 The app needs GTK 4.20, libadwaita 1.9, GLib 2.84, Python 3.12 and PyGObject 3.50, or newer:
 the libraries of GNOME 50. Nothing in it is tied to a distribution. Fedora 44, Ubuntu 26.04,
 Arch Linux and openSUSE Tumbleweed ship those versions; Debian 13 and Ubuntu 24.04 do not.
-To build and test it you also need Meson, gettext, `blueprint-compiler` 0.22 (Meson downloads
+To build and test it you also need Meson 1.2, gettext, `blueprint-compiler` 0.22 (Meson downloads
 its own when the installed one is missing or older), pycairo for the demo library generator,
 `appstream` and `desktop-file-utils` for the data checks, `ruff` for the lint, and `gjs` for
 the tests of `src/backend/bridge.js` (skipped without it).
@@ -34,7 +34,7 @@ scripts/demo.sh          # build the development profile into ./build and run it
                          # invented library: no Chrome, no Apple Account
 scripts/run.sh           # the same with the real engine (Chrome on the app's own profile)
 scripts/check.sh         # byte-compile, ruff, build, unit tests, desktop/metainfo/schema checks
-python3 -m unittest discover -s tests -v                        # the unit tests alone
+scripts/headless.sh python3 -m unittest discover -s tests -v    # the unit tests alone
 scripts/headless.sh scripts/screenshot.py --demo build/shot.png --page albums [--light]
 scripts/headless.sh COMMAND   # any of these on an invisible display, off your desktop
 ```

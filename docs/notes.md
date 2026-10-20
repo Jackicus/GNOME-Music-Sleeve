@@ -26,9 +26,11 @@ its "Performance pass" section.
   window it does not show, so a hidden bench or scroll-test window stalls.
 - A tiling extension resizes windows that are resizable when mapped; the scripts make theirs
   non-resizable (`scripts/harness.py`).
-- No input can be synthesised on this Wayland desktop: live runs are driven with
-  `gapplication action`, `scripts/am.py` and D-Bus, and `a11y_check.py` dispatches keys through
-  GTK's own controllers.
+- No input can be synthesised on this Wayland desktop: live runs on the desktop are driven
+  with `gapplication action`, `scripts/am.py` and D-Bus. Under `scripts/headless.sh`,
+  `a11y_check.py` sends real keys through the headless mutter's RemoteDesktop
+  (`scripts/remote_keys.py`); only its `--emulate-keys` fallback dispatches them through GTK's
+  own controllers.
 
 ## GTK and libadwaita, measured
 
@@ -211,7 +213,8 @@ the libraries and the GL driver map, which the app cannot shrink (a bare `Adw.Ap
 is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anonymous).
 
 - Measured headless, 2026-09-29: anonymous memory 212-215 MB after every page browsed twice
-  (RSS about 367 MB); the pages step (20 albums, 5 artists, 5 See All opened and popped)
+  (RSS about 367 MB); the pages step (20 albums, 5 artists, 5 See All opened and popped;
+  measured before bench.py also opened 5 of Apple Music's artist pages)
   leaves -1 to +1 MB after a warm-up round, and frees every page. Its first round grows RSS by
   about 6 MB once: the artwork's texture cache filling to its budget.
 - What brought it there (2026-09-28/29): each track of library.json kept as a tuple

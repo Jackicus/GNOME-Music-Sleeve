@@ -14,8 +14,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 
 ## Everyday use
 
-- The app starts Chrome, its playback engine, whenever it starts. Preferences › Engine › Start
-  Engine on Launch turns that off; the first thing you play then starts it.
+- The app starts Chrome, its playback engine, whenever it starts. Preferences › Engine ›
+  Browser › Start Engine on Launch turns that off; the first thing you play then starts it.
 - The app opens with the song you last listened to in the player bar, paused where it
   stopped, and Up Next as it was (the songs you queued: Autoplay adds its own again once it
   plays, when it is on): **Play** carries on from that second. Before you press it,
@@ -56,6 +56,10 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   scroll, down to the last one Apple Music has, and say how many there are at the end; if
   more cannot be loaded, **Try Again** at the end of the list asks once more. A radio show
   or a curator opens its page (one Apple Music has no page for here opens in your browser).
+- **Your Library**, beside **Apple Music** by the search field, searches your library
+  instead, as you type, whether or not the engine runs: your albums, artists and playlists
+  as shelves, then your songs as a list. When there are more songs than it lists, the songs'
+  **See All** opens Songs filtered by what you typed.
 - On Albums, Artists, Songs, Music Videos and a playlist's page (Favourite Songs too),
   just start typing to filter what the page lists (or press <kbd>Ctrl</kbd>+<kbd>F</kbd>,
   or click the search button in the header bar): it keeps what has the text in its title,
@@ -154,8 +158,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   there (or press and hold it, or press <kbd>Menu</kbd>) and choose **Remove from Up Next**,
   or select it and press <kbd>Delete</kbd>. **Clear**, above the list, takes out everything
   after the song playing; **Undo** on the message that follows puts it back. **Autoplay**
-  (the ∞ button beside Clear, also in Preferences › Playback) is on unless you turn it off:
-  when the queue ends, Apple Music keeps playing similar songs, which Up Next lists under
+  (the ∞ button beside Clear, also in Preferences › General › Playback) is on unless you
+  turn it off: when the queue ends, Apple Music keeps playing similar songs, which Up Next lists under
   **Autoplay** (and which you can remove like any other). It is this app's setting: Apple's
   other players keep their own. While a station plays, its queue is Apple's and cannot be
   changed, and Autoplay does not start while Repeat is on.
@@ -167,8 +171,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   as echoes, show under their line, smaller. In a duet
   each singer's lines keep to a side of their own, and lines sung together sit in the
   middle. When Apple Music has translations or pronunciations for a song's lyrics, the
-  translation button (beside the volume) offers **Show Translations**, each line's meaning
-  in your language under it, and **Show Pronunciations**, how a line in another script,
+  translation button (beside the Fullscreen button) offers **Show Translations**, each
+  line's meaning in your language under it, and **Show Pronunciations**, how a line in another script,
   such as Japanese or Korean, is pronounced, written in the script of your language (Latin
   letters for English). Each stays on for the songs after until you turn it off. The lyrics
   have no scrollbar: scroll them with the mouse wheel, the touchpad or a finger, or move
@@ -229,8 +233,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Next: it plays after everything already there, as **Play Later** does, or right after the
   song playing if you hold <kbd>Shift</kbd> as you drop it, as **Play Next** does. The bar
   lights up while it can take what you drag (a folder cannot be queued); it is there only
-  while something plays. Drag songs or an album onto **All Playlists** in the sidebar to
-  make a new playlist of them: the New Playlist dialog opens with the first one's name
+  while something plays. Drag songs, music videos or an album onto **All Playlists** in the
+  sidebar to make a new playlist of them: the New Playlist dialog opens with the first one's name
   filled in, and once Apple lists the new playlist, its page opens. The menus do the same
   from the keyboard: **Play Later**, **Play Next**, and **Add to Playlist › New
   Playlist…**.
@@ -275,7 +279,7 @@ Other limits:
 
 - Songs play only in a browser with Widevine: Google Chrome has it. Microsoft Edge, Brave
   and Vivaldi can fetch it (Brave and Vivaldi may ask first, in their own window: turn off
-  Preferences › Engine › Run Browser Hidden to see it), and Chromium needs its
+  Preferences › Engine › Browser › Run Browser Hidden to see it), and Chromium needs its
   distribution's Widevine package. Only Google Chrome is tested. A snap cannot be the
   engine. Changing browser may mean signing in again.
 - Music videos play as audio only: the engine has no window to show them in.
@@ -314,12 +318,12 @@ Other limits:
 
 - **"Install Google Chrome to play Apple Music."** No browser was found: neither Google
   Chrome nor another Chromium-based browser. Install Google Chrome, or name another
-  browser's command in Preferences › Engine › Browser program.
+  browser's command in Preferences › Engine › Browser › Browser program.
 - **"This browser cannot play songs; Google Chrome can."** The browser the engine runs in
   has no Widevine, which the songs are protected with: browsing, your library and the
   30-second previews work, but songs do not play. Install Google Chrome and name it in
-  Preferences › Engine › Browser program (`google-chrome-stable`), or give the browser its
-  Widevine module.
+  Preferences › Engine › Browser › Browser program (`google-chrome-stable`), or give the
+  browser its Widevine module.
 - **"The playback engine stopped."** Chrome exited or its page stopped answering. Click
   **Restart** in the message, or just play something.
 - **"Unlock the keyring, then start the engine."** Chrome keeps the key that encrypts its
@@ -375,7 +379,7 @@ development build uses `~/.local/share/apple-music/chrome-devel/` and
   asking Apple to end the session too, stops Chrome and deletes both the Chrome profile and
   the cache. Nothing of the account stays on screen either: the next account signed in
   starts with its own Recently Played, favourites and Recently Searched.
-- **Preferences › General › Cache › Clear** deletes only the cache.
+- **Preferences › General › Library › Cache › Clear…** deletes only the cache.
 - To remove everything by hand, quit the app first, then run:
 
   ```bash

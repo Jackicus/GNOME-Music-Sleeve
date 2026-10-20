@@ -1609,7 +1609,7 @@ def editorial_shelves(raw, cache_dir):
     return {'shelves': shelves}
 
 
-# The Radio grouping's elements the page puts apart (README.md, "The editorial pages"): the
+# The Radio grouping's elements the page puts apart (README.md, "The editorial groupings"): the
 # hero row and the live stations, each made of children holding one item.
 RADIO_HERO_KIND = '316'
 RADIO_LIVE_KIND = '488'

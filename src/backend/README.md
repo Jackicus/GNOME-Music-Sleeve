@@ -77,10 +77,10 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `lyrics(catalogSongId, languages)` | `{synced, lines: [Line]}`, the TTML read with the page's XML parser (`parseTtmlLyrics`). A Line is `{startMs, endMs, text, stanza?, words?, background?, backgroundWords?, agent?, pronunciation?, pronunciationWords?, pronunciationBackground?, pronunciationBackgroundWords?, translation?, translationBackground?}`, empty fields left out: `stanza: true` on a verse's first line (each `<div>`); `text` the main vocals, `background` the `<span ttm:role="x-bg">` (parentheses and all), each with its spaces run together; with `itunes:timing="Word"` on the root, `words` and `backgroundWords` are their timed `<span>`s as `[{startMs, endMs, text}]`, each piece's text with the space after it, so the pieces join to the text (a piece without one is a syllable joined to the next); `agent` the `<p>`'s (or its `<div>`'s) `ttm:agent`, kept only when some line's is not `v1`. src/lyrics.py's docstring has the shape, and engine.lyrics_answer checks it. music.apple.com's request (checked against the API on 2026-10-19): `/v1/catalog/<sf>/songs/<id>/syllable-lyrics?extend=ttmlLocalizations&l[lyrics]=<languages.lyrics>&l[script]=<languages.script>` (`api.lyrics_languages()`: `en-GB`, `en-Latn`), whose `attributes.ttmlLocalizations` is the TTML with `<head><metadata><iTunesMetadata><transliterations><transliteration xml:lang="ja-Latn"><text for="L1">…` and `<translations><translation xml:lang="en-US"><text for="L1">…`: a line's `pronunciation` and `translation` are the `<text>` its `itunes:key` names, split and (the transliteration's) timed as the line is, and dropped when they are the line itself. Its lines are the plain `/lyrics`' (which ignores those parameters); that is asked when syllable-lyrics fails |
 | `search(term, limit, types, offset, top)` | the API's answer, shaped by `normalize.search_results()`: `GET /v1/catalog/<sf>/search` for `types` (`api.SEARCH_TYPES`, every kind the page shows, curators included; or one kind's, `api.SEARCH_KIND_TYPES`), `limit` a type (25 at most), from `offset` when there is one, and `with=topResults` with `top`. Each type's section names its next page in `next` (`/v1/catalog/<sf>/search?offset=25&…`, `api.next_offset()`), absent at the end |
 | `suggest(term, limit)`, `searchLanding()`, `category(id)` | the API's answer, shaped by `normalize.search_suggestions()`, `search_landing()`, `category_page()` |
-| `playlistSuggestions(playlistId, limit, offered, selected, previewed)` | `{results: {suggested: [songs]}}`, the songs Apple suggests adding to a library playlist, shaped by `normalize.playlist_suggestions()`: music.apple.com's own request (checked against the API on 2026-10-08), `POST /v1/me/recommendations/suggested?contexts=playlist-suggested-songs&types=songs&limit=<limit>` with `{targetContent: {id, type: 'library-playlists'}}`, through the request builder (`music()` sends no body); up to `limit` (20 by default) full catalog songs. With `offered` (catalog ids shown) or `selected` (those added) the body also carries `offered: {suggested: [{id, type: 'songs', meta: {impressed: true, previewed}}]}` (`previewed` true for the ids in `previewed`, those whose preview was played) and `selected: [{id, type: 'songs', meta: {source: 'suggested'}}]`, as the web player's Refresh sends them; Apple then answers none of the offered songs (checked 2026-10-08) |
+| `playlistSuggestions(playlistId, limit, offered, selected, previewed)` | `{results: {suggested: [songs]}}`, the songs Apple suggests adding to a library playlist, shaped by `normalize.playlist_suggestions()`: music.apple.com's own request (checked against the API on 2026-10-08), `POST /v1/me/recommendations/suggested?platform=web&omit[resource]=autos&contexts=playlist-suggested-songs&types=songs&include[songs]=artists&limit=<limit>` with `{targetContent: {id, type: 'library-playlists'}}`, through the request builder (`music()` sends no body); up to `limit` (20 by default) full catalog songs. With `offered` (catalog ids shown) or `selected` (those added) the body also carries `offered: {suggested: [{id, type: 'songs', meta: {impressed: true, previewed}}]}` (`previewed` true for the ids in `previewed`, those whose preview was played) and `selected: [{id, type: 'songs', meta: {source: 'suggested'}}]`, as the web player's Refresh sends them; Apple then answers none of the offered songs (checked 2026-10-08) |
 | `preview(id, url)` | `{ok: true, id}` once Apple's 30-second clip of a song (`url`, https: the song's `previews[0].url`, kept as `previewUrl`) plays, or `{error, code}` (`NO_PREVIEW` for no https address, else the media error's name, such as `NotAllowedError`). MusicKit is paused first and its queue left alone: the clip plays in an `Audio` element of the page's own, at MusicKit's volume (`volume()` sets both), one at a time. `play()` and every `control()` stop it, and so does MusicKit playing again (`previewDidChange` follows each start and end) |
 | `stopPreview()` | `{stopped}`: whether a preview was playing |
-| `subscribe()`, `unsubscribe()` | MusicKit's listeners on or off, once per instance |
+| `subscribe()`, `unsubscribe()` | MusicKit's listeners on or off, once per instance: `{subscribed: true, events: [names], attached}` (`attached` false when this bridge's listeners were on already), and `{subscribed: false}` |
 
 ### The playlist writes
 
@@ -247,15 +247,16 @@ An item has one rating, `PUT /v1/me/ratings/<type>s/<id>` with `{type: 'ratings'
 attributes: {value}}` (the bridge's `rating(kind, id, value)`): 1 is a favourite
 (`Engine.love()`), -1 Suggest Less (`Engine.suggest_less()`), and `DELETE` takes either
 away (`Engine.unlove()`); `Engine.rating()` reads it back from `GET
-/v1/me/ratings/<type>s?ids=<id>`. `<type>` is `api.resource_type()`'s: `songs`, `albums`,
-`playlists`, `stations`, `music-videos`, or the `library-` type for a library id. A PUT
+/v1/me/ratings/<type>s?ids=<id>`. `<type>` is `api.resource_type()`'s, singular (the bridge
+adds the `s`): `song`, `album`, `playlist`, `station`, `music-video`, or `library-<type>` for
+a library id (but a station's). A PUT
 replaces the rating there was, so Suggest Less replaces a favourite and Favourite a Suggest
 Less. Checked against a real account on 2026-10-20 (MusicKit
 `playback/AppleMusic-2642.7.0-external`, the `gb` storefront) on a song:
 
 | Request | Apple's answer |
 |---|---|
-| `PUT /v1/me/ratings/songs/<id>` `{type: 'rating', attributes: {value: -1}}` | 200 with the rating (`value` -1): Suggest Less. `GET` answers it, the catalog read gives `personalRating: -1`; `DELETE` takes it away (204, then 404). The web player offers Suggest Less for albums, artists, music videos, playlists, songs and stations, and not with a favourite |
+| `PUT /v1/me/ratings/songs/<id>` `{type: 'ratings', attributes: {value: -1}}` | 200 with the rating (`value` -1): Suggest Less. `GET` answers it, the catalog read gives `personalRating: -1`; `DELETE` takes it away (204, then 404). The web player offers Suggest Less for albums, artists, music videos, playlists, songs and stations, and not with a favourite |
 
 The menus follow the web player: Favourite or Remove from Favourites, and Suggest Less (not
 beside a favourite) or Undo Suggest Less (`actions.rating_actions()`). An artist's favourite
@@ -286,13 +287,36 @@ The catalog read that finds an item's library twin (`api.library_twin_params()`,
 gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
 `fields[<type>]=inLibrary,personalRating`.
 
+### The editorial groupings: New and Radio
+
+The Radio page (`groupings?name=radio`, below) and the New page (`name=music`) answer one
+`groupings` resource whose `tabs` hold one `editorial-elements` (kind 382) with `children`,
+each a shelf by `attributes.editorialElementKind` (checked live on 2026-10-20):
+
+| Kind | What it is |
+|---|---|
+| 316 | the hero row: children 320 (wide, with `artwork`, `editorialArtwork`, `designBadge` such as "UPDATED PLAYLIST", `designTag`, sometimes `editorialVideo`), 317 and 383 (`designBadge`), each one resource in `contents` |
+| 488 | Radio's live stations: children 489, each one live station in `contents` and a `stationGlyph` (the station's logo with its colours) |
+| 326 | a shelf: `name`, `displayStyle` (`compact`, `expanded`), `contents` (albums, playlists, stations, `apple-curators`, `music-videos`, `uploaded-videos`), and `room`, its See All |
+| 327 | a shelf of songs |
+| 385 | New's "New for <month>": children 386 (an `apple-curators` in `contents`) and 394 (`artwork`, `designTag`, and a `link` or an `apple-curators`) |
+| 391 | More to Explore: `name` and `links`, `[{label, url, target?}]` |
+| 322 | untitled `links`, every one a genre's grouping |
+
+`normalize._grouping_shelves()` makes a shelf of every titled element with something in its
+`contents` or its children's (326, 327, 385's curators, 488), and of the first untitled one
+made of children (316) the featured shelf; `radio_shelves()` tells 316 and 488 apart
+(`RADIO_HERO_KIND`, `RADIO_LIVE_KIND`). The 391 and 322 links, a room (a 326's See All), and
+the design keys (`designBadge`, `designTag`, `stationGlyph`, a 394's `artwork`) are not
+used yet ("The editorial pages' links and rooms", below).
+
 ### The Radio page
 
 `Engine.radio()` asks `GET /v1/editorial/<sf>/groupings` with `api.RADIO_PARAMS`
 (`name=radio`, `platform=web`, without which it is a 400, `tabs=subscriber`,
 `extend=editorialArtwork`, `include[stations]=events,radio-show`), the web player's request
 for its Radio page less `extend[station-events]=editorialVideo`, checked live on 2026-10-20.
-The answer is the editorial grouping New's is (see "The editorial pages" below for its
+The answer is the editorial grouping New's is (see "The editorial groupings" above for its
 element kinds), shaped by `normalize.radio_shelves()` through New's own
 `_grouping_shelves()`:
 
@@ -448,23 +472,12 @@ relationships: {'credit-artists': {data}}}`, `kind` `performer`, `composer-and-l
 `{id, type, attributes: {name, roleNames: [..], artwork?}}`, its id not an artist's catalog
 id. A library song needs its catalog id.
 
-### The editorial pages: New's banners and links, rooms (#370)
+### The editorial pages' links and rooms (#370)
 
-The Radio page (`groupings?name=radio`, above) and the New page (`name=music`) answer one
-`groupings` resource whose `tabs` hold one `editorial-elements` (kind 382) with `children`,
-each a shelf by `attributes.editorialElementKind`:
-
-| Kind | What it is |
-|---|---|
-| 316 | the hero row: children 320 (wide, with `artwork`, `editorialArtwork`, `designBadge` such as "UPDATED PLAYLIST", `designTag`, sometimes `editorialVideo`), 317 and 383 (`designBadge`), each one resource in `contents` |
-| 488 | Radio's live stations: children 489, each one live station in `contents` and a `stationGlyph` (the station's logo with its colours) |
-| 326 | a shelf: `name`, `displayStyle` (`compact`, `expanded`), `contents` (albums, playlists, stations, `apple-curators`, `music-videos`, `uploaded-videos`), and `room`, its See All |
-| 327 | a shelf of songs |
-| 385 | New's "New for <month>": children 386 (an `apple-curators` in `contents`) and 394 (`artwork`, `designTag`, and a `link` or an `apple-curators`) |
-| 391 | More to Explore: `name` and `links`, `[{label, url, target?}]` |
-| 322 | untitled `links`, every one a genre's grouping |
-
-The links' URLs and what opens them (the web player's routes):
+What the editorial groupings ("The editorial groupings" above) hold that the app does not
+use yet: the 391 (More to Explore) and 322 (genre) elements' `links`, a 326 shelf's `room`
+(its See All), and the design keys (`designBadge`, `designTag`, `stationGlyph`, a 394's
+`artwork`). The links' URLs and what opens them (the web player's routes):
 
 | URL | Request |
 |---|---|
@@ -516,7 +529,7 @@ still reads: no dates, no hearts, Recently Added Apple's shelf).
 
 ```jsonc
 {
-  "version": 2, "generated": "2026-09-25T12:00:00Z", "storefront": "us",
+  "version": 4, "generated": "2026-09-25T12:00:00Z", "storefront": "us",
   "sections": {"albums": [Item], "artists": [Item], "playlists": [Item], "radio": [Item],
                "videos": [Item]},
   "shelves": [{"key": "rec-<id>", "title": "…", "items": [Item],   // Apple's recommendations
@@ -565,6 +578,7 @@ Track = {"id": "i.…", "catalogId": "…" /* or null */, "title": "…", "artis
          "type": "library-songs",        // the API's: songs, music-videos, library-…, or ''
                                          // (the item playing may carry MusicKit's own
                                          // 'song' or 'musicVideo' instead)
+         "artUrl": "…" /* or null */,    // the bridge's: the artwork at 256x256, for MPRIS
          "autoplay": true,               // a queue entry autoplay added (only then)
          "isLive": true}                 // the item playing is a live radio station (only
                                          // then: its type 'radioStation', durationMs 0)
@@ -648,8 +662,13 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
 | `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
+| `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
+| `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |
+
 `normalize.prune_caches()` runs after the library's first load and after every sync; it also
-removes what older versions kept (`items/`) and temporary files over an hour old.
+removes what older versions kept (`items/`) and temporary files over an hour old. Clear
+Cache (`src/cache.py`'s `CACHE_ENTRIES`) also removes `items/` and `library.lock`, an older
+version's leftovers.
 
 ## Environment
 

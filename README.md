@@ -32,7 +32,7 @@ The screenshots show an invented demo library.
   pages laid out as Apple Music's: the artist's wide banner where Apple has one, the latest
   release, top songs, albums, radio shows, About and similar artists. An album's page ends
   with its release date, its other versions, music videos and more by the artist; Search
-  remembers what you searched for and lists every result with See All.
+  remembers what you opened from it and lists every result with See All.
 - Menus on songs, albums, playlists and artists, as each allows: Add to Library or Remove
   from Library, Favourite, Suggest Less, Create Station, and Add to Playlist, for a whole
   album or playlist too.
@@ -66,8 +66,8 @@ apps do those). The whole list, with the reasons, is in the
 - An Apple Music subscription.
 - Google Chrome, found as `google-chrome-stable`, `google-chrome` or
   `/opt/google/chrome/chrome`. Without it, the app tries Microsoft Edge, Brave, Vivaldi and
-  Chromium (not their snaps), and Preferences › Engine › Browser program can name another
-  command. Any of them plays only with Widevine, which the app checks when the engine
+  Chromium (not their snaps), and Preferences › Engine › Browser › Browser program can name
+  another command. Any of them plays only with Widevine, which the app checks when the engine
   starts; only Google Chrome is tested.
 - GTK 4.20, libadwaita 1.9, GLib 2.84, Python 3.12 and PyGObject 3.50, or newer: the
   libraries of GNOME 50. Any distribution that ships them will do. Fedora 44, Ubuntu 26.04,
