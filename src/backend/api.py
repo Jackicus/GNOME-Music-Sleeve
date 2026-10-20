@@ -26,7 +26,8 @@ The standard library only; engine.py and actions.py use it.
     playlist_entries(listed)            # a playlist's tracks as a PUT of them sends them back
     reordered_entries(listed, shown, order)   # those in a new order, or EngineError('conflict')
     is_editorial_id('6789.12')          # whether it may name an editorial room or grouping
-    replay_params('2025')               # what a year's Replay is asked with ('' the latest)
+    replay_request('2025')              # (path, params) of a year's Replay (None the latest)
+    replay_songs_params(ids)            # the catalog read of its top songs, by id
 """
 
 import re
@@ -149,19 +150,24 @@ RECENT_PLAYED_ENDPOINT = '/v1/me/recent/played'
 RECENT_PLAYED_PAGE = 10
 RECENT_PLAYED_LIMIT = 30
 
-# Replay: the account's year in music, Apple's music summaries ("Get the user's replay data",
-# documented with `filter[year]=latest` alone): the year's top songs, artists and albums as
-# the summary's `views`, each in its order. The years Apple has a Replay of, each with its
-# playlist (the web player's Replay listing, REPLAY_YEARS_*), and a past year's summary by
-# its year (replay_params) are as remembered, not checked live: the engine takes Apple
-# refusing either as there being none.
+# Replay: the account's year in music, Apple's music summaries (checked live 2026-10-20): the
+# latest year's summary asked with `filter[year]=latest`, a past year's by its own resource,
+# `year-<YYYY>` (Apple answers `filter[year]=<YYYY>` with a 400), each with its top songs,
+# artists and albums as the summary's `views`, in rank order. A view's items are period
+# summaries that wrap the song, album or artist; a song is its catalog id alone, so the
+# songs are read from the catalog by id (REPLAY_SONGS_ENDPOINT, up to REPLAY_SONGS_LIMIT in
+# one read). The years Apple has a Replay of, each with its playlist, are the web player's
+# Replay listing (REPLAY_YEARS_*).
 REPLAY_ENDPOINT = '/v1/me/music-summaries'
+REPLAY_YEAR_ENDPOINT = '/v1/me/music-summaries/year-{year}'
 REPLAY_VIEWS = 'top-songs,top-artists,top-albums'
 REPLAY_LATEST = 'latest'
+REPLAY_SONGS_ENDPOINT = '/v1/catalog/{storefront}/songs'
+REPLAY_SONGS_LIMIT = 100
 REPLAY_YEARS_ENDPOINT = '/v1/me/music-summaries/search'
 REPLAY_YEARS_PARAMS = {'period': 'year', 'fields[music-summaries]': 'period,year',
                        'include[music-summaries]': 'playlist'}
-# What a Replay year may be: four digits (it goes into a query and the kept answer's name).
+# What a Replay year may be: four digits (it goes into a path and the kept answer's name).
 REPLAY_YEAR = re.compile(r'^[12][0-9]{3}$')
 
 
@@ -170,10 +176,26 @@ def is_replay_year(value):
     return isinstance(value, str) and REPLAY_YEAR.match(value) is not None
 
 
-def replay_params(year=None):
-    """What a year's Replay is asked with: its summary's views, of `year` (an
-    is_replay_year year), or of the latest year without one."""
-    return {'filter[year]': year or REPLAY_LATEST, 'views': REPLAY_VIEWS}
+def replay_request(year=None):
+    """What a year's Replay summary is asked with, (path, params): the latest year's as
+    REPLAY_ENDPOINT with `filter[year]=latest`, a past `year`'s (an is_replay_year year) as
+    its own resource, `/v1/me/music-summaries/year-<year>`; with its views either way."""
+    if year:
+        return REPLAY_YEAR_ENDPOINT.format(year=year), {'views': REPLAY_VIEWS}
+    return REPLAY_ENDPOINT, {'filter[year]': REPLAY_LATEST, 'views': REPLAY_VIEWS}
+
+
+def replay_songs_params(song_ids):
+    """The catalog read of Replay's top songs (REPLAY_SONGS_ENDPOINT): the first
+    REPLAY_SONGS_LIMIT catalog ids of `song_ids`, each once, in one read; None without any."""
+    found = []
+    for song_id in song_ids or ():
+        song_id = str(song_id or '')
+        if song_id.isdigit() and song_id not in found:
+            found.append(song_id)
+    if not found:
+        return None
+    return {'ids': ','.join(found[:REPLAY_SONGS_LIMIT])}
 
 # An artist's page, as music.apple.com's views-based artist page asks for it: the artist with
 # every view its page shows (each answered with Apple's own title, its first page of

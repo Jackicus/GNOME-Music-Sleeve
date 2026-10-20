@@ -3223,8 +3223,9 @@ def chart_song(track, album):
 
 def build_replay_page(out_dir, albums, artists, draw_cover, thumb_for, cover_size, generated):
     """Write replay.json, the Replay page's answer for the latest of DEMO_REPLAY_YEARS
-    (normalize.replay_page()'s shape, kept as the engine keeps it, stamped `cached` with the
-    library's date), and each earlier year's in replay/<year>.json: Top Songs (twenty-five
+    (normalize.replay_page()'s shape, kept as the engine keeps it, with its `basis`,
+    normalize.REPLAY_SHAPE, and stamped `cached` with the library's date), and each earlier
+    year's in replay/<year>.json: Top Songs (twenty-five
     of the library's songs, ranked, a list), Top Artists and Top Albums (ten of the
     library's own each, ranked: their pages are the library's), untitled for the app to name
     them, then each year's invented Replay playlist of the library's songs, with its tracks,
@@ -3272,6 +3273,7 @@ def build_replay_page(out_dir, albums, artists, draw_cover, thumb_for, cover_siz
                 {'key': 'replay-playlists', 'title': '', 'chart': 'replay-playlists',
                  'items': playlists},
             ],
+            'basis': normalize.REPLAY_SHAPE,  # the shape the engine keeps it in
             'cached': generated,
             'demo': True,  # invented: the demo engine answers only these
         }

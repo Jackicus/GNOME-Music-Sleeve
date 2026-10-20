@@ -622,7 +622,9 @@ class TestDemoLibrarySchema(unittest.TestCase):
             with self.subTest(year=year):
                 answer = latest if year == years[0] else read('replay', f'{year}.json')
                 self.assertIs(answer['demo'], True)
-                self.assertEqual(set(answer) - {'demo', 'cached'}, {'year', 'years', 'shelves'})
+                self.assertEqual(set(answer) - {'demo', 'cached'},
+                                 {'year', 'years', 'shelves', 'basis'})
+                self.assertEqual(answer['basis'], normalize.REPLAY_SHAPE)
                 self.assertEqual((answer['year'], answer['years']), (year, years))
                 shelves = answer['shelves']
                 self.assertEqual([shelf['chart'] for shelf in shelves],

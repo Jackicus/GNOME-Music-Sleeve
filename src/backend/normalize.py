@@ -2279,35 +2279,47 @@ def _chart_items(resources, cache_dir):
 REPLAY_VIEWS = (('top-songs', 'songs'), ('top-artists', 'artists'), ('top-albums', 'albums'))
 # The chart of the shelf of each year's Replay playlist.
 REPLAY_PLAYLISTS = 'replay-playlists'
+# The relationship each view's period summaries hold their song, artist or album in, by chart.
+REPLAY_WRAPS = {'songs': 'song', 'artists': 'artist', 'albums': 'album'}
+# The shape a Replay answer is kept in, its `basis` (Engine.replay): a newer one makes the
+# kept answers of an older shape be asked again. Bump it when replay_page reads Apple's
+# answers anew.
+REPLAY_SHAPE = 'replay-2'
 
 
 def replay_page(raw, cache_dir):
     """`replay`'s answer from Apple's music summaries: {year, years, shelves}. `raw` is
-    {summary, years, year}: the summary read (`/v1/me/music-summaries` with `views`; None
-    when Apple had none), the years read (`/v1/me/music-summaries/search`; None without it)
-    and the year asked ('' for the latest). `year` is the summary's (its `attributes.year`),
+    {summary, songs, years, year}: the summary read (`/v1/me/music-summaries` with `views`,
+    a past year's `/v1/me/music-summaries/year-<YYYY>`; None when Apple had none), the
+    catalog read of its top songs by id (replay_song_ids(); None without it), the years read
+    (`/v1/me/music-summaries/search`; None without it) and the year asked ('' for the
+    latest). `year` is the summary's (its `attributes.year`, else its id's, `year-<YYYY>`),
     else the one asked ('' when neither says); `years` every year Apple lists a Replay of,
     newest first, as strings (replay_years()). The shelves are the summary's views with
     something in them, in REPLAY_VIEWS' order, each `{key, title, items, chart, ranked}`
     keyed `replay-<chart>` (`songs`, `artists`, `albums`), titled as Apple titles the view
-    ('' without one: the app names it by `chart`), the items as a chart's (each once, a song
-    with its album's name), Top Songs `form: 'songs'`; then, when the years read lists their
-    playlists, one shelf of them, newest first (`replay-playlists`, untitled)."""
+    ('' without one: the app names it by `chart`), the items the song, artist or album each
+    of the view's period summaries holds, in rank order, as a chart's (each once, a song
+    with its album's name; a song the catalog read did not answer is left out), Top Songs
+    `form: 'songs'`; then, when the years read lists their playlists, one shelf of them,
+    newest first (`replay-playlists`, untitled)."""
     raw = raw if isinstance(raw, dict) else {}
     summary = _first_resource(raw.get('summary'))
-    attrs = (summary.get('attributes') or {}) if summary else {}
-    year = str(attrs.get('year') or raw.get('year') or '')
+    year = _replay_year(summary) if summary else ''
+    if not year:
+        year = str(raw.get('year') or '')
     if not api.is_replay_year(year):
         year = ''
     views = summary.get('views') if summary else None
     views = views if isinstance(views, dict) else {}
+    songs = {str(song.get('id')): song for song in _resources(raw.get('songs'))}
     shelves = []
     for name, chart in REPLAY_VIEWS:
         view = views.get(name)
         data = view.get('data') if isinstance(view, dict) else None
         if not isinstance(data, list):
             continue
-        items = _chart_items(data, cache_dir)
+        items = _chart_items(_replay_resources(data, REPLAY_WRAPS[chart], songs), cache_dir)
         if not items:
             continue
         title = (view.get('attributes') or {}).get('title')
@@ -2324,12 +2336,68 @@ def replay_page(raw, cache_dir):
     return {'year': year, 'years': [entry['year'] for entry in years], 'shelves': shelves}
 
 
+def replay_song_ids(summary):
+    """The catalog ids of a Replay summary's top songs, in rank order, each once: the songs
+    its `top-songs` period summaries hold as an id alone (`relationships.song.data[0]`, no
+    attributes), which the catalog is asked for (api.replay_songs_params)."""
+    resource = _first_resource(summary)
+    views = resource.get('views') if resource else None
+    view = views.get('top-songs') if isinstance(views, dict) else None
+    data = view.get('data') if isinstance(view, dict) else None
+    found = []
+    for entry in _replay_resources(data if isinstance(data, list) else [], 'song', None):
+        song_id = str(entry.get('id') or '')
+        if not entry.get('attributes') and song_id.isdigit() and song_id not in found:
+            found.append(song_id)
+    return found
+
+
+def _replay_resources(data, wraps, songs):
+    """The resources a Replay view's items stand for, in rank order: each period summary's
+    (`<kind>-period-summaries`) `relationships.<wraps>.data[0]`, an item of another type as
+    it is. With `songs` (the catalog's songs by id), a song Apple gives as its id alone is
+    the catalog's, and left out when the catalog did not answer it."""
+    found = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get('type') or '').endswith('-period-summaries'):
+            related = entry.get('relationships')
+            related = related.get(wraps) if isinstance(related, dict) else None
+            entry = next(iter(_resources(related)), None)
+            if entry is None:
+                continue
+        if songs is not None and entry.get('type') == 'songs' and not entry.get('attributes'):
+            entry = songs.get(str(entry.get('id')))
+            if entry is None:
+                continue
+        found.append(entry)
+    return found
+
+
+def _replay_year(resource):
+    """A music summary's year, a string: its `attributes.year`, else its id's (`year-<YYYY>`),
+    else ''."""
+    year = str((resource.get('attributes') or {}).get('year') or '')
+    if not year:
+        year = str(resource.get('id') or '').removeprefix('year-')
+    return year if api.is_replay_year(year) else ''
+
+
+def _resources(answer):
+    """The resources (dicts) of an answer's `data`, in order."""
+    data = answer.get('data') if isinstance(answer, dict) else None
+    return [resource for resource in data if isinstance(resource, dict)] if isinstance(
+        data, list) else []
+
+
 def replay_years(raw, cache_dir=None):
     """The years Apple lists a Replay of (`/v1/me/music-summaries/search?period=year` with
-    `include[music-summaries]=playlist`), newest first, each once: [{year, playlist}], `year`
-    a string (api.is_replay_year), `playlist` the year's Replay playlist as a shelf item (its
-    `relationships.playlist`, included in the answer), or None. A summary of another period
-    than a year is left out."""
+    `include[music-summaries]=playlist`: a `music-summaries` resource a year, id
+    `year-<YYYY>`), newest first, each once: [{year, playlist}], `year` a string
+    (api.is_replay_year; its `attributes.year`, else its id's), `playlist` the year's Replay
+    playlist as a shelf item (its `relationships.playlist`, with its attributes in the
+    answer), or None. A summary of another period than a year is left out."""
     data = raw.get('data') if isinstance(raw, dict) else None
     found = {}
     for resource in data if isinstance(data, list) else []:
@@ -2338,8 +2406,8 @@ def replay_years(raw, cache_dir=None):
         attrs = resource.get('attributes') or {}
         if attrs.get('period') not in (None, 'year'):
             continue
-        year = str(attrs.get('year') or '')
-        if not api.is_replay_year(year) or year in found:
+        year = _replay_year(resource)
+        if not year or year in found:
             continue
         playlist = None
         related = ((resource.get('relationships') or {}).get('playlist') or {}).get('data')

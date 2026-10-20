@@ -133,7 +133,8 @@ paths:
   `stale: True` (`cache.read_kept(allow_stale=True)`); every answer carries its `cached`
   stamp. An answer asked about something that changes (`basis`: the suggestions' fingerprint
   of the songs the playlist holds, `suggestions.basis()`; an album's or a playlist's page, the
-  views it asked for, `api.ALBUM_PARAMS`, `api.PLAYLIST_PARAMS`) is kept with it and is not fresh
+  views it asked for, `api.ALBUM_PARAMS`, `api.PLAYLIST_PARAMS`; Replay, the shape it is kept in,
+  `normalize.REPLAY_SHAPE`, bumped when its reading of Apple's answer changes) is kept with it and is not fresh
   for another, whatever its age; nor is one whose `expires` has passed (Radio's, once a live
   station's programmes run out: `normalize.answer_expired()`). Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations') or in an older `format` than `lyrics.FORMAT` (bump it when the lines carry something new). `item()`'s artwork
   goes to remote-art/ (`place_in_remote_art`): art/ and thumb/ are the library's, pruned
