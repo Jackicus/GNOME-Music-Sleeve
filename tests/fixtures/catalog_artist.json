@@ -277,7 +277,25 @@
           "attributes": {
             "title": "Radio Shows"
           },
-          "data": []
+          "data": [
+            {
+              "id": "1724049600",
+              "type": "apple-curators",
+              "href": "/v1/catalog/gb/apple-curators/1724049600",
+              "attributes": {
+                "name": "The Paper Parachutes Hour",
+                "kind": "Show",
+                "showHostName": "Paper Parachutes",
+                "artwork": {
+                  "url": "https://example.invalid/image/thumb/aW52ZW50ZWQ/{w}x{h}bb.jpg",
+                  "width": 1080,
+                  "height": 1080,
+                  "bgColor": "204060"
+                },
+                "url": "https://music.apple.com/gb/curator/the-paper-parachutes-hour/1724049600"
+              }
+            }
+          ]
         },
         "singles": {
           "href": "/v1/catalog/gb/artists/1724049001/view/singles",

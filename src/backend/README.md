@@ -227,7 +227,7 @@ element kinds), shaped by `normalize.radio_shelves()` through New's own
   'ra.<n>'}`, which the app's `{kind: 'station', id}` play is;
 - a radio show is an `apple-curators` of `kind` `Show` (with `showHostName`): a category
   tile, as every curator on a shelf is, subtitled with its host, whose page is the
-  category page (`bridge.category()`, the curator with its grouping: its episodes);
+  category page (`bridge.category()`: its episodes and playlists; see below);
 - the 391 (More to Explore) and 322 (genre links) elements have no `contents` and are left
   out, as on New, and so are `uploaded-videos`.
 
@@ -256,6 +256,30 @@ header's width in device pixels, in steps of 480, no wider than the source: a `v
 3:1, an `sr` one at its own 2:1 (that `sr` answers sizes other than 4320x2160 is to be
 confirmed live), into `remote-art/`. The demo's invented banners carry `art`, a file, and
 no `url`.
+
+### Curators and radio shows
+
+An `apple-curators` resource has `attributes.kind` `Show` (a radio show, with
+`showHostName`), `Genre` or `Curator`; third parties are `curators`. None has `playParams`:
+nothing plays a curator, and there is nothing to favourite (checked live on 2026-10-20).
+`normalize.normalize_curator()` makes every one a category tile (kind `category`, a show
+subtitled with its host) wherever Apple puts one: a grouping's shelf (New's "New for …",
+Radio, a category page), the search landing, an artist's `view/radio-shows`, and
+`normalize_item()`, which never makes one a station. Its menu is Open in Browser and Copy
+Link alone (`actions.curator_menu()`), and its tile opens its page:
+
+- `bridge.category(id)` asks `GET
+  /v1/catalog/<sf>/apple-curators/<id>?include=grouping,playlists&include[editorial-elements]=children,contents,room&extend=editorialArtwork&platform=web`,
+  music.apple.com's request. `normalize.category_page()` makes `relationships.grouping`'s
+  326 shelves (a show's: its episodes, as `stations`, and albums and playlists) into
+  shelves, then `relationships.playlists`, less those already shown, into one keyed
+  `playlists` (untitled: the app names it);
+- an artist's `view/radio-shows` is not empty for the hosts of Apple's shows (21 of 24
+  tried), every entry an `apple-curators` of kind `Show`: the artist page's Radio Shows
+  (`CURATOR_VIEWS`). Their `view/more-to-hear` holds the episodes (`stations`, `streaming`,
+  not live), which play as stations;
+- search answers curators only when asked for (`types=apple-curators`), never with the
+  app's `types`.
 
 ## Checked live, not used yet
 
@@ -343,19 +367,11 @@ The links' URLs and what opens them (the web player's routes):
 A live station's events also carry `heroArtwork`, and some an `editorialVideo` (the web
 player's `extend[station-events]=editorialVideo`), which the Radio page does not use.
 
-### Curators and radio shows (#359, #360)
+### A radio show's banner (#401)
 
-An `apple-curators` resource has `attributes.kind` `Show` (a radio show, with
-`showHostName`), `Genre` or `Curator`; third parties are `curators`. None has `playParams`:
-nothing plays, and there is nothing to favourite. Its page is `GET
-/v1/catalog/<sf>/apple-curators/<id>?include=grouping,playlists&include[editorial-elements]=children,contents,room&extend=editorialArtwork&platform=web`:
-`relationships.grouping` a grouping of 326 shelves as above (a show's: its episodes, as
-`stations`, and albums and playlists) and `relationships.playlists`. A show's banner is
-`editorialArtwork.bannerUber`, else `subscriptionCover`, else `subscriptionHero`. Search
-answers curators only when asked for (`types=apple-curators`), never with the app's
-`types`. An artist's `view/radio-shows` is not empty for the hosts of Apple's shows (21 of
-24 tried), every entry an `apple-curators` of kind `Show`; their `view/more-to-hear` holds
-episodes (`stations`, `streaming`, not live).
+A show's page (the category page, "Curators and radio shows" above) carries its banner in
+the curator's `editorialArtwork`: `bannerUber`, else `subscriptionCover`, else
+`subscriptionHero`. The category page shows no banner yet.
 
 ## Events
 

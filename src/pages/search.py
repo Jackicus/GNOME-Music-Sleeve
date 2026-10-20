@@ -182,6 +182,7 @@ class SearchPage(Adw.NavigationPage):
         connect_weak(self.songs_list, 'activate', self._on_song_activated)
         connect_weak(self.songs_see_all_button, 'clicked', self._on_songs_see_all_clicked)
         self.categories_box.bind_model(self._categories, weak_method(self._create_category_tile))
+        context_menu.attach(self.categories_box)  # a category's Open in Browser, Copy Link
         self.suggestions_list.bind_model(self._suggestions,
                                          weak_method(self._create_suggestion_row))
         self.recent_box.bind_model(self._recent_items, weak_method(self._create_recent_tile))

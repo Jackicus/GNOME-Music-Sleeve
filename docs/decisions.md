@@ -633,6 +633,15 @@ changes, change it here, with the date. The plan they came from is in
   on the buttons' line or, where it has no room (a phone, a narrow window beside the
   cover), on one of their own under Play and Shuffle (an `AdwWrapBox`), rather than
   ellipsizing the buttons or moving the cover's breakpoint.
+- **A curator is a page, never a station** (2026-10-20, #359, #360). Apple's curators (a
+  genre's page, a radio show) have no `playParams`, so Play and Favourite on one could only
+  fail. Every curator, wherever Apple puts one (a shelf, the search landing, an artist's
+  Radio Shows), is a category tile that opens its page, and its menu is Open in Browser and
+  Copy Link alone; the normaliser never makes one a station. The page is the category page,
+  asked as music.apple.com asks it (the grouping's shelves with their contents, then the
+  curator's playlists), so a show's page lists its episodes, which play as stations. A show
+  offers no Go to Artist: Apple names its host (`showHostName`), not the host's artist. The
+  show's banner waits (#401): the category page has no hero.
 - **An artist of the library is shown as the library holds them** (2026-10-03). Apple Music
   has two pages of an artist: the catalog's, and its library's (Library › Artists: a list
   of artists beside the one chosen, their albums in the library under the name, Play and

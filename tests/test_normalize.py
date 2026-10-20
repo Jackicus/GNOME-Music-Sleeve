@@ -1119,8 +1119,8 @@ class TestArtistPage(unittest.TestCase):
     def test_the_shelves_in_apples_order(self):
         # The empty views are left out; About goes before similar-artists on the page.
         self.assertEqual([shelf['key'] for shelf in self.page['shelves']], [
-            'featured-albums', 'full-albums', 'music-videos', 'playlists', 'singles',
-            'appears-on-albums', 'more-to-hear', 'more-to-see', 'similar-artists'])
+            'featured-albums', 'full-albums', 'music-videos', 'playlists', 'radio-shows',
+            'singles', 'appears-on-albums', 'more-to-hear', 'more-to-see', 'similar-artists'])
         self.assertEqual([shelf['title'] for shelf in self.page['shelves']][:2],
                          ['Essential Albums', 'Albums'])
         self.assertEqual([shelf['key'] for shelf in self.page['shelves'] if shelf['more']],
@@ -1150,6 +1150,27 @@ class TestArtistPage(unittest.TestCase):
         self.assertEqual((link['kind'], link['title'], link['subtitle'], link['url'], link['play']),
                          ('link', 'Paper Parachutes on Ladders of Rain', '11:22',
                           'https://music.apple.com/gb/post/1724049500', {}))
+
+    def test_the_radio_shows_the_artist_hosts(self):
+        # #360: the view holds Apple curators of kind Show, once dropped (an empty shelf).
+        # Each is a category tile opening the show's page, subtitled with its host, and
+        # nothing plays it.
+        shelf = self.shelf('radio-shows')
+        self.assertEqual(shelf['title'], 'Radio Shows')
+        show = shelf['items'][0]
+        self.assertEqual((show['id'], show['kind'], show['title'], show['subtitle']),
+                         ('1724049600', 'category', 'The Paper Parachutes Hour',
+                          'Paper Parachutes'))
+        self.assertEqual(show['url'],
+                         'https://music.apple.com/gb/curator/the-paper-parachutes-hour/1724049600')
+        self.assertTrue(show['art'].startswith('https://'))
+        self.assertNotIn('play', show)
+        # A curator in another view still has no tile there.
+        views = self.raw['data'][0]['views']
+        views['playlists']['data'].append(views['radio-shows']['data'][0])
+        page = normalize.artist_page(self.raw, self.tmp_dir)
+        playlists = next(shelf for shelf in page['shelves'] if shelf['key'] == 'playlists')
+        self.assertEqual({item['kind'] for item in playlists['items']}, {'playlist'})
 
     def test_a_view_seen_again_under_the_same_title_is_left_out(self):
         views = self.raw['data'][0]['views']

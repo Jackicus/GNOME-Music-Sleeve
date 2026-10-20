@@ -142,6 +142,8 @@ ARTIST_FACTS = [
 
 # The radio shows an artist's episodes air on, and the words an episode or an interview takes.
 DEMO_SHOWS = ['Lighthouse One', 'Slow Tide Radio', 'The Long Play', 'Night Shift']
+# The radio shows the invented artists host (their pages' Radio Shows).
+DEMO_HOSTED_SHOWS = ['{artist} Radio', 'Late Lights with {artist}', 'The {artist} Hour']
 DEMO_EPISODES = ['{artist} in Conversation', 'The Making of {album}', '{genre} Spotlight',
                  'A Night with {artist}']
 DEMO_INTERVIEWS = ['{artist} on {album}', '{artist}: Behind the Songs', 'Live from the Studio']
@@ -2363,12 +2365,17 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
     """Write artists/<catalog id>.json for each hand-written artist: the page the catalog would
     answer (normalize.artist_page()'s shape, kept as the engine keeps it, stamped `cached`
     with the library's date), made of the artist's albums, songs and videos in the library,
-    and invented singles, playlists, radio episodes and interviews drawn here. Albums and
-    songs keep their library ids, so their pages are the library's."""
+    and invented singles, playlists, radio episodes and interviews drawn here. Every other
+    artist, the first among them, hosts a radio show (Radio Shows: a category tile, as
+    Apple's curators are), whose page is written beside the Radio page's shows
+    (categories/<id>.json: its episodes, then its playlists). Albums and songs keep their
+    library ids, so their pages are the library's."""
     rnd = random.Random(31)
     art_dir = os.path.join(out_dir, 'art')
     pages_dir = os.path.join(out_dir, 'artists')
+    categories_dir = os.path.join(out_dir, 'categories')
     os.makedirs(pages_dir, exist_ok=True)
+    os.makedirs(categories_dir, exist_ok=True)
 
     def cover(item_id, title, subtitle, palette_index, wide=False, badge=None):
         path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
@@ -2428,11 +2435,23 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
             brief(video, subtitle=str(video['year'])) for video in videos
             if video['subtitle'] == name])
         picks = [track for track, _album in rnd.sample(tracks, min(12, len(tracks)))]
-        shelf('playlists', 'Artist Playlists', [
+        artist_playlists = [
             collection(f'pl.demo{index:02d}1', 'playlist', f'{name} Essentials',
                        f'Apple Music {genre}', None, picks, index * 5 + 1),
             collection(f'pl.demo{index:02d}2', 'playlist', f'{name}: Deep Cuts',
-                       f'Apple Music {genre}', None, picks[::-1][:8], index * 5 + 2)])
+                       f'Apple Music {genre}', None, picks[::-1][:8], index * 5 + 2)]
+        shelf('playlists', 'Artist Playlists', artist_playlists)
+        hosted = None
+        if index % 2 == 0:
+            show_title = DEMO_HOSTED_SHOWS[(index // 2) % len(DEMO_HOSTED_SHOWS)].format(
+                artist=name)
+            show_id = f'demo.ashow{index:02d}'
+            art = cover(show_id, show_title, name, index * 5 + 4, badge='SHOW')
+            hosted = {'id': show_id, 'kind': 'category', 'title': show_title,
+                      'subtitle': name, 'art': art, 'thumb': thumb_for(art),
+                      'artColor': PALETTES[(index * 5 + 4) % len(PALETTES)][1],
+                      'url': f'https://music.apple.com/us/curator/{slug(show_title)}/{show_id}'}
+            shelf('radio-shows', 'Radio Shows', [hosted])
         singles = []
         for number, (track, _album) in enumerate(rnd.sample(tracks, min(2, len(tracks))), 1):
             year = newest['year'] + (1 if number == 1 else 0)
@@ -2467,6 +2486,18 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
                              'catalogId': None, 'url': None,
                              'play': {'kind': 'station', 'id': item_id}, 'groups': []})
         shelf('more-to-hear', 'More To Hear', episodes)
+        if hosted is not None:
+            show_page = {
+                'id': hosted['id'], 'title': hosted['title'],
+                'shelves': [
+                    {'key': f"cat-{hosted['id']}-episodes", 'title': 'Episodes',
+                     'items': [dict(episode, subtitle=hosted['title']) for episode in episodes]},
+                    {'key': 'playlists', 'title': '', 'items': artist_playlists}],
+                'cached': generated,
+                'demo': True}  # invented: the demo engine answers only these
+            with open(os.path.join(categories_dir, f"{hosted['id']}.json"), 'w',
+                      encoding='utf-8') as f:
+                json.dump(show_page, f, indent=2)
         interviews = []
         for number in range(2):
             words = DEMO_INTERVIEWS[(index + number) % len(DEMO_INTERVIEWS)].format(

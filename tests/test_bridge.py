@@ -869,6 +869,21 @@ class BridgeTest(unittest.TestCase):
               'types': 'albums,artists,music-videos,playlists,songs,stations', 'limit': 10}]])
 
     @scenario("""
+        mk.apiAnswers['/v1/catalog/gb/apple-curators/900000901'] = {data: []};
+        const answer = await bridge.category('900000901');
+        return {answer, calls: mk.calls};
+    """)
+    def test_a_category_asks_for_its_shelves_contents_and_playlists(self, value):
+        # A curator's page as music.apple.com asks for it: a radio show's lists its episodes
+        # and playlists (#359, #360).
+        self.assertEqual(value['answer'], {'data': []})
+        self.assertEqual(value['calls'], [
+            ['api.music', '/v1/catalog/gb/apple-curators/900000901',
+             {'include': 'grouping,playlists',
+              'include[editorial-elements]': 'children,contents,room',
+              'extend': 'editorialArtwork', 'platform': 'web'}]])
+
+    @scenario("""
         mk.writeStatus = 200;
         mk.writeBody = JSON.stringify({results: {suggested: [{id: '1000000101', type: 'songs'}]}});
         const answer = await bridge.playlistSuggestions('p.pl1');

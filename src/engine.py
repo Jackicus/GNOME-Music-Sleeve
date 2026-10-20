@@ -1958,7 +1958,8 @@ class Engine(GObject.Object):
 
     async def category(self, category_id, refresh=False):
         """A category's page: {id, title, shelves: [{key, title, items}]}, the curator's
-        grouping as shelves (Best New Songs, New Releases, Playlists, Stations…). From
+        grouping as shelves (Best New Songs, New Releases, Playlists, Stations…; a radio
+        show's episodes), then its own playlists (normalize.category_page). From
         <cache>/categories/<id>.json for a day, else the bridge's category() and kept."""
         category_id = str(category_id or '')
         if not category_id:

@@ -1204,7 +1204,9 @@ def normalize_item(raw_item, cache_dir=None, include_groups=True, art_urls=None)
         item = normalize_playlist(raw_item, cache_dir=cache_dir, art_urls=art_urls)
     elif raw_type in ('artists', 'library-artists') or raw_kind == 'artist':
         item = normalize_artist(raw_item, cache_dir=cache_dir, art_urls=art_urls)
-    elif raw_type in ('stations', 'radio-stations', 'apple-curators') or raw_kind == 'station':
+    elif raw_type == 'apple-curators':
+        item = curator_item(raw_item)
+    elif raw_type in ('stations', 'radio-stations') or raw_kind == 'station':
         item = normalize_station(raw_item, cache_dir=cache_dir, art_urls=art_urls)
     elif raw_type in ('songs', 'library-songs') or raw_kind == 'song':
         item = normalize_song_as_item(raw_item, cache_dir=cache_dir, art_urls=art_urls)
@@ -1368,12 +1370,42 @@ def normalize_category(raw):
 CATEGORY_ART_SIZE = 320
 
 
+def normalize_curator(raw):
+    """An Apple curator (`apple-curators`: a genre's, a curator's, a radio show's) as a
+    category tile (normalize_category), a radio show (attributes.kind `Show`) subtitled with
+    its host (`showHostName`) where Apple names one. None without a name. Apple gives a
+    curator no playParams: nothing plays it, and its tile opens its page (category_page)."""
+    item = normalize_category(raw)
+    if item is not None:
+        attrs = raw.get('attributes') or {}
+        host = str(attrs.get('showHostName') or '').strip()
+        if attrs.get('kind') == 'Show' and host:
+            item['subtitle'] = host
+    return item
+
+
+def curator_item(raw):
+    """An Apple curator as normalize_item answers one: its category tile
+    (normalize_curator) with nothing to play and no groups, never a station; a nameless one
+    is kind `unknown`."""
+    item = normalize_curator(raw)
+    if item is None:
+        attrs = raw.get('attributes') or {}
+        item = {'id': str(raw.get('id') or ''), 'kind': 'unknown',
+                'title': str(attrs.get('name') or ''), 'subtitle': None, 'art': None,
+                'artColor': None, 'url': attrs.get('url')}
+    item.update(play={}, groups=[], thumb=None)
+    return item
+
+
 def category_page(raw, cache_dir):
-    """Engine.category()'s answer from a curator with its grouping: the
-    category's `id` and `title`, and its `shelves` — the grouping's one
-    tab's editorial elements, each `{key, title, items}` in Apple's order,
-    items normalised as a search hit is (no groups, art as it stands);
-    an element with no title or nothing in it is left out."""
+    """Engine.category()'s answer from a curator with its grouping and its
+    playlists (a genre's, or a radio show's: its episodes, albums and
+    playlists): the category's `id` and `title`, and its `shelves` — the
+    grouping's one tab's editorial elements, each `{key, title, items}` in
+    Apple's order, items normalised as a search hit is (no groups, art as it
+    stands), then the curator's own playlists (_curator_playlists); an
+    element with no title or nothing in it is left out."""
     data = (raw or {}).get('data') or []
     curator = data[0] if data and isinstance(data[0], dict) else {}
     attrs = curator.get('attributes') or {}
@@ -1383,7 +1415,26 @@ def category_page(raw, cache_dir):
     for grouping in groupings:
         if isinstance(grouping, dict):
             shelves.extend(_grouping_shelves(grouping, cache_dir, 'cat'))
+    playlists = _curator_playlists(curator, cache_dir, shelves)
+    if playlists is not None:
+        shelves.append(playlists)
     return {'id': str(curator.get('id') or ''), 'title': title, 'shelves': shelves}
+
+
+def _curator_playlists(curator, cache_dir, shelves):
+    """A curator's own playlists (its `playlists` relationship) as the category page's last
+    shelf, keyed `playlists` and untitled (the app names it), less those its grouping's
+    `shelves` show already; None when none is left."""
+    shown = {(item['kind'], item['id']) for shelf in shelves for item in shelf['items']}
+    relationship = (curator.get('relationships') or {}).get('playlists') or {}
+    items = []
+    for raw_item in relationship.get('data') or []:
+        item = _shelf_item(raw_item, cache_dir, curators=False)
+        if item is None or item['kind'] != 'playlist' or (item['kind'], item['id']) in shown:
+            continue
+        shown.add((item['kind'], item['id']))
+        items.append(item)
+    return {'key': 'playlists', 'title': '', 'items': items} if items else None
 
 
 # The resource types an editorial shelf may hold, and the app can show; what
@@ -1397,14 +1448,14 @@ SHELF_RESOURCE_TYPES = {
 
 def _shelf_item(raw_item, cache_dir, settle=True, curators=True, art_urls=None):
     """An editorial element's or a recommendation's content as a shelf item:
-    an Apple curator as a category tile (its page is its grouping, as on the
-    search page; None without `curators`), a known resource with a name
+    an Apple curator as a category tile (normalize_curator: its page is its
+    grouping, as on the search page; None without `curators`), a known resource with a name
     without its groups (its art as a search hit's with `settle`, or the
     files a sync fetches, registered in `art_urls`); anything else None."""
     if not isinstance(raw_item, dict):
         return None
     if raw_item.get('type') == 'apple-curators':
-        return normalize_category(raw_item) if curators else None
+        return normalize_curator(raw_item) if curators else None
     if raw_item.get('type') not in SHELF_RESOURCE_TYPES:
         return None
     if not (raw_item.get('attributes') or {}).get('name'):
@@ -1891,6 +1942,10 @@ OWN_RELEASES = {'featured-release', 'latest-release', 'full-albums', 'singles', 
 # about the artist, which the app opens on music.apple.com, having no player for them.
 LINK_RESOURCE_TYPES = {'uploaded-videos', 'music-movies'}
 
+# The views of an artist that hold Apple curators: the radio shows the artist hosts, each
+# an `apple-curators` of kind Show, a category tile opening the show's page.
+CURATOR_VIEWS = {'radio-shows'}
+
 
 # An artist's wide header, as music.apple.com makes it (src/backend/README.md, "An artist's
 # banner"): the editorial background where Apple has one, cut with its own crop code, else
@@ -2023,17 +2078,15 @@ def artist_view_items(view, resources, cache_dir):
     groups: an album, a single or a video of the artist's own subtitled with its year, one it
     appears on with its artist, an essential album (featured-albums) with Apple's line about
     it; a song with its `album` (top-songs: the album's name) and
-    year; a radio episode with its show's name (Apple's notes carry it); a video about the
-    artist as a `link` Item opening its page (`url`), subtitled with its length. What the
+    year; a radio episode with its show's name (Apple's notes carry it); a radio show the
+    artist hosts as a category tile opening the show's page (_artist_view_item); a video about
+    the artist as a `link` Item opening its page (`url`), subtitled with its length. What the
     app cannot show is left out."""
     items = []
     for resource in resources if isinstance(resources, list) else []:
         if not isinstance(resource, dict):
             continue
-        if resource.get('type') in LINK_RESOURCE_TYPES:
-            item = _link_item(resource)
-        else:
-            item = _shelf_item(resource, cache_dir, curators=False)
+        item = _artist_view_item(view, resource, cache_dir)
         if item is None:
             continue
         attrs = resource.get('attributes') or {}
@@ -2058,6 +2111,18 @@ def artist_view_items(view, resources, cache_dir):
                 item['subtitle'] = show.strip()
         items.append(item)
     return items
+
+
+def _artist_view_item(view, resource, cache_dir):
+    """One entry of an artist's view as a shelf item, or None: a video about the artist as
+    a link (_link_item), a radio show the artist hosts (an Apple curator of kind Show, all a
+    `radio-shows` view holds) as its category tile (normalize_curator), anything else as a
+    shelf's (_shelf_item, which has no tile for a curator elsewhere)."""
+    if resource.get('type') in LINK_RESOURCE_TYPES:
+        return _link_item(resource)
+    if view in CURATOR_VIEWS and resource.get('type') == 'apple-curators':
+        return normalize_curator(resource)
+    return _shelf_item(resource, cache_dir, curators=False)
 
 
 def _link_item(resource):
