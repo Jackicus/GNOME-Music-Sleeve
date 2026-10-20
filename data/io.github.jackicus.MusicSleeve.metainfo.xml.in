@@ -64,35 +64,35 @@
   <screenshots>
     <screenshot type="default" environment="gnome">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/home-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/albums-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/album-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/now-playing-light.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/home-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/albums-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/album-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.1/data/screenshots/now-playing-dark.png</image>
     </screenshot>
   </screenshots>
 
@@ -102,6 +102,24 @@
   </branding>
 
   <releases>
+    <release version="1.0.1" date="2026-10-20">
+      <description>
+        <p>
+          Fixes: signing out forgets the account, the last session comes back as it should,
+          and Undo and Autoplay in Up Next work again.
+        </p>
+        <ul>
+          <li>Signing out forgets what the app held of the account: Home's Recently Played, ratings and favourites, Recently Searched and Up Next's covers are never shown to the next one</li>
+          <li>The last session, restored at launch: Play, Next or Previous pressed while the player starts plays what you chose, once; a song that can no longer be found no longer loses the whole session; Autoplay's songs no longer come back as songs you queued; and your Autoplay setting is kept</li>
+          <li>Undo after Clear in Up Next puts the songs back again, and Autoplay carries on after every queue you play, not only the first</li>
+          <li>A library kept by an older version is synced in full once, so its dates added and favourites appear</li>
+          <li>An album's page shows You Might Also Like</li>
+          <li>Closing a filter with Escape leaves the focus on the item you were on, and clearing Up Next from the keyboard leaves it on the song playing</li>
+          <li>The first shelf on Home shows its paging arrows</li>
+          <li>Go to Current Song works in a filtered playlist</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-10-20">
       <description>
         <p>
@@ -110,7 +128,7 @@
         </p>
         <ul>
           <li>Charts, with Top Songs, Top Albums, Top Playlists, the Daily Top 100 and City Charts, and Apple Music's own Radio page</li>
-          <li>An album's page ends with its release date and its other versions, music videos, more by the artist and what else you might like; album and playlist pages name their curator and when they were updated, and add to your library from the header</li>
+          <li>An album's page ends with its release date and its other versions, music videos, more by the artist and what else you might like; a playlist's page names its curator and when it was updated, and album and playlist pages add to your library from the header</li>
           <li>Artist pages wear the artist's banner, show their latest release beside their top songs and their radio shows, and an artist can be made a favourite with the star</li>
           <li>Search shows what you searched for recently, filters by kind and lists every result with See All, radio shows and curators among them</li>
           <li>Your favourite songs, albums, playlists and music videos show a heart, and Favourites Only shows them alone; Recently Added holds everything you added, and albums sort by Date Added; Albums, Artists, Songs, Music Videos and a playlist's songs filter as you type</li>
