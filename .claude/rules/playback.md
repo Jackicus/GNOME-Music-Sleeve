@@ -105,15 +105,24 @@ paths:
   once it is answered (`_restoring`), so play_next's item goes after it. The request takes
   the session (`_take_restored`, which makes a refresh() answer under way stale) and gives
   it back on a failure, unless MusicKit refused it (`api` with a code:
-  dropped, `session-dropped` deletes the file, `error` toasts why). MusicKit refuses a whole
-  queue by ids when one song cannot be found (`NOT_FOUND`): `_without_missing()` sends it
-  once more without the songs MusicKit's message names and those `engine.songs_found()`
-  (one read by id of the library's and the catalog's) does not answer, the item and its
-  position kept; only the item itself gone (or none found missing, or a second refusal)
-  drops it. A refresh() answer while
+  dropped, `session-dropped` deletes the file, `error` toasts why). Its queue by ids is
+  retried without the songs that cannot be found as any list of songs is (below), the item
+  and its position kept; only the item itself gone (or none found missing, or a second
+  refusal) drops it. A refresh() answer while
   a play request is pending sets only the modes. Discord publishes nothing while restored.
   tests/test_session.py and test_player.py's RestoreTest; `scripts/screenshot.py --demo
   --restored` shows it.
+- MusicKit refuses a whole list of songs by id (kind `songs`: Songs' Play and Shuffle, a
+  library artist's Play, a shelf of songs, a selection's or a drop's Play Next and Play
+  Later, the session restored) when one song in it cannot be found (`NOT_FOUND`, setQueue's
+  `musickit_code` or, from playNext and playLater, which throw, the message:
+  `player.not_found()`). `play()`, `play_next()` and `play_later()` then send it once more
+  without the songs MusicKit's message names and those `engine.songs_found()` (one read by
+  id of the library's and the catalog's) does not answer (`_without_missing()`), in order,
+  from the item asked for (`start_with`, `start_id`) or, that one gone, the next found, and
+  toast "N songs could not be played" (`left_out_message()`). None found missing, none left,
+  none after the item, or a second refusal: the refusal stands, never a third try.
+  tests/test_player.py's SongListTest.
 - A preview (a suggested song's 30-second clip, `Player.start_preview`) plays in the
   page's own audio element, not through MusicKit, which pauses for it: the state, track,
   times and queue stay MusicKit's, so the bar, the sheet and MPRIS show the queue paused,

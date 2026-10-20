@@ -79,8 +79,9 @@ item-undo-remove, "s" (playlist id), the toast's Undo of a selection's Remove fr
 
 A track list's selection (widgets/selection_mode.py) acts through the methods above, the
 selected tracks in the order shown: Play Next and Play Later queue each run of songs as one
-`songs` command (queue_commands(), as a drop on the player bar does too; one song at a time
-when MusicKit refuses the list); Add to Playlist is add_items_to_playlist(); Remove from
+`songs` command (queue_commands(), as a drop on the player bar does too; the Player sends it
+again without the songs MusicKit cannot find, and one song at a time goes when MusicKit
+refuses the list still); Add to Playlist is add_items_to_playlist(); Remove from
 Playlist is one write of the entries kept (Engine.remove_playlist_entries()); Remove from
 Library asks once and takes them out one after the other, hidden at once, one toast and one
 sync after.
@@ -1777,7 +1778,8 @@ class ItemActions:
     async def _send_queue(self, commands, later):
         """Queue queue_commands() `commands` in order: at the end (`later`), or after the item
         playing, each Play Next in front of the one after it. A list of songs MusicKit refuses
-        ('api') is queued one song at a time instead. Raises the engine's EngineError."""
+        ('api') even without the songs it cannot find (the Player's retry) is queued one song
+        at a time instead. Raises the engine's EngineError."""
         player = self.app.player
         method = player.play_later if later else player.play_next
         for kind, item_id in (commands if later else list(reversed(commands))):

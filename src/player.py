@@ -111,14 +111,19 @@ through a play request (restore_session: the album or playlist it came from when
 still that, else its songs' ids; shuffle off, the repeat mode, the position as start_time),
 and play_next/play_later queue it paused first. The request plays what the session shows as
 it goes out, after the engine's start: a step taken meanwhile is what plays, and a second
-Play sends nothing. A queue by ids that MusicKit refuses because songs in it cannot be
-found (NOT_FOUND: removed from the library, gone from the catalog) is sent once more without
-them (_without_missing), the item and its position kept, unless the item is one of them. A
+Play sends nothing. Its queue by ids, refused for songs that cannot be found, is sent
+again without them as any list of songs is (below), but the item itself gone drops it. A
 request that fails gives the session back, unless MusicKit refused the queue
 (EngineError('api') with its code): then it is dropped, `session-dropped` is emitted (the
 file goes) and `error` says why. MusicKit playing anything
 of its own ends it too. `source` is what a queue came from ({kind, id}: an album, a playlist,
 a station) while the queue is still that, in order; None otherwise.
+MusicKit refuses a whole list of songs by id (`songs`: Songs' Play and Shuffle, a library
+artist's Play, a shelf of songs, a selection's Play Next and Play Later, the session
+restored) when one of them cannot be found (NOT_FOUND: removed from the library, gone from
+the catalog): play() and play_next()/play_later() send it once more without them
+(_without_missing), in order, from the item asked for or, that one gone, the next found, and
+toast how many were left out (left_out_message()); a second refusal stands.
 A live radio station (the Track's `isLive`: MusicKit plays it as one item, and the duration
 it reports is only the stream's window) cannot be sought, paused or skipped (every
 mk.capabilities flag false; MusicKit ignores the seek and the pause): `live` is True, the
@@ -143,6 +148,7 @@ import logging
 import re
 import time
 from gettext import gettext as _
+from gettext import ngettext
 
 from gi.repository import Gio, GLib, GObject
 
@@ -246,6 +252,24 @@ END_SLACK = 2.0
 # ("One or more items could not be resolved: <id>"): a song since removed from the library,
 # or gone from the catalog.
 NOT_FOUND = 'NOT_FOUND'
+
+
+def not_found(error):
+    """Whether an EngineError is MusicKit refusing a queue because an item in it could not
+    be resolved: setQueue's answer carries the code (`musickit_code`); playNext and
+    playLater throw, so theirs is only in the message."""
+    if error.code != 'api':
+        return False
+    if error.musickit_code:
+        return error.musickit_code == NOT_FOUND
+    return NOT_FOUND in (error.message or '')
+
+
+def left_out_message(count):
+    """The toast after a list of songs played or queued without the `count` of them MusicKit
+    could not find."""
+    return ngettext('{count} song could not be played', '{count} songs could not be played',
+                    count).format(count=count)
 
 
 def _holds_item(name, data):
@@ -1238,15 +1262,15 @@ class Player(GObject.Object):
                         await self._send_play(kind, item_id, start_with, shuffle, start_id,
                                               restoring)
                     except EngineError as error:
-                        found = None
-                        if restoring is not None:
-                            found = await self._without_missing(error, kind, item_id,
-                                                                start_with)
+                        found = await self._without_missing(
+                            error, kind, item_id, start_with, start_id,
+                            keep_item=restoring is not None)
                         if found is None or serial != self._play_serial:
                             raise
-                        item_id, start_with = found
+                        item_id, start_with, start_id, left_out = found
                         await self._send_play(kind, item_id, start_with, shuffle, start_id,
                                               restoring)
+                        self._app.toast(left_out_message(left_out))
                 except EngineError as error:
                     self._source, self._source_ids = source
                     if not self._give_back(held, error, restoring is not None):
@@ -1255,32 +1279,49 @@ class Player(GObject.Object):
             if serial == self._play_serial:
                 self._set_pending(False)
 
-    async def _without_missing(self, error, kind, item_id, start_with):
-        """A session restored by its songs' ids that MusicKit refused because some could
-        not be resolved (NOT_FOUND): the request again without them, (ids, start_with), or
-        None when the item itself is one of them or none is known. The missing are those
-        MusicKit's message names and those Apple's read (songs_found) does not answer;
-        a read that fails leaves the message's alone."""
-        if kind != 'songs' or error.code != 'api' or error.musickit_code != NOT_FOUND:
+    async def _without_missing(self, error, kind, item_id, start_with=None, start_id=None,
+                               keep_item=False):
+        """A list of songs by id (`songs`: a play request's, play_next's, play_later's) that
+        MusicKit refused whole because some could not be resolved (NOT_FOUND, not_found()):
+        the request again without them, in order, as (ids, start_with, start_id, left out),
+        or None when none is known missing, none would be left, or there is no item to start
+        at. The missing are those MusicKit's message names and those Apple's read
+        (songs_found) does not answer; a read that fails leaves the message's alone. The item
+        at `start_with` keeps its place; when it is one of them the next one found plays
+        instead (`start_id` moved to it), unless `keep_item` (a session restored, which is
+        dropped rather than shown at another song)."""
+        if kind != 'songs' or not not_found(error):
             return None
-        ids = item_id.split(',')
-        if not 0 <= start_with < len(ids):
+        ids = str(item_id).split(',')
+        if start_with is not None and not 0 <= start_with < len(ids):
             return None
         named = set(re.findall(r'[\w.-]+', error.message or ''))
         missing = {song_id for song_id in ids if song_id in named}
         try:
             found = await self._engine.songs_found(ids)
         except EngineError as failure:
-            log.warning("the last session's songs could not be looked up: %s", failure)
+            log.warning('the songs of a list could not be looked up: %s', failure)
         else:
             missing.update(song_id for song_id in ids if song_id not in found)
-        if not missing or ids[start_with] in missing:
-            return None
         kept = [song_id for song_id in ids if song_id not in missing]
-        log.warning('the last session: %d of its %d songs could not be found; queued without',
-                    len(ids) - len(kept), len(ids))
-        before = sum(1 for song_id in ids[:start_with] if song_id in missing)
-        return ','.join(kept), start_with - before
+        if not missing or not kept:
+            return None
+        if start_with is not None:
+            gone = ids[start_with] in missing
+            if gone and keep_item:
+                return None
+            # The item's place in what is kept, or (gone) the next one found's.
+            start_with = sum(1 for song_id in ids[:start_with] if song_id not in missing)
+            if start_with >= len(kept):
+                return None
+            if gone and start_id is not None:
+                start_id = kept[start_with]
+        elif start_id in missing:
+            start_id = None
+        left_out = len(ids) - len(kept)
+        log.warning('%d of a list of %d songs could not be found; sent again without them',
+                    left_out, len(ids))
+        return ','.join(kept), start_with, start_id, left_out
 
     async def _send_play(self, kind, item_id, start_with, shuffle, start_id, restoring):
         """The engine's play, with what a session restored brings: its repeat mode and a
@@ -1337,12 +1378,24 @@ class Player(GObject.Object):
         (restore_session), so it goes after that."""
         await self.ensure_engine()
         await self.restore_session(paused=True)
-        await self._engine.play_next(kind, item_id)
+        await self._queue(self._engine.play_next, kind, item_id)
 
     async def play_later(self, kind, item_id):
         await self.ensure_engine()
         await self.restore_session(paused=True)
-        await self._engine.play_later(kind, item_id)
+        await self._queue(self._engine.play_later, kind, item_id)
+
+    async def _queue(self, command, kind, item_id):
+        """The engine's play_next or play_later; a list of songs MusicKit refuses for some it
+        cannot find is queued once more without them (_without_missing), with a toast."""
+        try:
+            await command(kind, item_id)
+        except EngineError as error:
+            found = await self._without_missing(error, kind, item_id)
+            if found is None:
+                raise
+            await command(kind, found[0])
+            self._app.toast(left_out_message(found[3]))
 
     async def start_preview(self, song_id, url):
         """Play Apple's preview of a song (`url`, its clip's https address) in place of any
