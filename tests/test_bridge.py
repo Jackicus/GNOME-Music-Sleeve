@@ -313,7 +313,7 @@ class BridgeTest(unittest.TestCase):
             ('playbackDurationDidChange', {'duration': 30}),
             ('queueItemsDidChange', {'index': 0, 'items': [dict(track, index=0)],
                                      'editable': True, 'canAutoplay': True,
-                                     'autoplay': False}),
+                                     'autoplay': False, 'edit': 0}),
             ('queuePositionDidChange', {'index': 1, 'oldIndex': 0}),
             ('shuffleModeDidChange', {'shuffle': 'on'}),
             ('repeatModeDidChange', {'repeat': 'all'}),
@@ -793,6 +793,116 @@ class BridgeTest(unittest.TestCase):
                                          ['i.d', True]])
         self.assertEqual(value['partial'], {'ok': True, 'restored': 1})
         self.assertEqual(value['partialBack'], ['i.a', 'i.b', 'i.d'])
+
+    @scenario("""
+        bridge.subscribe();
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, ['i.a', 'i.b', 'i.c', 'i.d', 'i.e', 'i.f'].map(song), 1,
+                                 [4, 5]);
+        const ids = () => mk.queue.items.map(item => item.id);
+        const out = {};
+        out.down = bridge.queueMove(2, 3, 'i.c', 5);
+        out.afterDown = ids();
+        out.calls = mk.calls.filter(call => call[0].startsWith('queue.'));
+        out.events = posted.filter(event => event.name === 'queueItemsDidChange')
+            .map(event => [event.data.items.map(track => track.id), event.data.edit]);
+        // Within Autoplay: the entry stays autoplay's.
+        out.autoplay = bridge.queueMove(5, 4, 'i.f', 6);
+        out.flags = mk.queue._queueItems.map(entry => [entry.item.id, entry.isAutoplay]);
+        out.refusals = {
+            current: bridge.queueMove(1, 3, 'i.b', 9),
+            history: bridge.queueMove(0, 3, 'i.a', 9),
+            stale: bridge.queueMove(2, 3, 'i.c', 9),       // i.d is at 2 now
+            above: bridge.queueMove(3, 1, 'i.c', 9),
+            same: bridge.queueMove(3, 3, 'i.c', 9),
+            past: bridge.queueMove(3, 6, 'i.c', 9),
+            missing: bridge.queueMove(9, 2, 'i.z', 9),
+            intoAutoplay: bridge.queueMove(3, 4, 'i.c', 9),
+            outOfAutoplay: bridge.queueMove(4, 3, 'i.f', 9),
+        };
+        out.afterRefusals = ids();
+        out.edit = bridge.queue().edit;                  // refusals note no edit
+        out.removed = bridge.queueRemove(2, 'i.d', 7);
+        out.removeEdit = posted[posted.length - 1].data.edit;
+        mk.capabilities = {canEditPlaybackQueue: false};
+        out.station = bridge.queueMove(2, 3, 'i.c', 8);
+        mk.capabilities = {};
+        mk.queue.spliceQueueItems = undefined;
+        out.noSplice = bridge.queueMove(2, 3, 'i.c', 8);
+        return out;
+    """)
+    def test_queue_move_is_two_splices_posted_once(self, value):
+        self.assertEqual(value['down'], {'ok': True})
+        self.assertEqual(value['afterDown'], ['i.a', 'i.b', 'i.d', 'i.c', 'i.e', 'i.f'])
+        self.assertEqual(value['calls'], [['queue.spliceQueueItems', 2, 1, 0],
+                                          ['queue.spliceQueueItems', 3, 0, 1]])
+        # The queue one entry short between the splices is never posted.
+        self.assertEqual(value['events'], [[['i.a', 'i.b', 'i.d', 'i.c', 'i.e', 'i.f'], 5]])
+        self.assertEqual(value['autoplay'], {'ok': True})
+        self.assertEqual(value['flags'], [['i.a', False], ['i.b', False], ['i.d', False],
+                                          ['i.c', False], ['i.f', True], ['i.e', True]])
+        codes = {name: answer.get('code') for name, answer in value['refusals'].items()}
+        self.assertEqual(codes, {'current': 'CURRENT', 'history': 'STALE', 'stale': 'STALE',
+                                 'above': 'STALE', 'same': 'STALE', 'past': 'STALE',
+                                 'missing': 'STALE', 'intoAutoplay': 'SECTION',
+                                 'outOfAutoplay': 'SECTION'})
+        self.assertEqual(value['afterRefusals'], ['i.a', 'i.b', 'i.d', 'i.c', 'i.f', 'i.e'])
+        self.assertEqual(value['edit'], 6)
+        self.assertEqual(value['removed'], {'ok': True})
+        self.assertEqual(value['removeEdit'], 7)
+        self.assertEqual(value['station']['code'], 'NOT_EDITABLE')
+        self.assertEqual(value['noSplice']['code'], 'NOT_EDITABLE')
+
+    @scenario("""
+        bridge.subscribe();
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, ['i.a', 'i.b', 'i.c', 'i.d'].map(song), 0);
+        mk.queue.deferEvents = true;                     // MusicKit posting after the call
+        const out = {moved: bridge.queueMove(1, 3, 'i.b', 2)};
+        for (let turn = 0; turn < 4; turn++)
+            await null;
+        out.events = posted.filter(event => event.name === 'queueItemsDidChange')
+            .map(event => [event.data.items.map(track => track.id), event.data.edit]);
+        return out;
+    """)
+    def test_a_move_posted_after_the_call_shows_the_queue_moved(self, value):
+        self.assertEqual(value['moved'], {'ok': True})
+        moved = [['i.a', 'i.c', 'i.d', 'i.b'], 2]
+        self.assertEqual(value['events'], [moved, moved])  # read as the queue is: moved
+
+    @scenario("""
+        bridge.subscribe();
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, ['i.a', 'i.b', 'i.c', 'i.d'].map(song), 0);
+        const splice = mk.queue.spliceQueueItems;
+        // MusicKit's filter drops the item as it is put back, once.
+        let dropped = false;
+        mk.queue.spliceQueueItems = function (start, count, items = []) {
+            if (!dropped && items.length) {
+                dropped = true;
+                return splice.call(this, start, count, []);
+            }
+            return splice.call(this, start, count, items);
+        };
+        const out = {dropped: bridge.queueMove(1, 3, 'i.b', 4)};
+        out.back = mk.queue.items.map(item => item.id);
+        out.last = posted.filter(event => event.name === 'queueItemsDidChange').pop()
+            .data.items.map(track => track.id);
+        // MusicKit throws as it is put back: back where it was, as well.
+        mk.queue.spliceQueueItems = function (start, count, items = []) {
+            if (items.length && start === 2) throw new TypeError('refused');
+            return splice.call(this, start, count, items);
+        };
+        out.thrown = bridge.queueMove(1, 2, 'i.b', 5);
+        out.thrownBack = mk.queue.items.map(item => item.id);
+        return out;
+    """)
+    def test_a_move_musickit_does_not_take_puts_the_entry_back(self, value):
+        self.assertEqual(value['dropped']['code'], 'STALE')
+        self.assertEqual(value['back'], ['i.a', 'i.b', 'i.c', 'i.d'])
+        self.assertEqual(value['last'], ['i.a', 'i.b', 'i.c', 'i.d'])
+        self.assertEqual(value['thrown']['code'], 'STALE')
+        self.assertEqual(value['thrownBack'], ['i.a', 'i.b', 'i.c', 'i.d'])
 
     @scenario("""
         // The harness's queue takes its arguments as MusicKit's does: the entries to put in

@@ -455,9 +455,25 @@
         return items.map(function (item) { return added.indexOf(item) >= 0; });
     }
 
+    // The number of the last of the app's queue edits applied here (queueRemove's and
+    // queueMove's `edit`, which the Player counts up), carried by every queue snapshot as
+    // `edit`: a snapshot that reaches the app while it has edits out says which of them it
+    // holds already, and the Player puts the others back on it (Player.apply_queue).
+    let queueEdit = 0;
+
+    // True while a move's first splice runs (queueMove): the queue it leaves, one entry
+    // short, is never posted; the second splice's queueItemsDidChange posts the queue moved.
+    let moveSplicing = false;
+
+    // An edit's number, kept as the last applied: from the app's own count (a page reloaded
+    // starts again at 0, and the app's count goes on).
+    function noteEdit(edit) {
+        if (Number.isInteger(edit) && edit > 0) queueEdit = edit;
+    }
+
     function queueSnapshot(mk) {
         if (!mk || !mk.queue) {
-            return { index: 0, items: [] };
+            return { index: 0, items: [], edit: queueEdit };
         }
         const media = mk.queue.items || [];
         const flags = autoplayFlags(mk.queue, media);
@@ -473,8 +489,20 @@
             items: items,
             editable: capabilities.editable,
             canAutoplay: capabilities.canAutoplay,
-            autoplay: !!mk.autoplayEnabled
+            autoplay: !!mk.autoplayEnabled,
+            edit: queueEdit
         };
+    }
+
+    // Where the entries after the item playing divide (queueMove): the index of the first
+    // one autoplay added after `position`, or the queue's length. Up Next's sections, as
+    // the app's section_bounds() makes them.
+    function autoplaySplit(queue, items, position) {
+        const flags = autoplayFlags(queue, items);
+        for (let index = position + 1; index < items.length; index++) {
+            if (flags[index]) return index;
+        }
+        return items.length;
     }
 
     // MusicKit's serial playback controller (every queue but a station's), which runs
@@ -742,6 +770,8 @@
             mk = getMusicKit();
             // A refill an Undo came before goes before the app hears of it.
             if (name === 'queueItemsDidChange' && lateRefill) dropLateRefill(mk);
+            // A move half done: the queue one entry short is not the app's to see.
+            if (name === 'queueItemsDidChange' && moveSplicing) return;
             data = mk ? EVENT_DATA[name](mk, event) : null;
         } catch (err) {
             data = { error: describeError(err) };
@@ -1115,21 +1145,88 @@
 
         // Remove the queue's entry at `index`, when it is still the entry `id` (the web
         // player's own check) and not the one playing: queue.spliceQueueItems, or the
-        // deprecated queue.remove where that is missing. One queueItemsDidChange follows;
-        // the item playing and its time are left alone. {ok: true}, or {error, code}:
-        // NOT_EDITABLE (a station's queue), CURRENT, STALE (the queue changed meanwhile).
-        queueRemove: function (index, id) {
+        // deprecated queue.remove where that is missing. One queueItemsDidChange follows,
+        // its snapshot naming `edit` (the app's number for this edit); the item playing and
+        // its time are left alone. {ok: true}, or {error, code}: NOT_EDITABLE (a station's
+        // queue), CURRENT, STALE (the queue changed meanwhile).
+        queueRemove: function (index, id, edit) {
             const mk = getMusicKit();
             if (!mk || !mk.queue) throw new Error('MusicKit not initialized');
             index = Number(index);
             const refused = editRefused(mk, index, String(id));
             if (refused) return refused;
+            noteEdit(edit);
             if (typeof mk.queue.spliceQueueItems === 'function') {
                 mk.queue.spliceQueueItems(index, 1);
             } else {
                 mk.queue.remove(index);
             }
             return { ok: true };
+        },
+
+        // Move the queue's entry at `from`, when it is still the entry `id` and comes after
+        // the one playing, to `to` (its index once moved), within its section of Up Next
+        // (what the user queued, or what autoplay added: autoplaySplit): two
+        // queue.spliceQueueItems, `spliceQueueItems(from, 1)` and then `spliceQueueItems(to,
+        // 0, taken)`, the queue item taken given back as it came (ONE array, so it keeps its
+        // isAutoplay). The first splice's queueItemsDidChange is not posted (moveSplicing),
+        // so the app sees the queue moved and never one entry short; the snapshot names
+        // `edit`. When MusicKit does not put the entry back at `to` (its filter drops an item
+        // it cannot play now, or it throws), the entry goes back where it was if it can, the
+        // queue as it is now is posted, and the answer is STALE. {ok: true}, or {error,
+        // code}: NOT_EDITABLE (a station's queue, or no spliceQueueItems), CURRENT, STALE,
+        // SECTION (`to` in the other section).
+        queueMove: function (from, to, id, edit) {
+            const mk = getMusicKit();
+            if (!mk || !mk.queue) throw new Error('MusicKit not initialized');
+            from = Number(from);
+            to = Number(to);
+            const refused = editRefused(mk, from, String(id));
+            if (refused) return refused;
+            const queue = mk.queue;
+            if (typeof queue.spliceQueueItems !== 'function') {
+                return { error: 'this queue cannot be reordered', code: 'NOT_EDITABLE' };
+            }
+            const items = queue.items || [];
+            const position = typeof queue.position === 'number' ? queue.position : -1;
+            if (from < position) {
+                return { error: 'the entry at ' + from + ' has played', code: 'STALE' };
+            }
+            if (!Number.isInteger(to) || to <= position || to >= items.length || to === from) {
+                return { error: 'no place ' + to + ' to move to', code: 'STALE' };
+            }
+            const split = autoplaySplit(queue, items, position);
+            if ((from < split) !== (to < split)) {
+                return { error: 'the entry at ' + from + ' cannot leave its section', code: 'SECTION' };
+            }
+            const moved = items[from];
+            noteEdit(edit);
+            let taken = null;
+            moveSplicing = true;
+            try {
+                taken = queue.spliceQueueItems(from, 1);
+            } finally {
+                moveSplicing = false;
+            }
+            let placed = false;
+            if (Array.isArray(taken) && taken.length === 1) {
+                try {
+                    queue.spliceQueueItems(to, 0, taken);
+                    placed = (queue.items || [])[to] === moved;
+                } catch {
+                    placed = false;
+                }
+            }
+            if (placed) return { ok: true };
+            if (Array.isArray(taken) && taken.length === 1 && (queue.items || []).indexOf(moved) < 0) {
+                try {
+                    queue.spliceQueueItems(from, 0, taken);
+                } catch {
+                    // Gone for good: the app reads the queue as it is.
+                }
+            }
+            postEvent('queueItemsDidChange', {});
+            return { error: 'the entry at ' + from + ' could not be moved', code: 'STALE' };
         },
 
         // Everything after the item playing taken out of the queue (Up Next's Clear):

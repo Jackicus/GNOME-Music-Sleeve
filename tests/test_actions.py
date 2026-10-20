@@ -341,6 +341,27 @@ class MenuTest(unittest.TestCase):
                          names(build_menu(LIBRARY_TRACK, queued=True)))
         self.assertNotIn('win.item-remove-from-queue', names(build_menu(LIBRARY_TRACK)))
 
+    def test_an_up_next_entry_moves_where_its_menu_says(self):
+        menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(4, 'i.song1'),
+                          queue_moves=(-1, 1))
+        moves = [(name, target) for name, target in actions_of(menu)
+                 if name in ('win.item-move-in-queue', 'win.item-remove-from-queue')]
+        self.assertEqual(moves, [('win.item-move-in-queue', (4, 3, 'i.song1')),
+                                 ('win.item-move-in-queue', (4, 5, 'i.song1')),
+                                 ('win.item-remove-from-queue', (4, 'i.song1'))])
+        self.assertIn('_Move Up', labels_of(menu))
+        self.assertIn('Move _Down', labels_of(menu))
+        letters = [label[label.index('_') + 1].lower() for label in labels_of(menu)
+                   if '_' in label]
+        self.assertEqual(len(letters), len(set(letters)), labels_of(menu))
+        # At the end of its section: Move Up alone; with no queue entry, neither.
+        menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(4, 'i.song1'),
+                          queue_moves=(-1,))
+        self.assertEqual([target for name, target in actions_of(menu)
+                          if name == 'win.item-move-in-queue'], [(4, 3, 'i.song1')])
+        self.assertNotIn('win.item-move-in-queue',
+                         names(build_menu(LIBRARY_TRACK, queued=True, queue_moves=(-1, 1))))
+
     def test_the_item_playing_as_a_track(self):
         playing = NowPlaying({'id': 'i.song1', 'catalogId': '1000000001', 'type': 'song',
                               'title': 'Harbour Lights', 'artist': 'The Invented Band',
@@ -851,6 +872,12 @@ class FakePlayer:
     def __init__(self, engine):
         self.engine = engine
         self.ensured = 0
+        # An invented queue of six, the second playing: Up Next's moves name its entries.
+        self.queue = Gio.ListStore(item_type=NowPlaying)
+        for number in range(6):
+            self.queue.append(NowPlaying({'id': f'i.q{number}', 'title': f'Entry {number}',
+                                          'type': 'song', 'index': number}))
+        self.queue_index = 1
 
     async def ensure_engine(self):
         self.ensured += 1
@@ -864,6 +891,17 @@ class FakePlayer:
     async def remove_from_queue(self, index, entry_id):
         await self.engine._record('remove_from_queue', index, entry_id)
         return entry_id != 'i.gone'
+
+    async def move_in_queue(self, index, to_index, entry_id):
+        await self.engine._record('move_in_queue', index, to_index, entry_id)
+        if entry_id == 'i.gone':
+            return False
+        entries = list(self.queue)
+        entries.insert(to_index, entries.pop(index))
+        self.queue.splice(0, len(entries), entries)
+        for position, entry in enumerate(entries):
+            entry.index = position
+        return True
 
 
 class FakeLibrary:
@@ -1116,6 +1154,8 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         signature = '(sss)' if len(target) == 3 else '(ss)'
         if name == 'item-remove-from-queue':
             signature = '(is)'
+        elif name == 'item-move-in-queue':
+            signature = '(iis)'
         self.window.actions[name].activate(GLib.Variant(signature, target))
         await asyncio.gather(*self.app.tasks)
         self.app.tasks.clear()
@@ -1137,8 +1177,11 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
             'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
             'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue',
-            'item-move-in-playlist', 'item-undo-reorder', 'item-view-credits',
-            'item-undo-remove']))
+            'item-move-in-queue', 'item-move-in-playlist', 'item-undo-reorder',
+            'item-view-credits', 'item-undo-remove']))
+        self.assertEqual(
+            self.window.actions['item-move-in-queue'].get_parameter_type().dup_string(),
+            '(iis)')
         self.assertEqual(
             self.window.actions['item-remove-from-queue'].get_parameter_type().dup_string(),
             '(is)')
@@ -1181,6 +1224,16 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.toasts, [])  # the row goes: no toast
         await self.run_action('item-remove-from-queue', 5, 'i.gone')
         self.assertEqual(self.window.announced, ['Removed from Up Next'])  # nothing taken
+
+    async def test_move_in_up_next(self):
+        await self.run_action('item-move-in-queue', 4, 2, 'i.q4')
+        self.assertIn(('move_in_queue', 4, 2, 'i.q4'), self.app.engine.calls)
+        # Its place among the four after the entry playing.
+        self.assertEqual(self.window.announced,
+                         ['“Entry 4” moved to position 1 of 4 in Up Next'])
+        self.assertEqual(self.app.toasts, [])  # the row moves: no toast
+        await self.run_action('item-move-in-queue', 3, 4, 'i.gone')
+        self.assertEqual(len(self.window.announced), 1)  # nothing moved
 
     async def test_love_a_track_by_its_catalog_id(self):
         self.actions.menu_for(LIBRARY_TRACK)  # the menu names the track; its action finds it

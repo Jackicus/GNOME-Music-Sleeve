@@ -19,7 +19,8 @@ from tests.gtk import iterate
 from applemusic.backend.errors import EngineError
 from applemusic.lyrics import Lyrics
 from applemusic.player import (ACTIVE_STATES, STOPPED_STATES, NowPlaying, Player, format_time,
-                               playback_error_text, undone_tail)
+                               move_range, moved_entry, playback_error_text, removed_entry,
+                               undone_tail)
 
 
 class Clock:
@@ -87,6 +88,7 @@ class FakeEngine(GObject.Object):
         self.fail = None  # an EngineError every command raises
         self.play_options = []  # each play's start_id, and start_time and paused when given
         self.play_failures = []  # EngineErrors the next plays raise, one each, in turn
+        self.edits = []  # each queue edit's number (queue_remove's and queue_move's `edit`)
 
     def event(self, name, data):
         self.emit('event', name, data)
@@ -154,8 +156,13 @@ class FakeEngine(GObject.Object):
     async def queue_jump(self, index):
         return await self._command('queue_jump', index)
 
-    async def queue_remove(self, index, entry_id):
+    async def queue_remove(self, index, entry_id, edit=None):
+        self.edits.append(edit)
         return await self._command('queue_remove', index, entry_id)
+
+    async def queue_move(self, index, to_index, entry_id, edit=None):
+        self.edits.append(edit)
+        return await self._command('queue_move', index, to_index, entry_id)
 
     async def queue_clear(self):
         return await self._command('queue_clear')
@@ -2421,6 +2428,339 @@ class QueueEditTest(unittest.TestCase):
             # What MusicKit gets is the session as edited.
             self.assertEqual(engine.calls[-1], ('play', 'songs', 'i.e0000,i.e0001', 1, False))
             self.assertFalse(player.can_undo_clear)  # the Clear was the session's
+        asyncio.run(go())
+
+
+class QueuePage:
+    """MusicKit's queue behind a FakeEngine, edited as the bridge edits it: each remove or
+    move runs when the page gets to it, in order (`hold()` keeps them waiting until
+    `release()`), its queueItemsDidChange (the snapshot naming the edit's number) posted
+    before the answer, or, `deferred`, on the loop's next turn (MusicKit posting its events
+    after the call), read as the queue is then. An edit whose entry is not where it is named
+    is refused ('queue-changed'), as the bridge refuses it; queue() answers the queue."""
+
+    def __init__(self, engine, items, index, deferred=False):
+        self.engine = engine
+        self.items = [{key: value for key, value in item.items() if key != 'index'}
+                      for item in items]
+        self.index = index
+        self.edit = 0
+        self.deferred = deferred
+        self._open = asyncio.Event()
+        self._open.set()
+        self._lock = asyncio.Lock()
+        engine.queue_remove = self.remove
+        engine.queue_move = self.move
+        engine.queue = self.queue
+
+    def hold(self):
+        self._open.clear()
+
+    def release(self):
+        self._open.set()
+
+    def ids(self):
+        return [item['id'] for item in self.items]
+
+    def snapshot(self):
+        return {'index': self.index, 'edit': self.edit,
+                'items': [dict(item, index=position) for position, item in enumerate(self.items)]}
+
+    def post(self):
+        self.engine.event('queueItemsDidChange', self.snapshot())
+
+    def change(self, items):
+        """MusicKit changing its queue itself (autoplay's refill, its entries going): the
+        event the app did not ask for."""
+        self.items = [dict(item) for item in items]
+        self.post()
+
+    async def queue(self):
+        self.engine.calls.append(('queue',))
+        return self.snapshot()
+
+    async def _run(self, edit, apply):
+        async with self._lock:
+            await self._open.wait()
+            edited = apply()
+            if edited is None:
+                raise EngineError('queue-changed', 'the entry named is another now')
+            self.items = edited
+            if edit is not None:
+                self.edit = edit
+            if self.deferred:
+                asyncio.get_running_loop().call_soon(self.post)
+            else:
+                self.post()
+
+    async def remove(self, index, entry_id, edit=None):
+        self.engine.calls.append(('queue_remove', index, entry_id))
+        self.engine.edits.append(edit)
+        await self._run(edit, lambda: removed_entry(self.items, index, entry_id))
+
+    async def move(self, index, to_index, entry_id, edit=None):
+        self.engine.calls.append(('queue_move', index, to_index, entry_id))
+        self.engine.edits.append(edit)
+        await self._run(edit, lambda: moved_entry(self.items, index, to_index, entry_id))
+
+
+class QueueMoveTest(unittest.TestCase):
+    """Up Next's moves: within a section, in the store at once as one splice of the same
+    objects, then MusicKit's queue; the edits out replayed onto every snapshot that does not
+    hold them yet, so a burst of moves and removes never takes the store back a step."""
+
+    def playing(self, count=8, index=1, autoplay=(), deferred=False):
+        """A Player over a QueuePage of `count` invented entries (those at `autoplay` added
+        by autoplay), the entry at `index` playing."""
+        player, engine, app = make_player(state='up')
+        items = entries(count)
+        for position in autoplay:
+            items[position]['autoplay'] = True
+        page = QueuePage(engine, items, index, deferred=deferred)
+        page.post()
+        engine.event('nowPlayingItemDidChange', {'track': items[index], 'index': index})
+        return player, engine, app, page
+
+    def ids(self, player):
+        return [entry.id for entry in player.queue]
+
+    def watch(self, player):
+        changes = []
+        player.queue.connect('items-changed', lambda _store, *args: changes.append(args))
+        return changes
+
+    def test_move_range_is_the_entrys_section(self):
+        queue = [types.SimpleNamespace(autoplay=flag)
+                 for flag in (False, False, False, False, True, True)]
+        self.assertEqual(move_range(queue, 1, 2), (2, 3))  # Playing Next
+        self.assertEqual(move_range(queue, 1, 5), (4, 5))  # Autoplay
+        self.assertEqual(move_range(queue[:4], 1, 3), (2, 3))  # no autoplay
+        for index in (0, 1, 6):  # history, the entry playing, past the end
+            self.assertIsNone(move_range(queue, 1, index))
+        self.assertIsNone(move_range(queue, -1, 2))  # nothing playing
+
+    def test_replays(self):
+        items = [{'id': name} for name in 'abcd']
+        self.assertEqual(moved_entry(items, 1, 3, 'b'), [{'id': 'a'}, {'id': 'c'},
+                                                         {'id': 'd'}, {'id': 'b'}])
+        self.assertIsNone(moved_entry(items, 1, 3, 'c'))
+        self.assertIsNone(moved_entry(items, 1, 4, 'b'))
+        self.assertEqual(removed_entry(items, 2, 'c'), [{'id': 'a'}, {'id': 'b'}, {'id': 'd'}])
+        self.assertIsNone(removed_entry(items, 2, 'b'))
+        self.assertIsNone(removed_entry(items, 7, 'b'))
+        self.assertEqual(items, [{'id': name} for name in 'abcd'])  # not changed in place
+
+    def test_a_move_takes_the_entry_out_and_puts_the_same_object_back(self):
+        async def go():
+            player, engine, app, page = self.playing()
+            await app.settle()
+            objects = list(player.queue)
+            changes = self.watch(player)
+            seen = []
+            player.connect('notify::moving', lambda *_: seen.append(player.moving))
+            page.hold()
+            task = asyncio.ensure_future(player.move_in_queue(5, 2, 'i.e0005'))
+            await asyncio.sleep(0)
+            order = [0, 1, 5, 2, 3, 4, 6, 7]
+            self.assertEqual(self.ids(player), [f'i.e{n:04}' for n in order])
+            self.assertEqual(changes, [(5, 1, 0), (2, 0, 1)])
+            self.assertEqual(list(player.queue), [objects[n] for n in order])
+            self.assertEqual(seen, [objects[5], None])  # named while it moved
+            self.assertEqual([entry.index for entry in player.queue], list(range(8)))
+            self.assertEqual([entry.raw['index'] for entry in player.queue], list(range(8)))
+            page.release()
+            self.assertTrue(await task)
+            self.assertEqual(engine.calls[-1], ('queue_move', 5, 2, 'i.e0005'))
+            self.assertEqual(len(changes), 2)  # MusicKit's event changed nothing
+            self.assertEqual(self.ids(player), page.ids())
+            self.assertEqual(list(player.queue), [objects[n] for n in order])
+            # Down, the other way.
+            self.assertTrue(await player.move_in_queue(2, 7, 'i.e0005'))
+            self.assertEqual(self.ids(player), page.ids())
+            self.assertEqual(changes[2:], [(2, 1, 0), (7, 0, 1)])
+            self.assertEqual(player._edits_out, [])
+        asyncio.run(go())
+
+    def test_a_move_stays_after_the_entry_playing_and_in_its_section(self):
+        async def go():
+            player, engine, app, page = self.playing(autoplay=(6, 7))
+            await app.settle()
+            engine.calls.clear()
+            refused = ((1, 3, 'i.e0001'),   # the entry playing
+                       (0, 3, 'i.e0000'),   # History
+                       (3, 1, 'i.e0003'),   # above the entry playing
+                       (3, 0, 'i.e0003'),   # into History
+                       (3, 6, 'i.e0003'),   # into Autoplay
+                       (6, 5, 'i.e0006'),   # out of Autoplay
+                       (3, 4, 'i.e0004'),   # another entry is at 3
+                       (3, 3, 'i.e0003'),   # where it is
+                       (3, 8, 'i.e0003'),   # past the end
+                       (9, 2, 'i.e0009'))
+            for index, to_index, entry_id in refused:
+                self.assertFalse(await player.move_in_queue(index, to_index, entry_id),
+                                 (index, to_index))
+            self.assertEqual(engine.calls, [])
+            self.assertEqual(player.move_range(3), (2, 5))
+            self.assertEqual(player.move_range(7), (6, 7))
+            self.assertIsNone(player.move_range(1))
+            self.assertTrue(await player.move_in_queue(7, 6, 'i.e0007'))  # within Autoplay
+            self.assertTrue(await player.move_in_queue(2, 5, 'i.e0002'))  # within Playing Next
+            self.assertEqual(self.ids(player), page.ids())
+            self.assertEqual([entry.autoplay for entry in player.queue], [False] * 6 + [True] * 2)
+            # A station's queue: nothing moves.
+            page.engine.event('queueItemsDidChange', dict(page.snapshot(), editable=False))
+            self.assertIsNone(player.move_range(3))
+            self.assertFalse(await player.move_in_queue(3, 4, self.ids(player)[3]))
+        asyncio.run(go())
+
+    def assert_burst_kept_the_store(self, player, page, objects_by_id, changes):
+        """After a burst: the store is MusicKit's queue, its entries the objects they were,
+        and MusicKit's events changed nothing of it."""
+        self.assertEqual(self.ids(player), page.ids())
+        self.assertTrue(all(objects_by_id[entry.id] is entry for entry in player.queue))
+        self.assertEqual(changes, [])
+        self.assertEqual([entry.index for entry in player.queue],
+                         list(range(player.queue.get_n_items())))
+        self.assertEqual(player._edits_out, [])
+
+    def test_held_alt_down(self):
+        """Alt+Down held: one entry moved down five times while MusicKit has taken none of
+        the moves yet. Each move's event arrives with the later moves still out."""
+        for deferred in (False, True):
+            with self.subTest(deferred=deferred):
+                async def go(deferred=deferred):
+                    player, engine, app, page = self.playing(count=10, deferred=deferred)
+                    await app.settle()
+                    page.hold()
+                    tasks = []
+                    for step in range(5):
+                        tasks.append(asyncio.ensure_future(
+                            player.move_in_queue(2 + step, 3 + step, 'i.e0002')))
+                        await asyncio.sleep(0)
+                    self.assertEqual(self.ids(player)[7], 'i.e0002')
+                    objects = {entry.id: entry for entry in player.queue}
+                    changes = self.watch(player)
+                    page.release()
+                    self.assertEqual(await asyncio.gather(*tasks), [True] * 5)
+                    await asyncio.sleep(0)  # a deferred event's turn
+                    await app.settle()
+                    self.assertEqual(engine.edits, [1, 2, 3, 4, 5])
+                    self.assert_burst_kept_the_store(player, page, objects, changes)
+                asyncio.run(go())
+
+    def test_rapid_delete(self):
+        """Delete pressed four times: each removal names the entry that took the last one's
+        place, and MusicKit's events come back with the later ones still out."""
+        for deferred in (False, True):
+            with self.subTest(deferred=deferred):
+                async def go(deferred=deferred):
+                    player, engine, app, page = self.playing(count=10, deferred=deferred)
+                    await app.settle()
+                    page.hold()
+                    tasks = []
+                    for number in range(4):
+                        tasks.append(asyncio.ensure_future(
+                            player.remove_from_queue(3, f'i.e{3 + number:04}')))
+                        await asyncio.sleep(0)
+                    self.assertEqual(player.queue.get_n_items(), 6)
+                    objects = {entry.id: entry for entry in player.queue}
+                    changes = self.watch(player)
+                    page.release()
+                    self.assertEqual(await asyncio.gather(*tasks), [True] * 4)
+                    await asyncio.sleep(0)
+                    await app.settle()
+                    self.assertEqual(page.ids(), [f'i.e{n:04}' for n in (0, 1, 2, 7, 8, 9)])
+                    self.assert_burst_kept_the_store(player, page, objects, changes)
+                asyncio.run(go())
+
+    def test_mixed_burst_with_musickits_own_change(self):
+        """Moves and removes out together, and autoplay's refill landing in the middle: the
+        refill is the one change the store takes, at its end."""
+        async def go():
+            player, engine, app, page = self.playing(count=8)
+            await app.settle()
+            page.hold()
+            tasks = [asyncio.ensure_future(player.move_in_queue(6, 2, 'i.e0006'))]
+            await asyncio.sleep(0)
+            tasks.append(asyncio.ensure_future(player.remove_from_queue(4, 'i.e0003')))
+            await asyncio.sleep(0)
+            tasks.append(asyncio.ensure_future(player.move_in_queue(2, 5, 'i.e0006')))
+            await asyncio.sleep(0)
+            expected = ['i.e0000', 'i.e0001', 'i.e0002', 'i.e0004', 'i.e0005', 'i.e0006',
+                        'i.e0007']
+            self.assertEqual(self.ids(player), expected)
+            objects = {entry.id: entry for entry in player.queue}
+            changes = self.watch(player)
+            refill = [dict(entry, autoplay=True) for entry in entries(2, tag='r')]
+            page.change(page.items + refill)  # before MusicKit has taken any of the edits
+            self.assertEqual(changes, [(7, 0, 2)])
+            self.assertEqual(self.ids(player), expected + ['i.r0000', 'i.r0001'])
+            objects.update((entry.id, entry) for entry in player.queue)
+            changes.clear()
+            page.release()
+            self.assertEqual(await asyncio.gather(*tasks), [True] * 3)
+            await app.settle()
+            self.assert_burst_kept_the_store(player, page, objects, changes)
+        asyncio.run(go())
+
+    def test_an_edit_musickit_refuses_in_a_burst(self):
+        """MusicKit's queue changed under a burst (an entry gone): the edit that named it is
+        refused, its replay dropped, and the queue read again shows MusicKit's."""
+        async def go():
+            player, engine, app, page = self.playing(count=8)
+            await app.settle()
+            page.hold()
+            first = asyncio.ensure_future(player.move_in_queue(3, 4, 'i.e0003'))
+            await asyncio.sleep(0)
+            second = asyncio.ensure_future(player.move_in_queue(6, 5, 'i.e0006'))
+            await asyncio.sleep(0)
+            # MusicKit loses i.e0005 before it takes either: the second names a place its
+            # entry is no longer at.
+            page.change([item for item in page.items if item['id'] != 'i.e0005'])
+            page.release()
+            self.assertTrue(await first)
+            self.assertFalse(await second)
+            await app.settle()
+            self.assertEqual(self.ids(player), page.ids())
+            self.assertEqual(page.ids()[2:], ['i.e0002', 'i.e0004', 'i.e0003', 'i.e0006',
+                                              'i.e0007'])
+            self.assertEqual(player._edits_out, [])
+            self.assertIn(('queue',), engine.calls)  # read again
+        asyncio.run(go())
+
+    def test_a_restored_session_is_moved_locally(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await app.settle()
+            engine.calls.clear()
+            queue = [{key: value for key, value in item.items() if key != 'index'}
+                     for item in entries(5)]
+            self.assertTrue(player.restore(session(queue=queue, index=1)))
+            self.assertTrue(await player.move_in_queue(4, 2, 'i.e0004'))
+            self.assertEqual(self.ids(player), ['i.e0000', 'i.e0001', 'i.e0004', 'i.e0002',
+                                                'i.e0003'])
+            self.assertIsNone(player.source)  # its songs' queue now, not the album's
+            self.assertEqual(engine.calls, [])
+            self.assertEqual(player._edits_out, [])
+            await player.resume()
+            self.assertEqual(engine.calls[-1],
+                             ('play', 'songs', 'i.e0000,i.e0001,i.e0004,i.e0002,i.e0003', 1,
+                              False))
+        asyncio.run(go())
+
+    def test_the_engine_going_drops_the_edits_out(self):
+        async def go():
+            player, engine, app, page = self.playing()
+            await app.settle()
+            page.hold()
+            task = asyncio.ensure_future(player.move_in_queue(3, 4, 'i.e0003'))
+            await asyncio.sleep(0)
+            self.assertEqual(len(player._edits_out), 1)
+            player.apply_queue(None)
+            self.assertEqual(player._edits_out, [])
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         asyncio.run(go())
 
 

@@ -30,10 +30,13 @@ UI awaits.
     await engine.seek(seconds); await engine.volume(level)   # volume answers the level set
     await engine.shuffle('toggle'); await engine.repeat('cycle')   # answer {shuffle, repeat}
     await engine.now_playing()   # {state, track, position, duration, shuffle, repeat, volume}
-    await engine.queue()         # {index, items: [Track…]}
+    await engine.queue()         # {index, items: [Track…], edit: the last edit applied}
     await engine.queue_jump(3)   # play the queue's entry at index 3 (mk.changeToMediaAtIndex)
-    await engine.queue_remove(4, 'i.abc')  # the entry at 4, when it is still i.abc (not the
-                                           # item playing): queue.spliceQueueItems
+    await engine.queue_remove(4, 'i.abc', edit=7)  # the entry at 4, when it is still i.abc
+                                           # (not the item playing): queue.spliceQueueItems;
+                                           # `edit` the Player's number for it
+    await engine.queue_move(4, 2, 'i.abc', edit=8)  # that entry to 2, within its section of
+                                           # Up Next: two splices, posted as one change
     await engine.queue_clear()   # everything after the item playing (queue.clearAfterCurrent)
     await engine.queue_undo_clear()   # Clear's entries back after the item, while it plays
     await engine.set_autoplay(True)   # mk.autoplayEnabled (None: read): {autoplay, canAutoplay}
@@ -491,7 +494,16 @@ def with_pdeathsig(argv):
 
 # The bridge's codes for a queue edit it refused, as the engine's.
 QUEUE_REFUSALS = {'NOT_EDITABLE': 'queue-locked', 'CURRENT': 'queue-changed',
-                  'STALE': 'queue-changed'}
+                  'STALE': 'queue-changed', 'SECTION': 'queue-changed'}
+
+
+def _edit_number(edit):
+    """An edit's number as the bridge takes it: a positive int, else None."""
+    return edit if isinstance(edit, int) and not isinstance(edit, bool) and edit > 0 else None
+
+
+def _queue_index(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _queue_answer(answer, what):
@@ -1571,16 +1583,34 @@ class Engine(GObject.Object):
         await self._require_widevine()
         await client.bridge('queueJump', index, timeout=PLAY_TIMEOUT)
 
-    async def queue_remove(self, index, entry_id):
+    async def queue_remove(self, index, entry_id, edit=None):
         """Take the queue's entry at `index` out, when it is still the entry `entry_id` and
         not the item playing (the bridge's queueRemove: queue.spliceQueueItems). One
-        queueItemsDidChange follows. EngineError('queue-locked') when MusicKit allows no edits
-        (a station's queue), 'queue-changed' when the entry there is another now (or it is the
-        item playing), 'usage' for an index that is none."""
-        if isinstance(index, bool) or not isinstance(index, int) or index < 0 or not entry_id:
+        queueItemsDidChange follows, its snapshot's `edit` this `edit` (the Player's number
+        for the edit, so it knows the snapshot holds it). EngineError('queue-locked') when
+        MusicKit allows no edits (a station's queue), 'queue-changed' when the entry there is
+        another now (or it is the item playing), 'usage' for an index that is none."""
+        if not _queue_index(index) or not entry_id:
             raise EngineError('usage', f'not a queue entry: {index!r}, {entry_id!r}')
         client = await self._ready()
-        _queue_answer(await client.bridge('queueRemove', index, str(entry_id)), 'remove')
+        _queue_answer(await client.bridge('queueRemove', index, str(entry_id),
+                                          _edit_number(edit)), 'remove')
+
+    async def queue_move(self, from_index, to_index, entry_id, edit=None):
+        """Move the queue's entry at `from_index`, when it is still the entry `entry_id` and
+        comes after the item playing, to `to_index` (its index once moved), within its
+        section of Up Next (what the user queued, or what autoplay added): the bridge's
+        queueMove, two queue.spliceQueueItems, of which only the second's queueItemsDidChange
+        is posted, its snapshot's `edit` this `edit`. EngineError('queue-locked') as
+        queue_remove(), 'queue-changed' when the entry there is another now, `to_index` is no
+        place for it or in the other section, or MusicKit did not take the move; 'usage' for
+        an index that is none."""
+        if not (_queue_index(from_index) and _queue_index(to_index)) or not entry_id:
+            raise EngineError('usage', f'not a queue move: {from_index!r} to {to_index!r}, '
+                                       f'{entry_id!r}')
+        client = await self._ready()
+        _queue_answer(await client.bridge('queueMove', from_index, to_index, str(entry_id),
+                                          _edit_number(edit)), 'move')
 
     async def queue_clear(self):
         """Take everything after the item playing out of the queue (the bridge's queueClear:

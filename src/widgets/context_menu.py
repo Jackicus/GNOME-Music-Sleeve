@@ -14,7 +14,8 @@ A widget offering a menu has a `context_item` attribute: the Item or Track it sh
 (an unbound row), and `context_queued` true when that is an entry of the player's queue (the
 player bar's item, Up Next's rows: a menu without Play, actions.build_menu), and
 `context_queue_entry` its (index, id) there when Up Next may take it out (Remove from Up Next;
-None otherwise). The controllers
+None otherwise), and `context_queue_moves` the steps it can take there (Move Up, Move Down).
+The controllers
 sit on the view, not on each recycled tile: the right click and the long press in the capture
 phase, so they come before the rows' own click gestures (which would select or activate), the
 shortcuts for the focused row. What was pressed is found by picking the widget under the
@@ -117,7 +118,8 @@ def popup(widget, obj, x=None, y=None, queued=None, owner_widget=None):
     if queued is None:
         queued = bool(getattr(source, 'context_queued', False))
     entry = getattr(source, 'context_queue_entry', None)
-    menu = (actions.menu_for(obj, queued=queued, queue_entry=entry)
+    moves = getattr(source, 'context_queue_moves', ())
+    menu = (actions.menu_for(obj, queued=queued, queue_entry=entry, queue_moves=moves)
             if actions is not None else None)
     if menu is None:
         return None

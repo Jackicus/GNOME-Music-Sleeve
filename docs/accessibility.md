@@ -72,8 +72,11 @@ list and the script together.
    switches), on Up Next its History toggle, Autoplay toggle and Clear (Space clears what
    follows the entry playing, with an Undo toast, and the focus moves to the entry playing as
    Clear goes insensitive), and into the list (arrows move, Enter seeks to a line or plays an entry, Menu opens an entry's menu, with
-   Remove from Up Next after the entry playing; Delete removes the focused entry, and the
-   focus moves to the one that took its place). Space on History shows the entries played
+   Move Up, Move Down and Remove from Up Next after the entry playing; Delete removes the
+   focused entry, and the focus moves to the one that took its place; Alt+Down and Alt+Up
+   move the focused entry one place within its section (Playing Next, or Autoplay), the
+   focus going with it and its new place said ("moved to position 2 of 9 in Up Next"), and
+   do nothing at either end of the section or on the entry playing). Space on History shows the entries played
    before, most recent first, in place of Up Next (Autoplay and Clear go): Tab reaches them,
    Enter plays one again, their menus have no Remove, and Space on the toggle goes back.
    Then the close button and the header bar's buttons, More Options among them (the item

@@ -10,12 +10,13 @@ TAB_KEYS and MAIN_MENU into the window's F10, widgets/context_menu.py binds CONT
 (as context_menu.MENU_KEYS, which sidebar_view.py binds on the sidebar's rows too),
 and sidebar_view.py binds FOLDER_OPEN and FOLDER_CLOSE on the sidebar (keys for the focused
 row, only with the focus in the sidebar), as widgets/queue.py binds QUEUE_REMOVE on Up Next's
-list; a playlist's page runs MOVE_UP and MOVE_DOWN on its focused song (keyboard.move_step():
-Alt+Up and Alt+Down, as GNOME Text Editor moves a line), and keyboard.py parses VOLUME_UP and
-VOLUME_DOWN into its VOLUME_KEYS, the window's too, and the selection mode's keys (SELECT_*,
-LEAVE_SELECTION) into its SELECTION_KEYS: a track list's, which the window's key controller
-gives the page in that mode. tests/test_shortcuts.py checks that the dialog lists every one
-of them. Keys that are none of these are listed as they are: Escape
+list; a playlist's page runs MOVE_UP and MOVE_DOWN on its focused song, and Up Next on its
+focused entry (keyboard.move_step(): Alt+Up and Alt+Down, as GNOME Text Editor moves a
+line), and keyboard.py parses VOLUME_UP and VOLUME_DOWN into its VOLUME_KEYS, the window's
+too, and the selection mode's keys (SELECT_*, LEAVE_SELECTION) into its SELECTION_KEYS: a
+track list's, which the window's key controller gives the page in that mode.
+tests/test_shortcuts.py checks that the dialog lists every one of them. Keys that are none
+of these are listed as they are: Escape
 (the dialogs', the Now Playing sheet's, the full-screen player's), under General with the
 other keys that act on windows.
 
@@ -84,7 +85,8 @@ FOLDER_OPEN = 'Right'
 FOLDER_CLOSE = 'Left'
 # On a focused Up Next row (widgets/queue.py binds it on the list): Remove from Up Next.
 QUEUE_REMOVE = 'Delete'
-# On a focused song of a playlist of the user's: move it up or down one place.
+# On a focused song of a playlist of the user's, or a focused Up Next entry after the one
+# playing (within its section): move it up or down one place.
 MOVE_UP = '<alt>Up'
 MOVE_DOWN = '<alt>Down'
 # Anywhere in the window while something plays (keyboard.volume_step): the volume up or down
@@ -150,6 +152,8 @@ def sections():
             (_('Show or Hide Lyrics'), 'show-lyrics'),
             (_('Show or Hide Up Next'), 'show-queue'),
             (_('Remove from Up Next'), QUEUE_REMOVE),
+            (_('Move Up in Up Next'), MOVE_UP),
+            (_('Move Down in Up Next'), MOVE_DOWN),
             (_('Fullscreen Player'), 'win.fullscreen-player'),
         ]),
         (_('Playlists'), [

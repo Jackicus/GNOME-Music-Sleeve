@@ -308,7 +308,7 @@ def classes():
             self.moved.append((playlist.id, from_index, to_index, at_once))
             return playlist.reorder(moved(len(playlist.track_ids()), from_index, to_index))
 
-        def menu_for(self, obj, queued=False, queue_entry=None):
+        def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
             self.asked.append(obj)
             self.queue_entries.append(queue_entry)
             menu = Gio.Menu()
