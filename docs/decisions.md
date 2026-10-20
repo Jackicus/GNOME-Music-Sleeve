@@ -641,7 +641,7 @@ changes, change it here, with the date. The plan they came from is in
   asked as music.apple.com asks it (the grouping's shelves with their contents, then the
   curator's playlists), so a show's page lists its episodes, which play as stations. A show
   offers no Go to Artist: Apple names its host (`showHostName`), not the host's artist. The
-  show's banner waits: the category page has no hero.
+  show's banner waits (#401): the category page has no hero.
 - **An artist of the library is shown as the library holds them** (2026-10-03). Apple Music
   has two pages of an artist: the catalog's, and its library's (Library › Artists: a list
   of artists beside the one chosen, their albums in the library under the name, Play and

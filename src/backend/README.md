@@ -367,7 +367,7 @@ The links' URLs and what opens them (the web player's routes):
 A live station's events also carry `heroArtwork`, and some an `editorialVideo` (the web
 player's `extend[station-events]=editorialVideo`), which the Radio page does not use.
 
-### A radio show's banner (#359)
+### A radio show's banner (#401)
 
 A show's page (the category page, "Curators and radio shows" above) carries its banner in
 the curator's `editorialArtwork`: `bannerUber`, else `subscriptionCover`, else
