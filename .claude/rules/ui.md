@@ -194,7 +194,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `NOW_PLAYING_TABS` (keys the window's capture-phase key controller handles: the playback
   actions, and Ctrl+Shift+L and Ctrl+Shift+U, Now Playing on a tab), `MAIN_MENU`,
   `CONTEXT_MENU`, the sidebar's `FOLDER_OPEN` and `FOLDER_CLOSE` (sidebar_view.py binds
-  them) and `sections()` (the Keyboard Shortcuts dialog); tests/test_shortcuts.py checks
+  them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it) and `sections()` (the Keyboard Shortcuts dialog); tests/test_shortcuts.py checks
   that the dialog lists every key, and that no accelerator is a HIG standard one the app
   does not implement (Ctrl+N is "New"). `src/keyboard.py` decides which action a key runs
   (`playback_action()`, `tab_action()`; tests/test_keyboard.py): Space belongs to a focused

@@ -161,11 +161,20 @@ LYRICS_FIXTURES = {
 }
 
 
-def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None):
+def album_entries(album):
+    """An Item album's tracks as the bridge's Track entries."""
+    return [dict(entry) for group in album.raw.get('groups') or []
+            for entry in group.get('entries') or []]
+
+
+def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None,
+                           autoplay=False):
     """A Player.apply() dict: the demo library's first album as the queue, its first track
     playing `position` seconds in (PLAYING_POSITION, 65 s, by default), the album's cover as
     the artwork, and with `lyrics` the synced lyrics of the LYRICS_FIXTURES file named
-    `fixture`. The demo cannot play: this is what the Player would show."""
+    `fixture`; with `autoplay`, the album's first AUTOPLAY_AFTER tracks, then the next
+    album's first AUTOPLAY_COUNT as entries autoplay added. The demo cannot play: this is
+    what the Player would show."""
     from applemusic.backend import config
     from applemusic.remote import remote_art_path
 
@@ -174,10 +183,13 @@ def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None):
     album = app.library.albums.get_item(0)
     if album is None:
         sys.exit('harness: the demo library has no album')
-    entries = [dict(entry) for group in album.raw.get('groups') or []
-               for entry in group.get('entries') or []]
+    entries = album_entries(album)
     if not entries:
         sys.exit('harness: the demo album has no tracks')
+    if autoplay:
+        following = app.library.albums.get_item(1)
+        added = album_entries(following)[:AUTOPLAY_COUNT] if following is not None else []
+        entries = entries[:AUTOPLAY_AFTER] + [dict(entry, autoplay=True) for entry in added]
     for index, entry in enumerate(entries):
         entry['artUrl'] = DEMO_ART_URL
         entry['index'] = index
@@ -196,6 +208,10 @@ def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None):
         with open(path, encoding='utf-8') as file:
             state['lyrics'] = json.load(file)
     return state
+
+
+AUTOPLAY_AFTER = 4   # the album's tracks an invented queue with autoplay keeps
+AUTOPLAY_COUNT = 5   # and the entries autoplay added after them
 
 
 def invented_session(app, position=None):

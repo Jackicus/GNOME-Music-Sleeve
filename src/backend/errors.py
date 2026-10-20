@@ -13,8 +13,11 @@ NOT_SIGNED_IN = 'not-signed-in'  # MusicKit is not authorized
 API = 'api'                      # Apple, MusicKit or the page said no
 TIMEOUT = 'timeout'              # Chrome or the page took too long
 USAGE = 'usage'                  # a bad argument (the debug CLI's)
+QUEUE_LOCKED = 'queue-locked'    # MusicKit allows no edits of this queue (a station's)
+QUEUE_CHANGED = 'queue-changed'  # the queue's entry named is no longer there: it changed
 
-CODES = (ENGINE_DOWN, NO_BROWSER, NO_WIDEVINE, NO_KEYRING, NOT_SIGNED_IN, API, TIMEOUT, USAGE)
+CODES = (ENGINE_DOWN, NO_BROWSER, NO_WIDEVINE, NO_KEYRING, NOT_SIGNED_IN, API, TIMEOUT, USAGE,
+         QUEUE_LOCKED, QUEUE_CHANGED)
 
 
 class EngineError(Exception):

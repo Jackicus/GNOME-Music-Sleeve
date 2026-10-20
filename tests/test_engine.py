@@ -43,7 +43,8 @@ FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 RELAY = pathlib.Path(__file__).parent / 'fake_chrome_relay.py'
 PLAYBACK_METHODS = ('signout', 'play', 'playNext', 'playLater', 'control', 'seek', 'volume',
                     'shuffle',
-                    'repeat', 'nowPlaying', 'queue', 'queueJump', 'lyrics',
+                    'repeat', 'nowPlaying', 'queue', 'queueJump', 'queueRemove', 'queueClear',
+                    'queueUndoClear', 'autoplay', 'lyrics',
                     'search', 'suggest', 'searchLanding', 'category', 'playlistSuggestions',
                     'rating', 'addToLibrary', 'removeFromLibrary', 'libraryHas',
                     'addToPlaylist', 'createPlaylist',
@@ -1319,6 +1320,43 @@ class PlaybackTest(EngineFixture):
                 await self.engine.queue_jump(index)
             self.assertEqual(raised.exception.code, 'usage')
 
+    async def test_queue_edits(self):
+        await self.up()
+        await self.engine.queue_remove(4, 'i.abc')
+        self.page.bridge_answers['queueClear'] = {'ok': True, 'cleared': 3}
+        self.assertEqual(await self.engine.queue_clear(), 3)
+        self.page.bridge_answers['queueUndoClear'] = {'ok': True, 'restored': 3}
+        self.assertEqual(await self.engine.queue_undo_clear(), 3)
+        self.assertEqual(self.page.bridge_calls, [('queueRemove', 4, 'i.abc'), ('queueClear',),
+                                                  ('queueUndoClear',)])
+        for bad in ((-1, 'i.a'), ('1', 'i.a'), (True, 'i.a'), (2, '')):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.queue_remove(*bad)
+            self.assertEqual(raised.exception.code, 'usage')
+        refusals = {'NOT_EDITABLE': 'queue-locked', 'CURRENT': 'queue-changed',
+                    'STALE': 'queue-changed', 'ODD': 'api'}
+        for refusal, code in refusals.items():
+            self.page.bridge_answers['queueRemove'] = {'error': 'no', 'code': refusal}
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.queue_remove(2, 'i.a')
+            self.assertEqual(raised.exception.code, code, refusal)
+        self.page.bridge_answers['queueUndoClear'] = {'error': 'nothing', 'code': 'STALE'}
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.queue_undo_clear()
+        self.assertEqual(raised.exception.code, 'queue-changed')
+
+    async def test_autoplay(self):
+        await self.up()
+        self.page.bridge_answers['autoplay'] = {'autoplay': True, 'canAutoplay': False}
+        self.assertEqual(await self.engine.set_autoplay(True),
+                         {'autoplay': True, 'canAutoplay': False})
+        self.page.bridge_answers['autoplay'] = None   # not a dict: what was asked
+        self.assertEqual(await self.engine.set_autoplay(False),
+                         {'autoplay': False, 'canAutoplay': True})
+        await self.engine.set_autoplay(None)
+        self.assertEqual(self.page.bridge_calls, [('autoplay', True), ('autoplay', False),
+                                                  ('autoplay', None)])
+
     LANGUAGES = {'lyrics': 'en-GB', 'script': 'en-Latn'}
 
     async def up_for_lyrics(self):
@@ -1515,6 +1553,8 @@ class PlaybackTest(EngineFixture):
                      self.engine.shuffle('on'), self.engine.repeat('all'),
                      self.engine.now_playing(), self.engine.queue(),
                      self.engine.play_next('song', 'i.1'), self.engine.queue_jump(0),
+                     self.engine.queue_remove(1, 'i.1'), self.engine.queue_clear(),
+                     self.engine.queue_undo_clear(), self.engine.set_autoplay(True),
                      self.engine.lyrics('1000000001'), self.engine.search('x'),
                      self.engine.suggest('x'), self.engine.landing(), self.engine.category('1'),
                      self.engine.browse(), self.engine.made_for_you()):

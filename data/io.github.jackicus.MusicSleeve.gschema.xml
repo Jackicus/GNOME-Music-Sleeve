@@ -43,6 +43,11 @@
       <summary>Play a suggested song as a preview</summary>
       <description>Whether clicking one of a playlist's Suggested Songs plays Apple Music's 30-second preview of it instead of the whole song. A preview leaves the queue as it is: the music playing pauses for it. A song without a preview plays in full.</description>
     </key>
+    <key name="autoplay" type="b">
+      <default>true</default>
+      <summary>Autoplay similar music</summary>
+      <description>Whether Apple Music keeps playing similar songs when the queue ends, added to Up Next under Autoplay. The app sets it on the playback engine at every start: it is the app's setting, not the account's, and Apple Music's other players keep their own.</description>
+    </key>
     <key name="lyrics-translations" type="b">
       <default>false</default>
       <summary>Show translations under lyrics</summary>

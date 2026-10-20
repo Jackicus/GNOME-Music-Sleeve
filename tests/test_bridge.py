@@ -35,7 +35,7 @@ GJS = shutil.which('gjs')
 EVENTS = ('authorizationStatusDidChange', 'playbackStateDidChange', 'nowPlayingItemDidChange',
           'playbackTimeDidChange', 'playbackDurationDidChange', 'queueItemsDidChange',
           'queuePositionDidChange', 'shuffleModeDidChange', 'repeatModeDidChange',
-          'playbackVolumeDidChange', 'mediaPlaybackError')
+          'playbackVolumeDidChange', 'mediaPlaybackError', 'autoplayEnabledDidChange')
 
 # Apple's TTML lyrics, as the catalog's /lyrics answers carry them (invented words): two
 # stanzas, entities, word-timed spans, a <br>, CDATA, the four time formats, a blank line.
@@ -303,7 +303,9 @@ class BridgeTest(unittest.TestCase):
             ('nowPlayingItemDidChange', {'track': track, 'index': 1}),
             ('playbackTimeDidChange', {'position': 3, 'duration': 30}),
             ('playbackDurationDidChange', {'duration': 30}),
-            ('queueItemsDidChange', {'index': 0, 'items': [dict(track, index=0)]}),
+            ('queueItemsDidChange', {'index': 0, 'items': [dict(track, index=0)],
+                                     'editable': True, 'canAutoplay': True,
+                                     'autoplay': False}),
             ('queuePositionDidChange', {'index': 1, 'oldIndex': 0}),
             ('shuffleModeDidChange', {'shuffle': 'on'}),
             ('repeatModeDidChange', {'repeat': 'all'}),
@@ -621,6 +623,115 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(value['none'], {'state': 'stopped', 'track': None, 'position': 0,
                                          'duration': 0, 'shuffle': 'off', 'repeat': 'none',
                                          'volume': 1})
+
+    # -- the queue: Up Next's edits and autoplay -------------------------------------------
+
+    @scenario("""
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b'), song('i.c'), song('i.d')], 1, [3]);
+        mk.autoplayEnabled = true;
+        const flagged = bridge.queue();
+        // The queue items out of step with the items: the autoplay MediaItems say instead.
+        mk.queue._queueItems.push({item: song('i.e'), isAutoplay: false});
+        Object.defineProperty(mk.queue, 'items', {value: mk.queue.items.slice(0, 4)});
+        const byList = bridge.queue().items.map(track => !!track.autoplay);
+        mk.capabilities = {canEditPlaybackQueue: false, canAutoplay: false};
+        const station = bridge.queue();
+        return {flagged, byList, station: [station.editable, station.canAutoplay]};
+    """)
+    def test_the_queue_says_what_autoplay_added_and_what_may_be_done(self, value):
+        flagged = value['flagged']
+        self.assertEqual([track.get('autoplay') for track in flagged['items']],
+                         [None, None, None, True])  # only where true: other entries as before
+        self.assertEqual((flagged['index'], flagged['editable'], flagged['canAutoplay'],
+                          flagged['autoplay']), (1, True, True, True))
+        self.assertEqual(value['byList'], [False, False, False, True])
+        self.assertEqual(value['station'], [False, False])
+
+    @scenario("""
+        bridge.subscribe();
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b'), song('i.c'), song('i.d')], 1);
+        const out = {};
+        out.removed = bridge.queueRemove(2, 'i.c');
+        out.after = mk.queue.items.map(item => item.id);
+        out.current = bridge.queueRemove(1, 'i.b');
+        out.stale = bridge.queueRemove(2, 'i.c');      // i.d is at 2 now
+        out.missing = bridge.queueRemove(9, 'i.z');
+        out.calls = mk.calls.filter(call => call[0].startsWith('queue.'));
+        out.events = posted.filter(event => event.name === 'queueItemsDidChange')
+            .map(event => event.data.items.map(track => track.id));
+        // Without spliceQueueItems: the deprecated remove.
+        mk.queue.spliceQueueItems = undefined;
+        out.old = bridge.queueRemove(2, 'i.d');
+        out.oldCall = mk.calls[mk.calls.length - 1];
+        mk.capabilities = {canEditPlaybackQueue: false};
+        out.station = bridge.queueRemove(0, 'i.a');
+        return out;
+    """)
+    def test_queue_remove_takes_the_entry_named_and_no_other(self, value):
+        self.assertEqual(value['removed'], {'ok': True})
+        self.assertEqual(value['after'], ['i.a', 'i.b', 'i.d'])
+        self.assertEqual(value['current']['code'], 'CURRENT')
+        self.assertEqual(value['stale']['code'], 'STALE')
+        self.assertEqual(value['missing']['code'], 'STALE')
+        self.assertEqual(value['calls'], [['queue.spliceQueueItems', 2, 1, 0]])
+        self.assertEqual(value['events'], [['i.a', 'i.b', 'i.d']])
+        self.assertEqual(value['old'], {'ok': True})
+        self.assertEqual(value['oldCall'], ['queue.remove', 2])
+        self.assertEqual(value['station']['code'], 'NOT_EDITABLE')
+
+    @scenario("""
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b'), song('i.c'), song('i.d')], 1, [3]);
+        const out = {};
+        out.cleared = bridge.queueClear();
+        out.after = mk.queue.items.map(item => item.id);
+        out.undone = bridge.queueUndoClear();
+        out.back = mk.queue._queueItems.map(entry => [entry.item.id, entry.isAutoplay]);
+        out.twice = bridge.queueUndoClear();           // once only
+        bridge.queueClear();
+        mk.queue.position = 0;                          // another item plays now
+        out.moved = bridge.queueUndoClear();
+        out.calls = mk.calls.filter(call => call[0].startsWith('queue.'));
+        mk.capabilities = {canEditPlaybackQueue: false};
+        out.station = bridge.queueClear();
+        return out;
+    """)
+    def test_queue_clear_keeps_what_it_took_for_undo(self, value):
+        self.assertEqual(value['cleared'], {'ok': True, 'cleared': 2})
+        self.assertEqual(value['after'], ['i.a', 'i.b'])
+        self.assertEqual(value['undone'], {'ok': True, 'restored': 2})
+        self.assertEqual(value['back'], [['i.a', False], ['i.b', False], ['i.c', False],
+                                         ['i.d', True]])
+        self.assertEqual(value['twice']['code'], 'STALE')
+        self.assertEqual(value['moved']['code'], 'STALE')
+        self.assertEqual(value['calls'], [['queue.clearAfterCurrent'],
+                                          ['queue.spliceQueueItems', 2, 0, 2],
+                                          ['queue.clearAfterCurrent']])
+        self.assertEqual(value['station']['code'], 'NOT_EDITABLE')
+
+    @scenario("""
+        bridge.subscribe();
+        const out = {read: bridge.autoplay(null)};
+        out.on = bridge.autoplay(true);
+        out.flag = mk.autoplayEnabled;
+        mk.fire('autoplayEnabledDidChange', true);
+        out.off = bridge.autoplay(false);
+        mk.fire('autoplayEnabledDidChange', {});        // no boolean: the instance's
+        mk.capabilities = {canAutoplay: false};
+        out.station = bridge.autoplay(null);
+        out.events = posted.filter(event => event.name === 'autoplayEnabledDidChange')
+            .map(event => event.data);
+        return out;
+    """)
+    def test_autoplay_is_set_and_followed(self, value):
+        self.assertEqual(value['read'], {'autoplay': False, 'canAutoplay': True})
+        self.assertEqual(value['on'], {'autoplay': True, 'canAutoplay': True})
+        self.assertIs(value['flag'], True)
+        self.assertEqual(value['off'], {'autoplay': False, 'canAutoplay': True})
+        self.assertEqual(value['station'], {'autoplay': False, 'canAutoplay': False})
+        self.assertEqual(value['events'], [{'autoplay': True}, {'autoplay': False}])
 
     # -- lyrics ----------------------------------------------------------------------------
 

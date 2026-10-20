@@ -39,6 +39,10 @@ def error_message(code):
         return _('Apple Music did not answer in time'), None, None
     if code == errors.API:
         return _('Apple Music could not do that'), None, None
+    if code == errors.QUEUE_LOCKED:
+        return _('Up Next cannot be changed while a station plays'), None, None
+    if code == errors.QUEUE_CHANGED:
+        return _('Up Next changed meanwhile; try again'), None, None
     # A usage error or an unknown code: the bridge or Chrome answered something the app
     # did not expect, so that is what the user is told.
     return _('The playback engine did not answer as expected'), None, None

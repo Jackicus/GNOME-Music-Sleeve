@@ -36,6 +36,12 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
 - A `Gtk.SliceListModel` whose `offset` plus `size` passes `G_MAXUINT` wraps its end and
   ignores changes after it, or reports them wrongly (a `Gtk.ListView` over it has crashed):
   "the rest from N" is `size = GLib.MAXUINT32 - N`, set again whenever the offset changes.
+- Sections over one list: a small Python `Gtk.SectionModel` (`GObject.Object, Gio.ListModel,
+  Gtk.SectionModel`, its `do_get_section` answering `(start, end)`, `sections_changed()` when
+  they move, never with a range past the items) passes its model's items through untouched.
+  Two slices of one store in a `Gtk.FlattenListModel` give sections too, but moving their
+  bound moves items between the parts: their rows are built again and the list's focus item
+  can land on the last row (`widgets.queue.QueueSections`, docs/notes.md).
 
 ## Layout and widgets
 

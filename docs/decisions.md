@@ -305,6 +305,23 @@ changes, change it here, with the date. The plan they came from is in
   is known (a library song's `catalogId`, a library artist's when the library has one), so it
   never names a station that is not there. What it plays is a station like any other: a
   song-seeded one's queue cannot be edited (the entry above).
+- **Up Next's edits: at once, MusicKit's queue the truth; Autoplay on** (2026-10-20, #332).
+  Remove from Up Next, Clear and Clear's Undo change the Player's queue at once and then
+  MusicKit's (`queue.spliceQueueItems`, `clearAfterCurrent`, the cleared entries spliced
+  back), each naming its entry by index and id, as the web player checks, so a queue that
+  changed meanwhile is never edited in the wrong place; MusicKit's `queueItemsDidChange`
+  that follows then finds the queue as it is, and a refusal shows MusicKit's queue again.
+  The Player applies every queue event as the fewest splices of its store, so the rows
+  stay (on a 500-entry queue one removal went from rebuilding 205 rows, 186 ms, to one, 10
+  ms: docs/notes.md), and events are not coalesced in time: turning Autoplay off removes
+  its entries one event each, each a one-row splice. Clear has an Undo toast rather than a
+  confirmation (the HIG's way), Remove neither (the row goes, and a screen reader is told).
+  No per-row remove button: the menu, Delete and a long press reach it with a mouse, the
+  keyboard and a finger, and a button on every row is a widget per row to bind. Autoplay is
+  on unless turned off (the `autoplay` setting, `true`: Apple's apps start with it on), set
+  on MusicKit at every engine start and after the page reloads; the entries it adds are
+  listed under an Autoplay heading. While a session is restored (#342), the edits change it
+  alone, and it is queued as its songs from then on.
 - **The last session, shown paused, handed over at Play** (2026-10-20, #342). As Apple's own
   apps do, the app opens with the last item in the bar, paused where it stopped, and its
   queue. It is kept in the cache (`session.json`: library ids and titles, so not the

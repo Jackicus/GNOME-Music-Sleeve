@@ -10,6 +10,7 @@
                           [--now-playing [lyrics|localized|syllable|queue]]
                           [--fullscreen-player [lyrics|localized|syllable|none]]
                           [--idle] [--position SECONDS] [--playing] [--restored]
+                          [--autoplay]
                           [--search TERM]
                           [--context-menu [--submenu NAME]]
                           [--preferences [general|engine]]
@@ -56,6 +57,8 @@ pronunciations and translations (--setting lyrics-pronunciations=true and
 lyrics-translations=true show them), and "syllable" with lyrics_syllable.json's, an
 invented word-timed duet (syllables, background vocals, two singers and a group, a long
 intro and a long break between verses) with pronunciations and translations too.
+--autoplay makes the queue the album's first four tracks and five of the next album's
+as entries autoplay added, which Up Next shows under its Autoplay header.
 With --demo only.
 --position SECONDS puts the invented item that many seconds in (65 by default: a
 line of each lyrics fixture is current), say mid-word, or inside a break.
@@ -146,6 +149,8 @@ parser.add_argument('--playing', action='store_true',
                     help='an invented item playing, the sheet closed (the player bar)')
 parser.add_argument('--restored', action='store_true',
                     help='the invented item as the last session restored at launch, paused')
+parser.add_argument('--autoplay', action='store_true',
+                    help='with --now-playing: entries autoplay added at the end of the queue')
 parser.add_argument('--search', metavar='TERM',
                     help='the Search page in Your Library mode with TERM typed')
 parser.add_argument('--context-menu', action='store_true',
@@ -180,6 +185,8 @@ if args.submenu and not (args.context_menu or args.sidebar_menu):
 if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
         and not args.demo:
     parser.error('--now-playing, --playing, --restored and --fullscreen-player need --demo')
+if args.autoplay and not args.now_playing:
+    parser.error('--autoplay needs --now-playing')
 if args.position is not None and not (args.now_playing or args.playing or args.restored
                                       or args.fullscreen_player):
     parser.error('--position needs --now-playing, --playing, --restored or '
@@ -258,7 +265,8 @@ def open_now_playing(window):
     chosen = args.fullscreen_player or args.now_playing
     fixture = chosen if chosen in harness.LYRICS_FIXTURES else 'lyrics'
     app.player.apply(harness.invented_playing_state(app, lyrics=chosen != 'none',
-                                                    fixture=fixture, position=args.position))
+                                                    fixture=fixture, position=args.position,
+                                                    autoplay=args.autoplay))
     if args.fullscreen_player:
         window.activate_action('win.fullscreen-player', None)
         if args.idle:

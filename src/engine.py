@@ -32,6 +32,11 @@ UI awaits.
     await engine.now_playing()   # {state, track, position, duration, shuffle, repeat, volume}
     await engine.queue()         # {index, items: [Track…]}
     await engine.queue_jump(3)   # play the queue's entry at index 3 (mk.changeToMediaAtIndex)
+    await engine.queue_remove(4, 'i.abc')  # the entry at 4, when it is still i.abc (not the
+                                           # item playing): queue.spliceQueueItems
+    await engine.queue_clear()   # everything after the item playing (queue.clearAfterCurrent)
+    await engine.queue_undo_clear()   # Clear's entries back after the item, while it plays
+    await engine.set_autoplay(True)   # mk.autoplayEnabled (None: read): {autoplay, canAutoplay}
     await engine.preview(song_id, url)   # Apple's 30-second clip of a song, outside the queue
                                          # (MusicKit pauses); previewDidChange events follow it
     await engine.stop_preview()  # the clip playing stopped: True if one was
@@ -390,6 +395,21 @@ def with_pdeathsig(argv):
                         'crashes')
         return list(argv)
     return [setpriv, '--pdeathsig', 'TERM', '--', *argv]
+
+
+# The bridge's codes for a queue edit it refused, as the engine's.
+QUEUE_REFUSALS = {'NOT_EDITABLE': 'queue-locked', 'CURRENT': 'queue-changed',
+                  'STALE': 'queue-changed'}
+
+
+def _queue_answer(answer, what):
+    """A queue edit's answer, or the EngineError its {error, code} means."""
+    if not isinstance(answer, dict):
+        raise EngineError('api', f'queue {what}: the page gave no answer')
+    if answer.get('error'):
+        code = QUEUE_REFUSALS.get(answer.get('code'), 'api')
+        raise EngineError(code, f'queue {what}: {answer["error"]}')
+    return answer
 
 
 class Engine(GObject.Object):
@@ -1411,6 +1431,46 @@ class Engine(GObject.Object):
         client = await self._ready()
         await self._require_widevine()
         await client.bridge('queueJump', index, timeout=PLAY_TIMEOUT)
+
+    async def queue_remove(self, index, entry_id):
+        """Take the queue's entry at `index` out, when it is still the entry `entry_id` and
+        not the item playing (the bridge's queueRemove: queue.spliceQueueItems). One
+        queueItemsDidChange follows. EngineError('queue-locked') when MusicKit allows no edits
+        (a station's queue), 'queue-changed' when the entry there is another now (or it is the
+        item playing), 'usage' for an index that is none."""
+        if isinstance(index, bool) or not isinstance(index, int) or index < 0 or not entry_id:
+            raise EngineError('usage', f'not a queue entry: {index!r}, {entry_id!r}')
+        client = await self._ready()
+        _queue_answer(await client.bridge('queueRemove', index, str(entry_id)), 'remove')
+
+    async def queue_clear(self):
+        """Take everything after the item playing out of the queue (the bridge's queueClear:
+        queue.clearAfterCurrent), keeping it in the page for queue_undo_clear(). How many
+        entries went. EngineError('queue-locked') as queue_remove()."""
+        client = await self._ready()
+        answer = _queue_answer(await client.bridge('queueClear'), 'clear')
+        cleared = answer.get('cleared')
+        return cleared if isinstance(cleared, int) else 0
+
+    async def queue_undo_clear(self):
+        """Put the entries the last queue_clear() took back after the item playing, while
+        it is the item it was. How many came back; EngineError('queue-changed') when there is
+        nothing to put back, or another item plays now."""
+        client = await self._ready()
+        answer = _queue_answer(await client.bridge('queueUndoClear'), 'undo clear')
+        restored = answer.get('restored')
+        return restored if isinstance(restored, int) else 0
+
+    async def set_autoplay(self, on):
+        """MusicKit's autoplay on or off (mk.autoplayEnabled), or only read (None): the
+        page's own switch, which the web player sets from its local storage as it loads.
+        Answers {autoplay, canAutoplay} as MusicKit has them after the set."""
+        client = await self._ready()
+        answer = await client.bridge('autoplay', None if on is None else bool(on))
+        if not isinstance(answer, dict):
+            return {'autoplay': bool(on), 'canAutoplay': True}
+        return {'autoplay': bool(answer.get('autoplay')),
+                'canAutoplay': answer.get('canAutoplay') is not False}
 
     def lyrics_path(self, catalog_song_id):
         """Where a song's lyrics are kept: <cache>/lyrics/<catalog id>.json."""

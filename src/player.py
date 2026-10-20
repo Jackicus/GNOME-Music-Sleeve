@@ -21,6 +21,9 @@ the playback commands as thin coroutines over the engine.
     player.queue, player.queue_index           # a Gio.ListStore of NowPlaying (the queue's
                                                # entries, in order) and where the item playing
                                                # is in it (-1: nowhere, or nothing playing)
+    player.queue_editable                      # MusicKit allows edits of the queue (not a
+                                               # station's)
+    player.autoplay, player.can_autoplay       # MusicKit's autoplay on, and allowed now
     player.lyrics, player.lyrics_loading       # a lyrics.Lyrics for the track (None: none, or
                                                # not there yet), and whether one is being read
     player.pending                             # a play request is with the engine (the play
@@ -29,6 +32,11 @@ the playback commands as thin coroutines over the engine.
     await player.play({'kind': 'album', 'id': …}, start_with=2, shuffle=False)  # or True,
                                                # or None: the mode as it is
     await player.queue_jump(3)  # play the queue's entry at index 3
+    await player.remove_from_queue(4, 'i.abc')   # an entry after the one playing, by index
+                                                 # and id (Up Next's Remove)
+    await player.clear_up_next()   # everything after the entry playing; undo_clear() puts
+    await player.undo_clear()      # it back while that entry still plays
+    await player.apply_autoplay()  # the `autoplay` setting to MusicKit (at every engine start)
     await player.toggle()       # pause while active (playing, loading…), else play
     await player.pause() / resume() / next() / stop()
     await player.previous()     # the item before, or this one again when a few seconds in
@@ -46,7 +54,8 @@ the playback commands as thin coroutines over the engine.
 The properties change only from the engine's events (playbackStateDidChange,
 nowPlayingItemDidChange, playbackTimeDidChange, playbackDurationDidChange,
 shuffleModeDidChange, repeatModeDidChange, playbackVolumeDidChange, queueItemsDidChange,
-queuePositionDidChange), plus one now_playing() (and queue()) read when the engine comes up,
+queuePositionDidChange, autoplayEnabledDidChange), plus one now_playing() (and queue()) read
+when the engine comes up,
 so the bar follows what MusicKit does rather than what was asked; nothing here polls. A
 null item clears the track only after TRACK_GRACE_MS without a new one (`track_grace_ms`;
 MusicKit sends a null between queues, right before the next item), and the previous item's
@@ -64,6 +73,19 @@ pauses for it, and the state, the track and the times stay MusicKit's, so the ba
 and MPRIS show the queue paused, which it is. Only `preview` says a clip plays, from the
 engine's previewDidChange events; it is '' again as the clip ends or stops (MusicKit playing
 again stops it), and when the engine goes down or the page is reloaded.
+A queue snapshot (queueItemsDidChange, queue()) is applied as the fewest changes to the store
+that make it the snapshot (apply_queue: the entries before and after the change kept as they
+are, renumbered), so a list over it keeps its rows. Up Next's edits (remove_from_queue,
+clear_up_next, undo_clear) change the store at once and then ask the engine; the
+queueItemsDidChange that follows is then the store as it is, and changes nothing. One that
+fails reads the queue again (a queue changed meanwhile, 'queue-changed', only that). Each
+names its entry by index and id, after the entry playing, and only while MusicKit allows edits
+(queue_editable, from the snapshot's `editable`: not on a station). While a session is
+restored they change it locally (it is then its songs' queue, no longer its source's).
+Autoplay is the app's `autoplay` setting, set on MusicKit (apply_autoplay) as the engine comes
+up, after a bridgeReset (the page set its own as it loaded) and when the setting changes;
+`autoplay` is what MusicKit has, from the snapshots and autoplayEnabledDidChange, and an entry
+autoplay added has NowPlaying.autoplay.
 The last session (src/session.py keeps it) is restored as the Player's own state: restore()
 shows its item paused, its queue and its position, and `restored` holds while MusicKit has
 not been asked for it, so MusicKit holding nothing (its empty answer as the engine comes up,
@@ -135,7 +157,8 @@ REPEAT_MODES = ('none', 'one', 'all')
 EVENTS = ('playbackStateDidChange', 'nowPlayingItemDidChange', 'playbackTimeDidChange',
           'playbackDurationDidChange', 'shuffleModeDidChange', 'repeatModeDidChange',
           'playbackVolumeDidChange', 'mediaPlaybackError', 'queueItemsDidChange',
-          'queuePositionDidChange', 'previewDidChange', 'bridgeReset')
+          'queuePositionDidChange', 'previewDidChange', 'autoplayEnabledDidChange',
+          'bridgeReset')
 
 
 def _text(value):
@@ -189,6 +212,11 @@ def _holds_item(name, data):
     return False
 
 
+def _entry_key(data):
+    """A queue entry's data as compared with a snapshot's: all of it but its index."""
+    return {key: value for key, value in data.items() if key != 'index'}
+
+
 class NowPlaying(GObject.Object):
     """The item playing: the bridge's Track shape (formatTrack in bridge.js), as properties.
 
@@ -197,7 +225,9 @@ class NowPlaying(GObject.Object):
     is what MusicKit reports while playing, which is what the seek bar follows. `kind` is
     what the item is to the account's ratings: 'song' or 'video' (from the Track's `type`,
     the API's resource type or MusicKit's own name for it; a Track without one is a song),
-    else '' (a station's segment, an ad: nothing to love).
+    else '' (a station's segment, an ad: nothing to love). `autoplay`: an entry autoplay added
+    to the queue (the Track's `autoplay`). `key` is its data but the index, which apply_queue
+    compares.
     """
 
     __gtype_name__ = 'AppleMusicNowPlaying'
@@ -212,6 +242,7 @@ class NowPlaying(GObject.Object):
     index = GObject.Property(type=int, default=0)
     explicit = GObject.Property(type=bool, default=False)
     kind = GObject.Property(type=str, default='')
+    autoplay = GObject.Property(type=bool, default=False)
 
     def __init__(self, data):
         data = data if isinstance(data, dict) else {}
@@ -226,8 +257,10 @@ class NowPlaying(GObject.Object):
             index=int(_number(data.get('index'))),
             explicit=bool(data.get('explicit')),
             kind=_kind_of(data),
+            autoplay=data.get('autoplay') is True,
         )
         self.raw = data
+        self.key = _entry_key(data)
 
     def same_as(self, other):
         """Whether `other` is this item at the same queue position: the same song at
@@ -260,6 +293,9 @@ class Player(GObject.Object):
     pending = GObject.Property(type=bool, default=False)
     preview = GObject.Property(type=str, default='')
     restored = GObject.Property(type=bool, default=False)
+    queue_editable = GObject.Property(type=bool, default=True)
+    autoplay = GObject.Property(type=bool, default=False)
+    can_autoplay = GObject.Property(type=bool, default=True)
 
     def __init__(self, app):
         """`app` gives the engine (`app.engine`), the settings (`signed-in`), `toast()`,
@@ -285,16 +321,19 @@ class Player(GObject.Object):
         self._source = None  # what the queue came from ({kind, id}), while it is still that
         self._source_ids = None  # the ids of the source's queue as MusicKit first gave them
         self._volume_wanted = None  # a volume set while restored with the engine down
+        self._cleared = None  # what the last Clear took, for its Undo ({id, entries, local})
         self._engine.connect('event', self._on_event)
         self._engine.connect('notify::state', self._on_engine_state)
         if self._engine.state == 'up':
             self._app.spawn(self.refresh())
+            self._app.spawn(self.apply_autoplay())
 
     # -- state from the engine -------------------------------------------------------------
 
     def _on_engine_state(self, engine, _pspec):
         if engine.state == 'up':
             self._app.spawn(self.refresh())
+            self._app.spawn(self.apply_autoplay())
         elif engine.state == 'down':
             if self.restored:
                 self._set_preview('')  # MusicKit never had the session: it stays
@@ -368,6 +407,7 @@ class Player(GObject.Object):
             self._set_state('none')
             self._set_position(0.0, 0.0)
             self.apply_queue(None)
+            self._cleared = None
             return
         data = now_playing
         if 'queue' in data:  # before the track, which then finds itself in it
@@ -389,25 +429,75 @@ class Player(GObject.Object):
             self._set_volume(data.get('volume'))
 
     def apply_queue(self, snapshot):
-        """Set the queue from a {index, items: [Track…]} snapshot (the bridge's queue()
-        answer and the queueItemsDidChange event), or empty it (None). A snapshot of the
-        same entries as before (their data compared, before any object is made: MusicKit
-        re-sends the whole queue at every change) rebinds no rows; one that differs, in a
-        title too, replaces them in one splice; the index is the snapshot's, or the track's
-        place when it says -1."""
+        """Set the queue from a {index, items: [Track…], editable, canAutoplay, autoplay}
+        snapshot (the bridge's queue() answer and the queueItemsDidChange event), or empty it
+        (None). MusicKit re-sends the whole queue at every change, so the snapshot is compared
+        with the store, entry by entry, before any object is made (_splice_queue), and only
+        what differs is spliced: the same entries rebind no rows, one entry taken out or put
+        in is one splice of it, and the entries kept are renumbered. The index is the
+        snapshot's, or the track's place when it says -1."""
         items = snapshot.get('items') if isinstance(snapshot, dict) else None
         items = items if isinstance(items, list) else []
         wanted = [dict(item, index=position) for position, item in enumerate(items)
                   if isinstance(item, dict)]
-        if [entry.raw for entry in self.queue] != wanted:
-            self.queue.splice(0, self.queue.get_n_items(),
-                              [NowPlaying(data) for data in wanted])
+        self._splice_queue(wanted)
+        self._take_capabilities(snapshot if isinstance(snapshot, dict) else {})
         self._follow_source(wanted)
         index = snapshot.get('index') if isinstance(snapshot, dict) else None
         index = int(index) if isinstance(index, int) and not isinstance(index, bool) else -1
         if index < 0 and self.track is not None:
             index = self._index_of(self.track)
         self._set_queue_index(index)
+
+    def _splice_queue(self, wanted):
+        """Make the store hold `wanted` (entries' data, each with its index) with one
+        splice of what differs: the entries alike at the start and at the end (compared by
+        NowPlaying.key: everything but the index) are kept as they are, and those after the
+        change get their new index."""
+        store = self.queue
+        count = store.get_n_items()
+        keys = [_entry_key(data) for data in wanted]
+        start = 0
+        limit = min(count, len(wanted))
+        while start < limit and store.get_item(start).key == keys[start]:
+            start += 1
+        end = 0
+        limit -= start
+        while (end < limit
+               and store.get_item(count - 1 - end).key == keys[len(wanted) - 1 - end]):
+            end += 1
+        removed = count - start - end
+        added = wanted[start:len(wanted) - end]
+        if removed or added:
+            store.splice(start, removed, [NowPlaying(data) for data in added])
+        if removed != len(added):
+            self._renumber(start + len(added))
+
+    def _renumber(self, start):
+        """The entries from `start` on get the index of their place (after a splice)."""
+        for position in range(start, self.queue.get_n_items()):
+            entry = self.queue.get_item(position)
+            if entry.index != position:
+                entry.raw['index'] = position
+                entry.index = position
+
+    def _take_capabilities(self, snapshot):
+        """What MusicKit allows with the queue now (a snapshot's `editable` and
+        `canAutoplay`), and its `autoplay`; a snapshot without them (an older answer, the
+        session restored, None) allows everything and leaves autoplay as it was."""
+        editable = snapshot.get('editable') is not False or self.restored
+        if editable != self.queue_editable:
+            self.queue_editable = editable
+        can_autoplay = snapshot.get('canAutoplay') is not False
+        if can_autoplay != self.can_autoplay:
+            self.can_autoplay = can_autoplay
+        if 'autoplay' in snapshot:
+            self._set_autoplay(snapshot.get('autoplay'))
+
+    def _set_autoplay(self, value):
+        autoplay = value is True
+        if autoplay != self.autoplay:
+            self.autoplay = autoplay
 
     def _follow_source(self, entries):
         """The source is kept while the queue holds what MusicKit first queued for it, in
@@ -472,6 +562,7 @@ class Player(GObject.Object):
             self._events += 1
             self.apply(None)
             self._app.spawn(self.refresh())
+            self._app.spawn(self.apply_autoplay())  # the page set its own as it loaded
         elif name == 'playbackTimeDidChange':
             self._take_position(data)
         elif name == 'playbackDurationDidChange':
@@ -490,6 +581,8 @@ class Player(GObject.Object):
             self._set_queue_index(index if isinstance(index, int) else -1)
         elif name == 'previewDidChange':
             self._set_preview(_text(data.get('id')))
+        elif name == 'autoplayEnabledDidChange':
+            self._set_autoplay(data.get('autoplay'))
         elif name == 'mediaPlaybackError':
             code = _text(data.get('code'))
             log.warning('playback error %s: %s', code or '(no code)',
@@ -787,9 +880,12 @@ class Player(GObject.Object):
         self._volume_wanted = None
 
     def _end_restored(self):
-        """The session restored is over: MusicKit has it, or holds another."""
+        """The session restored is over: MusicKit has it, or holds another (a Clear of the
+        session's has nothing to undo in MusicKit's)."""
         self._session = None
         self._queue_offset = 0
+        if self._cleared is not None and self._cleared['local']:
+            self._cleared = None
         if self.restored:
             self.restored = False
 
@@ -1070,6 +1166,130 @@ class Player(GObject.Object):
             await self.restore_session(index=int(index))
             return
         await self._engine.queue_jump(int(index))
+
+    # -- Up Next's edits ---------------------------------------------------------------------
+
+    def can_edit(self, index, entry_id=None):
+        """Whether the queue's entry at `index` (the entry `entry_id`, when given) may be
+        taken out: one after the entry playing, while MusicKit allows edits."""
+        if not self.queue_editable or self.queue_index < 0:
+            return False
+        if not self.queue_index < index < self.queue.get_n_items():
+            return False
+        return entry_id is None or self.queue.get_item(index).id == entry_id
+
+    def can_clear(self):
+        """Whether anything follows the entry playing that Clear could take out."""
+        return (self.queue_editable and self.queue_index >= 0
+                and self.queue_index + 1 < self.queue.get_n_items())
+
+    def _queue_edited(self):
+        """A session restored was edited: it is its songs' queue now, not its source's."""
+        if self.restored:
+            self._source = None
+            self._source_ids = None
+
+    async def _send_edit(self, command):
+        """An edit made in the store, sent to the engine: on a failure the queue is read
+        again (MusicKit's is what shows); 'queue-changed' (the entry named is not there now)
+        only that, else the error is raised. Whether the engine took it."""
+        try:
+            await command
+        except EngineError as error:
+            self._app.spawn(self.refresh_queue())
+            if error.code == 'queue-changed':
+                log.info('Up Next: %s', error)
+                return False
+            raise
+        return True
+
+    async def remove_from_queue(self, index, entry_id):
+        """Take the queue's entry at `index` out, when it is the entry `entry_id` and comes
+        after the entry playing (can_edit): out of the store at once, then out of MusicKit's
+        queue (engine.queue_remove), whose queueItemsDidChange then finds the store as it is.
+        While a session is restored, out of it alone. Whether it was taken out."""
+        index = int(index)
+        if not self.can_edit(index, entry_id):
+            log.debug('Up Next: entry %d is not %s, or cannot be removed', index, entry_id)
+            return False
+        self.queue.remove(index)
+        self._renumber(index)
+        if self.restored:
+            self._queue_edited()
+            return True
+        return await self._send_edit(self._engine.queue_remove(index, entry_id))
+
+    async def clear_up_next(self):
+        """Take everything after the entry playing out (Up Next's Clear): out of the store at
+        once, then out of MusicKit's queue (engine.queue_clear), or out of the session
+        restored alone. What went is kept for undo_clear(). How many entries went."""
+        if not self.can_clear():
+            return 0
+        at = self.queue_index
+        count = self.queue.get_n_items()
+        entries = [dict(self.queue.get_item(position).raw) for position in range(at + 1, count)]
+        self._cleared = {'id': self.queue.get_item(at).id, 'entries': entries,
+                         'local': self.restored}
+        self.queue.splice(at + 1, count - at - 1, [])
+        if self.restored:
+            self._queue_edited()
+            return len(entries)
+        try:
+            taken = await self._send_edit(self._engine.queue_clear())
+        except EngineError:
+            self._cleared = None
+            raise
+        if not taken:
+            self._cleared = None
+            return 0
+        return len(entries)
+
+    @property
+    def can_undo_clear(self):
+        """Whether undo_clear() has something to put back after the entry playing."""
+        cleared = self._cleared
+        return (cleared is not None and self.queue_index >= 0
+                and self.queue.get_item(self.queue_index).id == cleared['id']
+                and cleared['local'] == self.restored)
+
+    async def undo_clear(self):
+        """Put back what the last clear_up_next() took, after the entry playing, while that
+        is still the entry it was (and MusicKit's, or the session's, as the Clear was): into
+        the store at once, then MusicKit's queue (engine.queue_undo_clear). Once only. How
+        many came back."""
+        if not self.can_undo_clear:
+            self._cleared = None
+            return 0
+        cleared, self._cleared = self._cleared, None
+        at = self.queue_index + 1
+        self.queue.splice(at, 0, [NowPlaying(dict(data, index=at + offset))
+                                  for offset, data in enumerate(cleared['entries'])])
+        self._renumber(at + len(cleared['entries']))
+        if self.restored:
+            return len(cleared['entries'])
+        if not await self._send_edit(self._engine.queue_undo_clear()):
+            return 0
+        return len(cleared['entries'])
+
+    async def apply_autoplay(self):
+        """MusicKit's autoplay set to the app's `autoplay` setting (the page keeps a switch
+        of its own, which the web player sets as it loads): as the engine comes up, after a
+        bridgeReset and when the setting changes. Nothing with the engine not up or the demo
+        library; a failure is logged."""
+        if self._app.demo or self._engine.state != 'up':
+            return
+        wanted = self._app.settings.get_boolean('autoplay')
+        try:
+            answer = await self._engine.set_autoplay(wanted)
+        except EngineError as error:
+            log.debug('autoplay: %s', error)
+            return
+        self._set_autoplay(answer.get('autoplay'))
+        can_autoplay = answer.get('canAutoplay') is not False
+        if can_autoplay != self.can_autoplay:
+            self.can_autoplay = can_autoplay
+        if self.autoplay != wanted:
+            log.info('autoplay: MusicKit kept it %s', 'on' if self.autoplay else 'off')
 
     async def seek(self, seconds):
         if self.restored:

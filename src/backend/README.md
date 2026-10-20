@@ -34,6 +34,8 @@ app reaches Chrome only through the Engine; other modules may import the pure pa
 | `api` | Apple, MusicKit or the page said no (`status`: Apple's HTTP status; `musickit_code`: MusicKit's code for a refused play) |
 | `timeout` | Chrome or the page took too long |
 | `usage` | a bad argument (`scripts/am.py`) |
+| `queue-locked` | MusicKit allows no edits of the queue now (`capabilities.canEditPlaybackQueue` false: a station's) |
+| `queue-changed` | the queue's entry an edit named (its index and id) is not there any more: the queue changed meanwhile |
 
 ## The bridge
 
@@ -56,7 +58,11 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `volume(level)` | `{volume}`: MusicKit's level after the set (0 to 1; the page keeps it) |
 | `shuffle(on\|off\|toggle)`, `repeat(none\|one\|all\|cycle)` | `{shuffle, repeat}` |
 | `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume}`; `state` is MusicKit's `PlaybackStates` name |
-| `queue()` | `{index, items: [Track]}` |
+| `queue()` | `{index, items: [Track], editable, canAutoplay, autoplay}`: `editable` and `canAutoplay` are `mk.capabilities`' `canEditPlaybackQueue` and `canAutoplay` (true when MusicKit has none), `autoplay` is `mk.autoplayEnabled`; a Track autoplay added carries `autoplay: true` (its queue item's `isAutoplay`) |
+| `queueRemove(index, id)` | `{ok: true}` once the queue's entry at `index`, when it is still `id` and not the item playing, is out of the queue (`queue.spliceQueueItems(index, 1)`, else the deprecated `queue.remove(index)`), or `{error, code}`: `NOT_EDITABLE` (a station's queue), `CURRENT`, `STALE` (another entry is there now) |
+| `queueClear()` | `{ok: true, cleared}`: everything after the item playing out of the queue (`queue.clearAfterCurrent()`), its queue items kept for `queueUndoClear()`; or `{error, code: 'NOT_EDITABLE'}` |
+| `queueUndoClear()` | `{ok: true, restored}`: the queue items the last `queueClear()` took, spliced back after the item playing while it is the same item (`queue.spliceQueueItems(position + 1, 0, …items)`), once; or `{error, code}` (`STALE`: nothing kept, or another item plays) |
+| `autoplay(on)` | `{autoplay, canAutoplay}` after `mk.autoplayEnabled = on` (null: only read) |
 | `queueJump(index)` | `{ok: true}` (`mk.changeToMediaAtIndex`) |
 | `rating(kind, id, value)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, songId, type)` | `{ok: true}`, or a throw with Apple's status and message. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
 | `createPlaylist(attributes, tracks, parentId)` | `{id}`, the new playlist's; `attributes` `{name, description?}`, `tracks` `[{id, type}]` |
@@ -135,6 +141,32 @@ false). The web player's Create Station does not read it: it builds the id and p
 `play('station', 'ra.<id>')` plays it as it is (a song first, two entries queued, rolling),
 and on it `mk.capabilities.canEditPlaybackQueue` is false. A library song is seeded by its
 `catalogId`; a library artist only by the catalog id the library has for them.
+### The queue
+
+`mk.queue` (MusicKit v3) holds `_queueItems`, each `{item, isAutoplay}`; `queue.items` are
+the MediaItems, `queue.position` the current index (-1 for none), and
+`queue.userAddedItems`, `queue.autoplayItems`, `queue.unplayedUserItems`,
+`queue.unplayedAutoplayItems` filter them (MediaItems, not queue items). Checked live on
+2026-10-20 on a throwaway album queue while it played (#332): none of the calls below
+changed the playback state, the item or the time (no gap), and each splice posts one
+`queueItemsDidChange`. The bridge's `queueRemove`, `queueClear`, `queueUndoClear` and
+`autoplay` use them.
+
+| Call | What it does |
+|---|---|
+| `queue.spliceQueueItems(start, count, items = [])` | `Array.splice` on the queue items, answering those taken out; `queue.splice()` is the same over MediaItems |
+| `queue.remove(index)` | removes a later entry; logs a deprecation warning; throws `INVALID_ARGUMENTS` (`mk-007`) for the current index. The web player's own Remove from Up Next is this, after checking `queue.item(index).id` is the item it means |
+| `queue.clearAfterCurrent()` | everything after the current item goes; the current item and those before it stay (the history) |
+| `mk.autoplayEnabled` | read and written as a property; `autoplayEnabledDidChange` carries the new boolean. Set true at the end of a queue, it adds about ten entries some 2 s later (one `queueItemsDidChange`), each `isAutoplay: true`, a song whose `container` is a `stations` resource with an `ra.cp-…` id. Set false, it removes them one at a time (a `queueItemsDidChange` each). It does not start while repeat is on |
+
+`mk.capabilities` says what may be done now: `canEditPlaybackQueue`, `canAutoplay`, `canSeek`,
+`canPause`, `canSkipToNextItem`, `canSkipToPreviousItem`. On an album or a playlist they
+are all true; on a song-seeded station `canEditPlaybackQueue` is false (its queue is the
+station's, two entries at a time) and the rest true; on a live station all are false.
+Autoplay is the page's, not the account's: the web player keeps it in the page's
+`localStorage` under `music-app-pref:autoplay-<music user token>` and sets
+`mk.autoplayEnabled` from it when it loads, and the page started with it off; the app sets
+its own `autoplay` setting at every start and after a reload (`Player.apply_autoplay`).
 
 ### Ratings: Favourite and Suggest Less
 
@@ -195,31 +227,16 @@ write was made on items picked for the check and put back. Reads go through `mus
 the writes, and any read that must see a write (MusicKit's `music()` may answer from a
 cache), go through the request builder, as `apiWrite()` does.
 
-### The queue (#332, #361)
+### Moving queue entries (#361)
 
-`mk.queue` (MusicKit v3) holds `_queueItems`, each `{item, isAutoplay}`; `queue.items` are
-the MediaItems, `queue.position` the current index (-1 for none), and
-`queue.userAddedItems`, `queue.autoplayItems`, `queue.unplayedUserItems`,
-`queue.unplayedAutoplayItems` filter them (MediaItems, not queue items). Tried on a
-throwaway album queue while it played: none of these changed the playback state, the item
-or the time (no gap), and each splice posts one `queueItemsDidChange`.
-
-| Call | What it does |
-|---|---|
-| `queue.remove(index)` | removes a later entry; logs a deprecation warning; throws `INVALID_ARGUMENTS` (`mk-007`) for the current index. The web player's own Remove from Up Next is this, after checking `queue.item(index).id` is the item it means |
-| `queue.spliceQueueItems(start, count, items = [])` | `Array.splice` on the queue items, answering those taken out; `queue.splice()` is the same over MediaItems. A move is two calls, `spliceQueueItems(from, 1)` then `spliceQueueItems(to, 0, taken)`, and so two `queueItemsDidChange`; the next item played follows the new order. The web player has no reorder of its own |
-| `queue.removeQueueItems(predicate)` | removes every queue item `predicate(queueItem, index)` accepts, from the end, one event each |
-| `queue.clearAfterCurrent()` | everything after the current item goes; the current item and those before it stay (the history) |
-| `mk.clearQueue()` | the web player's Clear: the whole queue goes (`position` -1, `length` 0) while the current item plays on |
-| `mk.autoplayEnabled` | read and written as a property; `autoplayEnabledDidChange` carries the new boolean. Set true at the end of a queue, it adds about ten entries some 2 s later (one `queueItemsDidChange`), each `isAutoplay: true`, a song whose `container` is a `stations` resource with an `ra.cp-…` id. Set false, it removes them one at a time (a `queueItemsDidChange` each: coalesce them). It does not start while repeat is on |
-
-`mk.capabilities` says what may be done now: `canEditPlaybackQueue`, `canAutoplay`, `canSeek`,
-`canPause`, `canSkipToNextItem`, `canSkipToPreviousItem`. On an album or a playlist they
-are all true; on a song-seeded station `canEditPlaybackQueue` is false (its queue is the
-station's, two entries at a time) and the rest true; on a live station all are false. Autoplay is the
-page's, not the account's: the web player keeps it in the page's `localStorage` under
-`music-app-pref:autoplay-<music user token>` and sets `mk.autoplayEnabled` from it when it
-loads, and the page started with it off. The bridge's `formatTrack()` drops `isAutoplay`.
+A move is two `queue.spliceQueueItems` calls on the queue items (the queue section above):
+`spliceQueueItems(from, 1)`, then `spliceQueueItems(to, 0, taken)`, and so two
+`queueItemsDidChange`; the next item played follows the new order. The web player has no
+reorder of its own. Whether an entry moved into or out of autoplay's keeps its `isAutoplay`
+was not tried. `queue.removeQueueItems(predicate)` removes every queue item
+`predicate(queueItem, index)` accepts, from the end, one event each; `mk.clearQueue()` (the
+web player's Clear) empties the whole queue (`position` -1, `length` 0) while the current
+item plays on, so it is not Up Next's Clear.
 
 ### Live radio (#343)
 
@@ -327,11 +344,12 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 | `nowPlayingItemDidChange` | `{track: Track or null, index}` |
 | `playbackTimeDidChange` | `{position, duration}` in seconds, about four times a second while playing |
 | `playbackDurationDidChange` | `{duration}` |
-| `queueItemsDidChange` | `{index, items: [Track]}` (index -1 before playback starts) |
+| `queueItemsDidChange` | `{index, items: [Track], editable, canAutoplay, autoplay}`, as `queue()` answers (index -1 before playback starts) |
 | `queuePositionDidChange` | `{index, oldIndex}` |
 | `shuffleModeDidChange`, `repeatModeDidChange` | `{shuffle: "on"\|"off"}`, `{repeat: "none"\|"one"\|"all"}` |
 | `playbackVolumeDidChange` | `{volume}` |
 | `mediaPlaybackError` | `{code, message}` (`code`: MusicKit's `errorCode`, such as `CONTENT_UNAVAILABLE`, else '') |
+| `autoplayEnabledDidChange` | `{autoplay}`: MusicKit's autoplay turned on or off |
 | `previewDidChange` | `{id}` as a preview starts; `{id: null, ended, reason}` as it stops (`ended` its id; `reason` `ended`, `error`, `stopped`, `replaced` or `playback`, MusicKit taken in hand). The bridge's own, not MusicKit's |
 | `bridgeReset` | `{}`: the client's own, after it put the bridge back into a new document |
 
@@ -378,9 +396,10 @@ Track = {"id": "i.…", "catalogId": "…" /* or null */, "title": "…", "artis
          "durationLabel": "3:36", "explicit": true,
          "index": 0,                     // its place in its group's `play` queue
          "thumb": "…" /* or null */,     // a playlist's rows
-         "type": "library-songs"}        // the API's: songs, music-videos, library-…, or ''
+         "type": "library-songs",        // the API's: songs, music-videos, library-…, or ''
                                          // (the item playing may carry MusicKit's own
                                          // 'song' or 'musicVideo' instead)
+         "autoplay": true}               // a queue entry autoplay added (only then)
 ```
 
 An artist's page (`Engine.artist_page()`, `normalize.artist_page()`) is

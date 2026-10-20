@@ -162,6 +162,9 @@ class Application(Adw.Application):
         # for lyrics that have them): the settings themselves, as stateful actions.
         for key in ('lyrics-translations', 'lyrics-pronunciations'):
             self.add_action(self.settings.create_action(key))
+        # Up Next's Clear toast's Undo: what Clear took, back after the item playing.
+        self._add_action('undo-clear-up-next',
+                         lambda *_: self.player_command(self.player.undo_clear()))
         # Playback, enabled while something plays (the bar's buttons follow). Their keys
         # (Space, Ctrl+Right, Ctrl+Left) are the window's (shortcuts.PLAYBACK), not
         # accelerators, which GTK 4 would fire before a focused entry gets them.
@@ -267,6 +270,9 @@ class Application(Adw.Application):
         self.player = Player(self)
         self.player.connect('notify::track', self._on_track_changed)
         self.player.connect('error', self._on_playback_error)
+        # The autoplay setting (Up Next's toggle, Preferences) goes to MusicKit at once.
+        self.settings.connect('changed::autoplay',
+                              lambda *_: self.spawn(self.player.apply_autoplay()))
         self.library_sync = LibrarySync(self)
         if not self.demo:
             self.session = SessionKeeper(self, config.cache_dir() / SESSION_FILE)

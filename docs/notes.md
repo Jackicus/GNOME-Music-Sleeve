@@ -151,6 +151,19 @@ its "Performance pass" section.
   over scripts/harness.py with real keys (scripts/remote_keys.py), with and without
   animations, the window active and not: no crash in any of 20-odd rounds, so nothing was
   changed in the window (issue 254).
+- Up Next over a 500-entry invented queue (420x760, the headless display, medians of five;
+  the time to apply a queue event, then two frames drawn; the list keeps about 205 rows):
+  when the Player replaced the whole store at every difference, one entry removed cost 186
+  ms and made and bound 205 rows, ten removed one event each (Autoplay turned off) 1.8 s
+  and 2,050 rows, a move as two splices 350 ms, one entry appended 179 ms; with the store
+  spliced only where it differs (#332) those are 10 ms and one row, 98 ms and ten rows, 19
+  ms and two rows, 5 ms and none. A whole new queue is the same either way (183 ms, 205
+  rows), as is the next entry playing (4 to 7 ms, one row).
+- Sections from two `Gtk.SliceListModel`s of one store in a `Gtk.FlattenListModel` (Up
+  Next's first try): moving their common bound takes items out of one part and puts them
+  into the other, so their rows are built again, and the list's focus item went to the
+  last row when a queue first filled the first part. A small Python `Gtk.SectionModel` over
+  one slice (`widgets.queue.QueueSections`) gives the sections with no change to the rows.
 
 ## Memory
 
