@@ -107,6 +107,7 @@ install_data(
   'engine.py',
   'errors.py',
   'fullscreen.py',
+  'home.py',
   'i18n.py',
   'keyboard.py',
   'library.py',

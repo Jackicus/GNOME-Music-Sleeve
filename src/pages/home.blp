@@ -9,6 +9,12 @@ template $AppleMusicHomePage: Adw.NavigationPage {
     [top]
     Adw.HeaderBar header_bar {
       show-title: false;
+
+      [end]
+      Button refresh_button {
+        icon-name: "view-refresh-symbolic";
+        tooltip-text: _("Refresh");
+      }
     }
 
     content: Stack stack {

@@ -469,13 +469,15 @@ class Application(Adw.Application):
 
     # -- the library and the account --------------------------------------------------------
 
-    def start_sync(self, quick=False, playlists=False, videos=False, tracks_of=()):
+    def start_sync(self, quick=False, playlists=False, videos=False, tracks_of=(),
+                   shelves=False):
         """Sync the library (LibrarySync.start()): the task, or None. `quick`: the short pass
         after a library write (with `videos` and the tracks of the playlists `tracks_of`
         after a removal), `playlists` the shorter one after a playlist write (with the
-        tracks of `tracks_of` after their songs changed); both leave last-sync alone."""
+        tracks of `tracks_of` after their songs changed), `shelves` Home's Refresh (the
+        Home shelves alone); all leave last-sync alone."""
         return self.library_sync.start(quick=quick, playlists=playlists, videos=videos,
-                                       tracks_of=tracks_of)
+                                       tracks_of=tracks_of, shelves=shelves)
 
     async def clear_cache(self):
         """Clear the cache and sync again (account.clear_cache()); False in demo mode."""

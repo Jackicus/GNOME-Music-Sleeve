@@ -2250,7 +2250,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     # Recently Added: 8 newest albums
     newest_albums = sorted(albums, key=lambda a: (a['year'] or 0, a['id']), reverse=True)[:8]
 
-    # Recently Played: 4 albums + 3 playlists + 1 radio station
+    # Recently Played (Home's own, recent-played.json: build_recently_played): 4 albums + 3
+    # playlists + 1 radio station, played last first
     recently_played_items = [
         albums[4],   # Transmission Zero
         albums[12],  # Midnight Cassette Club
@@ -2286,13 +2287,10 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
             'items': newest_albums,
         },
         {
-            'key': 'recently-played',
-            'title': 'Recently Played',
-            'items': recently_played_items,
-        },
-        {
             'key': 'made-for-you',
             'title': 'Made for You',
+            # A recommendation's reason, which Home shows under its title.
+            'subtitle': 'Picked from the albums and playlists you play most',
             'items': made_for_you_items,
         },
     ]
@@ -2331,6 +2329,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                          library['generated'])
     build_charts_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
                       videos, draw_cover, thumb_for, cover_size, library['generated'])
+    build_recently_played(out_dir, recently_played_items, library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
 
@@ -2732,6 +2731,18 @@ def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums,
         with open(os.path.join(pages_dir, f"{album['catalogId']}.json"), 'w',
                   encoding='utf-8') as f:
             json.dump(page, f, indent=2)
+
+
+def build_recently_played(out_dir, items, generated):
+    """Write recent-played.json, Home's Recently Played (normalize.recently_played()'s shape,
+    kept as the engine keeps it, stamped `cached` with the library's date): the library's
+    own albums, playlists and station, without their track lists, as Apple's answer has
+    them."""
+    answer = {'items': [dict(item, groups=[]) for item in items],
+              'cached': generated,
+              'demo': True}  # invented: the demo engine answers only these
+    with open(os.path.join(out_dir, 'recent-played.json'), 'w', encoding='utf-8') as f:
+        json.dump(answer, f, indent=2)
 
 
 def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, cover_size,

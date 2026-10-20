@@ -16,9 +16,12 @@ dialog lists every one of them. Keys that are none of these are listed as they a
 (the dialogs', the Now Playing sheet's, the full-screen player's), under General with the
 other keys that act on windows.
 
-F11 is the one accelerator without a modifier: a function key, which no GTK widget takes for
-its own, the HIG's Fullscreen key, set as an accelerator by GNOME's own apps; the window's
-action does nothing while nothing plays (it is disabled).
+F11 and F5 are the accelerators without a modifier: function keys, which no GTK widget takes
+for its own, set as accelerators by GNOME's own apps: F11 the HIG's Fullscreen key (the
+window's action is disabled while nothing plays), F5 Refresh, the page's own (Home, New, Made
+for You, Radio, Charts, a category: the action is disabled on a page without one). Ctrl+R,
+which GNOME's apps also give Refresh, is Refresh Library here (app.sync), the sync of
+everything.
 
 The playback keys are not accelerators: GTK 4 runs application accelerators in the window's
 capture phase, before the focus widget, so a bare Space would fire while typing in an entry
@@ -48,6 +51,7 @@ ACCELS = {
     'window.close': ('<primary>w',),
     'win.back': ('<alt>Left',),
     'win.search': ('<primary>f',),
+    'win.refresh': ('F5',),
     'win.focus-sidebar': ('<primary>1',),
     'win.focus-content': ('<primary>2',),
     'win.focus-player': ('<primary>3',),
@@ -115,6 +119,7 @@ def sections():
         (_('Navigation'), [
             (_('Search or Filter'), 'win.search'),
             (_('Go to Current Song'), 'win.go-to-current-song'),
+            (_('Refresh the Page'), 'win.refresh'),
             (_('Go Back'), 'win.back'),
             (_('Focus the Sidebar'), 'win.focus-sidebar'),
             (_('Focus the Page'), 'win.focus-content'),

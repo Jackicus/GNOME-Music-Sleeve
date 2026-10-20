@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """The backend's shaping of the New page and the Radio page (editorial groupings), Made for
-You (recommendations) and the Charts page (the catalog's charts) into shelves, over invented
-answers."""
+You (recommendations) and the Charts page (the catalog's charts) into shelves, and Home's
+Recently Played, over invented answers."""
 
 import json
 import os
@@ -378,6 +378,64 @@ class ChartsShelvesTest(unittest.TestCase):
     def test_cache_path(self):
         self.assertEqual(normalize.charts_cache_path('/c'), os.path.join('/c', 'charts.json'))
         self.assertIn('charts.json', normalize.KEPT_ANSWERS)
+
+
+class RecommendationReasonTest(unittest.TestCase):
+    def test_a_reason_is_the_shelfs_subtitle_unless_it_repeats_the_title(self):
+        recs = [recommendation('r-1', 'Stations for You', [station('ra.1', 'Folk Station')]),
+                recommendation('r-2', 'Made for You', [mix('pl.pm-1', 'Chill Mix')]),
+                recommendation('r-3', 'New Releases', [album('900000201', 'Lantern Season')])]
+        recs[0]['attributes']['reason'] = {'stringForDisplay': '  Based on   what you play '}
+        recs[1]['attributes']['reason'] = {'stringForDisplay': 'made for you'}  # the title
+        shelves = normalize.recommendation_shelves(recs)
+        self.assertEqual([shelf.get('subtitle') for shelf in shelves],
+                         ['Based on what you play', None, None])
+        # Made for You's shelves carry it too.
+        self.assertEqual(normalize.made_for_you_shelves(recs)[0]['subtitle'],
+                         'Based on what you play')
+
+    def test_the_reason_alone(self):
+        self.assertEqual(normalize.recommendation_reason(
+            {'reason': {'stringForDisplay': 'Because you like folk'}, 'title': 'Folk'}),
+            'Because you like folk')
+        self.assertEqual(normalize.recommendation_reason({'reason': 'Bare text'}), 'Bare text')
+        for attrs in (None, {}, {'reason': None}, {'reason': {'stringForDisplay': 3}}):
+            self.assertEqual(normalize.recommendation_reason(attrs), '')
+
+
+class RecentlyPlayedTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_the_items_played_in_order_each_once(self):
+        curator = {'id': '900000901', 'type': 'apple-curators',
+                   'attributes': {'name': 'Invented Curator'}}
+        library = {'id': 'l.pl101', 'type': 'library-playlists',
+                   'attributes': {'name': 'Invented Evenings', 'canEdit': True,
+                                  'playParams': {'id': 'p.pl101', 'kind': 'playlist',
+                                                 'isLibrary': True}}}
+        raw = [album('900000201', 'Lantern Season'), station('ra.q-1', 'Quiet Radio'),
+               curator, library, album('900000201', 'Lantern Season'), 'junk',
+               {'id': 'x', 'type': 'albums', 'attributes': {}}]  # no name: no tile
+        answer = normalize.recently_played(raw, self.tmp.name)
+        self.assertEqual(set(answer), {'items'})
+        self.assertEqual([(item['kind'], item['id']) for item in answer['items']],
+                         [('album', '900000201'), ('station', 'ra.q-1'),
+                          ('playlist', 'l.pl101')])
+        self.assertTrue(all(item['groups'] == [] for item in answer['items']))
+        station_item = answer['items'][1]
+        self.assertTrue(station_item['art'].startswith('https://'))  # a catalog URL
+        self.assertIsNone(station_item['thumb'])
+
+    def test_nothing(self):
+        for raw in (None, [], {'data': []}, ['junk']):
+            self.assertEqual(normalize.recently_played(raw, self.tmp.name), {'items': []})
+
+    def test_cache_path(self):
+        self.assertEqual(normalize.recent_played_cache_path('/c'),
+                         os.path.join('/c', 'recent-played.json'))
+        self.assertIn('recent-played.json', normalize.KEPT_ANSWERS)
 
 
 if __name__ == '__main__':

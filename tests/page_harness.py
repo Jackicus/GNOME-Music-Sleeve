@@ -9,7 +9,8 @@ The engine stand-in answers each request from `engine.answers[name]`: a value, a
 to raise, or a function of the request's arguments (a coroutine function is awaited, so a
 test can hold an answer back); a request without an answer raises engine-down, as the demo
 engine does. `engine.calls` lists the requests in order. The application records what it is
-asked (actions, reports, toasts) and runs spawn()ed coroutines as tasks that settle() waits for.
+asked (actions, reports, toasts, syncs) and runs spawn()ed coroutines as tasks that settle()
+waits for.
 
 The application here is not registered and has an ID of its own, so the lifetime tests'
 (test_page_lifetime.py) can live beside it; stand_in_app() makes it the default application,
@@ -84,6 +85,7 @@ def classes():
             self.answers = {}
             self.suggestion_requests = []
             self.search_requests = []
+            self.recent_requests = []  # each recently_played()'s refresh
             self.start_error = None  # an EngineError a start raises
 
         async def _answer(self, name, *args):
@@ -133,6 +135,11 @@ def classes():
         async def charts(self, refresh=False):
             return await self._answer('charts', refresh)
 
+        async def recently_played(self, refresh=False):
+            # Each ask's refresh beside its name in `calls`.
+            self.recent_requests.append(refresh)
+            return await self._answer('recently_played', refresh)
+
         async def category(self, category_id, refresh=False):
             return await self._answer('category', category_id, refresh)
 
@@ -177,6 +184,7 @@ def classes():
             self.actions = []
             self.reported = []
             self.toasts = []
+            self.syncs = []  # each start_sync()'s keyword arguments
             self.recent_searches = RecentSearches()  # in memory: never the real cache
 
         def reset(self):
@@ -190,6 +198,7 @@ def classes():
             self.actions = []
             self.reported = []
             self.toasts = []
+            self.syncs = []
             self.settings.set_boolean('signed-in', True)
 
         def account_key(self, name):
@@ -216,6 +225,10 @@ def classes():
 
         def refuse_in_demo(self):
             return self.demo
+
+        def start_sync(self, **kwargs):
+            self.syncs.append(kwargs)
+            return None
 
         def activate_action(self, name, _parameter=None):
             self.actions.append(name)

@@ -114,6 +114,10 @@ list and the script together.
     volume a step up or down (a tenth) on a row, a tile or a button, and a screen reader
     hears the level ("Volume 80%"); on a sidebar row they are the row's (the focus moves,
     nothing is selected), on the seek slider the slider's, and in an entry the entry's.
+14. Home shows Recently Played after its first shelf, and Tab reaches its tiles. F5 refreshes
+    the page shown when it has a Refresh (Home, New, Made for You, Radio, Charts, a category),
+    the focus staying where it was; the header bar's Refresh is named, and Space on it
+    refreshes too, the focus staying on it.
 
 ## The tools
 

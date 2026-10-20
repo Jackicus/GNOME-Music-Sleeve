@@ -2535,7 +2535,8 @@ class SearchTest(EngineFixture):
         await self.up(authorized=False)
         for coro in (self.engine.search('paper'), self.engine.suggest('pa'),
                      self.engine.landing(), self.engine.category('1'), self.engine.browse(),
-                     self.engine.made_for_you(), self.engine.radio(), self.engine.charts()):
+                     self.engine.made_for_you(), self.engine.radio(), self.engine.charts(),
+                     self.engine.recently_played()):
             with self.assertRaises(EngineError) as raised:
                 await coro
             self.assertEqual(raised.exception.code, 'not-signed-in')
@@ -2796,6 +2797,7 @@ class SearchTest(EngineFixture):
             'made_for_you': (self.engine.made_for_you, self.cache / 'made-for-you.json'),
             'radio': (self.engine.radio, self.cache / 'radio.json'),
             'charts': (self.engine.charts, self.cache / 'charts.json'),
+            'recently_played': (self.engine.recently_played, self.cache / 'recent-played.json'),
         }
         for name, (_command, path) in commands.items():
             normalize.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))
@@ -2841,6 +2843,53 @@ class SearchTest(EngineFixture):
         self.assertEqual(answer['categories'], [])
         self.assertNotIn('stale', answer)
         self.assertNotEqual(answer['cached'], '2020-01-01T00:00:00Z')
+
+    async def test_recently_played_is_read_a_page_at_a_time_and_kept(self):
+        await self.up()
+        path = '/v1/me/recent/played'
+
+        def played(number, kind='albums'):
+            return {'id': f'9000003{number:02d}', 'type': kind,
+                    'attributes': {'name': f'Invented Played {number}',
+                                   'artistName': 'Invented Artist',
+                                   'playParams': {'id': f'9000003{number:02d}',
+                                                  'kind': kind[:-1]}}}
+
+        first = [played(n) for n in range(9)] + [played(9, 'stations')]
+        self.page.api_answers[(path, 0)] = {'data': first, 'next': f'{path}?offset=10'}
+        self.page.api_answers[(path, 10)] = {'data': [played(10), played(0)]}  # once each
+        answer = await self.engine.recently_played()
+        self.assertEqual(self.page.api_calls, [path, path])
+        self.assertEqual(self.page.api_params, [{'limit': 10, 'offset': 0},
+                                                {'limit': 10, 'offset': 10}])
+        self.assertEqual(set(answer), {'items', 'cached'})
+        self.assertEqual([item['title'] for item in answer['items']],
+                         [f'Invented Played {n}' for n in range(11)])
+        self.assertEqual(answer['items'][9]['kind'], 'station')
+        self.assertEqual(answer['items'][0]['groups'], [])
+        self.assertTrue((self.cache / 'recent-played.json').is_file())
+        # Kept: answered without the engine, but a refresh needs it.
+        await self.engine.stop()
+        self.assertEqual(len((await self.engine.recently_played())['items']), 11)
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.recently_played(refresh=True)
+        self.assertEqual(raised.exception.code, 'engine-down')
+
+    async def test_recently_played_keeps_the_pages_read_when_a_later_one_fails(self):
+        await self.up()
+        path = '/v1/me/recent/played'
+        self.page.api_answers[(path, 0)] = {
+            'data': [{'id': f'9000004{n:02d}', 'type': 'playlists',
+                      'attributes': {'name': f'Invented Mix {n}'}} for n in range(10)],
+            'next': f'{path}?offset=10'}
+        # The next page is Apple's 404 (the fake page's answer for what it has not got).
+        answer = await self.engine.recently_played(refresh=True)
+        self.assertEqual(len(answer['items']), 10)
+        # The first page failing fails the ask.
+        del self.page.api_answers[(path, 0)]
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.recently_played(refresh=True)
+        self.assertEqual(raised.exception.status, 404)
 
     async def test_made_for_you_keeps_the_mixes_and_stations(self):
         await self.up()

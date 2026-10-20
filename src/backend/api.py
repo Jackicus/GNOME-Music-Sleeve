@@ -93,6 +93,12 @@ CHARTS_PLAIN_PARAMS = {'types': 'songs,albums,playlists,music-videos', 'limit': 
 # Made for You: the recommendations, of which the mixes and stations are kept.
 RECOMMENDATIONS_ENDPOINT = '/v1/me/recommendations'
 RECOMMENDATIONS_PARAMS = {'limit': 25}
+# Home's Recently Played: the albums, playlists and stations played last, newest first
+# (Apple's documented endpoint), RECENT_PLAYED_PAGE a read (Apple's most for it), up to
+# RECENT_PLAYED_LIMIT by offset.
+RECENT_PLAYED_ENDPOINT = '/v1/me/recent/played'
+RECENT_PLAYED_PAGE = 10
+RECENT_PLAYED_LIMIT = 30
 
 # An artist's page, as music.apple.com's views-based artist page asks for it: the artist with
 # every view its page shows (each answered with Apple's own title, its first page of

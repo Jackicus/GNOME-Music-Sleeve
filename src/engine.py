@@ -76,6 +76,7 @@ UI awaits.
     await engine.category(id)    # {id, title, shelves}: a category's page
     await engine.browse()        # {shelves}: the New page (the editorial groupings)
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
+    await engine.recently_played()   # {items}: Home's Recently Played, newest first
     await engine.radio()         # {shelves[, expires]}: the Radio page (the radio grouping)
     await engine.charts()        # {shelves}: the Charts page (the catalog's charts: Top Songs,
                                  # Albums, Playlists, Music Videos, Daily Top 100, City Charts)
@@ -89,13 +90,13 @@ UI awaits.
                                       previewed=())
                                  # {items}: the songs Apple suggests adding to a library
                                  # playlist, none of `offered`; more=True: a few more, unkept
-    # The last nine are kept under the cache for a day (landing.json, categories/,
-    # browse.json, made-for-you.json, radio.json, charts.json, artists/, albums/,
-    # suggestions/) and answered from there without the engine; refresh=True asks again.
-    # Each answer carries `cached`, when it was fetched; one older than a day, answered when
-    # Apple cannot be asked, carries `stale: True` too. The suggestions are kept with `basis`,
-    # what the playlist held, and asked again once it holds something else; Radio's until its
-    # live programmes run out (`expires`), whatever its age.
+    # The last ten are kept under the cache for a day (landing.json, categories/,
+    # browse.json, made-for-you.json, radio.json, charts.json, recent-played.json, artists/,
+    # albums/, suggestions/) and answered from there without the engine; refresh=True asks
+    # again. Each answer carries `cached`, when it was fetched; one older than a day, answered
+    # when Apple cannot be asked, carries `stale: True` too. The suggestions are kept with
+    # `basis`, what the playlist held, and asked again once it holds something else; Radio's
+    # until its live programmes run out (`expires`), whatever its age.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
@@ -2387,3 +2388,32 @@ class Engine(GObject.Object):
                                    api.RECOMMENDATIONS_PARAMS, timeout=BROWSE_TIMEOUT)
         return await self._kept_answer(normalize.made_for_you_cache_path(str(self.cache_dir)),
                                        refresh, fetch, _made_for_you)
+
+    async def recently_played(self, refresh=False):
+        """Home's Recently Played: {items: [Item]} (normalize.recently_played), the albums,
+        playlists and stations played last, newest first, from api.RECENT_PLAYED_ENDPOINT,
+        api.RECENT_PLAYED_PAGE a read by offset, up to api.RECENT_PLAYED_LIMIT. A later page
+        that fails keeps the ones in hand; the first must answer. From
+        <cache>/recent-played.json for a day, else fetched and kept: Home shows the kept one
+        at once and asks with `refresh` once it is a minute old (src/home.py)."""
+        async def fetch(client):
+            page = api.RECENT_PLAYED_PAGE
+            resources = []
+            while len(resources) < api.RECENT_PLAYED_LIMIT:
+                params = {'limit': page, 'offset': len(resources)}
+                try:
+                    answer = await self._api(client, api.RECENT_PLAYED_ENDPOINT, params,
+                                             timeout=READ_TIMEOUT)
+                except EngineError as error:
+                    if not resources or error.code == 'engine-down':
+                        raise
+                    log.info('recently played, past %d: %s', len(resources), error)
+                    break
+                data = api.page_data(answer)
+                resources += data
+                if len(data) < page or not answer.get('next'):
+                    break
+            return resources[:api.RECENT_PLAYED_LIMIT]
+        return await self._kept_answer(
+            normalize.recent_played_cache_path(str(self.cache_dir)), refresh, fetch,
+            normalize.recently_played)

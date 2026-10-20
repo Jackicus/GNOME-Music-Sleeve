@@ -41,7 +41,8 @@ LYRICS_MAX_AGE = 30 * 24 * 60 * 60
 REMOTE_ART_BUDGET = 32 * 1024 * 1024
 LYRICS_KEEP = 2000
 # The day-long answers in the cache's top folder, beside categories/.
-KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json')
+KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
+                'recent-played.json')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -1884,14 +1885,51 @@ def _recommendation_shelves(raw_recs, cache_dir, accept, settle, art_urls=None):
         items = [item for item in items if item is not None]
         if not items:
             return
-        title = attrs.get('title') or {}
-        title = title.get('stringForDisplay') if isinstance(title, dict) else str(title)
+        title = _display_string(attrs.get('title'))
         key = rec.get('id') or len(shelves)
-        shelves.append({'key': f'rec-{key}', 'title': title or '', 'items': items})
+        shelf = {'key': f'rec-{key}', 'title': title, 'items': items}
+        reason = recommendation_reason(attrs)
+        if reason:
+            shelf['subtitle'] = reason
+        shelves.append(shelf)
 
     for rec in raw_recs or []:
         walk(rec)
     return shelves
+
+
+def _display_string(value):
+    """An attribute Apple gives as {stringForDisplay} (or as a bare string): its text, or ''."""
+    if isinstance(value, dict):
+        value = value.get('stringForDisplay')
+    return value if isinstance(value, str) else ''
+
+
+def recommendation_reason(attrs):
+    """A recommendation's `reason` (Apple's documented `reason.stringForDisplay`, in the
+    account's language: why it is offered), or '' without one, or when it only says the
+    title again. Home shows it under the shelf's title (its `subtitle`)."""
+    attrs = attrs if isinstance(attrs, dict) else {}
+    reason = ' '.join(_display_string(attrs.get('reason')).split())
+    title = ' '.join(_display_string(attrs.get('title')).split())
+    return reason if reason.casefold() != title.casefold() else ''
+
+
+def recently_played(raw, cache_dir=None):
+    """Home's Recently Played from `/v1/me/recent/played` (api.RECENT_PLAYED_ENDPOINT, the
+    pages read: a list of resources, newest first): {items: [Item]}, each once (by kind and
+    id), as a shelf's items are (no track lists, their artwork as a search hit's: the sync's
+    files where they exist, else a small catalog URL); a curator, an editorial item or
+    anything else the app has no tile for is left out."""
+    items = []
+    seen = set()
+    for raw_item in raw if isinstance(raw, list) else []:
+        item = _shelf_item(raw_item, cache_dir, settle=True, curators=False)
+        if item is None or (item['kind'], item['id']) in seen:
+            continue
+        seen.add((item['kind'], item['id']))
+        items.append(item)
+    return {'items': items}
 
 
 def _settle_search_art(item, raw_item):
@@ -2610,6 +2648,12 @@ def browse_cache_path(cache_dir):
 def made_for_you_cache_path(cache_dir):
     """Where the Made for You shelves (made_for_you_shelves) are kept for a day."""
     return os.path.join(cache_dir, 'made-for-you.json')
+
+
+def recent_played_cache_path(cache_dir):
+    """Where Home's Recently Played (recently_played) is kept: the last answer, shown while
+    the next is asked for (a day, as the other answers)."""
+    return os.path.join(cache_dir, 'recent-played.json')
 
 
 def radio_cache_path(cache_dir):

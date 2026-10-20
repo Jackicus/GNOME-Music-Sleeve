@@ -1169,6 +1169,35 @@ async def walkthrough(window):
         check('Escape goes back to the page it was opened from',
               window.navigation_view.get_visible_page() is not charts,
               window.navigation_view.get_visible_page())
+    print('-- home')
+    window.select_page('home')
+    await asyncio.sleep(1.0)  # the demo's invented Recently Played, then the shelves bound
+    home = window.navigation_view.get_visible_page()
+    keys = [widget.shelf.key for widget in home._column.widgets if widget.get_visible()]
+    check('Home shows Recently Played after its first shelf',
+          keys[1:2] == ['recently-played'], keys)
+    recent = home._column.widget_for(home._recent.shelf)
+    await key(window, '<primary>2', 0.6)
+    for _ in range(8):  # the first shelf's arrows, See All and cards, then Recently Played's
+        if recent is None or inside(window.get_focus(), recent.list_view):
+            break
+        await key(window, 'Tab')
+    check('Tab reaches Recently Played', recent is not None
+          and inside(window.get_focus(), recent.list_view), describe(window.get_focus()))
+    focus = window.get_focus()
+    refreshed = []
+    refresh = home.refresh
+    home.refresh = lambda: (refreshed.append(True), refresh())
+    await key(window, 'F5', 0.6)
+    check('F5 refreshes Home, the focus staying on its tile',
+          refreshed == [True] and window.get_focus() is focus, describe(window.get_focus()))
+    check('Refresh is named', home.refresh_button.get_tooltip_text() == 'Refresh')
+    home.refresh_button.grab_focus()
+    await key(window, 'space', 0.6)
+    check('Space on Refresh refreshes, the focus staying on it',
+          refreshed == [True, True] and window.get_focus() is home.refresh_button,
+          describe(window.get_focus()))
+    home.refresh = refresh
     print('-- folders')
     tree = app.library.playlist_tree()
     folder = next(node for node in tree.flat if node.kind == 'folder' and node.children)

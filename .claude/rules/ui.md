@@ -79,7 +79,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   drag onto the sidebar's folders (`GridPage(drag=True)`). The playlists' dialogs (the name, the confirmation
   before a delete) are `dialogs/playlist.py`'s, presented by the item actions.
 - New, Made for You, Radio and a search category are `ShelvesPage`s over the engine's
-  answers. Radio's has an `arrange` of its own (pages/radio.py over src/radio.py's pure
+  answers (a shelf's `subtitle`, a recommendation's reason, is a dimmed line under its
+  title). Radio's has an `arrange` of its own (pages/radio.py over src/radio.py's pure
   functions): the library's stations as Recently Played after Apple's live stations, each
   live station subtitled with the programme on air as the page is shown, and Recently Played
   alone in place of the status page while Apple cannot answer; `follow(library, 'changed')`
@@ -95,6 +96,14 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   scripts/demo_library.py invents).
   A state the page shows is not toasted too. A library page's empty state offers Sign In… while
   signed out (outside the demo) through one `pages.SignInOffer(status_page)`.
+- Home (pages/home.py over src/home.py's pure parts) is the library's shelves and Recently
+  Played, `Engine.recently_played()`: the kept answer at once, Apple's when it is a minute
+  old as the page is shown (`home.Throttle`), into one ShelfModel in place
+  (`home.RecentlyPlayed`), after the first shelf (`home.arrange()`); an answer that would
+  move the page or take the focus waits for the next map (`home.hold_back()`), and nothing of
+  it is toasted. Its Refresh asks past the throttle and runs the sync's shelves pass
+  (`app.start_sync(shelves=True)`). A page with a Refresh has `refresh()`, which F5
+  (`win.refresh`) calls on the page shown.
 - A page of shelves is a vertical `Gtk.Box` of a handful of `AppleMusicShelf`, each a horizontal
   `Gtk.ListView` in its own scrolled window, placed by a `widgets.shelf.ShelfColumn`: a shelf
   shown again keeps its widget (moved into place), new ones are bound a frame apart after
@@ -165,7 +174,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   which style.css takes out of the rows' inset. No answer (offline, the engine down, a 404)
   leaves them out, only logged. Tab from a track enters the shelves, Shift+Tab from the first
   goes back to the last track (`_on_list_key_pressed`, as for a playlist's suggestions).
-- The window's keyed actions (`win.back`, `win.search`, `win.focus-*`,
+- The window's keyed actions (`win.back`, `win.search`, `win.refresh`, `win.focus-*`,
   `win.fullscreen-player`, `win.new-playlist`, `win.go-to-current-song`, and
   `win.show-lyrics` and `win.show-queue` through `TabActions.set_free()`) are disabled while a dialog is open over the window
   (`Window._update_actions`); add a new keyed window action there. `Window._close_sheet()`
