@@ -31,7 +31,8 @@ class CacheTest(unittest.TestCase):
             'thumb/l.alb1.jpg': 300, 'remote-art/abc.jpg': 400, 'items/album-1.json': 50,
             'lyrics/1000000001.json': 30, 'categories/c1.json': 40,
             'artists/1000.json': 25, 'albums/2000.json': 25, 'suggestions/p.pl1.json': 20,
-            'credits/1000000001.json': 18,
+            'credits/1000000001.json': 18, 'rooms/9001.json': 11, 'groupings/9002.json': 11,
+            'multirooms/9003.json': 11,
             'recent-searches.json': 15, 'session.json': 12, 'demo-search.json': 9,
             # Writes that never finished: an older version's temporary name, and store.py's.
             'library.json.tmp': 60, '.a1b2c3.tmp': 7, 'lyrics/.d4e5.tmp': 3,
@@ -59,6 +60,9 @@ class CacheTest(unittest.TestCase):
                      normalize.artist_cache_path(root, '1'), normalize.album_cache_path(root, '2'),
                      normalize.suggestions_cache_path(root, 'p.1'),
                      normalize.credits_cache_path(root, '3'),
+                     normalize.room_cache_path(root, '4'),
+                     normalize.grouping_cache_path(root, '5'),
+                     normalize.multiroom_cache_path(root, '6'),
                      normalize.demo_search_path(root)):
             entry = os.path.relpath(path, root).split(os.sep)[0]
             self.assertIn(entry, cache.CACHE_ENTRIES, path)

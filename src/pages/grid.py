@@ -17,18 +17,23 @@ item and sort in C: about 10 ms for 2,000 albums, against 25 ms for a Python
 Gtk.CustomSorter, whose cost grows with every comparison rather than every item.
 """
 
+import logging
 from gettext import gettext as _
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
+from ..backend.errors import EngineError
 from ..library import Item
 from ..widgets import context_menu
+from ..widgets.engine_status import EngineStatus
 from ..widgets.filter_bar import FilterBar, SearchText, ShownModel
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
 from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
                             weak_method)
 from . import SignInOffer, app, mark_bound
+
+log = logging.getLogger(__name__)
 
 
 def _string(name):
@@ -210,6 +215,16 @@ class GridPage(Adw.NavigationPage):
     icon. Its tiles are drag sources (widgets/dnd.py): an album or a playlist onto a sidebar
     playlist (its songs added) or the player bar (queued), a playlist or folder onto a
     sidebar folder (moved), a music video as a song is; artists drag nowhere.
+
+    With `fetch`, a coroutine function answering {items: [item dicts], cached} (an Engine
+    method: an editorial room's, Engine.room), the page shows its answer's items instead of
+    `model`, wrapped as the shelves pages wrap theirs (remote.remote_items, their thumbnails
+    fetched while the page is shown), as round portraits or 16:9 frames when they are all
+    artists or all music videos. It asks when first shown, when shown again with an answer
+    more than a day old, and from its header bar's Refresh (refresh(), F5; not in the demo),
+    shows the spinner meanwhile and what the engine's failure means otherwise
+    (widgets.engine_status.EngineStatus, its button on the status page), and stops asking
+    once hidden.
     """
 
     __gtype_name__ = 'AppleMusicGridPage'
@@ -227,9 +242,17 @@ class GridPage(Adw.NavigationPage):
     def __init__(self, library, title, model, sorts=(), artist=False, video=False, root=True,
                  icon_name=None, empty_title=None, empty_description=None, missing_title=None,
                  missing_description=None, data_sorts=(), favourites=None,
-                 filter_words=None):
+                 filter_words=None, fetch=None):
         super().__init__(title=title)
         self._library = library
+        self._fetch = fetch
+        self._answer = None  # the fetch's answer shown
+        self._task = None  # the fetch running
+        self._art_task = None  # the answer's thumbnails being fetched
+        self._failure = None  # what the status page says the engine's failure means
+        if fetch is not None:
+            model = Gio.ListStore(item_type=Item)
+            self._fetched = model
         self._get_model = model if callable(model) else lambda: model
         self._artist = artist
         self._shape = ARTIST if artist else VIDEO if video else COVER
@@ -248,7 +271,10 @@ class GridPage(Adw.NavigationPage):
         self.bind_property('title', self.title_label, 'label', GObject.BindingFlags.SYNC_CREATE)
         self._icon_name = icon_name
         self.empty_page.set_icon_name(icon_name)
-        self._sign_in = SignInOffer(self.empty_page)  # Sign In… while signed out
+        if fetch is None:
+            self._sign_in = SignInOffer(self.empty_page)  # Sign In… while signed out
+        else:
+            self._remote_controls()
 
         self._all_sorts = tuple(sorts) + tuple(data_sorts)
         self._data_sorts = frozenset(data_sorts)
@@ -359,6 +385,24 @@ class GridPage(Adw.NavigationPage):
             self._handlers.add(library, 'favourites-changed', self._on_favourites_changed)
         self._update_state()
 
+    def _remote_controls(self):
+        """A fetching page's Refresh and its status page's button (EngineStatus's: Sign In…,
+        Start Engine, Try Again), connected weakly: a bound method would keep the page."""
+        self._engine_status = EngineStatus(app(), self._show_status, self.load, {
+            'engine-down': _('Start the engine to load this page'),
+            'not-signed-in': _('This page appears once you sign in to Apple Music'),
+            'failed': _('Could Not Load This Page'),
+        })
+        self._status_button = Gtk.Button(halign=Gtk.Align.CENTER, visible=False,
+                                         css_classes=['pill', 'suggested-action'])
+        self.empty_page.set_child(self._status_button)
+        connect_weak(self._status_button, 'clicked', self._on_status_clicked)
+        self._refresh_button = Gtk.Button(icon_name='view-refresh-symbolic',
+                                          tooltip_text=_('Refresh'),
+                                          visible=not getattr(app(), 'demo', False))
+        self.header_bar.pack_end(self._refresh_button)
+        connect_weak(self._refresh_button, 'clicked', self._on_refresh_clicked)
+
     def _model(self):
         model = self._get_model()
         self._missing = model is None
@@ -397,6 +441,8 @@ class GridPage(Adw.NavigationPage):
 
     def do_map(self):
         Adw.NavigationPage.do_map(self)
+        if self._fetch is not None:
+            self._map_fetched()
         if not self._sort_restored:
             self._sort_restored = True
             self._update_sorts()
@@ -405,6 +451,117 @@ class GridPage(Adw.NavigationPage):
                 self._favourites_action.change_state(GLib.Variant('b', True))
         self._on_library_changed()
         self._on_favourites_changed()  # what changed while the page was hidden
+
+    # A fetching page's answer.
+
+    def _map_fetched(self):
+        from .shelves import expired
+
+        self._engine_status.watch()  # may load again: the engine came up meanwhile
+        if not self._loading() and (self._answer is None or expired(self._answer)):
+            self.load()
+        elif self._art_task is None and self._fetched.get_n_items():
+            from ..remote import fetch_items_art
+
+            self._art_task = app().spawn(fetch_items_art(list(self._fetched)))
+
+    def do_unmap(self):
+        if self._fetch is not None:
+            self._engine_status.unwatch()
+        Adw.NavigationPage.do_unmap(self)
+
+    def do_hidden(self):
+        # Left (popped or covered; a push maps, unmaps and maps a page again): a fetching
+        # page's requests stop, asked again if it is shown again.
+        if self._fetch is not None:
+            if self._loading():
+                self._task.cancel()
+                self._task = None
+                self._engine_status.clear()
+            if self._art_task is not None and not self._art_task.done():
+                self._art_task.cancel()
+            self._art_task = None
+        Adw.NavigationPage.do_hidden(self)
+
+    def _loading(self):
+        return self._task is not None and not self._task.done()
+
+    def load(self, refresh=False):
+        """Ask for a fetching page's answer (again, past the cache, with `refresh`)."""
+        if self._fetch is None:
+            return
+        if self._loading():
+            self._task.cancel()
+        self._task = app().spawn(self._load(refresh))
+
+    async def _load(self, refresh):
+        if not self._fetched.get_n_items():
+            self._engine_status.loading()
+        try:
+            answer = await self._fetch(refresh)
+        except EngineError as error:
+            log.info('%s: %s', self.get_title(), error)
+            if self._fetched.get_n_items():
+                app().report(error)  # a refresh that failed keeps what is shown
+            else:
+                self._engine_status.fail(error)
+            return
+        self._show_answer(answer if isinstance(answer, dict) else {})
+
+    def _show_answer(self, answer):
+        from ..remote import fetch_items_art, remote_items
+
+        self._answer = answer
+        self._failure = None
+        self._engine_status.clear()
+        items = remote_items(answer.get('items'))
+        if not self._fetched.get_n_items():
+            self._shape_for(items)
+        if self._art_task is not None and not self._art_task.done():
+            self._art_task.cancel()
+        self._art_task = None
+        self._fetched.splice(0, self._fetched.get_n_items(), items)
+        self._update_state()
+        if items:
+            self._art_task = app().spawn(fetch_items_art(items))
+
+    def _shape_for(self, items):
+        """The tiles' shape for a fetching page's first items, before it has made any: round
+        portraits for all artists, 16:9 frames for all music videos, covers otherwise."""
+        kinds = {item.kind for item in items}
+        self._artist = kinds == {'artist'}
+        video = kinds == {'video'}
+        self._shape = ARTIST if self._artist else VIDEO if video else COVER
+        self._column_width = VIDEO_COLUMN_WIDTH if video else COLUMN_WIDTH
+        if video:
+            self.grid_view.set_min_columns(1)
+        self._set_columns(estimate_columns(self._column_width))
+
+    def _show_status(self, status, title, description, button):
+        """EngineStatus's state: the spinner ('loading') while nothing is shown, or its
+        words and button on the status page."""
+        self._failure = None if status == 'loading' else (title, description, button)
+        self._update_state()
+
+    @property
+    def refresh(self):
+        """Refresh (the header bar's button, and F5 through win.refresh) on a fetching page
+        that offers it (not in the demo); None on any other, which has none."""
+        if self._fetch is None or not self._refresh_button.get_visible():
+            return None
+        return self._refresh
+
+    def _refresh(self):
+        self._on_refresh_clicked(self._refresh_button)
+
+    def _on_refresh_clicked(self, _button):
+        if self._engine_status.status in ('engine-down', 'not-signed-in'):
+            self._engine_status.activate()  # Start Engine, or Sign In
+        elif not self._loading():
+            self.load(refresh=True)
+
+    def _on_status_clicked(self, _button):
+        self._engine_status.activate()
 
     def _on_library_changed(self, *_args):
         model = self._model()
@@ -492,10 +649,19 @@ class GridPage(Adw.NavigationPage):
         filtered = self._favourites_on or searched
         total = 0 if self._missing else self._sorted.get_n_items()
         icon_name = self._icon_name
+        button = None
         if self._filtered.get_n_items():
             name = 'items'
-        elif library.state == 'loading' or (library.state == 'empty' and library.syncing):
+        elif self._fetch is not None and self._answer is None and self._failure is None:
+            name = 'loading'  # the fetch's answer is on its way
+        elif self._fetch is None and (library.state == 'loading'
+                                      or (library.state == 'empty' and library.syncing)):
             name = 'loading'  # the first sync is on its way
+        elif self._failure is not None:
+            name = 'empty'
+            title, description, button = self._failure
+            self.empty_page.set_title(title)
+            self.empty_page.set_description(description)
         else:
             name = 'empty'
             if self._missing:
@@ -508,7 +674,13 @@ class GridPage(Adw.NavigationPage):
             else:
                 title, description = self._empty
             self.empty_page.set_title(title)
-            self._sign_in.set_description(description)
+            if self._fetch is None:
+                self._sign_in.set_description(description)
+            else:
+                self.empty_page.set_description(description)
+        if self._fetch is not None:
+            self._status_button.set_label(button or '')
+            self._status_button.set_visible(bool(button))
         self.empty_page.set_icon_name(icon_name)
         self.stack.set_visible_child_name(name)
         # Shown while a filter is on, whatever it leaves, so it can be turned off.

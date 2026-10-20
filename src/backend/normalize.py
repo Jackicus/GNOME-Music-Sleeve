@@ -48,7 +48,8 @@ LYRICS_KEEP = 2000
 KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
                 'recent-played.json')
 # The folders of day-long answers, one file an item.
-ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'suggestions', 'credits')
+ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'suggestions', 'credits', 'rooms',
+                  'groupings', 'multirooms')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -1562,37 +1563,233 @@ def _grouping_shelves(grouping, cache_dir, prefix, featured=False):
     made of other elements (the banners at the top of the New page) becomes
     a shelf too, untitled and marked `featured: true`; untitled elements are
     otherwise left out, as are link rows and empty ones."""
+    return _grouping_parts(grouping, cache_dir, prefix, featured)[0]
+
+
+def _grouping_parts(grouping, cache_dir, prefix, featured=False, banners=False):
+    """A grouping's shelves (_grouping_shelves) and its link rows (element_links), as
+    _element_parts makes them of each of its tabs' elements in turn."""
     shelves = []
+    links = []
     tabs = ((grouping.get('relationships') or {}).get('tabs') or {}).get('data') or []
     for tab in tabs:
         if not isinstance(tab, dict):
             continue
         children = ((tab.get('relationships') or {}).get('children') or {}).get('data') or []
-        for index, element in enumerate(children):
-            if not isinstance(element, dict):
+        wanted = featured and not any(shelf.get('featured') for shelf in shelves)
+        found, found_links = _element_parts(children, cache_dir, prefix, wanted, banners)
+        shelves.extend(found)
+        links.extend(found_links)
+    return shelves, links
+
+
+def _element_parts(elements, cache_dir, prefix, featured=False, banners=False):
+    """Editorial elements (a grouping tab's, a multiroom's children) as (shelves, links):
+
+    - shelves: each element that has a title and something in it, as `{key, title, items}`
+      in Apple's order, keyed `<prefix>-<element id>` (its place without an id); with
+      `featured`, the first untitled element made of other elements (the hero row) too,
+      untitled and marked `featured: true`, and with `banners` that shelf's items carry
+      what their banners show (featured_extras), the shelf `form: 'banners'` when one of
+      them has a banner of its own;
+    - links: each element with `links` (More to Explore, the genres' row) as element_links
+      makes it, keyed as a shelf would be, in Apple's order."""
+    shelves = []
+    links = []
+    for index, element in enumerate(elements):
+        if not isinstance(element, dict):
+            continue
+        key = f"{prefix}-{element.get('id') or index}"
+        section = element_links(element, key)
+        if section is not None:
+            links.append(section)
+            continue
+        element_attrs = element.get('attributes') or {}
+        shelf_title = str(element_attrs.get('title') or element_attrs.get('name') or '').strip()
+        own = ((element.get('relationships') or {}).get('contents') or {}).get('data') or []
+        is_featured = not shelf_title
+        if is_featured and (own or not featured):
+            continue
+        items = []
+        seen = set()
+        for raw_item in _element_contents(element):
+            item = _shelf_item(raw_item, cache_dir)
+            if item is None or (item['kind'], item['id']) in seen:
                 continue
-            element_attrs = element.get('attributes') or {}
-            shelf_title = str(element_attrs.get('title') or element_attrs.get('name') or '').strip()
-            own = ((element.get('relationships') or {}).get('contents') or {}).get('data') or []
-            is_featured = not shelf_title
-            if is_featured and (own or not featured):
+            seen.add((item['kind'], item['id']))
+            items.append(item)
+        if not items:
+            continue
+        shelf = {'key': key, 'title': shelf_title, 'items': items}
+        if is_featured:
+            shelf['featured'] = True
+            featured = False  # one featured shelf
+            if banners:
+                extras = featured_extras(element)
+                for item in items:
+                    item.update(extras.get((item['kind'], item['id'])) or {})
+                if any(item.get('banner') for item in items):
+                    shelf['form'] = 'banners'
+        shelves.append(shelf)
+    return shelves, links
+
+
+# A banner's artwork (README.md, "The editorial groupings"): the hero row's wide children
+# (320) carry an editorial artwork of their own, the others (317, 383) show their content's;
+# the first of these cuts either has is the banner, cut at its source's shape.
+BANNER_ARTWORK_KEYS = ('subscriptionHero', 'superHeroWide')
+BANNER_ARTWORK_CROP = 'sr'
+# The kind of item each resource type a banner holds is (_shelf_item's), the key
+# featured_extras answers by.
+_RESOURCE_KINDS = {'albums': 'album', 'playlists': 'playlist', 'artists': 'artist',
+                   'stations': 'station', 'songs': 'song', 'music-videos': 'video',
+                   'apple-curators': 'category'}
+
+
+def featured_extras(element):
+    """What the hero row's banners show beyond their item, by the (kind, id) of the item each
+    holds: `badge`, the child's `designBadge` ("NEW ALBUM": Apple's words, in the account's
+    language), `banner`, a wide artwork (the child's own editorialArtwork, else its
+    content's: the first of BANNER_ARTWORK_KEYS, as wide_artwork() makes it), and
+    `tagline`, the content's short editorial line (`plainEditorialNotes`' `tagline`, else
+    its `short`; else the child's). Each key only where Apple gives it."""
+    extras = {}
+    children = ((element.get('relationships') or {}).get('children') or {}).get('data') or []
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        child_attrs = child.get('attributes') or {}
+        contents = ((child.get('relationships') or {}).get('contents') or {}).get('data') or []
+        for content in contents:
+            kind = _RESOURCE_KINDS.get(content.get('type')) if isinstance(content, dict) else None
+            if kind is None:
                 continue
-            items = []
-            seen = set()
-            for raw_item in _element_contents(element):
-                item = _shelf_item(raw_item, cache_dir)
-                if item is None or (item['kind'], item['id']) in seen:
-                    continue
-                seen.add((item['kind'], item['id']))
-                items.append(item)
-            if items:
-                shelf = {'key': f"{prefix}-{element.get('id') or index}", 'title': shelf_title,
-                         'items': items}
-                if is_featured:
-                    shelf['featured'] = True
-                    featured = False  # one featured shelf
-                shelves.append(shelf)
-    return shelves
+            attrs = content.get('attributes') or {}
+            found = {}
+            badge = ' '.join(str(child_attrs.get('designBadge') or '').split())
+            if badge:
+                found['badge'] = badge
+            banner = (_editorial_banner(child_attrs.get('editorialArtwork'))
+                      or _editorial_banner(attrs.get('editorialArtwork')))
+            if banner is not None:
+                found['banner'] = banner
+            tagline = (_tagline(attrs.get('plainEditorialNotes'))
+                       or _tagline(child_attrs.get('plainEditorialNotes')))
+            if tagline:
+                found['tagline'] = tagline
+            extras.setdefault((kind, str(content.get('id') or '')), found)
+    return extras
+
+
+def _editorial_banner(editorial):
+    """The first of BANNER_ARTWORK_KEYS an editorialArtwork has, as wide_artwork() makes it,
+    or None."""
+    if not isinstance(editorial, dict):
+        return None
+    for key in BANNER_ARTWORK_KEYS:
+        found = wide_artwork(editorial.get(key), BANNER_ARTWORK_CROP)
+        if found is not None:
+            return found
+    return None
+
+
+def _tagline(notes):
+    if not isinstance(notes, dict):
+        return ''
+    return ' '.join(str(notes.get('tagline') or notes.get('short') or '').split())
+
+
+# The links of the editorial pages (README.md, "New's banners and More to Explore"): what
+# each of the web player's routes opens, by the last part of the URL's path, and the query
+# key (lower-cased) that names it. A collection's page names its room by fcId too.
+LINK_ROUTES = {'viewroom': ('room', 'fcid'), 'viewgrouping': ('grouping', 'id'),
+               'viewmultiroom': ('multiroom', 'fcid'), 'viewtop': ('charts', 'genreid')}
+_COLLECTION_PATH = re.compile(r'/collection/[^/]*/id\d+$', re.IGNORECASE)
+
+
+def editorial_link(link):
+    """One of an editorial element's `links` ({label, url, target?}) as what the app opens,
+    {title, kind, id, url}, `kind` one of
+
+    - 'room' (`…/viewRoom?fcId=<id>`, a collection's `…/collection/<slug>/id<n>?fcId=<id>`,
+      the web player's `music.apple.com/<sf>/room/<id>`): Engine.room(id), a grid of its
+      contents;
+    - 'grouping' (`…/viewGrouping?id=<id>`): Engine.grouping(id), a page of shelves;
+    - 'multiroom' (`…/viewMultiRoom?fcId=<id>`): Engine.multiroom(id), a page of shelves;
+    - 'charts' (`…/viewTop?genreId=<n>`, `music.apple.com/<sf>/charts`): the Charts page,
+      `genre` the genre's id when the link names one;
+    - 'link' (any other https URL, and one marked `target: 'external'`): opened in the
+      browser, `id` and `url` the URL.
+
+    None without a label, or without a URL the app can open (one of the routes without its
+    id, a URL that is not https)."""
+    if not isinstance(link, dict):
+        return None
+    label = ' '.join(str(link.get('label') or '').split())
+    url = str(link.get('url') or '').strip()
+    if not label or not url:
+        return None
+    from urllib.parse import parse_qs, urlsplit
+
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or '').lower()
+    except ValueError:
+        return None
+    if parts.scheme not in ('http', 'https'):
+        return None
+    if (host == 'apple.com' or host.endswith('.apple.com')) and link.get('target') != 'external':
+        query = {key.lower(): values[0]
+                 for key, values in parse_qs(parts.query).items() if values}
+        path = parts.path.rstrip('/')
+        route = LINK_ROUTES.get(path.rpartition('/')[2].lower())
+        if route is None and _COLLECTION_PATH.search(path):
+            route = LINK_ROUTES['viewroom']
+        segments = path.strip('/').split('/')
+        if route is None and host == 'music.apple.com' and len(segments) >= 2:
+            # The web player's own pages: /<sf>/charts, /<sf>/room/<id>.
+            if segments[1] == 'charts':
+                return {'title': label, 'kind': 'charts', 'id': 'charts', 'url': None}
+            if segments[1] == 'room' and len(segments) >= 3:
+                query['fcid'] = segments[-1]
+                route = LINK_ROUTES['viewroom']
+        if route is not None:
+            kind, name = route
+            found = query.get(name, '')
+            if kind == 'charts':
+                answer = {'title': label, 'kind': 'charts', 'id': 'charts', 'url': None}
+                if api.is_editorial_id(found):
+                    answer['genre'] = found
+                return answer
+            if not api.is_editorial_id(found):
+                return None
+            return {'title': label, 'kind': kind, 'id': found, 'url': None}
+    if parts.scheme != 'https':
+        return None
+    return {'title': label, 'kind': 'link', 'id': url, 'url': url}
+
+
+def element_links(element, key):
+    """An editorial element's row of links (kind 391, More to Explore, titled; 322, the
+    genres', untitled) as {key, title, links}, each link as editorial_link() makes it, each
+    once; None for an element without `links`, or none the app can open."""
+    attrs = element.get('attributes') or {}
+    raw = attrs.get('links')
+    if not isinstance(raw, list):
+        return None
+    links = []
+    seen = set()
+    for link in raw:
+        found = editorial_link(link)
+        found_key = None if found is None else (found['kind'], found['id'], found.get('genre'))
+        if found_key is None or found_key in seen:
+            continue
+        seen.add(found_key)
+        links.append(found)
+    if not links:
+        return None
+    title = str(attrs.get('title') or attrs.get('name') or '').strip()
+    return {'key': key, 'title': title, 'links': links}
 
 
 def editorial_shelves(raw, cache_dir):
@@ -1600,15 +1797,72 @@ def editorial_shelves(raw, cache_dir):
     own New page (`/v1/editorial/<storefront>/groupings` with `name=music`,
     `platform=web`): `shelves`, the grouping's editorial elements in
     Apple's order — the featured banners first as one shelf marked
-    `featured` (and untitled: the page names it), then Best New Songs, New
-    Releases, playlists, stations, videos… — each `{key, title, items}` with
-    items as `search` has them (no groups, art as it stands; a curator among
-    them a category tile)."""
+    `featured` (and untitled: the page names it), each item with its banner's
+    `badge`, `banner` and `tagline` (featured_extras; the shelf `form: 'banners'` when
+    one has a banner), then Best New Songs, New Releases, playlists, stations, videos… —
+    each `{key, title, items}` with items as `search` has them (no groups, art as it
+    stands; a curator among them a category tile); and `links`, its rows of links (More
+    to Explore, the genres': element_links) in Apple's order."""
     shelves = []
+    links = []
     for grouping in (raw or {}).get('data') or []:
         if isinstance(grouping, dict):
-            shelves.extend(_grouping_shelves(grouping, cache_dir, 'new', featured=True))
-    return {'shelves': shelves}
+            found, found_links = _grouping_parts(grouping, cache_dir, 'new', featured=True,
+                                                 banners=True)
+            shelves.extend(found)
+            links.extend(found_links)
+    return {'shelves': shelves, 'links': links}
+
+
+def editorial_grouping(raw, cache_dir):
+    """Engine.grouping()'s answer (`/v1/editorial/<storefront>/groupings/<id>`, a page a
+    More to Explore link opens, the same shape as New's): {id, title, shelves, links} as
+    editorial_shelves makes them, keyed `grp-<element id>`, `title` the grouping's name
+    ('' without one)."""
+    data = (raw or {}).get('data') or []
+    grouping = data[0] if data and isinstance(data[0], dict) else {}
+    attrs = grouping.get('attributes') or {}
+    shelves, links = _grouping_parts(grouping, cache_dir, 'grp', featured=True, banners=True)
+    return {'id': str(grouping.get('id') or ''),
+            'title': str(attrs.get('title') or attrs.get('name') or '').strip(),
+            'shelves': shelves, 'links': links}
+
+
+def editorial_multiroom(raw, cache_dir):
+    """Engine.multiroom()'s answer (`/v1/editorial/<storefront>/multirooms/<id>`): {id,
+    title, shelves, links}, its children as a grouping's elements are (_element_parts: the
+    345 shelves; the 404 header holds nothing and is left out), keyed `mr-<element id>`,
+    `title` the multiroom's ('' without one)."""
+    data = (raw or {}).get('data') or []
+    room = data[0] if data and isinstance(data[0], dict) else {}
+    attrs = room.get('attributes') or {}
+    children = ((room.get('relationships') or {}).get('children') or {}).get('data') or []
+    shelves, links = _element_parts(children, cache_dir, 'mr')
+    return {'id': str(room.get('id') or ''),
+            'title': str(attrs.get('title') or attrs.get('name') or '').strip(),
+            'shelves': shelves, 'links': links}
+
+
+def editorial_room(raw, cache_dir):
+    """Engine.room()'s answer (`/v1/editorial/<storefront>/rooms/<id>`, a More to Explore
+    link's collection): {id, title, items}, its `contents` (up to a hundred) in Apple's
+    order as a shelf's items are (_shelf_item: no groups, art as it stands), each once,
+    `title` the room's ('' without one)."""
+    data = (raw or {}).get('data') or []
+    room = data[0] if data and isinstance(data[0], dict) else {}
+    attrs = room.get('attributes') or {}
+    contents = ((room.get('relationships') or {}).get('contents') or {}).get('data') or []
+    items = []
+    seen = set()
+    for raw_item in contents:
+        item = _shelf_item(raw_item, cache_dir)
+        if item is None or (item['kind'], item['id']) in seen:
+            continue
+        seen.add((item['kind'], item['id']))
+        items.append(item)
+    return {'id': str(room.get('id') or ''),
+            'title': str(attrs.get('title') or attrs.get('name') or '').strip(),
+            'items': items}
 
 
 # The Radio grouping's elements the page puts apart (README.md, "The editorial groupings"): the
@@ -2139,6 +2393,23 @@ def banner_template(url, crop):
     return f'{url[:tail.start()]}{{w}}x{{h}}{crop}.jpg'
 
 
+def wide_artwork(artwork, crop):
+    """An Apple artwork dict ({url, width, height, bgColor}) as a wide image to fetch, {url,
+    crop, width, height, color}: `url` its template cut with `crop` (banner_template), {w}x{h}
+    left to fill; `width` and `height` the source's pixels; `color` its background colour
+    (#rrggbb) or None. None without an https template and a size."""
+    if not isinstance(artwork, dict):
+        return None
+    url = banner_template(artwork.get('url'), crop)
+    width, height = artwork.get('width'), artwork.get('height')
+    if (url is None or not isinstance(width, int) or not isinstance(height, int)
+            or width <= 0 or height <= 0):
+        return None
+    color = artwork.get('bgColor')
+    return {'url': url, 'crop': crop, 'width': width, 'height': height,
+            'color': format_color(color) if isinstance(color, str) else None}
+
+
 def artist_banner(attrs):
     """An artist's wide header from its attributes (`editorialArtwork` and `hero` extended),
     as {url, crop, width, height, color}, or None: `url` the template cut with the crop
@@ -2150,19 +2421,7 @@ def artist_banner(attrs):
     first hero entry's first content when its `recommendedCropCodes` list BANNER_HERO_CROP
     (some entries have no content), else None: the page keeps the round portrait."""
     attrs = attrs if isinstance(attrs, dict) else {}
-
-    def banner(artwork, crop):
-        if not isinstance(artwork, dict):
-            return None
-        url = banner_template(artwork.get('url'), crop)
-        width, height = artwork.get('width'), artwork.get('height')
-        if (url is None or not isinstance(width, int) or not isinstance(height, int)
-                or width <= 0 or height <= 0):
-            return None
-        color = artwork.get('bgColor')
-        return {'url': url, 'crop': crop, 'width': width, 'height': height,
-                'color': format_color(color) if isinstance(color, str) else None}
-
+    banner = wide_artwork
     editorial = attrs.get('editorialArtwork')
     if isinstance(editorial, dict):
         found = banner(editorial.get(BANNER_EDITORIAL), BANNER_EDITORIAL_CROP)
@@ -2728,6 +2987,21 @@ def radio_cache_path(cache_dir):
 def charts_cache_path(cache_dir):
     """Where the Charts page's shelves (charts_shelves) are kept for a day."""
     return os.path.join(cache_dir, 'charts.json')
+
+
+def room_cache_path(cache_dir, room_id):
+    """Where an editorial room's contents (editorial_room) are kept for a day, by its id."""
+    return os.path.join(cache_dir, 'rooms', f'{_safe_id(room_id)}.json')
+
+
+def grouping_cache_path(cache_dir, grouping_id):
+    """Where an editorial grouping's shelves (editorial_grouping) are kept for a day."""
+    return os.path.join(cache_dir, 'groupings', f'{_safe_id(grouping_id)}.json')
+
+
+def multiroom_cache_path(cache_dir, multiroom_id):
+    """Where an editorial multiroom's shelves (editorial_multiroom) are kept for a day."""
+    return os.path.join(cache_dir, 'multirooms', f'{_safe_id(multiroom_id)}.json')
 
 
 def write_answer(path, answer, cache_dir, generation=None):

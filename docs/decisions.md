@@ -824,13 +824,14 @@ changes, change it here, with the date. The plan they came from is in
   whose programmes have all run out for a station is not fresh, whatever its age
   (`expires`). A radio show is an Apple curator: its tile opens its page (the category
   page, which a curator's grouping already makes), never Play. The hero row's stations
-  that the live row shows are left out of it; Apple's links (More to Explore, the genres)
-  wait for #370. The page is a `ShelvesPage` with an `arrange` of its own rather than a
-  class of its own: PyGObject refuses a subclass of a `Gtk.Template` class.
+  that the live row shows are left out of it, and so are Apple's links (More to Explore,
+  the genres) and its banners' art, which New shows (#370). The page is a `ShelvesPage`
+  with an `arrange` of its own rather than a class of its own: PyGObject refuses a
+  subclass of a `Gtk.Template` class.
 - **Charts is a pushed page, reached from New and Search** (2026-10-20, #344). Apple Music
-  has no Charts destination of its own, so neither does the app: a Top Charts tile ends
-  New (under More to Explore, where Apple's New page ends with its links, #370's to fill)
-  and leads Search's browse categories, as Apple's Browse lists its chart rooms, and both
+  has no Charts destination of its own, so neither does the app: Top Charts ends New
+  (under More to Explore, unless Apple's own links reach the charts) and leads Search's
+  browse categories, as Apple's Browse lists its chart rooms, and both
   push one page (`pages/charts.py`, `window.open_item` for kind `charts`). The page is a
   `ShelvesPage` over `GET /v1/catalog/<sf>/charts` (every kind at once, most played,
   `with=dailyGlobalTopCharts,cityCharts` for the Daily Top 100 and City Charts playlists;
@@ -844,6 +845,21 @@ changes, change it here, with the date. The plan they came from is in
   ranking, so plain tiles. `ShelfColumn` picks the widget by the shelf's `form` (songs or
   tiles), so the songs need no page of their own. No genre filter yet (#404): the request
   takes `genre=`, the page has nowhere to choose one.
+- **New's banners, and More to Explore as links to in-app pages** (2026-10-20, #370). New
+  opens as Apple's does: the hero row's items as wide banner cards (Apple's `designBadge`
+  over the title and the content's tagline, over the 320's own editorial artwork or the
+  317's content's, cut at its source's shape and fetched for the widest card), a shelf
+  `form` of their own (`banners`) so the shelves after it keep their tiles; an item
+  without a banner shows its cover whole on its colour, and a hero row without any banner
+  stays hero cards. Apple's rows of links (391, More to Explore; 322, the genres) end the
+  page as cards of a label and a chevron, not tiles: Apple gives them no artwork. Each
+  opens what the web player would, in the app: a room as a grid of its contents (a
+  `GridPage` that fetches, since a room is a collection to browse, not shelves), a
+  grouping (New's shape) or a multiroom as a page of shelves with its own links, the charts
+  as the Charts page, anything else in the browser; each kept a day as the other editorial
+  pages are. Any shelves page shows the links its answer carries, so a grouping's page ends
+  as New does. Top Charts stays among them, first, unless Apple's links reach the charts
+  themselves. Radio's hero and links are left as they were.
 - **Home's Recently Played is asked as Home is shown; Refresh is F5** (2026-10-20, #346).
   Home's other shelves are the library's, which the sync writes every few hours; Recently
   Played follows what was just played, so it is not one of them: it is

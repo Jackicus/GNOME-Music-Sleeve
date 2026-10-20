@@ -7,11 +7,12 @@ and See All, which song_shelf.py's grid of songs shares."""
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
-from . import context_menu
+from . import banner_tile, context_menu
+from .banner_tile import BannerTile
 from .hero_tile import HeroTile
 from .labels import bind_label, unbind_label
 from .tile import Tile, shape_for
-from .util import connect_weak, each_frame, grown, next_frame, rows_kept
+from .util import connect_weak, each_frame, grown, next_frame, rows_kept, weak_method
 
 # The tiles a shelf's row shows at most: See All opens the whole shelf. A horizontal
 # Gtk.ListView makes a tile for every item up to about 200, whatever is on screen (100 items
@@ -194,9 +195,11 @@ class Shelf(PagedRow, Gtk.Box):
     The row is a horizontal Gtk.ListView of the first ROW_LIMIT items (FIRST_TILES at once,
     the rest over the next frames: give_items()), the scrolled window's own child. It builds
     a tile for each of them, but only the tiles on screen are mapped and ask for their
-    artwork. With `hero`, the tiles are 260 px AppleMusicHeroTiles, the cover
-    over a band in its colour; otherwise 160 px AppleMusicTiles, round for artists and 16:9
-    for music videos (as tall as the rest), each numbered (a RankedTile) when the ShelfModel
+    artwork. With `hero`, the tiles are 260 px AppleMusicHeroTiles, the cover over a band
+    in its colour; with `banners`, wide AppleMusicBannerTiles (a featured shelf whose items
+    have Apple's banners: widgets/banner_tile.py); otherwise 160 px AppleMusicTiles, round
+    for artists and 16:9 for music videos (as tall as the rest), each numbered (a
+    RankedTile) when the ShelfModel
     is `ranked` (a chart's: remote.remote_shelves). The shelf follows its ShelfModel's title,
     its subtitle (a recommendation's reason, a dimmed line under the title, when there is one)
     and its items as they change.
@@ -223,6 +226,10 @@ class Shelf(PagedRow, Gtk.Box):
 
     shelf = None  # the ShelfModel shown
     _hero = False
+    _banners = False
+    _banner_width = banner_tile.BANNER_WIDTH  # the banner cards' width, the row's
+    _fit_idle = None
+    _fitted_to = -1  # the row's width the banner cards were last fitted to
     _ranked = False  # the tiles numbered: the shelf shown is a chart's
     _see_all = False
     _followed = ()  # (object, handler id) pairs on the shelf shown
@@ -261,6 +268,19 @@ class Shelf(PagedRow, Gtk.Box):
 
     hero = GObject.Property(type=bool, default=False, getter=_get_hero, setter=_set_hero,
                             nick='Hero', blurb='Whether the tiles are large cards')
+
+    def _get_banners(self):
+        return self._banners
+
+    def _set_banners(self, banners):
+        if banners == self._banners:
+            return
+        self._banners = banners
+        self._rebuild_rows()
+
+    banners = GObject.Property(type=bool, default=False, getter=_get_banners,
+                               setter=_set_banners, nick='Banners',
+                               blurb='Whether the tiles are wide banner cards')
 
     def _get_see_all(self):
         return self._see_all
@@ -331,8 +351,33 @@ class Shelf(PagedRow, Gtk.Box):
             or bool(getattr(self.shelf, 'more', False))
             or getattr(self.shelf, 'library_artist', None) is not None)
 
+    def _update_controls(self):
+        PagedRow._update_controls(self)
+        if (self._banners and self._fit_idle is None
+                and self.scrolled_window.get_width() != self._fitted_to):
+            # Not from inside the allocation that changed the width: in an idle.
+            self._fit_idle = GLib.idle_add(weak_method(self._fit_banners))
+
+    def _fit_banners(self):
+        """Give the banner cards the width that fits the row (banner_tile.card_width()):
+        narrower in a shelf narrower than one."""
+        self._fit_idle = None
+        self._fitted_to = self.scrolled_window.get_width()
+        width = banner_tile.card_width(self._fitted_to)
+        if width != self._banner_width:
+            self._banner_width = width
+            row = self.list_view.get_first_child()
+            while row is not None:
+                card = row.get_first_child()
+                if isinstance(card, BannerTile):
+                    card.set_width(width)
+                row = row.get_next_sibling()
+        return GLib.SOURCE_REMOVE
+
     def _on_setup(self, _factory, list_item):
-        if self._hero:
+        if self._banners:
+            list_item.set_child(BannerTile(width=self._banner_width))
+        elif self._hero:
             list_item.set_child(HeroTile())
         else:
             list_item.set_child(RankedTile() if self._ranked else Tile())
@@ -345,7 +390,7 @@ class Shelf(PagedRow, Gtk.Box):
             rank = list_item.get_position() + 1
             child.set_rank(rank)
             child = child.tile
-        if not self._hero:
+        if not (self._hero or self._banners):
             child.set_shape(shape_for(item))
         child.bind(item)
         bind_label(list_item, item, rank=rank)
@@ -371,18 +416,21 @@ class Shelf(PagedRow, Gtk.Box):
 FIRST_SHELVES = 3
 
 
-# The forms a ShelfColumn shows a shelf in: a row of tiles, a row of large cards, or a grid of
-# songs (a ShelfModel whose `form` is 'songs': a chart's Top Songs).
+# The forms a ShelfColumn shows a shelf in: a row of tiles, a row of large cards, a row of wide
+# banners (a ShelfModel whose `form` is 'banners': New's featured shelf with Apple's banners)
+# or a grid of songs (one whose `form` is 'songs': a chart's Top Songs).
 TILES = 'tiles'
 HEROES = 'heroes'
+BANNERS = 'banners'
 SONGS = 'songs'
 
 
 def form_for(shelf, hero):
-    """The form a ShelfColumn shows `shelf` in: SONGS for a ShelfModel whose `form` is
-    'songs', else HEROES or TILES as `hero` says."""
-    if getattr(shelf, 'form', '') == SONGS:
-        return SONGS
+    """The form a ShelfColumn shows `shelf` in: SONGS or BANNERS for a ShelfModel whose
+    `form` says so, else HEROES or TILES as `hero` says."""
+    form = getattr(shelf, 'form', '')
+    if form in (SONGS, BANNERS):
+        return form
     return HEROES if hero else TILES
 
 
@@ -456,6 +504,8 @@ class ShelfColumn:
             from .song_shelf import SongShelf  # song_shelf.py imports this module
 
             return SongShelf()
+        if form == BANNERS:
+            return Shelf(banners=True, see_all=True)
         return self._make_shelf(form == HEROES)
 
     def _bind(self, shelf, form):

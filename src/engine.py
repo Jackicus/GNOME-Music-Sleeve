@@ -84,7 +84,11 @@ UI awaits.
     await engine.suggest(term, limit=10)   # {terms: [{term, display}], items}
     await engine.landing()       # {categories}: the search page's Browse Categories
     await engine.category(id)    # {id, title, shelves}: a category's page
-    await engine.browse()        # {shelves}: the New page (the editorial groupings)
+    await engine.browse()        # {shelves, links}: the New page (the editorial groupings:
+                                 # the banners, the shelves, More to Explore's links)
+    await engine.room(id)        # {id, title, items}: a More to Explore link's collection
+    await engine.grouping(id)    # {id, title, shelves, links}: a link's page of shelves
+    await engine.multiroom(id)   # {id, title, shelves, links}: a link's page of shelves
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.recently_played()   # {items}: Home's Recently Played, newest first
     await engine.radio()         # {shelves[, expires]}: the Radio page (the radio grouping)
@@ -102,9 +106,10 @@ UI awaits.
                                  # playlist, none of `offered`; more=True: a few more, unkept
     await engine.credits(catalog_song_id)   # {categories: [{kind, title, people: [{name,
                                  # roles}]}]}: a song's credits (View Credits), in Apple's order
-    # The last eleven are kept under the cache for a day (landing.json, categories/,
-    # browse.json, made-for-you.json, radio.json, charts.json, recent-played.json, artists/,
-    # albums/, suggestions/, credits/) and answered from there without the engine;
+    # The last fourteen are kept under the cache for a day (landing.json, categories/,
+    # browse.json, rooms/, groupings/, multirooms/, made-for-you.json, radio.json,
+    # charts.json, recent-played.json, artists/, albums/, suggestions/, credits/) and
+    # answered from there without the engine;
     # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
     # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
     # suggestions are kept with `basis`, what the playlist held, and asked again once it holds
@@ -2376,6 +2381,50 @@ class Engine(GObject.Object):
                                        timeout=BROWSE_TIMEOUT)
         return await self._kept_answer(normalize.charts_cache_path(str(self.cache_dir)),
                                        refresh, fetch, normalize.charts_shelves)
+
+    async def _editorial_page(self, what, page_id, refresh, endpoint, params, path, shaper):
+        """One of the pages More to Explore's links open (a room, a grouping, a multiroom):
+        `endpoint` with `params` for the id, shaped by `shaper` and kept at `path(cache_dir,
+        id)` for a day (_kept_answer)."""
+        page_id = str(page_id or '')
+        if not api.is_editorial_id(page_id):
+            raise EngineError('usage', f'{what} needs an editorial id')
+
+        async def fetch(client):
+            storefront = await self._current_storefront()
+            return await self._api(
+                client, endpoint.format(storefront=storefront, id=page_id), params,
+                timeout=BROWSE_TIMEOUT)
+        return await self._kept_answer(path(str(self.cache_dir), page_id), refresh, fetch,
+                                       shaper)
+
+    async def room(self, room_id, refresh=False):
+        """An editorial room (a More to Explore link's collection): {id, title, items}, its
+        contents in Apple's order as normalize.editorial_room shapes them (api.ROOM_ENDPOINT).
+        From <cache>/rooms/<id>.json for a day, else fetched and kept."""
+        return await self._editorial_page('room', room_id, refresh, api.ROOM_ENDPOINT,
+                                          api.ROOM_PARAMS, normalize.room_cache_path,
+                                          normalize.editorial_room)
+
+    async def grouping(self, grouping_id, refresh=False):
+        """An editorial grouping (a More to Explore link's page, New's shape): {id, title,
+        shelves, links} as normalize.editorial_grouping shapes them (api.GROUPING_ENDPOINT
+        with api.GROUPING_PARAMS). From <cache>/groupings/<id>.json for a day, else fetched
+        and kept."""
+        return await self._editorial_page('grouping', grouping_id, refresh,
+                                          api.GROUPING_ENDPOINT, api.GROUPING_PARAMS,
+                                          normalize.grouping_cache_path,
+                                          normalize.editorial_grouping)
+
+    async def multiroom(self, multiroom_id, refresh=False):
+        """An editorial multiroom (a More to Explore link's page of shelves): {id, title,
+        shelves, links} as normalize.editorial_multiroom shapes them
+        (api.MULTIROOM_ENDPOINT with api.MULTIROOM_PARAMS). From
+        <cache>/multirooms/<id>.json for a day, else fetched and kept."""
+        return await self._editorial_page('multiroom', multiroom_id, refresh,
+                                          api.MULTIROOM_ENDPOINT, api.MULTIROOM_PARAMS,
+                                          normalize.multiroom_cache_path,
+                                          normalize.editorial_multiroom)
 
     async def artist_page(self, artist_id, refresh=False):
         """A catalog artist's page: {id, artist, banner, latest, topSongs, shelves}

@@ -863,17 +863,55 @@ class PageLifetimeTest(WidgetTestCase):
         await self.assert_freed(*refs)
 
     async def test_new_page(self):
-        # New, with More to Explore's tiles after its shelves; dropped at a sign-out.
+        # New, its banners first, with More to Explore's links after its shelves; dropped
+        # at a sign-out.
         from applemusic.pages import new
         from applemusic.sections import Destination
-        from applemusic.widgets.category_tile import CategoryTile
-        from applemusic.widgets.hero_tile import HeroTile
+        from applemusic.widgets.banner_tile import BannerArt, BannerTile
+        from applemusic.widgets.explore import ExploreBox, LinkChild
         from applemusic.widgets.tile import Tile
 
-        self.answer('browse', _shelves('featured', 'albums'))
+        answer = _shelves('featured', 'albums')
+        answer['shelves'][0].update(featured=True, form='banners')
+        for item in answer['shelves'][0]['items']:
+            item.update(badge='INVENTED', banner={'url': None, 'art': None, 'crop': 'sr',
+                                                  'width': 1600, 'height': 900})
+        answer['links'] = [{'key': 'more', 'title': 'Invented', 'links': [
+            {'title': 'Invented Room', 'kind': 'room', 'id': '900000701', 'url': None}]}]
+        self.answer('browse', answer)
         refs = await self.rooted_and_dropped(
             new.create(Destination('new', 'New', 'starred-symbolic')),
-            HeroTile, Tile, CategoryTile)
+            BannerTile, BannerArt, Tile, ExploreBox, LinkChild)
+        await self.assert_freed(*refs)
+
+    async def test_room_page(self):
+        # A More to Explore link's room: a grid that fetches its contents.
+        from applemusic.explore import link_item
+        from applemusic.pages import editorial
+        from applemusic.widgets.tile import Tile
+
+        self.answer('room', {'title': 'Invented Room', 'items': [
+            dict(_album(number, tracks=0), id=f'r{number}') for number in range(6)]})
+        item = link_item({'title': 'Invented Room', 'kind': 'room', 'id': '900000701'})
+        refs = await self.pushed_and_popped(editorial.create(self.library, item), Tile)
+        del item
+        await self.assert_freed(*refs)
+
+    async def test_grouping_page(self):
+        # A More to Explore link's grouping: shelves, then its own links.
+        from applemusic.explore import link_item
+        from applemusic.pages import editorial
+        from applemusic.widgets.explore import LinkChild
+        from applemusic.widgets.tile import Tile
+
+        answer = _shelves('albums', 'playlists')
+        answer['links'] = [{'key': 'genres', 'title': '', 'links': [
+            {'title': 'Invented Folk', 'kind': 'grouping', 'id': '900000706', 'url': None}]}]
+        self.answer('grouping', answer)
+        item = link_item({'title': 'Invented Grouping', 'kind': 'grouping', 'id': '900000704'})
+        refs = await self.pushed_and_popped(editorial.create(self.library, item), Tile,
+                                            LinkChild)
+        del item
         await self.assert_freed(*refs)
 
     async def test_made_for_you_page(self):

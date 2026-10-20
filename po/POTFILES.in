@@ -6,6 +6,7 @@ src/account.py
 src/actions.py
 src/credits.py
 src/errors.py
+src/explore.py
 src/dialogs/about.py
 src/dialogs/credits.py
 src/dialogs/credits.blp
@@ -37,6 +38,7 @@ src/pages/grid.py
 src/pages/grid.blp
 src/pages/home.blp
 src/pages/charts.py
+src/pages/editorial.py
 src/pages/radio.py
 src/pages/search.py
 src/pages/search.blp
@@ -51,6 +53,7 @@ src/pages/songs.blp
 src/widgets/engine_status.py
 src/widgets/context_menu.py
 src/widgets/selection_mode.py
+src/widgets/explore.py
 src/widgets/shelf.py
 src/widgets/shelf.blp
 src/widgets/song_shelf.py

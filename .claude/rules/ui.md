@@ -90,15 +90,23 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   live station subtitled with the programme on air as the page is shown, and Recently Played
   alone in place of the status page while Apple cannot answer; `follow(library, 'changed')`
   arranges again. The Charts page (pages/charts.py) is one too, pushed, not a destination:
-  `window.open_item` opens it for `charts.charts_item()`, the Top Charts category tile that
-  ends New (More to Explore, pages/new.py, a box after the shelves) and leads Search's
-  categories. They,
+  `window.open_item` opens it for `explore.charts_item()`, the Top Charts category tile that
+  leads Search's categories and the link among New's. A shelves page ends with its
+  answer's `links` (`widgets.explore.ExploreBox` after the shelves: src/explore.py's
+  Sections, cards of a label and a chevron, `LinkChild`, each holding its Item; New's
+  `explore` puts Top Charts first unless Apple's links reach the charts), which
+  `window.open_item` opens: a room as a `GridPage` with a `fetch` (its own spinner,
+  `EngineStatus` and Refresh), a grouping or multiroom as a `ShelvesPage`
+  (pages/editorial.py), the charts, or the browser. New's featured shelf is `form:
+  'banners'` when Apple's answer has their art (`widgets.banner_tile.BannerTile`, as wide
+  as the row fits: `card_width()`; its image a fixed-size `BannerArt`). They,
   Search and the album and artist pages show what the engine's failure means through one
   `widgets.engine_status.EngineStatus` (no widget; tests/test_engine_status.py): the spinner
   while it starts, Sign In when signed out, Start Engine (through `app.start_engine()`, whose
   failure the app reports), Try Again, and "Not Available in the Demo" with no button (the
-  demo engine answers `engine-down`, but for the artist and album pages and the search that
-  scripts/demo_library.py invents).
+  demo engine answers `engine-down`, but for the pages and the search that
+  scripts/demo_library.py invents: New and its links' pages, Radio, Charts, the artist and
+  album pages).
   A state the page shows is not toasted too. A library page's empty state offers Sign In… while
   signed out (outside the demo) through one `pages.SignInOffer(status_page)`.
 - Home (pages/home.py over src/home.py's pure parts) is the library's shelves and Recently

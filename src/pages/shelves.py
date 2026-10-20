@@ -3,15 +3,18 @@
 
 """AppleMusicShelvesPage: a page of shelves the engine answers with: New (engine.browse()),
 Made for You (engine.made_for_you()), Radio (engine.radio(), with a shelf of the library's
-own: pages/radio.py) and a search category (engine.category(id)).
+own: pages/radio.py), a search category (engine.category(id)), the Charts page and the
+pages More to Explore's links open (engine.grouping(id), engine.multiroom(id):
+pages/editorial.py).
 
 Unlike Home, whose shelves are the library's, these pages own their Items: the engine's
 shelf dicts are wrapped (remote.remote_shelves), their artwork pointed at <cache>/remote-art/
 (remote.remote_item) and fetched in the background (remote.fetch_shelf_art), each tile
 following its Item as its thumbnail arrives. The page shows a spinner while the answer is on
 its way, a status page with the fitting button when the engine cannot answer
-(widgets/engine_status.py), and the shelves otherwise; a refresh button in the header bar
-asks Apple again past the day-long cache.
+(widgets/engine_status.py), and the shelves otherwise, then the answer's rows of links
+(`links`: More to Explore, widgets/explore.py); a refresh button in the header bar asks
+Apple again past the day-long cache.
 """
 
 import logging
@@ -20,10 +23,12 @@ from gettext import gettext as _
 
 from gi.repository import Adw, Gtk
 
+from .. import explore
 from ..backend.errors import EngineError
 from ..backend.normalize import ANSWER_MAX_AGE, answer_expired
 from ..remote import fetch_shelf_art, remote_shelves
 from ..widgets.engine_status import EngineStatus
+from ..widgets.explore import ExploreBox
 from ..widgets.shelf import ShelfColumn
 from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, next_frame
 from . import app
@@ -73,6 +78,10 @@ class ShelvesPage(Adw.NavigationPage):
     makes of [] is shown in place of the status page when the engine cannot answer (Refresh
     and the engine coming up still do what the status page's button would), and the spinner
     gives way to it while a request is under way.
+
+    The answer's rows of links (`links`) follow the shelves (widgets.explore.ExploreBox), as
+    `explore(links)` makes them Sections (explore.sections by default; New's has Top Charts
+    among them).
     """
 
     __gtype_name__ = 'AppleMusicShelvesPage'
@@ -87,10 +96,11 @@ class ShelvesPage(Adw.NavigationPage):
     title_label = Gtk.Template.Child()
 
     def __init__(self, title, fetch, root=True, icon_name=None, hero=True, empty_title=None,
-                 empty_description=None, arrange=None):
+                 empty_description=None, arrange=None, explore=explore.sections):
         super().__init__(title=title)
         self.item = None  # a category page's category, for the window's double-push guard
         self._fetch = fetch
+        self._explore = explore
         self._root = root
         self._hero = hero
         self._icon_name = icon_name or 'view-grid-symbolic'
@@ -110,6 +120,9 @@ class ShelvesPage(Adw.NavigationPage):
             'failed': _('Could Not Load This Page'),
         })
         self._column = ShelfColumn(self.shelves_box, anchor=self.title_label)
+        # After the shelves: the column places them right after the title.
+        self.explore_box = ExploreBox()
+        self.shelves_box.append(self.explore_box)
         self.title_label.set_label(title)
         self._header_title = HeaderTitle(self.header_bar, self.title_label, self.scrolled_window)
         self.refresh_button.set_visible(not app().demo)
@@ -201,12 +214,14 @@ class ShelvesPage(Adw.NavigationPage):
         return list(shelves) if self._arrange is None else list(self._arrange(list(shelves)))
 
     def _present(self, shelves=None):
-        """Show the engine's shelves as `arrange` places them (or `shelves`), or the empty
-        state when there are none."""
+        """Show the engine's shelves as `arrange` places them (or `shelves`), then the
+        answer's links, or the empty state when there are neither shelves nor links."""
         shelves = self._arranged(self._remote) if shelves is None else shelves
         self._column.show(shelves, hero_first=self._hero)
         self._shelves = shelves
-        if shelves:
+        links = self._answer.get('links') if isinstance(self._answer, dict) else None
+        self.explore_box.show_sections(self._explore(links))
+        if shelves or (links and self.explore_box.sections):
             self.stack.set_visible_child_name('items')
             app().spawn(self._focus_shelves())
         else:

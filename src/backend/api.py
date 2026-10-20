@@ -25,8 +25,10 @@ The standard library only; engine.py and actions.py use it.
     can_move_to_folder('playlist', 'p.1')   # whether Apple is known to take that folder move
     playlist_entries(listed)            # a playlist's tracks as a PUT of them sends them back
     reordered_entries(listed, shown, order)   # those in a new order, or EngineError('conflict')
+    is_editorial_id('6789.12')          # whether it may name an editorial room or grouping
 """
 
+import re
 import urllib.parse
 
 from .errors import EngineError
@@ -95,6 +97,24 @@ CHARTS_LIMIT = 100
 CHARTS_PARAMS = {'types': 'songs,albums,playlists,music-videos', 'limit': CHARTS_LIMIT,
                  'with': 'dailyGlobalTopCharts,cityCharts'}
 CHARTS_PLAIN_PARAMS = {'types': 'songs,albums,playlists,music-videos', 'limit': CHARTS_LIMIT}
+# The pages More to Explore's links open (README.md, "The editorial groupings: New and
+# Radio"): a room (a collection: its contents), a grouping (a page of shelves, New's shape,
+# which is a 400 without `platform`) and a multiroom (a page of shelves), as the web player
+# asks for them.
+ROOM_ENDPOINT = '/v1/editorial/{storefront}/rooms/{id}'
+ROOM_PARAMS = {}
+GROUPING_ENDPOINT = '/v1/editorial/{storefront}/groupings/{id}'
+GROUPING_PARAMS = {'platform': 'web', 'extend': 'editorialArtwork'}
+MULTIROOM_ENDPOINT = '/v1/editorial/{storefront}/multirooms/{id}'
+MULTIROOM_PARAMS = {'extend': 'editorialArtwork,uber,lockupStyle'}
+# What an editorial page's id may be: Apple's are digits, a few letters and dots; anything
+# else is not asked for (it goes into a path).
+EDITORIAL_ID = re.compile(r'^[0-9A-Za-z._-]{1,64}$')
+
+
+def is_editorial_id(value):
+    """Whether `value` may name an editorial room, grouping or multiroom (EDITORIAL_ID)."""
+    return isinstance(value, str) and EDITORIAL_ID.match(value) is not None
 # Made for You: the recommendations, of which the mixes and stations are kept.
 RECOMMENDATIONS_ENDPOINT = '/v1/me/recommendations'
 RECOMMENDATIONS_PARAMS = {'limit': 25}

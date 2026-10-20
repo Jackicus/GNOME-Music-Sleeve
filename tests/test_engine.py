@@ -2985,12 +2985,55 @@ class SearchTest(EngineFixture):
         self.assertEqual([s['title'] for s in answer['shelves']],
                          ['', 'Best New Songs', 'New Releases', 'Stations'])
         self.assertTrue(answer['shelves'][0]['featured'])
+        self.assertEqual([row['title'] for row in answer['links']], ['More', ''])
         self.assertTrue((self.cache / 'browse.json').is_file())
         await self.engine.stop()
         self.assertEqual(len((await self.engine.browse())['shelves']), 4)
         await self.up()
         await self.engine.browse(refresh=True)
         self.assertEqual(self.page.api_calls, [path, path])
+
+    async def test_more_to_explores_pages_are_asked_by_id_and_kept_a_day(self):
+        # #370: a room, a grouping (New's shape: `platform` or a 400) and a multiroom.
+        self.page.storefront = 'gb'
+        await self.up()
+        grouping = self.fixture('editorial_groupings.json')
+        room = {'data': [{'id': '900000701', 'type': 'rooms', 'attributes': {
+            'title': 'Invented Room'}, 'relationships': {'contents': {
+                'data': grouping['data'][0]['relationships']['tabs']['data'][0][
+                    'relationships']['children']['data'][2]['relationships']['contents'][
+                    'data']}}}]}
+        multiroom = {'data': [{'id': '900000705', 'type': 'multirooms', 'attributes': {
+            'title': 'Invented Multiroom'}, 'relationships': {'children': {'data': []}}}]}
+        self.page.api_answers['/v1/editorial/gb/rooms/900000701'] = room
+        self.page.api_answers['/v1/editorial/gb/groupings/900000704'] = grouping
+        self.page.api_answers['/v1/editorial/gb/multirooms/900000705'] = multiroom
+        answer = await self.engine.room('900000701')
+        self.assertEqual((answer['title'], [item['id'] for item in answer['items']]),
+                         ('Invented Room', ['900000201', '900000202']))
+        answer = await self.engine.grouping('900000704')
+        self.assertEqual(answer['shelves'][0]['form'], 'banners')
+        self.assertEqual([row['key'] for row in answer['links']], ['grp-links', 'grp-genres'])
+        answer = await self.engine.multiroom('900000705')
+        self.assertEqual(answer['title'], 'Invented Multiroom')
+        self.assertEqual(self.page.api_calls, ['/v1/editorial/gb/rooms/900000701',
+                                               '/v1/editorial/gb/groupings/900000704',
+                                               '/v1/editorial/gb/multirooms/900000705'])
+        self.assertEqual(self.page.api_params, [
+            {}, {'platform': 'web', 'extend': 'editorialArtwork'},
+            {'extend': 'editorialArtwork,uber,lockupStyle'}])
+        for folder, name in (('rooms', '900000701'), ('groupings', '900000704'),
+                             ('multirooms', '900000705')):
+            self.assertTrue((self.cache / folder / f'{name}.json').is_file())
+        await self.engine.stop()
+        self.assertEqual((await self.engine.room('900000701'))['title'], 'Invented Room')
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.room('900000702')  # not kept: needs the engine
+        self.assertEqual(raised.exception.code, 'engine-down')
+        for bad in ('', '../x', 'a/b', None):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.grouping(bad)
+            self.assertEqual(raised.exception.code, 'usage')
 
     async def test_browse_failure_is_api(self):
         await self.up()

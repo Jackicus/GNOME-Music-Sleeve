@@ -83,13 +83,19 @@ touches widgets.
   through `home.py`'s pure parts: the kept answer at once, Apple's again once it is a minute
   old, `Throttle`; one shelf brought up to date in place, `RecentlyPlayed`, placed after the
   first shelf by `arrange()`; an update that would move the page or take the focus kept
-  for the next visit, `hold_back()`). New, Made for You, Radio, Search and the Charts page
-  (pushed from New's More to Explore and Search's categories) ask the engine (all but
+  for the next visit, `hold_back()`). New, Made for You, Radio, Search, the Charts page
+  (pushed from New's More to Explore and Search's categories) and the pages New's links
+  open (`pages/editorial.py`: a room's grid, a `GridPage` with a `fetch`, a grouping's or
+  multiroom's shelves) ask the engine (all but
   Search's results keep its answers in the cache for a day; a search's kind, filtered or a
   shelf's See All, is a list that pages on as it is scrolled: `search_pager.py`,
   `widgets/search_list.py`, `pages/search_all.py`), and what is opened from Search is its
   Recently Searched (`recent_searches.py`, a file in the cache, as music.apple.com keeps its
-  own in the browser). Radio arranges Apple's shelves with
+  own in the browser). New opens with Apple's banners (a shelf whose `form` is
+  `banners`: `widgets/banner_tile.py`, Apple's label over the title, the editorial image
+  fetched at the width drawn) and ends, as any shelves page whose answer has `links` does,
+  with its rows of links (`explore.py` makes them Items, `widgets/explore.py` cards the
+  window opens). Radio arranges Apple's shelves with
   `radio.py`'s pure functions: the library's stations as Recently Played after Apple's live
   stations, each live one subtitled with the programme on air as the page is shown. The
   artist page draws Apple's wide banner behind its header when the artist has one

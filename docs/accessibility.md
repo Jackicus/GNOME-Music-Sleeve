@@ -146,12 +146,15 @@ list and the script together.
     hears the level ("Volume 80%"); on a sidebar row they are the row's (the focus moves,
     nothing is selected), on the seek slider the slider's, and in an entry the entry's.
 14. Home shows Recently Played after its first shelf, and Tab reaches its tiles. F5 refreshes
-    the page shown when it has a Refresh (Home, New, Made for You, Radio, Charts, a category),
+    the page shown when it has a Refresh (Home, New, Made for You, Radio, Charts, a category, a room),
     the focus staying where it was; the header bar's Refresh is named, and Space on it
     refreshes too, the focus staying on it.
 15. Radio shows the live stations as large cards, then Recently Played: Ctrl+2 puts the
     focus in the live stations, Tab (past the shelf's arrows and See All) reaches the first,
-    and Right, Enter plays the second. Charts (New's or Search's Top Charts tile) shows Top
+    and Right, Enter plays the second. New opens with its banners as wide cards (Ctrl+2 and
+    Tab reach the first) and ends with More to Explore's links: Enter on one opens its room
+    as a grid, Ctrl+2 puts the focus in the grid, and Escape goes back to New. Charts (New's
+    or Search's Top Charts tile) shows Top
     Songs as a numbered grid of songs, then numbered tiles: Ctrl+2 and Tab reach the first
     song, Enter plays the chart from it, and Escape goes back. The script walks this before
     step 14.

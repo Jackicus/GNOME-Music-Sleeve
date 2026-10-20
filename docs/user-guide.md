@@ -49,7 +49,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   showing the last one meanwhile; it comes in place, so the page does not move under you.
   The refresh button in the header bar, or <kbd>F5</kbd>, asks Apple Music for all of
   Home's shelves again at once. A recommendation that says why it is offered shows the
-  reason under its title. <kbd>F5</kbd> refreshes New, Made for You, Radio and Charts too.
+  reason under its title. <kbd>F5</kbd> refreshes New, Made for You, Radio and Charts too,
+  and the pages New's links open.
 - Search shows what you opened from it lately under **Recently Searched**, above the browse
   categories; **Clear** empties it. The list stays on this computer, as music.apple.com keeps
   its own in the browser, and goes with the cache (Clear Cache, signing out).
@@ -111,8 +112,15 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   stays in the bar, and **Play** tunes in again, live. The system's media controls and
   Discord show it with no length or progress, and their pause stops it too. An artist who hosts a show on Apple Music Radio has it under
   **Radio Shows** on their page, and its episodes under **More To Hear**.
-- **Top Charts**, at the end of **New** (under **More to Explore**) and first among
-  Search's browse categories, opens Apple Music's charts: **Top Songs** as a numbered list
+- **New** is Apple Music's New page: its featured banners first, each with Apple's label
+  ("NEW ALBUM", "UPDATED PLAYLIST") over the title and a line about it, then its shelves
+  (new songs, new releases, playlists, stations, music videos), then **More to Explore**,
+  Apple's links to its collections and pages, and its genres. A collection opens as a grid
+  of what it holds, a page as its shelves (with its own links at the end), the charts as
+  **Top Charts** below, and a link to a web page in your browser. These pages are kept for
+  a day; their refresh button asks Apple again.
+- **Top Charts**, at the end of **New** (under **More to Explore**, unless Apple's own links
+  go there) and first among Search's browse categories, opens Apple Music's charts: **Top Songs** as a numbered list
   (click a song to play the chart from it; right-click for Play Next and the rest),
   **Top Albums** and **Top Playlists** as numbered tiles, the **Daily Top 100** playlists
   (the world's and each country's) and **City Charts** (a playlist for each of a number of
@@ -326,8 +334,9 @@ Other limits:
 - Radio's shelves need the engine and your sign-in (or the last copy of them): without them
   the page shows only the stations you played recently, or says what is missing. Apple's
   links at the end of its radio page (More to Explore, the genres) are not shown.
-- The charts are your storefront's, of every genre: there is no genre to choose yet. Like
-  New, they need the engine and your sign-in (or the last copy of them).
+- The charts are your storefront's, of every genre: there is no genre to choose yet (a
+  link to a genre's charts opens them all). Like New and the pages its links open, they need
+  the engine and your sign-in (or the last copy of them).
 - A playlist moves into a folder, but not yet out of every folder to the top level, and a
   folder does not move into another folder: Apple's service has not been seen to take those
   moves from the app yet, so it does not offer them. Apple's own apps can.

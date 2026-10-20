@@ -4,55 +4,143 @@
       "id": "grouping-music",
       "type": "groupings",
       "href": "/v1/editorial/gb/groupings/grouping-music",
-      "attributes": {"name": "Music", "genreNames": ["Music"]},
+      "attributes": {
+        "name": "Music",
+        "genreNames": [
+          "Music"
+        ]
+      },
       "relationships": {
-        "curator": {"data": []},
+        "curator": {
+          "data": []
+        },
         "tabs": {
           "data": [
             {
               "id": "tab-1",
               "type": "editorial-elements",
-              "attributes": {"editorialElementKind": "382", "doNotFilter": false},
+              "attributes": {
+                "editorialElementKind": "382",
+                "doNotFilter": false
+              },
               "relationships": {
                 "children": {
                   "data": [
                     {
                       "id": "banners",
                       "type": "editorial-elements",
-                      "attributes": {"editorialElementKind": "316", "displayStyle": "compact"},
+                      "attributes": {
+                        "editorialElementKind": "316",
+                        "displayStyle": "compact"
+                      },
                       "relationships": {
                         "children": {
                           "data": [
                             {
                               "id": "banner-1",
                               "type": "editorial-elements",
-                              "attributes": {"editorialElementKind": "317"},
-                              "relationships": {"contents": {"data": [
-                                {"id": "900000201", "type": "albums", "attributes": {
-                                  "name": "Lantern Season", "artistName": "Paper Parachutes",
-                                  "releaseDate": "2026-09-19", "trackCount": 11,
-                                  "artwork": {"url": "https://x/lantern/{w}x{h}{c}.{f}", "bgColor": "2a3b4c", "width": 3000, "height": 3000},
-                                  "playParams": {"id": "900000201", "kind": "album"}}}
-                              ]}}
+                              "attributes": {
+                                "editorialElementKind": "317",
+                                "designBadge": "NEW ALBUM"
+                              },
+                              "relationships": {
+                                "contents": {
+                                  "data": [
+                                    {
+                                      "id": "900000201",
+                                      "type": "albums",
+                                      "attributes": {
+                                        "name": "Lantern Season",
+                                        "artistName": "Paper Parachutes",
+                                        "releaseDate": "2026-09-19",
+                                        "trackCount": 11,
+                                        "artwork": {
+                                          "url": "https://x/lantern/{w}x{h}{c}.{f}",
+                                          "bgColor": "2a3b4c",
+                                          "width": 3000,
+                                          "height": 3000
+                                        },
+                                        "playParams": {
+                                          "id": "900000201",
+                                          "kind": "album"
+                                        },
+                                        "editorialArtwork": {
+                                          "subscriptionHero": {
+                                            "url": "https://x/lantern-hero/{w}x{h}{c}.{f}",
+                                            "width": 3840,
+                                            "height": 2160,
+                                            "bgColor": "1a2b3c"
+                                          }
+                                        },
+                                        "plainEditorialNotes": {
+                                          "tagline": "An  invented tagline",
+                                          "short": "Not this"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
                             },
                             {
                               "id": "banner-2",
                               "type": "editorial-elements",
-                              "attributes": {"editorialElementKind": "320"},
-                              "relationships": {"contents": {"data": [
-                                {"id": "900000301", "type": "apple-curators", "attributes": {
-                                  "name": "Apple Music Folk", "shortName": "Folk",
-                                  "url": "https://music.apple.com/gb/curator/folk/900000301",
-                                  "artwork": {"url": "https://x/folk/{w}x{h}{c}.{f}", "bgColor": "6b4f2a"}}}
-                              ]}}
+                              "attributes": {
+                                "editorialElementKind": "320",
+                                "designBadge": "FEATURED CURATOR",
+                                "designTag": "Invented Tag",
+                                "editorialArtwork": {
+                                  "superHeroWide": {
+                                    "url": "https://x/folk-wide/{w}x{h}{c}.{f}",
+                                    "width": 4320,
+                                    "height": 1080,
+                                    "bgColor": "0A0B0C"
+                                  }
+                                },
+                                "plainEditorialNotes": {
+                                  "short": "Invented short notes"
+                                }
+                              },
+                              "relationships": {
+                                "contents": {
+                                  "data": [
+                                    {
+                                      "id": "900000301",
+                                      "type": "apple-curators",
+                                      "attributes": {
+                                        "name": "Apple Music Folk",
+                                        "shortName": "Folk",
+                                        "url": "https://music.apple.com/gb/curator/folk/900000301",
+                                        "artwork": {
+                                          "url": "https://x/folk/{w}x{h}{c}.{f}",
+                                          "bgColor": "6b4f2a"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
                             },
                             {
                               "id": "banner-3",
                               "type": "editorial-elements",
-                              "attributes": {"editorialElementKind": "317"},
-                              "relationships": {"contents": {"data": [
-                                {"id": "900000401", "type": "uploaded-videos", "attributes": {"name": "Behind the Curtain", "artistName": "Someone"}}
-                              ]}}
+                              "attributes": {
+                                "editorialElementKind": "317"
+                              },
+                              "relationships": {
+                                "contents": {
+                                  "data": [
+                                    {
+                                      "id": "900000401",
+                                      "type": "uploaded-videos",
+                                      "attributes": {
+                                        "name": "Behind the Curtain",
+                                        "artistName": "Someone"
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
                             }
                           ]
                         }
@@ -61,55 +149,218 @@
                     {
                       "id": "best-new-songs",
                       "type": "editorial-elements",
-                      "attributes": {"editorialElementKind": "327", "name": "Best New Songs", "displayStyle": "compact"},
-                      "relationships": {"contents": {"data": [
-                        {"id": "900000501", "type": "songs", "attributes": {
-                          "name": "Quiet Engines", "artistName": "Paper Parachutes", "albumName": "Lantern Season",
-                          "durationInMillis": 201000, "artwork": {"url": "https://x/lantern/{w}x{h}{c}.{f}", "bgColor": "2a3b4c"},
-                          "playParams": {"id": "900000501", "kind": "song"}}},
-                        {"id": "900000502", "type": "songs", "attributes": {
-                          "name": "Borrowed Light", "artistName": "The Tidewater Choir",
-                          "durationInMillis": 187000, "contentRating": "explicit",
-                          "playParams": {"id": "900000502", "kind": "song"}}}
-                      ]}}
+                      "attributes": {
+                        "editorialElementKind": "327",
+                        "name": "Best New Songs",
+                        "displayStyle": "compact"
+                      },
+                      "relationships": {
+                        "contents": {
+                          "data": [
+                            {
+                              "id": "900000501",
+                              "type": "songs",
+                              "attributes": {
+                                "name": "Quiet Engines",
+                                "artistName": "Paper Parachutes",
+                                "albumName": "Lantern Season",
+                                "durationInMillis": 201000,
+                                "artwork": {
+                                  "url": "https://x/lantern/{w}x{h}{c}.{f}",
+                                  "bgColor": "2a3b4c"
+                                },
+                                "playParams": {
+                                  "id": "900000501",
+                                  "kind": "song"
+                                }
+                              }
+                            },
+                            {
+                              "id": "900000502",
+                              "type": "songs",
+                              "attributes": {
+                                "name": "Borrowed Light",
+                                "artistName": "The Tidewater Choir",
+                                "durationInMillis": 187000,
+                                "contentRating": "explicit",
+                                "playParams": {
+                                  "id": "900000502",
+                                  "kind": "song"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
                     },
                     {
                       "id": "new-releases",
                       "type": "editorial-elements",
-                      "attributes": {"editorialElementKind": "326", "name": "New Releases"},
-                      "relationships": {"contents": {"data": [
-                        {"id": "900000201", "type": "albums", "attributes": {
-                          "name": "Lantern Season", "artistName": "Paper Parachutes", "trackCount": 11,
-                          "artwork": {"url": "https://x/lantern/{w}x{h}{c}.{f}", "bgColor": "2a3b4c"}}},
-                        {"id": "900000202", "type": "albums", "attributes": {
-                          "name": "Static Skyline", "artistName": "Paper Parachutes", "trackCount": 12}},
-                        {"id": "900000203", "type": "albums"}
-                      ]}}
+                      "attributes": {
+                        "editorialElementKind": "326",
+                        "name": "New Releases"
+                      },
+                      "relationships": {
+                        "contents": {
+                          "data": [
+                            {
+                              "id": "900000201",
+                              "type": "albums",
+                              "attributes": {
+                                "name": "Lantern Season",
+                                "artistName": "Paper Parachutes",
+                                "trackCount": 11,
+                                "artwork": {
+                                  "url": "https://x/lantern/{w}x{h}{c}.{f}",
+                                  "bgColor": "2a3b4c"
+                                }
+                              }
+                            },
+                            {
+                              "id": "900000202",
+                              "type": "albums",
+                              "attributes": {
+                                "name": "Static Skyline",
+                                "artistName": "Paper Parachutes",
+                                "trackCount": 12
+                              }
+                            },
+                            {
+                              "id": "900000203",
+                              "type": "albums"
+                            }
+                          ]
+                        }
+                      }
                     },
                     {
                       "id": "rooms",
                       "type": "editorial-elements",
-                      "attributes": {"editorialElementKind": "385", "name": "Browse by Mood"},
-                      "relationships": {"children": {"data": [
-                        {"id": "room-1", "type": "editorial-elements", "attributes": {"editorialElementKind": "394", "link": {"url": "https://music.apple.com/gb/room/1"}},
-                         "relationships": {"contents": {"data": []}}}
-                      ]}}
+                      "attributes": {
+                        "editorialElementKind": "385",
+                        "name": "Browse by Mood"
+                      },
+                      "relationships": {
+                        "children": {
+                          "data": [
+                            {
+                              "id": "room-1",
+                              "type": "editorial-elements",
+                              "attributes": {
+                                "editorialElementKind": "394",
+                                "link": {
+                                  "url": "https://music.apple.com/gb/room/1"
+                                }
+                              },
+                              "relationships": {
+                                "contents": {
+                                  "data": []
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
                     },
                     {
                       "id": "stations",
                       "type": "editorial-elements",
-                      "attributes": {"editorialElementKind": "326", "name": "Stations", "displayStyle": "expanded"},
-                      "relationships": {"contents": {"data": [
-                        {"id": "ra.900000601", "type": "stations", "attributes": {
-                          "name": "Paper Parachutes Radio", "isLive": false,
-                          "artwork": {"url": "https://x/station/{w}x{h}{c}.{f}", "bgColor": "111111"},
-                          "playParams": {"id": "ra.900000601", "kind": "radioStation"}}}
-                      ]}}
+                      "attributes": {
+                        "editorialElementKind": "326",
+                        "name": "Stations",
+                        "displayStyle": "expanded"
+                      },
+                      "relationships": {
+                        "contents": {
+                          "data": [
+                            {
+                              "id": "ra.900000601",
+                              "type": "stations",
+                              "attributes": {
+                                "name": "Paper Parachutes Radio",
+                                "isLive": false,
+                                "artwork": {
+                                  "url": "https://x/station/{w}x{h}{c}.{f}",
+                                  "bgColor": "111111"
+                                },
+                                "playParams": {
+                                  "id": "ra.900000601",
+                                  "kind": "radioStation"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
                     },
                     {
                       "id": "links",
                       "type": "editorial-elements",
-                      "attributes": {"editorialElementKind": "391", "name": "More", "links": [{"label": "Charts", "url": "https://music.apple.com/gb/charts"}]}
+                      "attributes": {
+                        "editorialElementKind": "391",
+                        "name": "More",
+                        "links": [
+                          {
+                            "label": "Charts",
+                            "url": "https://music.apple.com/gb/charts"
+                          },
+                          {
+                            "label": "Invented Room",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewRoom?fcId=900000701&cc=gb"
+                          },
+                          {
+                            "label": "Invented Collection",
+                            "url": "https://itunes.apple.com/gb/collection/invented-collection/id900000702?fcId=900000703&mt=14"
+                          },
+                          {
+                            "label": "Invented Grouping",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewGrouping?cc=gb&id=900000704"
+                          },
+                          {
+                            "label": "Invented Multiroom",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewMultiRoom?cc=gb&fcId=900000705"
+                          },
+                          {
+                            "label": "Invented Genre Charts",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewTop?genreId=21&cc=gb"
+                          },
+                          {
+                            "label": "Invented Concerts",
+                            "url": "https://example.com/invented-concerts",
+                            "target": "external"
+                          },
+                          {
+                            "label": "Invented Room",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewRoom?fcId=900000701&cc=gb"
+                          },
+                          {
+                            "label": "",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewRoom?fcId=900000709"
+                          },
+                          {
+                            "label": "No Id",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewRoom?cc=gb"
+                          },
+                          {
+                            "label": "Not Secure",
+                            "url": "http://example.com/invented"
+                          },
+                          "junk"
+                        ]
+                      }
+                    },
+                    {
+                      "id": "genres",
+                      "type": "editorial-elements",
+                      "attributes": {
+                        "editorialElementKind": "322",
+                        "links": [
+                          {
+                            "label": "Invented Folk",
+                            "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewGrouping?cc=gb&id=900000706"
+                          }
+                        ]
+                      }
                     }
                   ]
                 }
@@ -120,5 +371,9 @@
       }
     }
   ],
-  "meta": {"metrics": {"reco_id": "invented"}}
+  "meta": {
+    "metrics": {
+      "reco_id": "invented"
+    }
+  }
 }

@@ -56,7 +56,10 @@ artists, albums, songs, playlists, videos and stations, the Radio page's shows, 
 invented curators with their pages in categories/), and the Charts page's
 (charts.json, normalize.charts_shelves()'s shape: the demo's own songs, albums,
 playlists and videos ranked, and invented Daily Top 100 and City Charts playlists of
-its songs, for invented places), and each hand-written album's songs' credits (credits/<catalog
+its songs, for invented places), the New page's (browse.json,
+normalize.editorial_shelves()'s shape: invented banners over the demo's own albums and
+playlists, its shelves, and More to Explore's invented links, each link's page in rooms/,
+groupings/ or multirooms/), and each hand-written album's songs' credits (credits/<catalog
 id>.json, normalize.song_credits()'s shape: invented performers, writers, producers and
 engineers; the last album's last song none). Last it writes .demo-stamp, the
 record of what made it (demo_stamp.py), by which the harness and demo.sh know an out-of-date
@@ -2399,6 +2402,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                          library['generated'])
     build_charts_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
                       own_videos, draw_cover, thumb_for, cover_size, library['generated'])
+    build_new_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
+                   own_videos, radio_stations, draw_cover, library['generated'])
     build_recently_played(out_dir, recently_played_items, library['generated'])
     build_credits(out_dir, albums[:len(ALBUMS_DATA)], library['generated'])
 
@@ -3009,6 +3014,128 @@ def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for,
     }
     with open(os.path.join(out_dir, 'charts.json'), 'w', encoding='utf-8') as f:
         json.dump(answer, f, indent=2)
+
+
+# The New page's invented banners: the label over each, its line under the title, and which
+# of the library's albums (by place) or playlists (`playlist`) it shows; the last has no
+# banner of its own (its cover stands in, as when Apple's answer has none).
+DEMO_BANNERS = [('NEW ALBUM', 'A tide of tape-looped guitars, out now', 'album', 0),
+                ('UPDATED PLAYLIST', 'Fresh picks for slow mornings', 'playlist', 1),
+                ('PRE-RELEASE', 'Hear the first two songs before Friday', 'album', 3),
+                ('NEW EP', 'Four songs recorded live to tape', 'album', 5),
+                ('EXCLUSIVE', 'The complete sessions, remastered', 'album', 7)]
+# Its links (More to Explore, then the untitled genres' row): (label, kind, id); the pages
+# they open are written beside it (rooms/, groupings/, multirooms/).
+DEMO_EXPLORE = [('Late-Night Listening', 'room', 'demo.room01'),
+                ('Quiet Mornings', 'room', 'demo.room02'),
+                ('Sounds of the Coast', 'grouping', 'demo.grouping01'),
+                ('Instrumental Worlds', 'multiroom', 'demo.multiroom01'),
+                ('Charts', 'charts', 'charts'),
+                ('Live Near You', 'link', 'https://example.org/live-near-you')]
+DEMO_BANNER_SIZE = 1280  # an invented banner's width; 16:9, as Apple's wide cut is shown
+
+
+def build_new_page(out_dir, albums, playlists, videos, stations, draw_cover, generated):
+    """Write browse.json, the New page's answer (normalize.editorial_shelves()'s shape, kept
+    as the engine keeps it, stamped `cached` with the library's date): the featured shelf of
+    banners (DEMO_BANNERS: the library's own albums and playlists, so their pages are the
+    library's, each with Apple's label, a line and, but the last, a 16:9 banner drawn here,
+    on disk as `art` where Apple's would be a URL to fetch; `form: 'banners'`), then New
+    Releases, playlists, stations and music videos of the library's, and `links`: More to
+    Explore (DEMO_EXPLORE) and an untitled row of the albums' genres. Each link's page is
+    written too: rooms/<id>.json (normalize.editorial_room()'s shape), groupings/<id>.json
+    (editorial_grouping()'s: the genres' pages too) and multirooms/<id>.json
+    (editorial_multiroom()'s)."""
+    art_dir = os.path.join(out_dir, 'art')
+
+    def brief(item, **changes):
+        return dict(item, groups=[], **changes)
+
+    def write(folder, name, answer):
+        os.makedirs(os.path.join(out_dir, folder), exist_ok=True)
+        answer = dict(answer, cached=generated,
+                      demo=True)  # invented: the demo engine answers only these
+        with open(os.path.join(out_dir, folder, f'{name}.json'), 'w', encoding='utf-8') as f:
+            json.dump(answer, f, indent=2)
+
+    shown = [playlist for playlist in playlists
+             if not (playlist.get('attributes') or {}).get('isFavourites')]
+    banners = []
+    for number, (badge, tagline, kind, place) in enumerate(DEMO_BANNERS):
+        item = (albums if kind == 'album' else shown)[place % len(albums if kind == 'album'
+                                                             else shown)]
+        extra = {'badge': badge, 'tagline': tagline}
+        if number < len(DEMO_BANNERS) - 1:
+            palette = PALETTES[(number * 7 + 3) % len(PALETTES)]
+            path = os.path.join(art_dir, hashlib.sha1(
+                f"banner.new.{item['id']}".encode()).hexdigest() + '.jpg')
+            draw_cover(out_path=path, title=item['title'], subtitle=item['subtitle'],
+                       badge=None, palette=palette, motif=MOTIFS[number % len(MOTIFS)],
+                       is_artist=False, size=DEMO_BANNER_SIZE, wide=True)
+            extra['banner'] = {'url': None, 'art': path, 'crop': 'sr',
+                               'width': DEMO_BANNER_SIZE,
+                               'height': round(DEMO_BANNER_SIZE * 9 / 16),
+                               'color': palette[0]}
+        banners.append(brief(item, **extra))
+
+    def links(rows):
+        return [{'title': label, 'kind': kind, 'id': link_id,
+                 'url': link_id if kind == 'link' else None} for label, kind, link_id in rows]
+
+    genres = sorted({album['genre'] for album in albums})[:9]
+    genre_rows = [(genre, 'grouping', f'demo.genre{number:02d}')
+                  for number, genre in enumerate(genres)]
+    answer = {
+        'shelves': [
+            {'key': 'new-featured', 'title': '', 'featured': True, 'form': 'banners',
+             'items': banners},
+            {'key': 'new-releases', 'title': 'New Releases',
+             'items': [brief(album) for album in albums[1::2]]},
+            {'key': 'new-playlists', 'title': 'Playlists to Try',
+             'items': [brief(playlist) for playlist in shown]},
+            {'key': 'new-stations', 'title': 'Stations to Tune In',
+             'items': [brief(station) for station in stations]},
+            {'key': 'new-videos', 'title': 'New Music Videos',
+             'items': [brief(video) for video in videos]},
+        ],
+        'links': [
+            {'key': 'new-explore', 'title': 'More to Explore', 'links': links(DEMO_EXPLORE)},
+            {'key': 'new-genres', 'title': '', 'links': links(genre_rows)},
+        ],
+    }
+    write('', 'browse', answer)
+
+    write('rooms', 'demo.room01', {'id': 'demo.room01', 'title': 'Late-Night Listening',
+                                   'items': [brief(album) for album in albums[::2]]})
+    write('rooms', 'demo.room02', {'id': 'demo.room02', 'title': 'Quiet Mornings',
+                                   'items': [brief(playlist) for playlist in shown]
+                                   + [brief(album) for album in albums[1::3]]})
+    write('groupings', 'demo.grouping01', {
+        'id': 'demo.grouping01', 'title': 'Sounds of the Coast',
+        'shelves': [
+            {'key': 'grp-shore', 'title': 'Shoreline Albums',
+             'items': [brief(album) for album in albums[2::3]]},
+            {'key': 'grp-playlists', 'title': 'Coastal Playlists',
+             'items': [brief(playlist) for playlist in shown[::2]]},
+        ],
+        'links': [{'key': 'grp-more', 'title': 'More Like This',
+                   'links': links(DEMO_EXPLORE[:2])}]})
+    write('multirooms', 'demo.multiroom01', {
+        'id': 'demo.multiroom01', 'title': 'Instrumental Worlds',
+        'shelves': [
+            {'key': 'mr-quiet', 'title': 'Quiet Instrumentals',
+             'items': [brief(album) for album in albums[::3]]},
+            {'key': 'mr-videos', 'title': 'Watch and Listen',
+             'items': [brief(video) for video in videos]},
+        ],
+        'links': []})
+    for genre, _kind, grouping_id in genre_rows:
+        write('groupings', grouping_id, {
+            'id': grouping_id, 'title': genre,
+            'shelves': [{'key': f'grp-{grouping_id}-albums', 'title': f'Essential {genre}',
+                         'items': [brief(album) for album in albums
+                                   if album['genre'] == genre]}],
+            'links': []})
 
 
 # ---------------------------------------------------------------------------

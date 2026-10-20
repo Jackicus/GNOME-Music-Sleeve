@@ -62,7 +62,8 @@ log = logging.getLogger(__name__)
 # destinations' pages are kept for good.
 ROOT_LIMIT = 8
 # The kinds open_item shows a page for: it uncovers the content for them first.
-PAGE_KINDS = ('album', 'playlist', 'artist', 'folder', 'category', 'charts')
+PAGE_KINDS = ('album', 'playlist', 'artist', 'folder', 'category', 'charts', 'room',
+              'grouping', 'multiroom')
 # The fixed destinations whose pages show the engine's answers for the account signed in,
 # forgotten at sign-out (forget_account_pages). Home is kept, forgetting its Recently Played.
 ACCOUNT_PAGES = ('new', 'radio', 'made-for-you', 'search')
@@ -440,7 +441,8 @@ class Window(Adw.ApplicationWindow):
         (open_artist_page(), which Go to Artist opens); playlist folders their
         grid of folders and playlists (the page follows the folder Item: a rename, a
         deletion), search categories their page of shelves, the Top Charts tile the Charts
-        page (pages/charts.py), over the page shown, which the
+        page (pages/charts.py), More to Explore's links their room's grid or their grouping's
+        or multiroom's shelves (pages/editorial.py), over the page shown, which the
         Now Playing sheet then uncovers (its Go to Album and Go to Artist). A station,
         a song (a search hit, a Best New Songs tile) or a music video has no page: it plays,
         as on music.apple.com (a video as its audio, in the headless engine, as the context
@@ -478,6 +480,10 @@ class Window(Adw.ApplicationWindow):
             from .pages import charts
 
             page = charts.create(item)
+        elif item.kind in ('room', 'grouping', 'multiroom'):
+            from .pages import editorial
+
+            page = editorial.create(self._library, item)
         elif item.kind in ('station', 'song', 'video'):
             self.play_request(item.play)
             return

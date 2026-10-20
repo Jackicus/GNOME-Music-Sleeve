@@ -322,9 +322,41 @@ each a shelf by `attributes.editorialElementKind` (checked live on 2026-10-20):
 `normalize._grouping_shelves()` makes a shelf of every titled element with something in its
 `contents` or its children's (326, 327, 385's curators, 488), and of the first untitled one
 made of children (316) the featured shelf; `radio_shelves()` tells 316 and 488 apart
-(`RADIO_HERO_KIND`, `RADIO_LIVE_KIND`). The 391 and 322 links, a room (a 326's See All), and
-the design keys (`designBadge`, `designTag`, `stationGlyph`, a 394's `artwork`) are not
-used yet ("The editorial pages' links and rooms", below).
+(`RADIO_HERO_KIND`, `RADIO_LIVE_KIND`). New's (`editorial_shelves()`, through
+`_grouping_parts()`) also has, for the featured shelf's items, what their banners show
+(`featured_extras()`, below) and, as `links`, the 391 and 322 rows (`element_links()`,
+below). A room (a 326's See All), `designTag`, `stationGlyph` and a 394's `artwork` are not
+used yet.
+
+### New's banners and More to Explore (#370)
+
+New's answer (`Engine.browse()`, `normalize.editorial_shelves()`) is `{shelves, links}`:
+
+- the featured shelf's items carry, from the hero row's child that holds each:
+  `badge`, the child's `designBadge` ("NEW ALBUM", in the account's language); `banner`, a
+  wide artwork as `normalize.wide_artwork()` makes one (`{url, crop, width, height,
+  color}`, the template cut `sr`, its source's shape): the child's own `editorialArtwork`
+  (a 320's), else its content's (a 317's), the first of `subscriptionHero` and
+  `superHeroWide` (`BANNER_ARTWORK_KEYS`); and `tagline`, the content's
+  `plainEditorialNotes` `tagline`, else `short` (else the child's). The shelf is `form:
+  'banners'` when one item has a banner (the page's wide cards), else a plain featured
+  shelf (hero cards). Radio's hero gets none of it;
+- `links`, each row `{key, title, links}` (391's `name` its title, 322's untitled), each
+  link `normalize.editorial_link()`'s `{title, kind, id, url[, genre]}`, each once:
+
+| URL | `kind` | What the app opens |
+|---|---|---|
+| `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>`, `https://music.apple.com/<sf>/room/<id>` | `room` | `Engine.room(id)`: `GET /v1/editorial/<sf>/rooms/<id>` (`api.ROOM_ENDPOINT`), `rooms` with `title`, `sorts`, `contents` (up to 100): `normalize.editorial_room()`'s `{id, title, items}`, a grid |
+| `…/viewGrouping?cc=<sf>&id=<id>` | `grouping` | `Engine.grouping(id)`: `GET /v1/editorial/<sf>/groupings/<id>` with `api.GROUPING_PARAMS` (`platform=web`, without which it is a 400, "A single platform must be supplied"; `extend=editorialArtwork`), the same shape as New: `editorial_grouping()`'s `{id, title, shelves, links}` |
+| `…/viewMultiRoom?cc=<sf>&fcId=<id>` | `multiroom` | `Engine.multiroom(id)`: `GET /v1/editorial/<sf>/multirooms/<id>` with `api.MULTIROOM_PARAMS` (`extend=editorialArtwork,uber,lockupStyle`): `multirooms` with `title`, `uber` (`masterArt`, `name`, `description`, colours) and `children` (404 a header, 345 shelves with `contents` and `room`): `editorial_multiroom()`'s `{id, title, shelves, links}` |
+| `…/viewTop?genreId=<n>`, `https://music.apple.com/<sf>/charts` | `charts` | the Charts page (`genre` kept for #404; not tried live) |
+| any other https URL, or one with `target: 'external'` (`https://music.apple.com/concerts`) | `link` | the browser |
+
+The `music.apple.com/<sf>/room/<id>` and `/charts` forms were not among the links seen live
+(checked on 2026-10-20): they are read as the web player's own routes. A link's id goes into
+a path: one that is not `api.is_editorial_id()` is no link. Each of
+the three pages is kept a day (`rooms/`, `groupings/`, `multirooms/`, by id). The
+`uber`'s art and description, and a 345's `room`, are not shown.
 
 ### The Radio page
 
@@ -507,23 +539,14 @@ MusicKit posts `queueItemsDidChange` during `spliceQueueItems` or after it. `que
 web player's Clear) empties the whole queue (`position` -1, `length` 0) while the current
 item plays on, so it is not Up Next's Clear.
 
-### The editorial pages' links and rooms (#370)
+### The editorial pages' rooms and design keys
 
 What the editorial groupings ("The editorial groupings" above) hold that the app does not
-use yet: the 391 (More to Explore) and 322 (genre) elements' `links`, a 326 shelf's `room`
-(its See All), and the design keys (`designBadge`, `designTag`, `stationGlyph`, a 394's
-`artwork`). The links' URLs and what opens them (the web player's routes):
-
-| URL | Request |
-|---|---|
-| `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>` | `GET /v1/editorial/<sf>/rooms/<id>`: `rooms` with `title`, `sorts`, `contents` (up to 100) |
-| `…/viewGrouping?cc=<sf>&id=<id>` | `GET /v1/editorial/<sf>/groupings/<id>?platform=web`, the same shape as New; without `platform` a 400 ("A single platform must be supplied") |
-| `…/viewMultiRoom?cc=<sf>&fcId=<id>` | `GET /v1/editorial/<sf>/multirooms/<id>?extend=editorialArtwork,uber,lockupStyle`: `multirooms` with `title`, `uber` (`masterArt`, `name`, `description`, colours) and `children` (404 a header, 345 shelves with `contents` and `room`) |
-| `…/viewTop?genreId=<n>` | a chart page, by genre (not tried; the Charts page above, #404) |
-| `https://music.apple.com/concerts` (`target: 'external'`) | a web page |
-
-A live station's events also carry `heroArtwork`, and some an `editorialVideo` (the web
-player's `extend[station-events]=editorialVideo`), which the Radio page does not use.
+use yet: a 326 shelf's `room` (its See All: `GET /v1/editorial/<sf>/rooms/<id>`, which
+`Engine.room()` asks for a link's room), `designTag`, `stationGlyph`, a 394's `artwork`, a
+multiroom's `uber`. A live station's events also carry `heroArtwork`, and some an
+`editorialVideo` (the web player's `extend[station-events]=editorialVideo`), which the
+Radio page does not use.
 
 ### A radio show's banner (#401)
 
@@ -698,7 +721,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 | `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
 | `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |

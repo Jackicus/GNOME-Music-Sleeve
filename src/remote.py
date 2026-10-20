@@ -223,15 +223,24 @@ def banner_url(banner, pixels):
     return url.replace('{w}', str(width)).replace('{h}', str(height))
 
 
-async def fetch_banner(banner, pixels):
-    """The banner for a header `pixels` device pixels wide on disk under <cache>/remote-art/
-    (named by its sized URL's hash): its path once it is there, or None (no URL, or the fetch
-    failed: logged). Concurrent calls for one size share the download."""
+def banner_path(banner, pixels):
+    """Where fetch_banner() keeps the banner for `pixels` device pixels: under
+    <cache>/remote-art/, named by its sized URL's hash; None without an https template.
+    Nothing is asked of the disk."""
     url = banner_url(banner, pixels)
     if url is None:
         return None
-    path = os.path.join(str(config.cache_dir()), 'remote-art', normalize.artwork_filename(url))
-    return path if await _fetch(path, url) is not None else None
+    return os.path.join(str(config.cache_dir()), 'remote-art', normalize.artwork_filename(url))
+
+
+async def fetch_banner(banner, pixels):
+    """The banner for a header `pixels` device pixels wide on disk under <cache>/remote-art/
+    (banner_path()): its path once it is there, or None (no URL, or the fetch failed:
+    logged). Concurrent calls for one size share the download."""
+    path = banner_path(banner, pixels)
+    if path is None:
+        return None
+    return path if await _fetch(path, banner_url(banner, pixels)) is not None else None
 
 
 async def _fetch(path, url):
@@ -331,7 +340,8 @@ def remote_shelves(dicts):
     carries the offset of Apple's next page of it as `next` (None when Apple has no more),
     and `more` while there is one, so it offers See All. A chart's shelf keeps what it is as
     attributes of its ShelfModel: `ranked` (its items numbered, widgets.shelf) and `form`
-    ('songs': a list of songs, widgets.song_shelf), as the dict has them."""
+    ('songs': a list of songs, widgets.song_shelf; 'banners': New's wide banner cards,
+    widgets.banner_tile), as the dict has them."""
     shelves = []
     for data in dicts or []:
         if not isinstance(data, dict):
