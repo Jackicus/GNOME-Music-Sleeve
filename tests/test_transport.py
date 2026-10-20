@@ -108,8 +108,8 @@ class Button:
 
 class RatingEngine(GObject.Object):
     """An engine whose rating commands are recorded and gated: `rating` answers through
-    `rated` what `ratings` holds (1 loved, 0 not), `love`/`unlove` wait for `gate` and then
-    raise when `fail` says so."""
+    `rated` what `ratings` holds (1 loved, -1 Suggest Less, 0 neither), `love`/`unlove`
+    wait for `gate` and then raise when `fail` says so."""
 
     __gsignals__ = {
         'event': (GObject.SignalFlags.RUN_FIRST, None, (str, object)),
@@ -207,6 +207,26 @@ class HeartTest(unittest.TestCase):
             engine.read_gate.set()
             await app.settle()
             self.assertTrue(button.active)  # the read was cancelled: nothing flipped
+        asyncio.run(go())
+
+    def test_suggest_less_empties_the_heart(self):
+        """A menu's Suggest Less replaces the favourite (the rating -1): the heart shows
+        the song not loved, and a read that answers -1 does too."""
+        async def go():
+            heart, button, player, events, engine, app = make_heart()
+            await app.settle()
+            engine.ratings['1000000001'] = 1
+            events.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+            await app.settle()
+            self.assertTrue(button.active)
+            engine.emit('rated', 'song', '1000000001', -1)
+            self.assertFalse(button.active)
+            self.assertEqual(button.icon, 'heart-outline-symbolic')
+            other = dict(TRACK, id='i.demo0002', catalogId='1000000002', index=3)
+            engine.ratings['1000000002'] = -1
+            events.event('nowPlayingItemDidChange', {'track': other, 'index': 3})
+            await app.settle()
+            self.assertFalse(button.active)
         asyncio.run(go())
 
     def test_the_same_song_again_is_not_read_again(self):
