@@ -3,7 +3,8 @@
 
 """AppleMusicPreferencesDialog: app.preferences (Ctrl+,).
 
-General: Background Playback (background-playback) and Discord Presence (discord-presence);
+General: Background Playback (background-playback), Autoplay (autoplay), Notify When the Song
+Changes (notify-song-change) and Discord Presence (discord-presence);
 how often the library refreshes (sync-interval); Last Refreshed, saying when it last did
 (last-sync, as sync.last_sync_text() words it) or "Refreshing…" while it does, with Refresh
 (app.sync, off while it cannot run); the cache's size, measured in a thread and again after
@@ -44,6 +45,7 @@ log = logging.getLogger(__name__)
 BINDINGS = (
     ('background_row', 'active', 'background-playback'),
     ('autoplay_row', 'active', 'autoplay'),
+    ('notify_song_row', 'active', 'notify-song-change'),
     ('discord_row', 'active', 'discord-presence'),
     ('more_suggestions_row', 'active', 'more-suggestions'),
     ('preview_suggestions_row', 'active', 'preview-suggestions'),
@@ -60,6 +62,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     engine_page = Gtk.Template.Child()
     background_row = Gtk.Template.Child()
     autoplay_row = Gtk.Template.Child()
+    notify_song_row = Gtk.Template.Child()
     discord_row = Gtk.Template.Child()
     more_suggestions_row = Gtk.Template.Child()
     preview_suggestions_row = Gtk.Template.Child()

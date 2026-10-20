@@ -133,6 +133,7 @@ install_data(
   'shortcuts.py',
   'sidebar.py',
   'sidebar_view.py',
+  'song_notification.py',
   'suggestions.py',
   'sync.py',
   'timing.py',

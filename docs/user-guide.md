@@ -35,6 +35,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - Closing the window quits the app and stops Chrome. To keep the music playing with the window
   closed, turn on Background Playback in Preferences (<kbd>Ctrl</kbd>+<kbd>,</kbd>); the
   system's media controls bring the window back.
+- Preferences › General › Playback › Notify When the Song Changes shows a notification with
+  the new song's title, artist and cover each time the song changes while the app is in the
+  background (its window closed, or another window in front). It is off until you turn it on.
+  Each notification replaces the last, so they never pile up; a song you skip within a second
+  is passed over, and the first song after you start the app, a live station's next programme
+  and anything that changes while you are looking at the window are not announced. Clicking
+  the notification brings the window back.
 - Preferences › General › Playback › Discord Presence puts the song playing on your Discord
   profile, as "Listening to Apple Music" with the title, the artist, the album and its cover,
   and the artist in the status under your name. It is off until you turn it on, and it needs
