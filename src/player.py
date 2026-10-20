@@ -59,6 +59,8 @@ the playback commands as thin coroutines over the engine.
                                 # not asked yet: player.restored is True until the first Play
     await player.restore_session()   # hand it to MusicKit and play it (toggle and resume do)
     player.forget_session()     # sign-out, Clear Cache: the session restored goes
+    player.engine_lost()        # the engine going down on its own (its `lost`): what
+                                # played kept as a session restored, paused
 
 The properties change only from the engine's events (playbackStateDidChange,
 nowPlayingItemDidChange, playbackTimeDidChange, playbackDurationDidChange,
@@ -75,9 +77,10 @@ position, which MusicKit reports once more after a track change, is dropped here
 are asked of the engine (lyrics(), cached on disk) once per catalog song as it starts,
 never on a timer. A state or track event that arrives while a read is on its way is newer
 than the read's answer, which then sets only the modes and the volume. When the engine
-goes down everything resets to nothing playing, at once; so it does when the page loads a
+is stopped everything resets to nothing playing, at once; so it does when the page loads a
 new document (the engine's `bridgeReset` event), and now_playing() is read again for what
-the new one holds.
+the new one holds. When it is lost (engine_lost(), from the engine's `lost`: nobody asked
+for it to stop) what played is kept as a session restored, paused, for Play to resume.
 A preview (Apple's clip of a suggested song, engine.preview()) is not the queue: MusicKit
 pauses for it, and the state, the track and the times stay MusicKit's, so the bar, the sheet
 and MPRIS show the queue paused, which it is. Only `preview` says a clip plays, from the
@@ -154,6 +157,7 @@ from gi.repository import Gio, GLib, GObject
 
 from .backend.errors import EngineError
 from .lyrics import Lyrics
+from .session import user_queue
 
 log = logging.getLogger(__name__)
 
@@ -474,6 +478,8 @@ class Player(GObject.Object):
         if self._queue_events != events:
             log.debug('queue: an event arrived meanwhile; the answer is dropped')
             return
+        if self.restored:
+            return  # MusicKit holds nothing of the session restored (the engine was lost)
         self.apply_queue(answer)
 
     def apply(self, now_playing):
@@ -1026,6 +1032,16 @@ class Player(GObject.Object):
         index = session.get('index', 0)
         if not queue or not isinstance(index, int) or not 0 <= index < len(queue):
             return False
+        self._show_session(session)
+        log.info('the last session restored: %d in the queue, at %d', len(queue), index)
+        return True
+
+    def _show_session(self, session):
+        """`session` (restore()'s, checked, or engine_lost()'s) as the Player's own, paused:
+        its queue, its item at its position, its repeat mode, and its shuffle mode (off
+        unless it says so: the file's comes back in its order)."""
+        queue = session['queue']
+        index = session['index']
         self._session = session
         self._queue_offset = session.get('offset', 0)
         self._source = session.get('source')
@@ -1037,10 +1053,49 @@ class Player(GObject.Object):
         self._set_state('paused')
         self._set_position(_number(session.get('position')),
                            _number(session.get('duration'), self.duration) or None)
-        self._set_shuffle(False)
+        self._set_shuffle(session.get('shuffle', False))
         self._set_repeat(session.get('repeat'))
-        log.info('the last session restored: %d in the queue, at %d', len(queue), index)
-        return True
+
+    def engine_lost(self):
+        """The engine is going down on its own (Chrome crashed or was killed, the page
+        crashed, closed or stopped answering: the engine's `lost`, which the app passes on
+        unless it quits or the account changes): what shows is kept as a session restored,
+        paused at the position it reached, with its queue (the user's: what autoplay added
+        after the item goes, as from the file), its source and its repeat and shuffle modes,
+        so the engine's `down` that follows changes nothing and Play starts the engine again
+        and resumes it (restore_session). A live station is kept stopped, without a position
+        (_keep_station). Under a play request the item shown is kept without a source (the
+        one noted may be the new request's), and so is a queue the user edited away from its
+        source (_follow_source, on the store); the request's failure gives back a session it
+        took. The edits out to MusicKit (and a Clear's Undo) end here: the next page's
+        snapshots know nothing of them. Nothing to keep (no item, a session restored
+        already, an item that cannot be queued again): the `down` resets, as after a stop."""
+        if self.restored or self.track is None:
+            return
+        track = self.track
+        station = self._station_playing()
+        if station is None and track.kind not in ('song', 'video'):
+            return
+        self._release_hold()  # the item shows paused from here, not a play held
+        self._set_preview('')
+        self._edits_out.clear()
+        self._cleared = None
+        self._capabilities = {}
+        if station is not None:
+            self._keep_station(*station)
+            return
+        entries = [entry.raw for entry in self.queue]
+        index = self.queue_index
+        self._follow_source(entries)  # an edit MusicKit never answered is the store's only
+        source = self.source if not self.pending else None
+        if not 0 <= index < len(entries) or entries[index].get('id') != track.id:
+            entries, index, source = [dict(track.raw)], 0, None
+        self._cancel_clear()  # an item in its grace is what shows
+        self._show_session({'queue': user_queue(entries, index), 'index': index,
+                            'offset': 0, 'position': self.estimated_position(),
+                            'duration': self.duration, 'repeat': self.repeat,
+                            'shuffle': self.shuffle, 'source': source})
+        log.info('the engine was lost: the item kept, paused, for Play to resume')
 
     def forget_session(self):
         """Sign-out or Clear Cache: a session restored goes, and the bar with it. What
@@ -1272,7 +1327,8 @@ class Player(GObject.Object):
                                               restoring)
                         self._app.toast(left_out_message(left_out))
                 except EngineError as error:
-                    self._source, self._source_ids = source
+                    if held is not None or not self.restored:  # else engine_lost's choice
+                        self._source, self._source_ids = source
                     if not self._give_back(held, error, restoring is not None):
                         raise
         finally:

@@ -4,6 +4,7 @@
 """The error policy: each EngineError code's sentence and button (src/errors.py), and where
 Application.report() and the engine's `lost` send them (tests/test_app.py's app)."""
 
+import types
 import unittest
 
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
@@ -98,6 +99,16 @@ class LostTest(AppTestCase):
         self.app._quitting = object()  # the quit under way
         self.app.engine.emit('lost', 'stopped')
         self.assertEqual(self.app.toasts, [])
+
+    def test_the_player_keeps_what_played_unless_the_app_stopped_it(self):
+        lost = []
+        self.app.player = types.SimpleNamespace(engine_lost=lambda: lost.append(True))
+        self.addCleanup(setattr, self.app, 'player', None)
+        self.app.engine.emit('lost', 'the page crashed')
+        self.assertEqual(lost, [True])
+        self.app.signing_out = True  # its own stop: the Player resets as the engine goes
+        self.app.engine.emit('lost', 'stopped')
+        self.assertEqual(lost, [True])
 
 
 

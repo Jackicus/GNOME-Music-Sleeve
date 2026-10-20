@@ -39,9 +39,10 @@ paths:
   [lyrics|localized|syllable|queue]` opens the sheet on an invented item (the lyrics of
   `harness.LYRICS_FIXTURES`); `--playing` puts the item on the Player with the sheet closed
   (the bar's playing state), `--restored` as the last session restored at launch (paused,
-  `harness.invented_session()`); all need `--demo`, and take `--position SECONDS`. Each
-  album's entries carry an artwork URL of their own (`harness.demo_art_url()`, its files
-  copied where `remote.fetch_remote` keeps them: nothing is fetched); `--album N` plays
+  `harness.invented_session()`), `--lost` with `--playing` then as the engine lost leaves it
+  (`Player.engine_lost()`, the Restart toast); all need `--demo`, and take `--position
+  SECONDS`. Each album's entries carry an artwork URL of their own
+  (`harness.demo_art_url()`, its files copied where `remote.fetch_remote` keeps them: nothing is fetched); `--album N` plays
   another album, `--history` puts entries played already before the item (Up Next's
   History), `--live` plays an invented live radio station instead
   (`harness.invented_live_state()`: LIVE and Stop). `--signed-in [NAME]`,

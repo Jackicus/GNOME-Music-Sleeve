@@ -18,9 +18,9 @@ from tests.gtk import iterate
 
 from applemusic.backend.errors import EngineError
 from applemusic.lyrics import Lyrics
-from applemusic.player import (ACTIVE_STATES, STOPPED_STATES, NowPlaying, Player, format_time,
-                               move_range, moved_entry, playback_error_text, removed_entry,
-                               undone_tail)
+from applemusic.player import (ACTIVE_STATES, STOPPED_STATES, TRACK_HOLD, NowPlaying, Player,
+                               format_time, move_range, moved_entry, playback_error_text,
+                               removed_entry, undone_tail)
 
 
 class Clock:
@@ -3299,6 +3299,200 @@ class FormatTimeTest(unittest.TestCase):
         self.assertEqual(format_time(-3), '0:00')
         self.assertEqual(format_time(None), '0:00')
         self.assertEqual(format_time(30, remaining=True), '-0:30')
+
+
+# What autoplay added after the album: not the user's queue.
+AUTOPLAYED = dict(TRACK, id='i.demo0004', catalogId='1000000004', title='Undertow', index=3,
+                  autoplay=True)
+
+
+async def settle(times=5):
+    for _ in range(times):
+        await asyncio.sleep(0)
+
+
+class LostTest(unittest.TestCase):
+    """The engine lost mid-song (engine_lost(), which the app calls from the engine's `lost`,
+    then `down`): what played kept as a session restored, paused where it was, for Play to
+    start the engine again and resume; a stop nobody lost (no `lost`) resets."""
+
+    async def playing(self, clock):
+        """A Player with the album's first song playing 83 s in, half a second ago, and
+        autoplay's entry after the album."""
+        player, engine, app = make_player(state='up')
+        await player.play({'kind': 'album', 'id': 'l.alb1'}, shuffle=False)
+        engine.event('queueItemsDidChange', {'index': 0, 'edit': 0,
+                                             'items': QUEUE['items'] + [AUTOPLAYED]})
+        engine.event('nowPlayingItemDidChange', {'track': QUEUE['items'][0], 'index': 0,
+                                                 'capabilities': EVERYTHING})
+        clock.advance(TRACK_HOLD + 1)  # past the hold on the item before's last position
+        engine.event('playbackStateDidChange', {'state': 'playing', 'position': 82})
+        engine.event('playbackTimeDidChange', {'position': 83, 'duration': 214})
+        clock.advance(0.5)
+        await app.settle()
+        engine.calls.clear()
+        engine.play_options.clear()
+        return player, engine, app
+
+    def ids(self, player):
+        return [entry.id for entry in player.queue]
+
+    def test_the_item_stays_paused_where_it_was_and_play_resumes_it(self):
+        async def go():
+            with patched_clocks() as clock:
+                player, engine, app = await self.playing(clock)
+                track = player.track
+                tracks = []
+                player.connect('notify::track', lambda p, _pspec: tracks.append(p.track))
+                player.engine_lost()
+                engine.state = 'down'
+                self.assertTrue(player.restored)
+                self.assertIs(player.track, track)
+                self.assertEqual(tracks, [])  # the same item: the bar announces nothing
+                self.assertEqual((player.state, player.position, player.duration,
+                                  player.queue_index), ('paused', 83.5, 214.0, 0))
+                self.assertFalse(player.active)
+                self.assertFalse(player.stopped)
+                # The user's queue: autoplay adds again once it plays.
+                self.assertEqual(self.ids(player), ['i.demo0003', 'i.demo0002', 'i.demo0001'])
+                self.assertEqual(player.source, {'kind': 'album', 'id': 'l.alb1'})
+                self.assertEqual(controls(player), dict.fromkeys(CONTROLS, True))
+                # The Restart's new page holds nothing: that changes nothing.
+                engine.state = 'up'
+                await app.settle()
+                engine.event('bridgeReset', {})
+                engine.event('nowPlayingItemDidChange', {'track': None, 'index': -1})
+                engine.event('queueItemsDidChange', {'index': 0, 'items': [], 'edit': 0})
+                self.assertTrue(player.restored)
+                self.assertEqual((player.track.id, player.position, len(self.ids(player))),
+                                 ('i.demo0003', 83.5, 3))
+                # Play with the engine down again: started, then the album from the item.
+                engine.state = 'down'
+                engine.calls.clear()
+                await player.toggle()
+                await app.settle()
+                self.assertEqual(engine.calls[0], ('start', None))
+                self.assertIn(('play', 'album', 'l.alb1', 0, False), engine.calls)
+                self.assertEqual(engine.play_options,
+                                 [{'start_id': 'i.demo0003', 'start_time': 83.5}])
+                self.assertFalse(player.restored)
+        asyncio.run(go())
+
+    def test_a_stop_nobody_lost_resets(self):
+        async def go():
+            with patched_clocks() as clock:
+                player, engine, app = await self.playing(clock)
+                engine.state = 'down'  # quitting, sign-out, Preferences: no `lost`
+                self.assertFalse(player.restored)
+                self.assertIsNone(player.track)
+                self.assertEqual((player.state, player.queue.get_n_items()), ('none', 0))
+                player.engine_lost()  # nothing left to keep
+                self.assertFalse(player.restored)
+        asyncio.run(go())
+
+    def test_a_live_station_is_kept_stopped_without_a_position(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await player.play({'kind': 'station', 'id': 'ra.live01'})
+            live_playing(engine)
+            player.engine_lost()
+            engine.state = 'down'
+            self.assertTrue(player.restored)
+            self.assertTrue(player.live)
+            self.assertEqual((player.track.id, player.state, player.position, player.duration),
+                             ('ra.live01', 'stopped', 0.0, 0.0))
+            self.assertEqual(player.source, {'kind': 'station', 'id': 'ra.live01'})
+            await player.toggle()
+            await app.settle()
+            self.assertIn(('play', 'station', 'ra.live01', None, False), engine.calls)
+            self.assertEqual(engine.play_options[-1], {'start_id': None})  # live: no position
+        asyncio.run(go())
+
+    def test_an_item_that_cannot_be_queued_again_is_not_kept(self):
+        player, engine, app = make_player(state='up')
+        engine.event('nowPlayingItemDidChange', {'track': dict(TRACK, type='uploadedAudio'),
+                                                 'index': 0})
+        self.assertEqual(player.track.kind, '')
+        player.engine_lost()
+        engine.state = 'down'
+        self.assertFalse(player.restored)
+        self.assertIsNone(player.track)
+
+    def test_edits_out_end_and_an_edited_queue_plays_by_its_songs(self):
+        async def go():
+            with patched_clocks() as clock:
+                player, engine, app = await self.playing(clock)
+                gate = engine.gate('queue_remove')
+                task = asyncio.ensure_future(player.remove_from_queue(1, 'i.demo0002'))
+                await settle()
+                self.assertEqual(engine.edits, [1])  # out, MusicKit's snapshot not yet in
+                player.engine_lost()
+                engine.state = 'down'
+                self.assertIsNone(player.source)  # no longer the album's queue
+                # The next page's snapshots know nothing of edit 1: none is replayed.
+                self.assertEqual(player._edits_out, [])
+                engine.fail = EngineError('engine-down', 'the connection is gone')
+                gate.set()
+                with self.assertRaises(EngineError):
+                    await task
+                await app.settle()  # its queue read fails, and would change nothing
+                engine.fail = None
+                self.assertTrue(player.restored)
+                self.assertEqual(self.ids(player), ['i.demo0003', 'i.demo0001'])
+                await player.toggle()
+                await app.settle()
+                self.assertIn(('play', 'songs', 'i.demo0003,i.demo0001', 0, False),
+                              engine.calls)
+        asyncio.run(go())
+
+    def test_a_request_under_way_keeps_what_shows_without_a_source(self):
+        async def go():
+            with patched_clocks() as clock:
+                player, engine, app = await self.playing(clock)
+                gate = engine.gate('play')
+                task = asyncio.ensure_future(
+                    player.play({'kind': 'playlist', 'id': 'p.pl1'}, shuffle=False))
+                await settle()
+                self.assertTrue(player.pending)
+                player.engine_lost()
+                engine.state = 'down'
+                self.assertTrue(player.restored)
+                self.assertEqual((player.track.id, player.state, player.resting),
+                                 ('i.demo0003', 'paused', 'paused'))  # no play held
+                engine.play_failures.append(EngineError('engine-down', 'the connection'))
+                gate.set()
+                with self.assertRaises(EngineError):
+                    await task
+                self.assertFalse(player.pending)
+                self.assertTrue(player.restored)
+                self.assertIsNone(player.source)  # neither the album's nor the playlist's
+                await player.toggle()
+                await app.settle()
+                self.assertIn(('play', 'songs', 'i.demo0003,i.demo0002,i.demo0001', 0, False),
+                              engine.calls)
+        asyncio.run(go())
+
+    def test_a_restore_under_way_is_given_back(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            player.restore(session())
+            gate = engine.gate('play')
+            task = asyncio.ensure_future(player.toggle())
+            await settle()
+            self.assertFalse(player.restored)  # taken by the request
+            player.engine_lost()
+            engine.state = 'down'
+            self.assertTrue(player.restored)
+            engine.play_failures.append(EngineError('engine-down', 'the connection'))
+            gate.set()
+            with self.assertRaises(EngineError):
+                await task
+            self.assertTrue(player.restored)
+            self.assertEqual((player.track.id, player.state, player.position,
+                              player.queue.get_n_items(), player.source),
+                             ('i.demo0001', 'paused', 83.0, 3,
+                              {'kind': 'album', 'id': 'l.alb1'}))
+        asyncio.run(go())
 
 
 if __name__ == '__main__':

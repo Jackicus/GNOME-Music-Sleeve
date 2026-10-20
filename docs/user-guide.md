@@ -382,8 +382,10 @@ Other limits:
   30-second previews work, but songs do not play. Install Google Chrome and name it in
   Preferences › Engine › Browser › Browser program (`google-chrome-stable`), or give the
   browser its Widevine module.
-- **"The playback engine stopped."** Chrome exited or its page stopped answering. Click
-  **Restart** in the message, or just play something.
+- **"The playback engine stopped."** Chrome exited or its page stopped answering. The
+  player bar keeps the song, paused where it stopped, with Up Next (a radio station stays,
+  stopped): **Play** starts the engine again and carries on. Click **Restart** in the
+  message to start it without playing, or just play something else.
 - **"Unlock the keyring, then start the engine."** Chrome keeps the key that encrypts its
   sign-in in your keyring (GNOME Keyring or KWallet's Secret Service), and none answered on
   the session bus, so the app did not start Chrome: without that key, Chrome would delete

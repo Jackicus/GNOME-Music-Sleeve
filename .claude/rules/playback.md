@@ -112,6 +112,19 @@ paths:
   a play request is pending sets only the modes. Discord publishes nothing while restored.
   tests/test_session.py and test_player.py's RestoreTest; `scripts/screenshot.py --demo
   --restored` shows it.
+- The engine lost (its `lost`: nobody asked it to stop) keeps what played as a session
+  restored: the app's `_on_engine_lost` calls `Player.engine_lost()` before the engine goes
+  `down` (not while it quits or the account changes), which shows the item paused at
+  `estimated_position()`, the user's queue (`session.user_queue()`), the source (None under
+  a pending request, or once `_follow_source()` finds the store edited away from it), repeat
+  and shuffle as they were (`_show_session()`, restore()'s too); a live station
+  `_keep_station()`, stopped, no position. Up Next's edits out (`_edits_out`) and a Clear's
+  Undo end there (the next page numbers nothing of them), and a queue read under way while
+  restored changes nothing. A request pending at the loss fails as before: a session it
+  took is given back (`_give_back`), else the loss's choice of source stands. Play then
+  takes the restore path (the engine started, `_restore_request`, the retries). A stop the
+  app asks for has no `lost` and resets (`apply(None)`), and so does a `bridgeReset`.
+  test_player.py's LostTest; `scripts/screenshot.py --demo --playing --lost` shows it.
 - MusicKit refuses a whole list of songs by id (kind `songs`: Songs' Play and Shuffle, a
   library artist's Play, a shelf of songs, a selection's or a drop's Play Next and Play
   Later, the session restored) when one song in it cannot be found (`NOT_FOUND`, setQueue's

@@ -9,7 +9,7 @@
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|localized|syllable|queue]]
                           [--fullscreen-player [lyrics|localized|syllable|none]]
-                          [--idle] [--position SECONDS] [--playing] [--restored]
+                          [--idle] [--position SECONDS] [--playing] [--restored] [--lost]
                           [--autoplay] [--history] [--album N] [--live]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
                            [--see-all KEY]] [--filter TEXT]
@@ -83,7 +83,9 @@ allowed but Stop): LIVE in place of the seek slider and the times, Stop in place
 --playing puts the same item on the Player and leaves the sheet closed: the player
 bar in its playing state. --restored shows it as the last session restored at launch
 (Player.restore): paused at --position, its queue the album, MusicKit not asked. With
---demo only.
+--demo only. --lost, with --playing (or --live), then has the engine lost as Chrome
+crashing would leave it (the app's answer to the engine's `lost`: Player.engine_lost()
+keeps the item paused, and the Restart toast).
 --fullscreen-player puts the same item on the Player with the lyrics of the fixture
 named (syllable by default; none: a song without lyrics) and enters the full-screen
 player (win.fullscreen-player, F11's). The harness's window is not resizable, so the
@@ -190,6 +192,9 @@ parser.add_argument('--playing', action='store_true',
                     help='an invented item playing, the sheet closed (the player bar)')
 parser.add_argument('--restored', action='store_true',
                     help='the invented item as the last session restored at launch, paused')
+parser.add_argument('--lost', action='store_true',
+                    help='with --playing: the engine then lost (the item kept paused, the '
+                         'Restart toast)')
 parser.add_argument('--autoplay', action='store_true',
                     help='with --now-playing: entries autoplay added at the end of the queue')
 parser.add_argument('--history', action='store_true',
@@ -268,6 +273,8 @@ if args.position is not None and not (args.now_playing or args.playing or args.r
                  '--fullscreen-player')
 if args.live and not (args.now_playing or args.playing or args.fullscreen_player):
     parser.error('--live needs --now-playing, --playing or --fullscreen-player')
+if args.lost and not args.playing:
+    parser.error('--lost needs --playing')
 if args.idle and not args.fullscreen_player:
     parser.error('--idle needs --fullscreen-player')
 width, height = (int(n) for n in args.size.split('x'))
@@ -340,7 +347,7 @@ def open_now_playing(window):
     """--now-playing: the invented item on the Player (the demo's first album playing, with
     the lyrics fixture) and the sheet open on the tab; --playing: the item only, for the
     player bar; --restored: the item as the last session restored, paused; --live: a live
-    radio station in place of the item."""
+    radio station in place of the item; --lost: the engine then lost."""
     if args.restored:
         app.player.restore(harness.invented_session(app, position=args.position))
         return
@@ -355,6 +362,8 @@ def open_now_playing(window):
                                                         autoplay=args.autoplay,
                                                         album=args.album,
                                                         history=args.history))
+    if args.lost:
+        app._on_engine_lost(app.engine, 'a simulated loss')  # as the engine's `lost`
     if args.fullscreen_player:
         window.activate_action('win.fullscreen-player', None)
         if args.idle:

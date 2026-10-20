@@ -186,7 +186,8 @@ touches widgets.
   because the reload keeps every object that is still in the library.
 - **Losing the engine.** Chrome crashing or being killed, the page crashing or closing, and a
   page that no longer answers after a call timed out (the engine probes it) all end the
-  connection: the engine emits `lost(reason)` and goes down, the app offers to restart it in a
+  connection: the engine emits `lost(reason)` and goes down, the Player keeps what played as
+  a session restored, paused (`Player.engine_lost()`), the app offers to restart it in a
   toast, and the next play starts a fresh Chrome. When the page loads a new document, the client injects the bridge again and the
   engine passes a `bridgeReset` event on; if MusicKit does not come back after four tries, the
   connection is given up the same way.
