@@ -29,7 +29,11 @@ is (the thumbnails 320 x 180). Each hand-written artist also gets the page
 Apple's catalog would answer for it (artists/<catalog id>.json, the shape
 normalize.artist_page() gives: its top songs, latest release and shelves, made
 of the demo's own albums, songs and videos and a few invented singles,
-playlists, radio episodes and interviews), which the demo engine answers
+playlists, radio episodes and interviews), each hand-written album what the
+catalog would show under its tracks (albums/<catalog id>.json, the shape
+normalize.album_page() gives: its release date, copyright and label, and its
+shelves, made of the demo's own albums, videos and playlists and an invented
+edition or two), which the demo engine answers
 from, and each playlist the songs Apple would suggest adding to it
 (suggestions/<playlist id>.json, normalize.playlist_suggestions()'s shape:
 twenty-four of the demo's own songs it does not hold). Last it writes .demo-stamp, the
@@ -133,6 +137,11 @@ DEMO_EPISODES = ['{artist} in Conversation', 'The Making of {album}', '{genre} S
                  'A Night with {artist}']
 DEMO_INTERVIEWS = ['{artist} on {album}', '{artist}: Behind the Songs', 'Live from the Studio']
 SUGGESTIONS = 24  # a playlist's suggested songs: twelve shown at most, and spares
+# The record labels of the hand-written albums' footers (one an artist), and the other
+# editions an album's Other Versions offers (the first always, the second every other album).
+DEMO_LABELS = ['Lowtide Recordings', 'Paper Lantern Records', 'Driftwood Audio',
+               'Quiet Harbour Music', 'Northlight Sound']
+DEMO_EDITIONS = ['{title} (Deluxe)', '{title} (Remastered)']
 
 MOTIFS = [
     'sun_horizon',
@@ -2141,6 +2150,9 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     build_artist_pages(out_dir, artists_data[:len(ARTISTS_DATA)], artists, artist_albums_map,
                        albums, videos, draw_cover, thumb_for, cover_size, library['generated'])
     build_suggestions(out_dir, playlists, albums, library['generated'])
+    build_album_pages(out_dir, artists_data[:len(ARTISTS_DATA)], artists, artist_albums_map,
+                      albums[:len(ALBUMS_DATA)], videos, playlists, draw_cover, thumb_for,
+                      cover_size, library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
 
@@ -2332,6 +2344,91 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
             'demo': True,  # invented: the demo engine answers only these
         }
         with open(os.path.join(pages_dir, f'{catalog_id}.json'), 'w', encoding='utf-8') as f:
+            json.dump(page, f, indent=2)
+
+
+def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums, videos,
+                      playlists, draw_cover, thumb_for, cover_size, generated):
+    """Write albums/<catalog id>.json for each hand-written album: what the catalog would
+    answer for the rest of its page (normalize.album_page()'s shape, kept as the engine keeps
+    it, stamped `cached` with the library's date): its release date, copyright and label,
+    and its shelves, made of the library's own albums, videos and playlists (their pages the
+    library's) and an invented deluxe or remastered edition or two drawn here."""
+    rnd = random.Random(41)
+    art_dir = os.path.join(out_dir, 'art')
+    pages_dir = os.path.join(out_dir, 'albums')
+    os.makedirs(pages_dir, exist_ok=True)
+
+    def brief(item, **changes):
+        """An Item as a shelf carries it: no groups, unless `changes` give some."""
+        return dict(item, groups=[], **changes)
+
+    def edition(album, number):
+        """An invented other version of `album`: its tracks under another title and cover."""
+        item_id = f"demo.edition{album['id'][len('l.alb'):]}{number}"
+        title = DEMO_EDITIONS[number].format(title=album['title'])
+        year = album['year'] + (0 if number == 0 else 8)
+        path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
+        palette_index = int(album['id'][len('l.alb'):])  # the album's own palette, PALETTES
+        draw_cover(out_path=path, title=title, subtitle=album['subtitle'],
+                   badge='DELUXE' if number == 0 else 'REMASTER',
+                   palette=PALETTES[(palette_index + 3 + number) % len(PALETTES)],
+                   motif=MOTIFS[(palette_index + number) % len(MOTIFS)], is_artist=False,
+                   size=cover_size)
+        play = {'kind': 'album', 'id': item_id}
+        tracks = [dict(entry, index=position) for position, entry in
+                  enumerate(entry for group in album['groups'] for entry in group['entries'])]
+        return dict(album, id=item_id, title=title, subtitle=str(year), year=year, art=path,
+                    thumb=thumb_for(path), catalogId=None, url=None, play=play,
+                    artistName=album['subtitle'],
+                    groups=[{'name': '', 'play': play, 'entries': tracks}])
+
+    for number, album in enumerate(albums):
+        artist_index = next(index for index, owned in artist_albums_map.items()
+                            if any(other is album for other in owned))
+        artist = artists[artist_index]
+        name = artists_data[artist_index]['name']
+        shelves = []
+
+        def shelf(key, title, items, shelves=shelves):
+            if items:
+                shelves.append({'key': key, 'title': title, 'items': items, 'more': False})
+
+        shelf('other-versions', 'Other Versions',
+              [edition(album, edition_number) for edition_number in range(2 - number % 2)])
+        shelf('related-videos', 'Music Videos', [
+            brief(video, artistName=name) for video in videos if video['subtitle'] == name])
+        shelf('more-by-artist', '', [
+            brief(other, subtitle=str(other['year']), artistName=name)
+            for other in sorted(artist_albums_map[artist_index],
+                                key=lambda other: other['year'], reverse=True)
+            if other is not album])
+        held = {entry['catalogId'] for group in album['groups'] for entry in group['entries']}
+        shelf('appears-on', 'Featured On', [
+            brief(playlist) for playlist in playlists
+            if any(entry['catalogId'] in held
+                   for group in playlist['groups'] for entry in group['entries'])])
+        alike = [other for other in albums if other['genre'] == album['genre']
+                 and other['subtitle'] != album['subtitle']]
+        alike += rnd.sample([other for other in albums if other not in alike
+                             and other['subtitle'] != album['subtitle']], 8 - min(8, len(alike)))
+        shelf('related-albums', 'You Might Also Like', [
+            brief(other, artistName=other['subtitle']) for other in alike[:8]])
+
+        label = DEMO_LABELS[artist_index % len(DEMO_LABELS)]
+        page = {
+            'id': album['catalogId'],
+            'artistId': artist['catalogId'],
+            'artistName': name,
+            'release': {'releaseDate': f"{album['year']}-{number % 12 + 1:02d}-"
+                                       f"{number % 27 + 1:02d}",
+                        'copyright': f"℗ {album['year']} {label}", 'recordLabel': label},
+            'shelves': shelves,
+            'cached': generated,
+            'demo': True,  # invented: the demo engine answers only these
+        }
+        with open(os.path.join(pages_dir, f"{album['catalogId']}.json"), 'w',
+                  encoding='utf-8') as f:
             json.dump(page, f, indent=2)
 
 

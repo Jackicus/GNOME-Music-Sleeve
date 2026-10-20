@@ -1152,6 +1152,82 @@ class TestArtistPage(unittest.TestCase):
         self.assertEqual(normalize.artist_cache_path('/c', '../x'), '/c/artists/.._x.json')
 
 
+class TestAlbumPage(unittest.TestCase):
+    """album_page over an invented catalog album (tests/fixtures/catalog_album_page.json: the
+    album as Apple answers api.ALBUM_ENDPOINT with its views, and a page of its artist's
+    albums, api.MORE_BY_VIEW)."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp_dir)
+        with open(os.path.join(os.path.dirname(__file__), 'fixtures', 'catalog_album_page.json'),
+                  encoding='utf-8') as f:
+            self.raw = json.load(f)
+        self.page = normalize.album_page(self.raw, self.tmp_dir)
+
+    def shelf(self, key):
+        return next(shelf for shelf in self.page['shelves'] if shelf['key'] == key)
+
+    def test_the_album_its_artist_and_its_release(self):
+        self.assertEqual((self.page['id'], self.page['artistId'], self.page['artistName']),
+                         ('1724049100', '1724049001', 'Paper Parachutes'))
+        self.assertEqual(self.page['release'], {
+            'releaseDate': '2026-03-14', 'copyright': '℗ 2026 Invented Records Ltd',
+            'recordLabel': 'Invented Records'})
+
+    def test_the_shelves_in_apples_order(self):
+        # More By between Music Videos (empty here: left out) and Featured On, untitled (the
+        # app names it); Apple's titles for the rest; `more` where Apple has more.
+        self.assertEqual([(shelf['key'], shelf['title'], shelf['more'])
+                          for shelf in self.page['shelves']],
+                         [('other-versions', 'Other Versions', False),
+                          ('more-by-artist', '', True),
+                          ('appears-on', 'Featured On', False),
+                          ('related-albums', 'You Might Also Like', True)])
+
+    def test_each_card_says_what_apple_shows_under_it(self):
+        other = self.shelf('other-versions')['items'][0]
+        self.assertEqual((other['id'], other['kind'], other['subtitle'], other['artistName']),
+                         ('1724049150', 'album', '2026', 'Paper Parachutes'))  # the year
+        self.assertEqual(other['groups'], [])
+        self.assertTrue(other['art'].startswith('https://'))  # fetched by the page
+        # More By leaves the album itself out.
+        self.assertEqual([(album['id'], album['subtitle'])
+                          for album in self.shelf('more-by-artist')['items']],
+                         [('1724049110', '2023')])
+        # A curator Apple puts among the playlists has no tile here.
+        playlists = self.shelf('appears-on')['items']
+        self.assertEqual([(playlist['kind'], playlist['subtitle']) for playlist in playlists],
+                         [('playlist', 'Apple Music Indie')])
+        alike = self.shelf('related-albums')['items'][0]
+        self.assertEqual((alike['subtitle'], alike['artistName']), ('Mara Lind', 'Mara Lind'))
+
+    def test_without_more_by(self):
+        # The artist's albums could not be read: the album's own views still show.
+        page = normalize.album_page(dict(self.raw, moreBy=None), self.tmp_dir)
+        self.assertNotIn('more-by-artist', [shelf['key'] for shelf in page['shelves']])
+        self.assertEqual(len(page['shelves']), 3)
+
+    def test_an_answer_without_an_album(self):
+        for raw in ({}, {'album': {'data': []}}, None, {'album': {'data': ['x']}}):
+            with self.subTest(raw=raw):
+                page = normalize.album_page(raw, self.tmp_dir)
+                self.assertEqual((page['id'], page['artistId'], page['release'],
+                                  page['shelves']), ('', '', {}, []))
+
+    def test_the_release_keeps_only_what_apple_has(self):
+        self.assertEqual(normalize.album_release({'releaseDate': '1999', 'copyright': ' ',
+                                                  'recordLabel': 7}),
+                         {'releaseDate': '1999'})
+        self.assertEqual(normalize.album_release({'releaseDate': 'soon'}), {})
+        self.assertEqual(normalize.album_release(None), {})
+
+    def test_the_cache_path(self):
+        self.assertEqual(normalize.album_cache_path('/c', '1724049100'),
+                         '/c/albums/1724049100.json')
+        self.assertEqual(normalize.album_cache_path('/c', 'l.ab/c'), '/c/albums/l.ab_c.json')
+
+
 class TestPruneCaches(unittest.TestCase):
     """prune_caches over an invented cache."""
 
@@ -1179,6 +1255,7 @@ class TestPruneCaches(unittest.TestCase):
         self.put('categories/fresh.json', age=60)
         self.put('artists/1724049001.json', age=day + 60)
         self.put('artists/1724049002.json', age=60)
+        self.put('albums/1724049100.json', age=day + 60)
         self.put('landing.json', age=day + 60)
         self.put('browse.json', age=60)
         self.put('.x.json.tmp', age=2 * 3600)  # a crash's leftover
@@ -1192,14 +1269,15 @@ class TestPruneCaches(unittest.TestCase):
         self.put('art/a.jpg', age=10 * day)
         gone = normalize.prune_caches(self.tmp_dir, now=self.now, remote_bytes=250,
                                       lyrics_keep=2)
-        self.assertEqual(gone, {'remote-art': 1, 'lyrics': 3, 'answers': 3, 'items': 2,
+        self.assertEqual(gone, {'remote-art': 1, 'lyrics': 3, 'answers': 4, 'items': 2,
                                 'temps': 2})
         self.assertEqual(self.names('lyrics'), ['0.json', '1.json'])
         self.assertEqual(self.names('categories'), ['fresh.json'])
         self.assertEqual(self.names('artists'), ['1724049002.json'])
         self.assertEqual(self.names('remote-art'), ['0.jpg', '1.jpg'])
-        self.assertEqual(self.names(), ['.z.tmp', 'art', 'artists', 'browse.json', 'categories',
-                                        'library.json', 'lyrics', 'remote-art'])
+        self.assertEqual(self.names('albums'), [])
+        self.assertEqual(self.names(), ['.z.tmp', 'albums', 'art', 'artists', 'browse.json',
+                                        'categories', 'library.json', 'lyrics', 'remote-art'])
         # Again: nothing more to do.
         self.assertFalse(any(normalize.prune_caches(self.tmp_dir, now=self.now,
                                                     remote_bytes=250, lyrics_keep=2).values()))

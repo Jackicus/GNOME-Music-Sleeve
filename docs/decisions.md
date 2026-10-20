@@ -444,6 +444,22 @@ changes, change it here, with the date. The plan they came from is in
   catalog artist's page while the engine is up. Videos about the artist open on music.apple.com: the engine is
   headless and has no picture to show. The demo engine answers with the artist pages the
   demo library invents (marked `demo`), and with none of Apple's (#226).
+- **An album ends with its release and the catalog's shelves** (2026-10-20). Under the last
+  disc, as every Apple Music client ends an album: the release date in full, "N songs, M
+  minutes" and the ℗ line (else the label), then Other Versions, Music Videos, More By,
+  Featured On and You Might Also Like (#335). The shelves are the album's documented views
+  (`api.ALBUM_VIEWS`), asked with the album in one read; More By is no view of the album's,
+  so it is a page of its first artist's `full-albums`, less the album, a second read whose
+  failure only leaves More By out. Both are one answer kept for a day under the id the page
+  asks by (`albums/`), as an artist's page is. A library album has no catalog id of its own,
+  so the engine finds its catalog album through one of its songs, the way a library artist
+  is found; the footer then takes the catalog album's date and ℗ line. The answer is asked
+  after the tracks' first paint and appended as the list's last sections, so the page's
+  first build never waits for it; without it (offline, the engine down, signed out, a 404)
+  the page shows the songs and their count, and nothing is toasted: the shelves are extras,
+  not the page. They live inside the track list, in rows of its own (a `Gtk.ListView`
+  recycles only as its scrolled window's child), each shelf a horizontal list as the artist
+  page's are. The demo library invents an answer for each hand-written album.
 - **An artist of the library is shown as the library holds them** (2026-10-03). Apple Music
   has two pages of an artist: the catalog's, and its library's (Library › Artists: a list
   of artists beside the one chosen, their albums in the library under the name, Play and

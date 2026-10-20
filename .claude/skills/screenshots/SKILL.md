@@ -31,7 +31,8 @@ What to shoot: $ARGUMENTS
      `--search TERM`, `--context-menu` (`--submenu NAME` for one of its submenus, by its
      label, underscore and all: `"Add to Pla_ylist"`, a folder's name), `--preferences [general|engine]`,
      `--dialog about|shortcuts`; `--scroll PX` for the rest of a page taller than the
-     window (an artist's: `--open artist:first --scroll 900`; a playlist's Suggested Songs:
+     window (an artist's: `--open artist:first --scroll 900`; an album's footer and shelves:
+     `--open album:first --scroll 650`, and `1400` for the last of them; a playlist's Suggested Songs:
      `--page playlist:l.pl002 --scroll 1600`); `--focus` focuses the page's first tile or
      row with its focus ring (a music video's play symbol); `--setting KEY=VALUE` sets a setting first
      (`--setting more-suggestions=true` shows twelve suggestions);

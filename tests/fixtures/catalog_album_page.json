@@ -1,0 +1,95 @@
+{
+  "album": {
+    "data": [
+      {
+        "id": "1724049100",
+        "type": "albums",
+        "href": "/v1/catalog/gb/albums/1724049100",
+        "attributes": {
+          "name": "Ladders of Rain",
+          "artistName": "Paper Parachutes",
+          "releaseDate": "2026-03-14",
+          "trackCount": 10,
+          "copyright": "℗ 2026 Invented  Records Ltd",
+          "recordLabel": "Invented Records",
+          "artwork": {"url": "https://example.invalid/image/thumb/aW52ZW50ZWQ/{w}x{h}bb.jpg",
+                      "width": 3000, "height": 3000, "bgColor": "204060"},
+          "url": "https://music.apple.com/gb/album/invented/1724049100",
+          "playParams": {"id": "1724049100", "kind": "album"}
+        },
+        "relationships": {
+          "artists": {
+            "href": "/v1/catalog/gb/albums/1724049100/artists",
+            "data": [
+              {"id": "1724049001", "type": "artists",
+               "href": "/v1/catalog/gb/artists/1724049001"},
+              {"id": "1724049002", "type": "artists",
+               "href": "/v1/catalog/gb/artists/1724049002"}
+            ]
+          }
+        },
+        "views": {
+          "appears-on": {
+            "href": "/v1/catalog/gb/albums/1724049100/view/appears-on",
+            "attributes": {"title": "Featured On"},
+            "data": [
+              {"id": "pl.aW52ZW50ZWQx", "type": "playlists",
+               "attributes": {"name": "Invented Rainy Days", "curatorName": "Apple Music Indie",
+                              "artwork": {"url": "https://example.invalid/image/thumb/cGw/{w}x{h}bb.jpg",
+                                          "width": 1080, "height": 1080},
+                              "playParams": {"id": "pl.aW52ZW50ZWQx", "kind": "playlist"}}},
+              {"id": "1724049900", "type": "apple-curators",
+               "attributes": {"name": "Invented Curator"}}
+            ]
+          },
+          "other-versions": {
+            "href": "/v1/catalog/gb/albums/1724049100/view/other-versions",
+            "attributes": {"title": "Other Versions"},
+            "data": [
+              {"id": "1724049150", "type": "albums",
+               "attributes": {"name": "Ladders of Rain (Deluxe Edition)",
+                              "artistName": "Paper Parachutes", "releaseDate": "2026-09-01",
+                              "trackCount": 14,
+                              "artwork": {"url": "https://example.invalid/image/thumb/ZGx4/{w}x{h}bb.jpg",
+                                          "width": 3000, "height": 3000},
+                              "playParams": {"id": "1724049150", "kind": "album"}}}
+            ]
+          },
+          "related-albums": {
+            "href": "/v1/catalog/gb/albums/1724049100/view/related-albums",
+            "attributes": {"title": "You Might Also Like"},
+            "data": [
+              {"id": "1724049300", "type": "albums",
+               "attributes": {"name": "Harbour of Lamps", "artistName": "Mara Lind",
+                              "releaseDate": "2025-02-20", "trackCount": 9,
+                              "artwork": {"url": "https://example.invalid/image/thumb/aGFy/{w}x{h}bb.jpg",
+                                          "width": 3000, "height": 3000},
+                              "playParams": {"id": "1724049300", "kind": "album"}}}
+            ],
+            "next": "/v1/catalog/gb/albums/1724049100/view/related-albums?offset=10"
+          },
+          "related-videos": {
+            "href": "/v1/catalog/gb/albums/1724049100/view/related-videos",
+            "attributes": {"title": "Music Videos"},
+            "data": []
+          }
+        }
+      }
+    ]
+  },
+  "moreBy": {
+    "data": [
+      {"id": "1724049100", "type": "albums",
+       "attributes": {"name": "Ladders of Rain", "artistName": "Paper Parachutes",
+                      "releaseDate": "2026-03-14", "trackCount": 10,
+                      "playParams": {"id": "1724049100", "kind": "album"}}},
+      {"id": "1724049110", "type": "albums",
+       "attributes": {"name": "Kites in Fog", "artistName": "Paper Parachutes",
+                      "releaseDate": "2023-05-02", "trackCount": 10,
+                      "artwork": {"url": "https://example.invalid/image/thumb/a2l0/{w}x{h}bb.jpg",
+                                  "width": 3000, "height": 3000},
+                      "playParams": {"id": "1724049110", "kind": "album"}}}
+    ],
+    "next": "/v1/catalog/gb/artists/1724049001/view/full-albums?offset=30"
+  }
+}

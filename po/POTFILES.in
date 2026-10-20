@@ -60,3 +60,4 @@ src/widgets/transport.py
 src/widgets/labels.py
 src/library.py
 src/remote.py
+src/release.py

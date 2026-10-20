@@ -47,7 +47,9 @@ page has been browsed twice, and pages opened and closed leaving at most 5 MB be
   round are still alive (GObject weak
   references: a Python weakref dies with the wrapper, which PyGObject lets go whether or
   not the widget lives; see widgets/util.py), by class. A page that is freed once popped
-  leaves 0 alive.
+  leaves 0 alive. Each kind's median time in the measured round, from the open to the end
+  of its first paint, is a page's first build (an album's tracks and footer, before the
+  catalog's shelves come).
 
 A frame that does not come (the compositor sends none to a window it does not show:
 run the bench through scripts/headless.sh, whose virtual monitor shows it, and compare
@@ -238,6 +240,12 @@ def parent():
               f'{median(page["anon"] for page in pages):+.1f} MB) after gc.collect() and '
               f'malloc_trim(0), {verdict(grown, PAGES_TARGET)} the {PAGES_TARGET} MB '
               f'target; still alive (run 1): {alive}')
+        names = {'album': 'an album', 'artist': 'an artist', 'shelf': 'See All'}
+        timings = ', '.join(
+            f'{names[kind]} {fmt(median(page["open_ms"].get(kind) for page in pages), "ms")}'
+            for kind, _count in PAGES if any(kind in page.get('open_ms', {}) for page in pages))
+        if timings:
+            print(f'  pages opened, to the end of their first paint (median): {timings}')
     else:
         print('  pages: no run finished the step')
     print(f'  garbage collections (run 1): {first["gc"]}')
@@ -580,9 +588,11 @@ def child():
                 plan += [(kind, store.get_item(i))
                          for i in range(min(count, store.get_n_items()))]
         pushed = {}  # page class -> GObject weak references to the pages pushed
+        opens = {}  # kind -> ms from the open to the end of its first paint, measured round
 
-        async def tour():
+        async def tour(timed=False):
             for kind, target in plan:
+                started = time.perf_counter()
                 if kind == 'shelf':
                     window.open_shelf(target)
                 else:
@@ -590,7 +600,9 @@ def child():
                 page = window.navigation_view.get_visible_page()
                 pushed.setdefault(type(page).__name__, []).append(page.weak_ref())
                 del page
-                await next_paint(window)
+                painted = await next_paint(window)
+                if timed and painted:
+                    opens.setdefault(kind, []).append((time.perf_counter() - started) * 1000)
                 await asyncio.sleep(args.settle / 1000)  # rows bound, artwork decoded
                 window.navigation_view.pop()
                 await next_paint(window)
@@ -598,7 +610,7 @@ def child():
 
         await tour()  # the warm-up: what the first visits fill once (the artwork's LRU)
         rss_before, anon_before = memory()
-        await tour()
+        await tour(timed=True)
         rss_after, anon_after = memory()
         opened = {}
         for kind, _target in plan:
@@ -610,6 +622,7 @@ def child():
             'anon': round(anon_after - anon_before, 1),
             'alive': {name: [sum(ref() is not None for ref in refs), len(refs)]
                       for name, refs in pushed.items()},
+            'open_ms': {kind: round(median(times), 1) for kind, times in opens.items()},
         }
 
     app.connect('activate', on_activate)

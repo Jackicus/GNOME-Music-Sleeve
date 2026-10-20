@@ -45,6 +45,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   <kbd>Esc</kbd> clears the filter. Click a column title to sort by it, or use **Sort By**.
 - In a wide window a playlist's songs are a table, as the Songs page is: click an artist
   or an album there to open its page.
+- An album's page ends as Apple Music's does: under the last song, the release date, how
+  many songs and minutes it holds and its ℗ line, then **Other Versions** (deluxe editions,
+  remasters), **Music Videos**, **More By** the artist, **Featured On** (playlists with its
+  songs) and **You Might Also Like**, each shown when Apple Music has some. They come a
+  moment after the songs and are kept for a day.
 - Under your own playlists, **Suggested Songs** are songs Apple Music suggests adding, based
   on what the playlist holds, six at a time (twelve with Preferences › General › Suggested
   Songs › Show More Suggestions): click one to play it, its **+** button to add it to the
@@ -135,6 +140,10 @@ Other limits:
   distribution's Widevine package. Only Google Chrome is tested. A snap cannot be the
   engine. Changing browser may mean signing in again.
 - Music videos play as audio only: the engine has no window to show them in.
+- An album's shelves and its release date and ℗ line need the engine and your sign-in (or a
+  day-old copy of them): without them, or for an album Apple Music no longer has, the page
+  shows the songs and their count alone. Songs you added without their album, which show as
+  an album of their own, have no shelves.
 - Reordering a playlist's songs, making playlist folders and moving playlists between them
   happen in Apple's own apps.
 - One Apple Account per build: a release install and a development build each have their own

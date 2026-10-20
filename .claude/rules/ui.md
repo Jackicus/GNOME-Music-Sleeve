@@ -77,7 +77,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `widgets.engine_status.EngineStatus` (no widget; tests/test_engine_status.py): the spinner
   while it starts, Sign In when signed out, Start Engine (through `app.start_engine()`, whose
   failure the app reports), Try Again, and "Not Available in the Demo" with no button (the
-  demo engine answers `engine-down`, but for the artist pages scripts/demo_library.py invents).
+  demo engine answers `engine-down`, but for the artist and album pages scripts/demo_library.py
+  invents).
   A state the page shows is not toasted too. A library page's empty state offers Sign In… while
   signed out (outside the demo) through one `pages.SignInOffer(status_page)`.
 - A page of shelves is a vertical `Gtk.Box` of a handful of `AppleMusicShelf`, each a horizontal
@@ -126,6 +127,14 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   plays the song's preview (`Player.start_preview`, again to stop; one without a preview
   plays in full), the row marked while the Player's `preview` names it, and the page
   stops a preview it started when it is left (`do_hidden`).
+- An album's tracks end with its footer (`release.footer_lines()`: the release date in full,
+  "12 songs, 43 minutes", the ℗ line) and, once `Engine.album_page` answers (asked after the
+  tracks' first paint, by `release.album_target()`: a library album through one of its
+  songs), the catalog's shelves in Apple's order (Other Versions, Music Videos, More By,
+  Featured On, You Might Also Like) in one more section, a `ShelfColumn` in `shelves_box`,
+  which style.css takes out of the rows' inset. No answer (offline, the engine down, a 404)
+  leaves them out, only logged. Tab from a track enters the shelves, Shift+Tab from the first
+  goes back to the last track (`_on_list_key_pressed`, as for a playlist's suggestions).
 - The window's keyed actions (`win.back`, `win.search`, `win.focus-*`,
   `win.fullscreen-player`, and `win.show-lyrics` and `win.show-queue` through
   `TabActions.set_free()`) are disabled while a dialog is open over the window

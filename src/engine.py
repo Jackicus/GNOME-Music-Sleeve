@@ -59,17 +59,21 @@ UI awaits.
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.artist_page(id) # {id, artist, latest, topSongs, shelves}: a catalog artist's
                                  # page, every view of it at once
+    await engine.album_page(id, song_id=None)   # {id, artistId, artistName, release,
+                                 # shelves}: what an album's page shows under its tracks (a
+                                 # library album's through one of its songs)
     await engine.playlist_suggestions(playlist_id, limit=16, offered=(), selected=(),
                                       previewed=())
                                  # {items}: the songs Apple suggests adding to a library
                                  # playlist, none of `offered`; more=True: a few more, unkept
-    # The last six are kept under the cache for a day (landing.json, categories/, browse.json,
-    # made-for-you.json, artists/, suggestions/) and answered from there without the engine;
-    # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
-    # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
-    # suggestions are kept with `basis`, what the playlist held, and asked again once it
-    # holds something else.
+    # The last seven are kept under the cache for a day (landing.json, categories/,
+    # browse.json, made-for-you.json, artists/, albums/, suggestions/) and answered from
+    # there without the engine; refresh=True asks again. Each answer carries `cached`, when
+    # it was fetched; one older than a day, answered when Apple cannot be asked, carries
+    # `stale: True` too. The suggestions are kept with `basis`, what the playlist held, and
+    # asked again once it holds something else.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
+    await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
                                                   # for, found through its songs, or None
     await engine.related('song', id)  # {album, artists}: a catalog song's (or music video's)
@@ -88,8 +92,8 @@ Gio.Subprocess (awaitable wait_async), the connection is the asynchronous CDPCli
 Chrome's DevTools pipe (its descriptors 3 and 4: no port is open), and the JSON shaping and
 artwork HTTP of item() run in a thread. In demo mode (`demo=True`) start() and stop() do
 nothing and every command raises EngineError('engine-down') at once, but for a kept answer the
-demo library invented (scripts/demo_library.py writes its artists' pages, marked `demo`),
-answered from its cache.
+demo library invented (scripts/demo_library.py writes its artists' and albums' pages, marked
+`demo`), answered from its cache.
 
 The browser command (`browser_command`) and the preferred mode (`prefer_headless`) are read
 when Chrome is spawned, so a change applies at the next start and a running Chrome is left
@@ -1813,6 +1817,14 @@ class Engine(GObject.Object):
         client = await self._require_signed_in('browse')
         storefront = await self._current_storefront()
         path = api.ARTIST_VIEW_ENDPOINT.format(storefront=storefront, id=artist_id, view=view)
+        resources = await self._whole_view(client, path)
+        return await asyncio.to_thread(normalize.artist_view_items, view, resources,
+                                       str(self.cache_dir))
+
+    async def _whole_view(self, client, path):
+        """The resources of a view (an artist's, an album's), a page of
+        api.ARTIST_VIEW_LIMIT at a time: Apple's `next` links followed (RELATIONSHIP_PAGES
+        at most)."""
         answer = await self._api(client, path, {'limit': api.ARTIST_VIEW_LIMIT},
                                  timeout=READ_TIMEOUT)
         resources = api.page_data(answer)
@@ -1826,7 +1838,67 @@ class Engine(GObject.Object):
                 break
             resources += page
             link = answer.get('next')
-        return await asyncio.to_thread(normalize.artist_view_items, view, resources,
+        return resources
+
+    async def album_page(self, album_id, song_id=None, refresh=False):
+        """The rest of an album's page, under its tracks: {id, artistId, artistName, release,
+        shelves} (normalize.album_page): the footer's release date, copyright and label, and
+        the shelves in music.apple.com's order (Other Versions, Music Videos, More By, Featured
+        On, You Might Also Like), titled as Apple titles them (More By untitled: the page
+        names it). Two reads: the catalog album with its views (api.ALBUM_ENDPOINT), then a
+        page of its first artist's albums (api.MORE_BY_VIEW; More By is left out when that
+        read fails). A library album (an `l.` id) is its catalog album, found through
+        `song_id`, one of its songs' catalog ids: one read more, the first time. From
+        <cache>/albums/<id>.json for a day, else fetched and kept. An album the catalog
+        lacks is Apple's 404 (EngineError.status)."""
+        album_id = str(album_id or '')
+        song_id = str(song_id or '')
+        if not album_id or (api.is_library_id(album_id) and not song_id):
+            raise EngineError('usage', 'album_page needs a catalog album id, or a song id')
+
+        async def fetch(client):
+            storefront = await self._current_storefront()
+            catalog_id = album_id
+            if api.is_library_id(album_id):
+                found = await self._api(
+                    client, api.RELATED_ENDPOINTS['song'].format(storefront=storefront,
+                                                                 id=song_id),
+                    api.SONG_ALBUMS_PARAMS, timeout=READ_TIMEOUT)
+                catalog_id = api.first_related_id(found, 'albums')
+                if catalog_id is None:
+                    raise EngineError('api', f'no catalog album for song {song_id}',
+                                      status=404)
+            album = await self._api(
+                client, api.ALBUM_ENDPOINT.format(storefront=storefront, id=catalog_id),
+                api.ALBUM_PARAMS, timeout=READ_TIMEOUT)
+            more_by = None
+            artist_id = api.first_related_id(album, 'artists')
+            if artist_id is not None:
+                try:
+                    more_by = await self._api(
+                        client, api.ARTIST_VIEW_ENDPOINT.format(
+                            storefront=storefront, id=artist_id, view=api.MORE_BY_VIEW),
+                        {'limit': api.MORE_BY_LIMIT}, timeout=READ_TIMEOUT)
+                except EngineError as error:
+                    if error.code == 'engine-down':
+                        raise
+                    log.info('the albums of artist %s: %s', artist_id, error)
+            return {'album': album, 'moreBy': more_by}
+        return await self._kept_answer(
+            normalize.album_cache_path(str(self.cache_dir), album_id), refresh, fetch,
+            normalize.album_page)
+
+    async def album_view(self, album_id, view):
+        """One of a catalog album's views (api.ALBUM_VIEWS) whole, for its See All: its
+        Items as album_page() has them, Apple's `next` links followed."""
+        album_id, view = str(album_id or ''), str(view or '')
+        if not album_id or api.is_library_id(album_id) or view not in api.ALBUM_VIEWS:
+            raise EngineError('usage', 'album_view needs a catalog album id and a view')
+        client = await self._require_signed_in('browse')
+        storefront = await self._current_storefront()
+        path = api.ALBUM_VIEW_ENDPOINT.format(storefront=storefront, id=album_id, view=view)
+        resources = await self._whole_view(client, path)
+        return await asyncio.to_thread(normalize.album_view_items, view, resources,
                                        str(self.cache_dir))
 
     async def playlist_suggestions(self, playlist_id, refresh=False, limit=SUGGESTIONS_LIMIT,

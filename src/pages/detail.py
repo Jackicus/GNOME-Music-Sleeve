@@ -28,6 +28,14 @@ spares that fill an added song's place and what Apple has offered are a
 suggestions.Suggestions, one a playlist. The section is left out while there are none to
 show, the engine unable to answer among them: a failure is only logged.
 
+An album's tracks end as Apple Music's clients end an album: a section of one marker item
+whose row holds the footer (release.py: the release date in full, the songs and their time,
+the ℗ line), then, once the catalog has answered (Engine.album_page, asked after the
+tracks' first paint, kept for a day), one more whose row holds the catalog's shelves (Other
+Versions, Music Videos, More By, Featured On, You Might Also Like) in a ShelfColumn, as an
+artist page's are. An album the catalog cannot answer for shows the footer's counts alone:
+the failure is only logged.
+
 A suggested song clicked plays in full, as a track row's song does, or, with the
 `preview-suggestions` setting, Apple's 30-second preview of it (Player.start_preview(): the
 queue pauses for it), clicked again to stop; a song without a preview plays in full. The
@@ -46,6 +54,7 @@ from gi.repository import Adw, Gdk, Gio, GObject, Gtk, Pango
 from ..backend.errors import EngineError
 from ..library import Item, ShelfModel, Track
 from ..related import catalog_target
+from ..release import album_shelves, album_target, footer_lines
 from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
@@ -56,7 +65,7 @@ from ..widgets.engine_status import EngineStatus
 from ..widgets.labels import track_label
 from ..widgets.suggested_songs import SuggestedSongs
 from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader
-from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, weak_method
+from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, next_frame, weak_method
 from . import SignInOffer, app, show_notes
 
 log = logging.getLogger(__name__)
@@ -121,6 +130,46 @@ def suggestion_items(answer):
             if isinstance(entry, dict) and entry.get('id') and entry.get('kind') == 'song']
 
 
+def album_completer(answer, shelf):
+    """See All's coroutine function for a shelf under an album Apple has more of: the whole
+    view (Engine.album_view; for More By the artist's albums, Engine.artist_view, less the
+    album), the Items shown kept. None for a shelf Apple sent whole."""
+    if not getattr(shelf, 'more', False) or not isinstance(answer, dict):
+        return None
+    album_id = str(answer.get('id') or '')
+    artist_id = str(answer.get('artistId') or '')
+    if shelf.key == 'more-by-artist':
+        if not artist_id:
+            return None
+        key = artist_id
+
+        def fetch(engine):
+            return engine.artist_view(artist_id, 'full-albums')
+    elif album_id:
+        key = album_id
+
+        def fetch(engine):
+            return engine.album_view(album_id, shelf.key)
+    else:
+        return None
+
+    async def complete():
+        try:
+            dicts = await fetch(app().engine)
+        except EngineError as error:
+            log.info('%s, %s: %s', key, shelf.key, error)
+            return
+        shown = {item.id: item for item in shelf.items}
+        items = [shown.get(data.get('id')) or Item(remote_item(data)) for data in dicts
+                 if isinstance(data, dict) and data.get('id') and data.get('kind')
+                 and album_id not in (data.get('id'), data.get('catalogId'))]
+        if items:
+            shelf.more = False
+            shelf.update(shelf.title, items)
+            await fetch_shelf_art([shelf])
+    return complete
+
+
 class _Hero(GObject.Object):
     """The first item of a detail page's list: where the hero goes."""
 
@@ -131,6 +180,19 @@ class _Suggestions(GObject.Object):
     """The last item of a playlist's list, while it has suggestions: where they go."""
 
     __gtype_name__ = 'AppleMusicDetailSuggestions'
+
+
+class _Footer(GObject.Object):
+    """The item after an album's tracks: where its release footer goes."""
+
+    __gtype_name__ = 'AppleMusicDetailFooter'
+
+
+class _Shelves(GObject.Object):
+    """The last item of an album's list, while the catalog has shelves of it: where they
+    go."""
+
+    __gtype_name__ = 'AppleMusicDetailShelves'
 
 
 class _Row(Gtk.Box):
@@ -245,6 +307,8 @@ class DetailPage(Adw.NavigationPage):
     status_title = Gtk.Template.Child()
     status_description = Gtk.Template.Child()
     status_button = Gtk.Template.Child()
+    footer_label = Gtk.Template.Child()
+    shelves_box = Gtk.Template.Child()
 
     def __init__(self, library, item=None, find=None, root=False, title=None, icon_name=None,
                  empty_title=None, empty_description=None):
@@ -273,6 +337,16 @@ class DetailPage(Adw.NavigationPage):
         self._more_task = None
         self._suggestion_art_task = None
         self.suggested_songs = None
+        # What the catalog shows under an album's tracks (Engine.album_page): the Item it
+        # was asked for, the request under way and the art's, its answer, and its shelves,
+        # shown by a ShelfColumn in shelves_box, made with the first of them (a playlist's
+        # page, the first page built, never imports the shelves).
+        self._album_asked_for = None
+        self._album_task = None
+        self._album_art_task = None
+        self._album_answer = None
+        self._album_shelves = []
+        self._shelf_column = None
         # What the status box says when the engine cannot answer, and what its button does.
         self._engine_status = EngineStatus(app(), self._show_status, self._refetch, {
             'engine-down': _('Start the engine to load the songs'),
@@ -337,6 +411,11 @@ class DetailPage(Adw.NavigationPage):
         self._suggestions_section = Gio.ListStore(item_type=GObject.Object)
         self._suggestions_section.append(_Suggestions())
         self._suggestions_start = None  # the list position of the suggestions, while shown
+        self._footer_section = Gio.ListStore(item_type=GObject.Object)
+        self._footer_section.append(_Footer())
+        self._shelves_section = Gio.ListStore(item_type=GObject.Object)
+        self._shelves_section.append(_Shelves())
+        self._shelves_start = None  # the list position of an album's shelves, while shown
         self._sections = Gio.ListStore(item_type=Gio.ListModel)
         self._rows = Gtk.FlattenListModel(model=self._sections)
         self.list_view.set_model(Gtk.NoSelection(model=self._rows))
@@ -351,6 +430,7 @@ class DetailPage(Adw.NavigationPage):
         if should_fetch(self.item, self._fetched):
             self._fetch(self.item)  # a fetch cancelled when the page was hidden
         self._suggest()
+        self._ask_album()
         if self._suggestions is not None and self._suggestions.count != self._count():
             self._on_count_changed()  # the setting changed while the page was hidden
         self._on_preview_changed()  # a preview that ended while the page was hidden
@@ -384,11 +464,14 @@ class DetailPage(Adw.NavigationPage):
             self._fetch_task = None
             self._fetched = None
             self._engine_status.clear()
-        for task in (self._suggestions_task, self._more_task, self._suggestion_art_task):
+        for task in (self._suggestions_task, self._more_task, self._suggestion_art_task,
+                     self._album_task, self._album_art_task):
             if task is not None and not task.done():
                 task.cancel()
         if self._suggestions is None or not self._suggestions.shown:
             self._suggested_for = None  # asked again when shown: none came this time
+        if self._album_answer is None:
+            self._album_asked_for = None  # the same
         self._stop_preview()
         Adw.NavigationPage.do_hidden(self)
 
@@ -430,6 +513,7 @@ class DetailPage(Adw.NavigationPage):
         if item is None:
             self._shown_groups = None
             self._suggestions_start = None
+            self._shelves_start = None
             self._sections.remove_all()
             self._update_state()
             return
@@ -460,6 +544,18 @@ class DetailPage(Adw.NavigationPage):
         self._update_headers()
         sections = [self._hero_section] + [group.entries for group in groups]
         self._suggestions_start = None
+        self._shelves_start = None
+        if groups and item.kind == 'album':
+            # The footer, then the catalog's shelves once they have come (_take_album).
+            if self._album_asked_for is not item:
+                self._album_answer = None
+                self._album_shelves = []
+            self._update_footer(item, groups)
+            sections.append(self._footer_section)
+            position += 1
+            if self._album_shelves:
+                self._shelves_start = position
+                sections.append(self._shelves_section)
         shown = []
         if groups and wants_suggestions(item):
             self._suggest()
@@ -475,6 +571,79 @@ class DetailPage(Adw.NavigationPage):
         self._update_state()
         if shown:
             self._want_more()
+        if groups:
+            self._ask_album()
+
+    # What the catalog shows under an album's tracks: the footer and the shelves.
+
+    def _update_footer(self, item, groups):
+        """The footer's lines: the release date, the songs shown and their time, the
+        copyright (release.footer_lines), from the catalog's answer once it has come."""
+        count = sum(group.entries.get_n_items() for group in groups)
+        duration = sum(track.duration_ms for group in groups for track in group.entries)
+        answer = self._album_answer if self._album_asked_for is item else None
+        lines = footer_lines(item, answer, count, duration)
+        self.footer_label.set_label('\n'.join(lines))
+        self.footer_label.set_visible(bool(lines))
+
+    def _ask_album(self):
+        """Ask the catalog for the rest of the album shown (release.album_target), once,
+        while the page is mapped and its tracks are shown: the page's first build never
+        waits for it."""
+        item = self.item
+        if (item is None or item.kind != 'album' or self._album_asked_for is item
+                or not self.get_mapped() or not self._groups):
+            return
+        self._album_asked_for = item
+        target = album_target(item)
+        if target is None:
+            return
+        if self._album_task is not None and not self._album_task.done():
+            self._album_task.cancel()
+        self._album_task = app().spawn(self._load_album(item, *target))
+
+    async def _load_album(self, item, album_id, song_id):
+        """Engine.album_page()'s answer, after the tracks' first paint. An album it cannot
+        answer for (offline, the engine down, one the catalog lacks) shows what it has: the
+        failure is only logged."""
+        await next_frame(self.list_view)
+        try:
+            answer = await app().engine.album_page(album_id, song_id=song_id)
+        except EngineError as error:
+            log.info('the rest of album %s: %s', item.id, error)
+            return
+        if self.item is item and self._album_asked_for is item:
+            self._take_album(item, answer)
+
+    def _take_album(self, item, answer):
+        """Show Engine.album_page()'s answer: the footer's release lines, the shelves after
+        it (appended, the tracks' rows left as they are), and their thumbnails."""
+        self._album_answer = answer
+        self._album_shelves = album_shelves(answer, item.subtitle)
+        for shelf in self._album_shelves:
+            shelf.complete = album_completer(answer, shelf)
+        groups = [group for group in item.groups if group.entries.get_n_items()]
+        if not groups:
+            return
+        self._update_footer(item, groups)
+        if self._shelf_column is None and self._album_shelves:
+            from ..widgets.shelf import ShelfColumn
+
+            self._shelf_column = ShelfColumn(self.shelves_box)
+        if self._shelf_column is not None:
+            self._shelf_column.show(self._album_shelves)
+        count = self._sections.get_n_items()
+        present = count > 0 and self._sections.get_item(count - 1) is self._shelves_section
+        if self._album_shelves and not present:
+            self._shelves_start = self._rows.get_n_items()
+            self._sections.append(self._shelves_section)
+        elif present and not self._album_shelves:
+            self._shelves_start = None
+            self._sections.remove(count - 1)
+        if self._album_shelves:
+            if self._album_art_task is not None and not self._album_art_task.done():
+                self._album_art_task.cancel()
+            self._album_art_task = app().spawn(fetch_shelf_art(list(self._album_shelves)))
 
     # The songs Apple suggests adding to a playlist.
 
@@ -818,6 +987,10 @@ class DetailPage(Adw.NavigationPage):
             self._bound.discard(list_item)
             if isinstance(entry, _Suggestions):
                 row.show_widget(self.suggested_songs)
+            elif isinstance(entry, _Footer):
+                row.show_widget(self.footer_label)
+            elif isinstance(entry, _Shelves):
+                row.show_widget(self.shelves_box)
             else:
                 row.show_widget(self.hero)
             list_item.set_accessible_label('')
@@ -880,6 +1053,21 @@ class DetailPage(Adw.NavigationPage):
         if row is None and focus.get_first_child() is not None:
             row = focus.get_first_child()  # the list item's own widget: its row inside
         on_track = isinstance(row, _Row) and row.track_row.context_item is not None
+        shelves = self._shelves_start
+        if shelves is not None:
+            if forward and on_track:
+                self.list_view.scroll_to(shelves, Gtk.ListScrollFlags.FOCUS, None)
+                if not (self.shelves_box.get_mapped()
+                        and self.shelves_box.child_focus(Gtk.DirectionType.TAB_FORWARD)):
+                    # Their row is made at the list's next layout.
+                    app().spawn(self._focus_shelves())
+                return True
+            if backward and (focus is self.shelves_box or focus.is_ancestor(self.shelves_box)):
+                # Back through the shelves, then from the first of them to the last track
+                # (the footer between them takes no focus).
+                if not self.shelves_box.child_focus(Gtk.DirectionType.TAB_BACKWARD):
+                    self.list_view.scroll_to(shelves - 2, Gtk.ListScrollFlags.FOCUS, None)
+                return True
         start = self._suggestions_start
         if start is not None:
             first_button = self.suggested_songs.refresh_button
@@ -894,6 +1082,15 @@ class DetailPage(Adw.NavigationPage):
             last.grab_focus()
             return True
         return False
+
+    async def _focus_shelves(self):
+        """The first shelf's first focusable widget, once the list has laid out the row
+        scroll_to() brought into view (a frame or two)."""
+        for _attempt in range(3):
+            await next_frame(self.list_view)
+            if (self.shelves_box.get_mapped()
+                    and self.shelves_box.child_focus(Gtk.DirectionType.TAB_FORWARD)):
+                return
 
     def _on_unbind(self, _factory, list_item):
         self._bound.discard(list_item)

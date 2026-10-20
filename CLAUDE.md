@@ -64,8 +64,8 @@ for both builds, the sign-in's keys each build's own (`account_key()`).
 ```
 src/main.py, src/window.py      the Application, the Window (player_bar, sidebar_view, fullscreen)
 src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
-                                sync, account, cache, background, actions, related, discography,
-                                suggestions, errors, i18n, lyrics, remote, recent_searches, session,
+                                sync, account, cache, background, actions, related, release, session,
+                                discography, suggestions, errors, i18n, lyrics, remote, recent_searches,
                                 timing, shortcuts, keyboard, sidebar, sections; new ones go here)
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
@@ -143,8 +143,8 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
   the window handles them as `src/keyboard.py` decides (Space belongs to a focused button).
 - **Quitting**: activate `app.quit`, never `Gio.Application.quit()` directly: the quit path
   saves the window state and stops Chrome cleanly, where `do_shutdown` could only SIGKILL it.
-- **Demo mode** (`--demo`, `app.demo`): no engine (`engine-down`; only its invented artist pages
-  answer), no MPRIS, no search provider, its own settings; never Chrome, never the real cache.
+- **Demo mode** (`--demo`, `app.demo`): no engine (`engine-down`; only its invented artist and album
+  pages answer), no MPRIS, no search provider, its own settings; never Chrome, nor the real cache.
 - **Logging**: `log = logging.getLogger(__name__)`, set up once in main.py; no `print` in `src/`.
 - **Style**: `ruff check .` must be clean (`pyproject.toml`, no per-file exemptions). Beyond
   ruff: 4-space indents, no type annotations, a docstring where a module or function is not
