@@ -136,8 +136,9 @@ paths:
   playing; Playing Next; Autoplay from the first entry autoplay added: `section_bounds()`),
   a row being queue index `queue_index_at(position)` and showing its entry's cover, which
   `queue.EntryArt` finds once per artwork URL (on disk in a thread, else a thumbnail
-  fetched, never in the demo), only for the rows bound and at most every `ART_DELAY_MS`:
-  bind is a dictionary lookup. Remove from Up Next is in an entry's menu
+  fetched, never in the demo), only for the rows bound and at most every `ART_DELAY_MS`,
+  and again once the cache's generation moves (Clear Cache, sign-out): bind is a
+  dictionary lookup. Remove from Up Next is in an entry's menu
   (`context_queue_entry`) and on Delete (the focus then on the row in its place); History
   (a toggle above the list, off when the tab is left) shows the entries before the one
   playing, most recent first, in a second list over a `queue.HistoryModel` brought up to

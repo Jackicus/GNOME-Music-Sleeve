@@ -8,7 +8,9 @@ import asyncio
 import json
 import os
 import tempfile
+import threading
 import unittest
+from unittest import mock
 
 from tests import ROOT  # noqa: F401  (registers the applemusic package)
 
@@ -89,6 +91,32 @@ class RecentSearchesTest(unittest.IsolatedAsyncioTestCase):
         os.remove(self.path)
         await recent.load()
         self.assertEqual(recent.items.get_n_items(), 0)
+
+    async def test_the_old_caches_list_goes_at_once(self):
+        # After a sign-out (or Clear Cache) the old list shows nothing while the new cache
+        # is read, and what is opened meanwhile goes into an empty list, and the file.
+        recent = RecentSearches(self.path, self.spawn)
+        await recent.load()
+        recent.add(hit(1))
+        await self.written()
+        store.bump_cache_generation()
+        os.remove(self.path)
+        reading = threading.Event()
+        read = recent_searches.read
+
+        def held_read(path):
+            reading.wait(5)
+            return read(path)
+
+        with mock.patch.object(recent_searches, 'read', held_read):
+            loading = asyncio.ensure_future(recent.load())
+            await asyncio.sleep(0)  # its read under way, in a thread
+            self.assertEqual(ids(recent), [])
+            recent.add(hit(2))
+            reading.set()
+            await loading
+        self.assertEqual(ids(recent), ['c2'])
+        self.assertEqual([entry['id'] for entry in await self.written()], ['c2'])
 
     async def test_a_damaged_file_reads_as_nothing(self):
         with open(self.path, 'w', encoding='utf-8') as file:

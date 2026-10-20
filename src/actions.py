@@ -1102,6 +1102,15 @@ class ItemActions:
         `rated` (rating_target, favourite_target): 1, 0 or -1, or None."""
         return self._ratings.get(tuple(rated)) if rated is not None else None
 
+    def forget_account(self):
+        """Sign-out (Window.forget_account_pages()): the ratings and favourites the engine
+        said, the objects menus were built for and the playlists' orders pending and their
+        Undo were the account's, not the next one's (the Engine forgets its own as it stops)."""
+        self._ratings.clear()
+        self._menu_rated = None
+        self._remembered.clear()
+        self.playlist_order.forget()
+
     async def _refine(self, rated):
         try:
             # Its `rated` signal brings the answer.

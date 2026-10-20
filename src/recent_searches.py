@@ -7,9 +7,9 @@ which the page shows as Recently Searched before anything is typed.
 music.apple.com keeps its Recently Searched in the browser's own storage, not in the account,
 so the app keeps its own: <cache>/recent-searches.json, a list of Item dicts (only the keys a
 tile and window.open_item() read: KEYS), at most LIMIT of them. Clear Cache and sign-out
-clear it with the rest of the cache; load() notices the cache's generation move (store.py)
-and reads the file again, so nothing of the old cache shows, and a write begun for the old
-cache is dropped.
+clear it with the rest of the cache; load() notices the cache's generation move (store.py),
+empties the list at once and reads the file again, so nothing of the old cache shows, and a
+write begun for the old cache is dropped.
 
     recent = RecentSearches(config.cache_dir() / FILE_NAME, app.spawn)
     await recent.load()      # the file, once, and again after the cache was cleared
@@ -90,10 +90,14 @@ class RecentSearches:
         self._writer = None
 
     async def load(self):
-        """Read the file, unless it was read for this cache already (cheap then)."""
+        """Read the file, unless it was read for this cache already (cheap then). The list
+        read from a cache cleared since (a sign-out's: another account's) goes at once, not
+        once the read answers, so nothing opened meanwhile joins it."""
         generation = store.cache_generation()
         if generation == self._generation or self.path is None:
             return
+        if self._generation is not None:
+            self.items.remove_all()  # the file went with the cache: nothing to write
         self._generation = generation
         edits = self._edits
         entries = await asyncio.to_thread(read, self.path)

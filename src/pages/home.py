@@ -38,7 +38,9 @@ class HomePage(Adw.NavigationPage):
     to) or take the focus (it is in the shelf) waits for the next time the page is shown
     (home.hold_back()). While the engine is down or starting the kept answer shows, and the
     page asks once the engine is up and signed in; signed out there is no Recently Played,
-    and nothing is asked. No failure is toasted: the shelf stays as it was.
+    and nothing is asked. A sign-out forgets the answer even while the page is hidden (the
+    window calls forget_account()), so the next account's is never shown the old one's. No
+    failure is toasted: the shelf stays as it was.
 
     Refresh (the header bar's button, and F5: refresh()) asks Apple for Recently Played past
     the throttle and has the sync read the library's shelves again (Application.start_sync's
@@ -193,11 +195,21 @@ class HomePage(Adw.NavigationPage):
         return widget is not None and focus is not None and (
             focus is widget or focus.is_ancestor(widget))
 
+    def forget_account(self):
+        """Sign-out (Window.forget_account_pages()), whether the page is shown or not: what
+        it had of the account goes (_forget), and a failure of the account's asks no longer
+        holds the next account's first ask back."""
+        self._forget()
+        self._throttle.reset()
+
     def _forget(self):
         """The account signed out: no Recently Played, nothing held, nothing under way."""
         if self._loading():
             self._task.cancel()
         self._task = None
+        if self._art_task is not None and not self._art_task.done():
+            self._art_task.cancel()
+        self._art_task = None
         self._answer = self._pending = None
         self._wanted = False
         if self._recent.shelf.items.get_n_items():

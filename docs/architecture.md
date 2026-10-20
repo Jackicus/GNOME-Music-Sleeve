@@ -164,8 +164,10 @@ touches widgets.
   revokes the Apple session through MusicKit (starting a stopped engine for it, 20 seconds at
   most), stops every other job that writes the cache (the cache's generation is bumped),
   stops Chrome and keeps it from starting, deletes the profile and what the cache holds,
-  forgets the account's settings and pages, and empties the library; quitting meanwhile cuts
-  only the revocation short. Clear Cache stops the cache's writers the same way before it
+  forgets the account's settings and pages and what this run heard of it (Home's Recently
+  Played, the ratings and favourites the menus and the artist page's star know, the
+  playlists' orders pending, Recently Searched as read), and empties the library; quitting
+  meanwhile cuts only the revocation short. Clear Cache stops the cache's writers the same way before it
   deletes anything.
 - **Quitting.** Every way out (Ctrl+Q, closing the window, MPRIS Quit, SIGINT or SIGTERM)
   activates `app.quit`: the windows save their state, close their dialogs and hide, a start of

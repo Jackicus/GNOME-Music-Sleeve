@@ -64,7 +64,7 @@ ROOT_LIMIT = 8
 # The kinds open_item shows a page for: it uncovers the content for them first.
 PAGE_KINDS = ('album', 'playlist', 'artist', 'folder', 'category', 'charts')
 # The fixed destinations whose pages show the engine's answers for the account signed in,
-# forgotten at sign-out (forget_account_pages).
+# forgotten at sign-out (forget_account_pages). Home is kept, forgetting its Recently Played.
 ACCOUNT_PAGES = ('new', 'radio', 'made-for-you', 'search')
 
 
@@ -741,7 +741,10 @@ class Window(Adw.ApplicationWindow):
         again on the next visit (from the empty library, or the next account's): the pages
         pushed over the one shown, the pages of the engine's answers (ACCOUNT_PAGES) and
         every playlist's and folder's root page. Home is shown when the page shown was one
-        of them. The folders shown open are forgotten too."""
+        of them. The pages kept forget what they hold of the account (`forget_account()`:
+        Home's Recently Played), shown or not, and so do the item actions (the ratings and
+        favourites heard, the playlists' orders pending). The folders shown open are
+        forgotten too."""
         stack = self.navigation_view.get_navigation_stack()
         if stack.get_n_items() > 1:
             self.navigation_view.pop_to_page(stack.get_item(0))
@@ -751,6 +754,11 @@ class Window(Adw.ApplicationWindow):
             self._sidebar.select(HOME)
         for key in forget:
             self._drop_root(key)
+        for page in list(self._roots.values()):
+            forget_account = getattr(page, 'forget_account', None)
+            if forget_account is not None:
+                forget_account()
+        self.item_actions.forget_account()
         self._sidebar.forget_expanded()
 
     def _restore_page(self, key):

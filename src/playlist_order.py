@@ -131,6 +131,7 @@ class PlaylistOrder:
         self._refresh = refresh or (lambda playlist_id: refresh_playlist(app, playlist_id))
         self._pending = {}  # playlist id -> _Pending
         self._undo = {}  # playlist id -> the track ids before its last write
+        self._settling = set()  # the _settle() tasks under way
 
     @staticmethod
     def can_reorder(item):
@@ -213,6 +214,20 @@ class PlaylistOrder:
             return
         await asyncio.gather(*(self.flush(playlist_id) for playlist_id in ids))
 
+    def forget(self):
+        """Sign-out (ItemActions.forget_account()): the orders pending are dropped unwritten
+        (their writes under way cancelled), and nothing is left to undo or to read back,
+        so nothing of the account's playlists reaches the next account."""
+        for state in self._pending.values():
+            self._cancel_timer(state)
+            if state.writing is not None and not state.writing.done():
+                state.writing.cancel()
+        for task in self._settling:
+            task.cancel()
+        self._pending.clear()
+        self._undo.clear()
+        self._settling.clear()
+
     def _cancel_timer(self, state):
         if state.timer is not None:
             state.timer.cancel()
@@ -264,7 +279,9 @@ class PlaylistOrder:
         if state is not None and self._pending.get(playlist_id) is state and state.timer is None:
             del self._pending[playlist_id]
         if written:
-            self.app.spawn(self._settle(playlist_id, state.base))
+            task = self.app.spawn(self._settle(playlist_id, state.base))
+            self._settling.add(task)
+            task.add_done_callback(self._settling.discard)
         return True
 
     async def _put_back(self, item, state, error):

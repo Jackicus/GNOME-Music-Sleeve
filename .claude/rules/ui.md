@@ -52,7 +52,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   (startup time). Playlist and folder root pages are kept only for the last few shown
   (`window.ROOT_LIMIT`). Sign-out forgets the pages that show the account's things
   (`Window.forget_account_pages()`: the pushed pages, New, Radio, Made for You, Search and
-  every playlist and folder root), to be built again on the next visit.
+  every playlist and folder root), to be built again on the next visit; a root page kept
+  forgets what it holds of the account in its `forget_account()`, shown or not (Home's
+  Recently Played), and so does `item_actions.forget_account()` (the ratings and artist
+  favourites heard, the objects menus named, the playlists' orders pending and their Undo).
 - Pages listen to `app.library` (and anything else that outlives them) only while mapped:
   they declare the handlers once, in `__init__`, on a `widgets.util.MappedHandlers(self)`,
   which connects them (weakly) on map and disconnects them on unmap; `do_map` catches up with

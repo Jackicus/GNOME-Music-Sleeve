@@ -228,6 +228,20 @@ class PlaylistOrderTest(unittest.IsolatedAsyncioTestCase):
         await self.order.flush_all(quitting=True)
         self.assertEqual(len(self.app.engine.writes), 1)
 
+    async def test_a_sign_out_forgets_the_orders_pending_and_their_undo(self):
+        # Nothing of the account signed out is written for, or undone on, the next one.
+        self.order.settle = (0.02,)
+        self.app.engine.listed['p.1'] = list('bcade')
+        self.order.move(self.item, 0, 2, at_once=True)
+        await self.order.flush('p.1')  # written; Apple's tracks to be read back
+        self.order.move(self.item, 0, 1)  # waiting out its delay
+        self.order.forget()
+        await self.settle(0.05)
+        self.assertEqual(len(self.app.engine.writes), 1)
+        self.assertFalse(self.order.pending('p.1'))
+        self.assertEqual(self.app.syncs, [])  # no pass for the playlist read back
+        self.assertFalse(self.order.undo('p.1'))
+
     async def test_the_demo_shows_the_move_and_writes_nothing(self):
         self.app.demo = True
         self.assertTrue(self.order.move(self.item, 0, 1, at_once=True))

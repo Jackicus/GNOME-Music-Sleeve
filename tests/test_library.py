@@ -2077,6 +2077,20 @@ class TestHide(unittest.TestCase):
         self.assertEqual(library.hidden, frozenset())
         self.assertEqual(self.ids(library.playlists), ['p.pl1'])
 
+    def test_a_sign_outs_load_forgets_what_was_hidden_and_favoured(self):
+        # Sign-out wipes the cache, then loads: nothing the account removed or favoured this
+        # run is held over the next account's library.
+        library = self.library
+        self.run_in_cache(lambda: library.hide({('album', 'l.a1')}))
+        self.assertTrue(library.set_favourite('l.a2', True))
+        os.remove(Path(self.cache, 'library.json'))
+        self.run_in_cache(library.load)
+        self.assertEqual(library.hidden, frozenset())
+        self.write(held_library())  # the next account's first sync
+        self.run_in_cache(library.reload)
+        self.assertEqual(self.ids(library.albums), ['l.a1', 'l.a2'])
+        self.assertFalse(library.by_id('album', 'l.a2').favourite)
+
     def test_library_ids_by_id_and_catalog_id(self):
         library = self.library
         self.assertEqual(library.library_id('song', 'i.2'), 'i.2')
