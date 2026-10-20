@@ -16,13 +16,13 @@ budget) and answered as its path.
 The engine's search, suggest, category, browse, radio, charts and made-for-you answers name a
 catalog URL as an item's `art` when the sync has not fetched its cover (and no `thumb`):
 `remote_item(data)` gives such a dict the paths fetch_remote() would use (`thumb` at
-THUMB_SIZE, `art` at COVER_SIZE, with `thumbUrl` and `artUrl` to fetch them by), so a tile
-shows the thumbnail once `await fetch_thumb(item)` has brought it and a detail page's
-fetch_cover() the cover. remote_items() wraps such dicts as Items, remote_shelves() makes the
-engine's shelf dicts into ShelfModel objects of them, titled in the app's words (shelf_title()),
-and fetch_shelf_art() (fetch_items_art() for a list of Items) brings their thumbnails a few at
-a time, each Item notifying `thumb` as its file arrives: the tiles
-showing it follow their Item (widgets/tile.py).
+THUMB_SIZE, a video's that high and 16:9, `art` at COVER_SIZE, with `thumbUrl` and `artUrl`
+to fetch them by), so a tile shows the thumbnail once `await fetch_thumb(item)` has brought
+it and a detail page's fetch_cover() the cover. remote_items() wraps such dicts as Items,
+remote_shelves() makes the engine's shelf dicts into ShelfModel objects of them, titled in
+the app's words (shelf_title()), and fetch_shelf_art() (fetch_items_art() for a list of
+Items) brings their thumbnails a few at a time, each Item notifying `thumb` as its file
+arrives: the tiles showing it follow their Item (widgets/tile.py).
 
 Downloads run in a pool of their own (FETCH_WORKERS threads), not in asyncio's default
 executor, where the artwork is decoded: a page's thumbnails downloading on a slow connection
@@ -89,19 +89,23 @@ def is_url(value):
     return isinstance(value, str) and value.startswith('https://')
 
 
-def sized_url(url, size):
-    """`url` naming a `size`×`size` px image: Apple's templates and sized URLs both take it;
-    any other URL is left as it is."""
+def sized_url(url, size, height=None):
+    """`url` naming a `size`×`size` px image (`size`×`height` with a height: Apple's `bb`
+    fits the image into that box, its own shape kept): Apple's templates and sized URLs both
+    take it; any other URL is left as it is."""
     if not url:
         return None
-    url = normalize.template_artwork_url(str(url), size, size)
-    return ART_SIZE_RE.sub(lambda match: f'/{size}x{size}{match.group(3)}{match.group(4)}', url)
+    height = height or size
+    url = normalize.template_artwork_url(str(url), size, height)
+    return ART_SIZE_RE.sub(lambda match: f'/{size}x{height}{match.group(3)}{match.group(4)}',
+                           url)
 
 
-def remote_art_path(url, size=config.COVER_SIZE):
-    """Where fetch_remote keeps the image at `url` re-sized to `size`: under <cache>/remote-art/,
-    named by the sized URL's hash. None without a URL."""
-    url = sized_url(url, size)
+def remote_art_path(url, size=config.COVER_SIZE, height=None):
+    """Where fetch_remote keeps the image at `url` re-sized to `size` (by `height`, as
+    sized_url()): under <cache>/remote-art/, named by the sized URL's hash. None without a
+    URL."""
+    url = sized_url(url, size, height)
     if not url:
         return None
     return os.path.join(str(config.cache_dir()), 'remote-art', normalize.artwork_filename(url))
@@ -111,17 +115,19 @@ def remote_item(data):
     """An Item dict from the engine's search, category, browse, radio or made-for-you
     answers with its artwork where this app fetches it: when `art` is a catalog URL (the sync
     has not fetched the cover), a copy naming fetch_remote()'s files instead (`thumb` at
-    THUMB_SIZE unless the dict names one, `art` at COVER_SIZE) and the URLs to fetch them by
-    (`thumbUrl`, `artUrl`, for fetch_thumb() and fetch_cover()). A dict whose artwork is a
-    file, or that has none, is returned as it is."""
+    THUMB_SIZE unless the dict names one, a video's in its 16:9 box, normalize.thumb_box(),
+    `art` at COVER_SIZE) and the URLs to fetch them by (`thumbUrl`, `artUrl`, for
+    fetch_thumb() and fetch_cover()). A dict whose artwork is a file, or that has none, is
+    returned as it is."""
     url = data.get('art') if isinstance(data, dict) else None
     if not is_url(url):
         return data
     item = dict(data)
-    item['thumbUrl'] = sized_url(url, config.THUMB_SIZE)
+    box = normalize.thumb_box(config.THUMB_SIZE, normalize.wide_art(data))
+    item['thumbUrl'] = sized_url(url, *box)
     item['artUrl'] = sized_url(url, config.COVER_SIZE)
     if not item.get('thumb'):
-        item['thumb'] = remote_art_path(url, config.THUMB_SIZE)
+        item['thumb'] = remote_art_path(url, *box)
     item['art'] = remote_art_path(url, config.COVER_SIZE)
     return item
 

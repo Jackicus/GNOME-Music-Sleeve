@@ -1856,21 +1856,28 @@ LONG_PLAYLIST_ID = 'l.pllong'
 
 
 def _draw_one(job):
-    out_path, kwargs, thumb_path, thumb_size = job
+    out_path, kwargs, thumb_path, box = job
     if 'banner' in kwargs:  # an artist's banner: no thumbnail
         draw_banner(out_path, **kwargs['banner'])
         return
     draw_cover(out_path, **kwargs)
-    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(out_path, thumb_size, thumb_size, True)
+    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(out_path, *box, True)
     pixbuf.savev(thumb_path, 'jpeg', ['quality'], ['90'])
 
 
+def thumb_file(thumb_dir, art_path, wide=False):
+    """The thumbnail of the cover at art_path in thumb_dir, named as a sync names it
+    (normalize.thumb_name(): a wide cover's, a video's, apart)."""
+    return os.path.join(thumb_dir, normalize.thumb_name(os.path.basename(art_path), wide))
+
+
 def draw_covers(covers, thumb_dir, thumb_size):
-    """Draw each queued cover (draw_cover arguments) and its thumbnail under the same name in
+    """Draw each queued cover (draw_cover arguments) and its thumbnail (thumb_file(), in
+    normalize.thumb_box(): a wide cover's by its shorter edge, as a sync scales a video's) in
     thumb_dir: in this process for the usual few dozen, in a pool of processes (forked:
     there are no threads here) for a big generated library."""
-    jobs = [(out_path, kwargs,
-             os.path.join(thumb_dir, os.path.basename(out_path)), thumb_size)
+    jobs = [(out_path, kwargs, thumb_file(thumb_dir, out_path, kwargs.get('wide', False)),
+             normalize.thumb_box(thumb_size, kwargs.get('wide', False)))
             for out_path, kwargs in covers]
     if len(jobs) < 200:
         for job in jobs:
@@ -1921,9 +1928,9 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     def draw_cover(out_path, **kwargs):
         covers.append((out_path, kwargs))
 
-    def thumb_for(art_path):
-        """The thumbnail of a cover, under the same name in thumb/."""
-        return os.path.join(thumb_dir, os.path.basename(art_path))
+    def thumb_for(art_path, wide=False):
+        """The thumbnail of a cover in thumb/ (`wide`: a video's, drawn wide: thumb_file())."""
+        return thumb_file(thumb_dir, art_path, wide)
 
     catalog_id_base = 1724040000
     global_trk_counter = 1
@@ -2308,7 +2315,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
             'genre': artist_info['genre'],
             'summary': None,
             'art': art_path,
-            'thumb': thumb_for(art_path),
+            'thumb': thumb_for(art_path, wide=True),
             'artColor': palette[1],
             'durationMs': dur_ms,
             'explicit': False,
@@ -2692,9 +2699,10 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
             item_id = f'{int(catalog_id) * 10 + number}'
             art = cover(f'post.{item_id}', words, name, index * 3 + number, wide=True)
             seconds = rnd.randint(70, 900)
-            interviews.append({'id': item_id, 'kind': 'link', 'title': words,
+            interviews.append({'id': item_id, 'kind': 'link', 'video': True, 'title': words,
                                'subtitle': f'{seconds // 60}:{seconds % 60:02d}',
-                               'year': newest['year'], 'art': art, 'thumb': thumb_for(art),
+                               'year': newest['year'], 'art': art,
+                               'thumb': thumb_for(art, wide=True),
                                'url': f'https://music.apple.com/us/post/{item_id}',
                                'play': {}, 'groups': []})
         shelf('more-to-see', 'More To See', interviews)

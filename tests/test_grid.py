@@ -150,6 +150,36 @@ class GridTest(PageTestCase):
         # 1000 px: four columns of 246 at most (three fit inside the margins).
         self.assertTrue(await self.until(lambda: page.grid_view.get_max_columns() == 4))
 
+    async def test_a_see_all_of_videos_about_an_artist_shows_frames(self):
+        # #383: More To See's See All, its links to videos given their shared shape: 16:9
+        # frames in the video grid's columns, without the play symbol.
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets.tile import GRID_VIDEO_SIZE, Tile, shared_shape
+        from tests.page_harness import find_all
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item({'id': f'post{n}', 'kind': 'link', 'video': True,
+                                  'title': f'Interview {n}', 'subtitle': '4:52',
+                                  'url': f'https://music.apple.com/us/post/{n}'})
+                            for n in range(4)])
+        page = await self.show_root(GridPage(self.library, 'More To See', store,
+                                             shape=shared_shape(store)))
+
+        def tiles():
+            return [tile for tile in find_all(page.grid_view, Tile)
+                    if tile.context_item is not None]
+
+        self.assertTrue(await self.until(lambda: tiles() and tiles()[0].cover.get_width()))
+        self.assertTrue(all(tile.shape == 'frame' for tile in tiles()))
+        self.assertTrue(all(tile.play_symbol is None for tile in tiles()))
+        self.assertEqual(page.grid_view.get_min_columns(), 1)
+        cover = tiles()[0].cover
+        self.assertEqual((cover.get_width(), cover.get_height()), GRID_VIDEO_SIZE)
+        self.assertTrue(await self.until(lambda: page.grid_view.get_max_columns() == 4))
+
     async def test_the_title_and_the_first_cover_sit_on_the_margin(self):
         from gi.repository import Gio
 

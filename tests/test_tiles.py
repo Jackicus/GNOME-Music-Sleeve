@@ -632,6 +632,45 @@ class TileShapeTest(WidgetTestCase):
         self.assertEqual(shape_for(Item({'id': 'v', 'kind': 'video', 'title': 'V'})), 'video')
         self.assertEqual(shape_for(Item({'id': 'p', 'kind': 'playlist', 'title': 'P'})),
                          'cover')
+        # A video about an artist (More To See) is a frame; a label's link stays a cover.
+        self.assertEqual(shape_for(Item({'id': 'l', 'kind': 'link', 'video': True,
+                                         'title': 'L'})), 'frame')
+        self.assertEqual(shape_for(Item({'id': 'c', 'kind': 'link', 'title': 'C',
+                                         'curatorKind': 'curator'})), 'cover')
+
+    def test_shared_shape(self):
+        from applemusic.widgets.tile import shared_shape
+
+        videos = [Item({'id': f'v{n}', 'kind': 'video', 'title': 'V'}) for n in range(2)]
+        links = [Item({'id': f'l{n}', 'kind': 'link', 'video': True, 'title': 'L'})
+                 for n in range(2)]
+        self.assertEqual(shared_shape(videos), 'video')
+        self.assertEqual(shared_shape(links), 'frame')
+        self.assertEqual(shared_shape(videos + links), 'cover')  # mixed
+        self.assertEqual(shared_shape([Item(dict(ALBUM))]), 'cover')
+        self.assertEqual(shared_shape([]), 'cover')
+
+    def test_a_frame_tile_is_a_video_tile_without_the_play_symbol(self):
+        # #383: an artist's More To See opens on music.apple.com: a 16:9 frame as a music
+        # video's, decoded by its shorter edge, but nothing to play here.
+        from applemusic.widgets.tile import ART_SIZE, VIDEO_SIZE, Tile
+
+        tile = self.show(Tile(shape='frame'))
+        tile.bind(Item({'id': 'post1', 'kind': 'link', 'video': True, 'title': 'Interview',
+                        'subtitle': '4:52', 'thumb': '/cache/remote-art/post1.jpg'}))
+        self.assertTrue(wait_for(lambda: tile.get_width() > 0))
+        self.assertEqual((tile.cover.get_width(), tile.cover.get_height()), VIDEO_SIZE)
+        self.assertIsNone(tile.play_symbol)
+        pump()
+        self.assertEqual(self.loader.requests[-1],
+                         ('/cache/remote-art/post1.jpg', ART_SIZE * self.scale(tile)))
+        # A shelf's tile that was a music video's hides its play symbol as a frame.
+        tile.unbind()
+        tile.set_shape('video')
+        self.assertTrue(tile.play_symbol.get_visible())
+        tile.set_shape('frame')
+        self.assertFalse(tile.play_symbol.get_visible())
+        self.assertEqual(tile.art_box.get_size_request(), VIDEO_SIZE)
 
     def test_a_video_tile_is_16_9_and_as_tall_as_a_cover(self):
         from applemusic.widgets.tile import ART_SIZE, VIDEO_WIDTH, Tile

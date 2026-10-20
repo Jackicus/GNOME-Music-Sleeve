@@ -28,7 +28,8 @@ from ..widgets import context_menu
 from ..widgets.engine_status import EngineStatus
 from ..widgets.filter_bar import FilterBar, SearchText, ShownModel
 from ..widgets.labels import bind_label, unbind_label
-from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
+from ..widgets.tile import (ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, WIDE_SHAPES, Tile,
+                            shared_shape)
 from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
                             weak_method)
 from . import SignInOffer, app, mark_bound
@@ -202,29 +203,30 @@ class GridPage(Adw.NavigationPage):
     the menu (then Sort and Filter, shown while the filter is on whatever it leaves), with
     the empty state's words for no favourite left; remembered per root page in the
     favourites-only setting. `artist` makes round portrait tiles, `video` music videos' 16:9
-    ones (wider columns). `filter_words`, (label, count), gives the page a filter bar
-    (widgets/filter_bar.py) named `label` ("Filter Albums"), whose new count is announced in
-    the words count(shown, total) chooses ("{shown} of {total} albums", formatted here); a
-    filter that leaves nothing shows No Results Found. `root` is false for a page pushed over
-    another. Root or pushed, the
-    header bar shows the title while the big one is out of view (HeaderTitle). The
-    in-content title follows the page's `title`, on the page's margin, where the first
-    column's cover is. The loading and empty states follow the library's
-    state (the first sync filling an empty library is loading) and the model's item count. A
-    playlist folder's page is one too (pages.folder()): its folders are tiles with a folder
-    icon. Its tiles are drag sources (widgets/dnd.py): an album or a playlist onto a sidebar
-    playlist (its songs added) or the player bar (queued), a playlist or folder onto a
-    sidebar folder (moved), a music video as a song is; artists drag nowhere.
+    ones (wider columns); `shape`, a tile shape (tile.COVER, ARTIST, VIDEO or FRAME: a See
+    All's, tile.shared_shape()), takes the place of both. `filter_words`, (label, count),
+    gives the page a filter bar (widgets/filter_bar.py) named `label` ("Filter Albums"),
+    whose new count is announced in the words count(shown, total) chooses ("{shown} of
+    {total} albums", formatted here); a filter that leaves nothing shows No Results Found.
+    `root` is false for a page pushed over another. Root or pushed, the header bar shows the
+    title while the big one is out of view (HeaderTitle). The in-content title follows the
+    page's `title`, on the page's margin, where the first column's cover is. The loading and
+    empty states follow the library's state (the first sync filling an empty library is
+    loading) and the model's item count. A playlist folder's page is one too
+    (pages.folder()): its folders are tiles with a folder icon. Its tiles are drag sources
+    (widgets/dnd.py): an album or a playlist onto a sidebar playlist (its songs added) or the
+    player bar (queued), a playlist or folder onto a sidebar folder (moved), a music video as
+    a song is; artists drag nowhere.
 
     With `fetch`, a coroutine function answering {items: [item dicts], cached} (an Engine
     method: an editorial room's, Engine.room), the page shows its answer's items instead of
     `model`, wrapped as the shelves pages wrap theirs (remote.remote_items, their thumbnails
     fetched while the page is shown), as round portraits or 16:9 frames when they are all
-    artists or all music videos. It asks when first shown, when shown again with an answer
-    more than a day old, and from its header bar's Refresh (refresh(), F5; not in the demo),
-    shows the spinner meanwhile and what the engine's failure means otherwise
-    (widgets.engine_status.EngineStatus, its button on the status page), and stops asking
-    once hidden.
+    artists or all videos (tile.shared_shape()). It asks when first shown, when shown again
+    with an answer more than a day old, and from its header bar's Refresh (refresh(), F5;
+    not in the demo), shows the spinner meanwhile and what the engine's failure means
+    otherwise (widgets.engine_status.EngineStatus, its button on the status page), and
+    stops asking once hidden.
     """
 
     __gtype_name__ = 'AppleMusicGridPage'
@@ -239,7 +241,8 @@ class GridPage(Adw.NavigationPage):
     grid_view = Gtk.Template.Child()
     title_label = Gtk.Template.Child()
 
-    def __init__(self, library, title, model, sorts=(), artist=False, video=False, root=True,
+    def __init__(self, library, title, model, sorts=(), artist=False, video=False, shape=None,
+                 root=True,
                  icon_name=None, empty_title=None, empty_description=None, missing_title=None,
                  missing_description=None, data_sorts=(), favourites=None,
                  filter_words=None, fetch=None):
@@ -254,9 +257,7 @@ class GridPage(Adw.NavigationPage):
             model = Gio.ListStore(item_type=Item)
             self._fetched = model
         self._get_model = model if callable(model) else lambda: model
-        self._artist = artist
-        self._shape = ARTIST if artist else VIDEO if video else COVER
-        self._column_width = VIDEO_COLUMN_WIDTH if video else COLUMN_WIDTH
+        self._set_shape(shape or (ARTIST if artist else VIDEO if video else COVER))
         self._title_offset = 0
         self._bound = False  # a tile has been bound (the startup timing's mark)
         self.filter_bar = None  # the page's filter bar, on a page with `filter_words`
@@ -314,7 +315,7 @@ class GridPage(Adw.NavigationPage):
         # Before the model: the grid makes tiles for max-columns columns until it has a
         # width of its own (estimate_columns); _on_title_position keeps it fitting after.
         self._columns_idle = None
-        if video:
+        if self._shape in WIDE_SHAPES:
             self.grid_view.set_min_columns(1)  # two of them are wider than a 360 px window
         columns = estimate_columns(self._column_width)
         self._set_columns(columns)
@@ -525,15 +526,17 @@ class GridPage(Adw.NavigationPage):
         if items:
             self._art_task = app().spawn(fetch_items_art(items))
 
+    def _set_shape(self, shape):
+        """The shape the tiles are made in, and the columns' width it takes."""
+        self._shape = shape
+        self._artist = shape == ARTIST
+        self._column_width = VIDEO_COLUMN_WIDTH if shape in WIDE_SHAPES else COLUMN_WIDTH
+
     def _shape_for(self, items):
         """The tiles' shape for a fetching page's first items, before it has made any: round
-        portraits for all artists, 16:9 frames for all music videos, covers otherwise."""
-        kinds = {item.kind for item in items}
-        self._artist = kinds == {'artist'}
-        video = kinds == {'video'}
-        self._shape = ARTIST if self._artist else VIDEO if video else COVER
-        self._column_width = VIDEO_COLUMN_WIDTH if video else COLUMN_WIDTH
-        if video:
+        portraits for all artists, 16:9 frames for all videos, covers otherwise."""
+        self._set_shape(shared_shape(items))
+        if self._shape in WIDE_SHAPES:
             self.grid_view.set_min_columns(1)
         self._set_columns(estimate_columns(self._column_width))
 

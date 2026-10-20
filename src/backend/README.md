@@ -628,6 +628,7 @@ Item = {
   "title": "…", "subtitle": "…", "year": 2007, "genre": "…", "summary": "…" /* or null */,
   "art": "<cache>/art/<sha1>.jpg" /* or null */,     // 640 px, the pages' hero
   "thumb": "<cache>/thumb/<sha1>.jpg" /* or null */, // 320 px, tiles and rows
+                                                     // (a video's <sha1>-wide.jpg, 320 px high)
   "artUrl": "https://…/640x640bb.jpg",               // for fetching `art` on demand
   "artColor": "#1a1a1a" /* or null */, "explicit": false,
   "trackCount": 12, "durationMs": 2580000,           // albums, playlists (videos: length)
@@ -691,8 +692,9 @@ favourite: bool | null}`:
 header ("An artist's banner" above); `latest` the featured or latest release, with its
 `releaseDate`; the top songs song Items with their `album`; each shelf one of the artist's views in music.apple.com's
 order, titled as Apple titles it, `more` when `Engine.artist_view()` has more of it. A
-video about the artist (an interview, a film) is a `link` Item: its `url` is its page,
-its subtitle its length, and it has nothing to play. `favourite` is the artist's
+video about the artist (an interview, a film) is a `link` Item marked `"video": true`
+(its tile a 16:9 frame, its thumbnail asked 320 px high, as a music video's): its `url` is
+its page, its subtitle its length, and it has nothing to play. `favourite` is the artist's
 `inFavorites` (`normalize.in_favourites()`; null when Apple does not say): the star
 ("Favourites of artists" above).
 

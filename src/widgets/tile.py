@@ -24,16 +24,31 @@ VIDEO_WIDTH = 284
 VIDEO_SIZE = (VIDEO_WIDTH, ART_SIZE)
 GRID_VIDEO_SIZE = (240, 135)
 
-# The tile's shapes: a square cover, an artist's round portrait, a music video's 16:9 frame.
+# The tile's shapes: a square cover, an artist's round portrait, a music video's 16:9 frame
+# (its play symbol under the pointer), and the same frame without it: a video about an artist
+# (an interview, a film: normalize._link_item's, marked `video`), which opens on
+# music.apple.com rather than playing here.
 COVER = 'cover'
 ARTIST = 'artist'
 VIDEO = 'video'
+FRAME = 'frame'
+WIDE_SHAPES = (VIDEO, FRAME)
 
 
 def shape_for(item):
-    """The shape a tile shows `item` in: its kind's, a square cover for most."""
+    """The shape a tile shows `item` in: its kind's, a square cover for most, the 16:9 frame
+    for a video and a link to one."""
     kind = item.kind
+    if kind == 'link':
+        return FRAME if item.raw.get('video') is True else COVER
     return kind if kind in (ARTIST, VIDEO) else COVER
+
+
+def shared_shape(items):
+    """The shape all of `items` are shown in (shape_for()), a square cover when they differ:
+    a grid's, whose tiles are all one."""
+    shapes = {shape_for(item) for item in items}
+    return shapes.pop() if len(shapes) == 1 else COVER
 
 
 def cut_short(inscription):
@@ -51,7 +66,8 @@ class Tile(Gtk.Box):
     """A 160 px square cover over a title and a dim subtitle, one line each; in the ARTIST
     shape, a round portrait over a centred name; in the VIDEO shape, a 284×160 frame, a play
     symbol over it under the pointer or the keyboard focus (`video_size`, (width, height):
-    VIDEO_SIZE, or a video grid's GRID_VIDEO_SIZE). A favourite (Item.favourite) has a small
+    VIDEO_SIZE, or a video grid's GRID_VIDEO_SIZE); in the FRAME shape the same frame
+    without it. A favourite (Item.favourite) has a small
     heart at the end of the line under the title. With year=True the line under the
     title is the year (an artist's own albums, where the artist goes without saying). A line
     too long for the tile ends in an ellipsis, and the tooltip shows the whole of both; the
@@ -104,16 +120,17 @@ class Tile(Gtk.Box):
         return self._shape
 
     def set_shape(self, shape):
-        """Show a square cover (COVER), an artist's round portrait (ARTIST) or a music video's
-        frame (VIDEO). A grid page's tiles are all one; a shelf, which can mix them, switches
-        a tile as it binds it (before bind(): shape_for(item)). Only a change lays the tile
-        out again."""
+        """Show a square cover (COVER), an artist's round portrait (ARTIST), a music video's
+        frame (VIDEO) or a frame without the play symbol (FRAME). A grid page's tiles are all
+        one; a shelf, which can mix them, switches a tile as it binds it (before bind():
+        shape_for(item)). Only a change lays the tile out again."""
         if shape == self._shape:
             return
         self._slot.set_paths()  # the one showing lets go of its texture
         self._shape = shape
         artist = shape == ARTIST
-        video = shape == VIDEO
+        video = shape in WIDE_SHAPES
+        playable = shape == VIDEO
         if artist and self.avatar is None:
             # A silhouette until the picture arrives. Not initials: they are a label that
             # would be laid out again at every rebind. Made only for artist tiles: an
@@ -122,7 +139,7 @@ class Tile(Gtk.Box):
             self.avatar = Adw.Avatar(size=ART_SIZE,
                                      accessible_role=Gtk.AccessibleRole.PRESENTATION)
             self.insert_child_after(self.avatar, self.cover)
-        if video and self.play_symbol is None:
+        if playable and self.play_symbol is None:
             # Shown under the pointer and with the focus (style.css), never laid out again:
             # its opacity changes, not its visibility.
             self.play_symbol = Gtk.Box(
@@ -137,7 +154,7 @@ class Tile(Gtk.Box):
         if self.avatar is not None:
             self.avatar.set_visible(artist)
         if self.play_symbol is not None:
-            self.play_symbol.set_visible(video)
+            self.play_symbol.set_visible(playable)
         self.art_box.set_size_request(*(self._video_size if video else (ART_SIZE, ART_SIZE)))
         # Decoded at the size drawn, by the shorter edge: a cover at ART_SIZE whatever
         # video_size the tile was made with (a grid page makes all its tiles with one).

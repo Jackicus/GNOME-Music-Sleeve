@@ -147,11 +147,16 @@ class TestDemoLibrarySchema(unittest.TestCase):
             self.assertTrue(os.path.isabs(item['art']), f"Art path not absolute: {item['art']}")
             self.assertTrue(os.path.exists(item['art']), f"Art file does not exist: {item['art']}")
             self.assertGreater(os.path.getsize(item['art']), 1000)
-            # And its thumbnail beside it, under the same name.
+            # And its thumbnail beside it, under the same name (a video's marked wide, as a
+            # sync names it: normalize.thumb_name()).
             self.assertTrue(os.path.exists(item['thumb']),
                             f"Thumb file does not exist: {item['thumb']}")
-            self.assertEqual(os.path.basename(item['thumb']), os.path.basename(item['art']))
-            self.assertLess(os.path.getsize(item['thumb']), os.path.getsize(item['art']))
+            self.assertEqual(os.path.basename(item['thumb']),
+                             normalize.thumb_name(os.path.basename(item['art']),
+                                                  normalize.wide_art(item)))
+            _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(item['thumb'])
+            _fmt, art_width, art_height = GdkPixbuf.Pixbuf.get_file_info(item['art'])
+            self.assertLess(width * height, art_width * art_height)
 
         # artColor is a hex string
         if item['artColor'] is not None:
@@ -310,6 +315,14 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(banner['art'])
                     self.assertEqual((width, height), (banner['width'], banner['height']))
                     self.assertEqual(width, 3 * height)
+                # More To See: videos about the artist, links marked `video` as
+                # normalize._link_item marks them, their thumbnails 16:9 by the shorter edge.
+                more = {shelf['key']: shelf for shelf in answer['shelves']}['more-to-see']
+                for link in more['items']:
+                    self.assertEqual((link['kind'], link['video']), ('link', True))
+                    _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(link['thumb'])
+                    self.assertEqual((width, height),
+                                     normalize.thumb_box(config.THUMB_SIZE, wide=True))
         self.assertIsNotNone(banners[0])
         self.assertIsNone(banners[1])
         self.assertEqual(sum(banner is not None for banner in banners), 5)
@@ -625,8 +638,10 @@ class TestDemoLibrarySchema(unittest.TestCase):
             self.assertGreater(video['durationMs'], 0)
             _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(video['art'])
             self.assertEqual((width, height), (config.COVER_SIZE, config.COVER_SIZE * 9 // 16))
+            # Its thumbnail by its shorter edge, as a sync scales a video's (#383): the
+            # thumbnail size high, so a 160 px frame at 2x is drawn without enlarging.
             _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(video['thumb'])
-            self.assertEqual((width, height), (config.THUMB_SIZE, config.THUMB_SIZE * 9 // 16))
+            self.assertEqual((width, height), normalize.thumb_box(config.THUMB_SIZE, wide=True))
 
     def test_the_demo_has_the_normalisers_shapes(self):
         # Each kind of Item has the keys the real sync gives it (normalize), no more, no less,

@@ -57,7 +57,9 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   unmap, falls through its paths, shows another size of one meanwhile, and always hands the
   widget a texture or `empty()`. Tile, Cover (and so SongTitle, TrackRow, HeroTile, QueueRow),
   CategoryTile, the artist portrait and the artist banner use one; a new artwork widget
-  does too.
+  does too. A thumbnail is as big as a tile draws it at 2x by its shorter edge: a video's
+  (a music video's, a More To See link's) is asked and scaled in its 16:9 box,
+  `normalize.thumb_box()`, and named apart (`thumb_name()`), not in the square one.
 - A model change that removes the items a `Gtk.ListView` or `ColumnView` shows destroys those
   rows and builds new ones. To replace a list's contents, insert the new items first,
   `scroll_to(0)`, then remove the old ones (`SongsPage._show()`): the rows are only rebound.

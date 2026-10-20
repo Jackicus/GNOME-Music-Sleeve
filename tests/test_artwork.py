@@ -227,6 +227,25 @@ class TestArtwork(unittest.TestCase):
         tall = artwork._load(wide, 6)  # its shorter edge is no bigger: as it is
         self.assertEqual((tall.get_width(), tall.get_height()), (12, 6))
 
+    def test_a_video_thumbnail_fills_a_frame_at_a_scale_of_2(self):
+        # #383: a video's thumbnail, asked 320 px high (normalize.thumb_box), is drawn
+        # without enlarging in a shelf's 160 px frame at 2x, and decoded to the frame's
+        # size, as the square-boxed 320 x 180 was, at 1x.
+        from applemusic.backend import config, normalize
+
+        frame = (284, 160)  # a shelf's video tile (tile.VIDEO_SIZE), in logical pixels
+        width, height = normalize.thumb_box(config.THUMB_SIZE, wide=True)
+        path = os.path.join(self.temp_dir.name, 'video-wide.jpg')
+        pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, width, height)
+        pixbuf.fill(0x336699ff)
+        pixbuf.savev(path, 'jpeg', [], [])
+        at_two = artwork._load(path, frame[1] * 2)
+        self.assertEqual((at_two.get_width(), at_two.get_height()), (width, height))
+        self.assertGreaterEqual(at_two.get_height(), frame[1] * 2)
+        self.assertGreaterEqual(at_two.get_width(), frame[0] * 2)
+        at_one = artwork._load(path, frame[1])
+        self.assertEqual((at_one.get_width(), at_one.get_height()), (284, 160))
+
     def test_get_any_is_the_biggest_size_cached(self):
         # A stand-in while another size decodes: the biggest there is, the file's own size
         # counting as the biggest; eviction and clear() forget the sizes.

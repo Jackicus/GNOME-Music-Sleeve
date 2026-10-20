@@ -565,12 +565,12 @@ class Window(Adw.ApplicationWindow):
         else:
             model = shelf.items
         from .pages.grid import GridPage
+        from .widgets.tile import shared_shape
 
         # A shelf of artists (a search's, a category's) gets the round portraits, one of
-        # music videos their 16:9 frames.
-        kinds = {item.kind for item in shelf.items}
+        # videos (music videos, an artist's More To See) their 16:9 frames.
         page = GridPage(self._library, shelf.title, model, root=False,
-                        artist=kinds == {'artist'}, video=kinds == {'video'},
+                        shape=shared_shape(shelf.items),
                         icon_name='view-grid-symbolic', empty_title=_('Nothing Here'),
                         empty_description=_('This shelf is empty now'))
         page.shelf = shelf

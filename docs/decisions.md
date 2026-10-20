@@ -372,6 +372,18 @@ changes, change it here, with the date. The plan they came from is in
   two at middle widths and one in a 360 px window. Its
   play symbol shows under the pointer and with the keyboard focus, not always, as on Apple
   Music's tiles (#354).
+- **Videos about an artist are 16:9 too; a video's thumbnail is kept by its shorter edge**
+  (2026-10-20). An artist's More To See (interviews, films: `link` Items marked `video`)
+  shows the music videos' frame, without the play symbol, since they open on
+  music.apple.com rather than play here (`tile.FRAME`), and so does its See All. A video's
+  thumbnail is asked in a 569x320 box (`normalize.thumb_box()`), not 320x320: Apple's `bb`
+  fits a 16:9 image to the box, so the square one gave 320x180, which a 160 px frame at a
+  scale of 2 drew 1.8 times enlarged. Its file has a name of its own (`<sha1>-wide.jpg`), so
+  the next sync fetches it in place of the square-boxed one rather than keeping that. At a
+  scale of 1 a tile decodes it to the same 284x160 texture as before; at 2x to 569x320,
+  three times the square box's. Letting a video tile fall through to its cover instead
+  (640x360) was the other way: the library's covers are fetched only by the pages that show
+  them, so every video grid would have fetched its covers as it scrolled (#383).
 - **Show Translations and Show Pronunciations stay independent** (2026-10-19), as Apple's
   web player has them: two separate menu items, and with both on a line shows its
   pronunciation, then its translation. Checked against Apple's lyrics component (#309).

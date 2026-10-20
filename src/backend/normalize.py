@@ -53,9 +53,10 @@ ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'suggestions', 'credits', '
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
-# installs one here: a callable scale_image(src_path, dest_path, size) that
-# writes a JPEG at most size x size to dest_path and raises on failure
-# (GdkPixbuf, in the app). Without one, thumbnails are downloaded instead.
+# installs one here: a callable scale_image(src_path, dest_path, width, height)
+# that writes a JPEG at most width x height, the image's shape kept, to
+# dest_path and raises on failure (GdkPixbuf, in the app). Without one,
+# thumbnails are downloaded instead.
 scale_image = None
 
 
@@ -160,7 +161,8 @@ def artwork_cache_path(url, cache_dir):
 # The two sizes artwork is kept at, in pixels. The cover is the hero of a detail page; the
 # thumbnail is the copy the tiles and the track rows draw, so a page of tiles decodes small
 # files. Named after the same URL as the full-size file, so <cache>/thumb/<x>.jpg is the
-# thumbnail of <cache>/art/<x>.jpg. These are the defaults, from config; a sync sets them
+# thumbnail of <cache>/art/<x>.jpg (a video's is <x>-wide.jpg: thumb_box() below). These are
+# the defaults, from config; a sync sets them
 # with apply_art_sizes, and the marker file beside the covers records what a cache was built
 # at (load_art_sizes reads it once, at startup).
 DEFAULT_ART_SIZES = {'cover': config.COVER_SIZE, 'thumb': config.THUMB_SIZE}
@@ -241,21 +243,73 @@ def apply_art_sizes(cache_dir, cover, thumb, generation=None):
     return dict(ART_SIZES)
 
 
-def thumb_cache_path(url, cache_dir):
-    """The thumbnail's path for a full-size artwork URL."""
-    return os.path.join(cache_dir, 'thumb', artwork_filename(url))
+# A music video's artwork is 16:9 (wide_art(): a video's, a link's to one), and its tile
+# draws it by its shorter edge (widgets/tile.py: a frame 160 px high, 320 device pixels at a
+# scale of 2). Its thumbnail is asked for in a box VIDEO_ASPECT times the thumbnail size wide
+# and the size high, which Apple's `bb` and the scaler fill in the image's own shape (569 x 320
+# for a 16:9 video, where the square box gave 320 x 180, drawn 1.8 times enlarged at 2x), and
+# it is kept under a name of its own (WIDE_SUFFIX before the extension), so a cache whose
+# videos were thumbnailed in the square box fetches them again rather than keeping them.
+VIDEO_ASPECT = 16 / 9
+WIDE_SUFFIX = '-wide'
 
 
-def make_thumbnail(src_path, dest_path, cache_dir, size=None, generation=None):
-    """Scale the cover at `src_path` down to `dest_path` (in the cache at
-    `cache_dir`), atomically. False without a scale_image installed, when the
-    source is not an image, or when `generation` moved (store.py)."""
+def thumb_box(size, wide=False):
+    """(width, height): the box a thumbnail of `size` is asked for and scaled into, the
+    square, or for wide artwork (a video's) VIDEO_ASPECT times as wide."""
+    return (round(size * VIDEO_ASPECT), size) if wide else (size, size)
+
+
+def wide_art(item):
+    """Whether an Item dict's artwork is a video's 16:9 frame: a music video's, or a link's
+    to a video about an artist (_link_item's, marked `video`)."""
+    if not isinstance(item, dict):
+        return False
+    kind = item.get('kind')
+    return kind == 'video' or (kind == 'link' and item.get('video') is True)
+
+
+def is_wide_thumb(path):
+    """Whether a thumbnail's file is a wide one (thumb_cache_path(wide=True)'s)."""
+    return os.path.splitext(os.path.basename(path or ''))[0].endswith(WIDE_SUFFIX)
+
+
+def thumb_name(cover_name, wide=False):
+    """A thumbnail's file name: its cover's, with WIDE_SUFFIX for a wide one (a video's, in
+    its thumb_box())."""
+    if not wide:
+        return cover_name
+    stem, extension = os.path.splitext(cover_name)
+    return f'{stem}{WIDE_SUFFIX}{extension}'
+
+
+def thumb_cache_path(url, cache_dir, wide=False):
+    """The thumbnail's path for a full-size artwork URL (thumb_name())."""
+    return os.path.join(cache_dir, 'thumb', thumb_name(artwork_filename(url), wide))
+
+
+def cover_of_thumb(thumb_path, cache_dir):
+    """The cover a thumbnail is scaled from: the file of the same name in <cache>/art/,
+    without a wide thumbnail's WIDE_SUFFIX."""
+    stem, extension = os.path.splitext(os.path.basename(thumb_path))
+    if stem.endswith(WIDE_SUFFIX):
+        stem = stem[:-len(WIDE_SUFFIX)]
+    return os.path.join(cache_dir, 'art', stem + extension)
+
+
+def make_thumbnail(src_path, dest_path, cache_dir, size=None, generation=None, wide=None):
+    """Scale the cover at `src_path` down into its thumb_box() at `dest_path` (in the
+    cache at `cache_dir`), atomically: wide when `wide` says so, or (None) when the
+    destination's name does. False without a scale_image installed, when the source is not
+    an image, or when `generation` moved (store.py)."""
     if scale_image is None:
         return False
     size = size or ART_SIZES['thumb']
+    width, height = thumb_box(size, is_wide_thumb(dest_path) if wide is None else wide)
     try:
-        return store.atomic_create(dest_path, lambda temp: scale_image(src_path, temp, size),
-                                   root=cache_dir, generation=generation) is not None
+        return store.atomic_create(
+            dest_path, lambda temp: scale_image(src_path, temp, width, height),
+            root=cache_dir, generation=generation) is not None
     except Exception as error:  # the scaler's own errors (GLib.Error) as well as OSError
         log.debug('could not scale %s: %s', src_path, error)
         return False
@@ -263,12 +317,13 @@ def make_thumbnail(src_path, dest_path, cache_dir, size=None, generation=None):
 
 def cache_thumbnail(url, cache_dir, dest_path, generation=None):
     """The thumbnail at `dest_path`: scaled from the cached full-size cover
-    when that is on disk, fetched at the thumbnail size from `url` otherwise."""
+    (cover_of_thumb()) when that is on disk, fetched at the thumbnail size from `url`
+    otherwise."""
     if not url or not dest_path:
         return None
     if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
         return dest_path
-    full = os.path.join(cache_dir, 'art', os.path.basename(dest_path))
+    full = cover_of_thumb(dest_path, cache_dir)
     if not _art_missing(full) and make_thumbnail(full, dest_path, cache_dir,
                                                  generation=generation):
         return dest_path
@@ -596,9 +651,9 @@ def _extract_genre(attrs, raw_item):
     return raw_item.get('genre') or None
 
 
-def _extract_artwork(attrs, raw_item, cache_dir, art_urls):
-    """Extract the local cached cover path, its thumbnail's, and the hex
-    background color; the files' URLs go into `art_urls`."""
+def _extract_artwork(attrs, raw_item, cache_dir, art_urls, wide=False):
+    """Extract the local cached cover path, its thumbnail's (`wide`: a video's,
+    thumb_box()), and the hex background color; the files' URLs go into `art_urls`."""
     art = None
     thumb = None
     art_color = None
@@ -614,7 +669,7 @@ def _extract_artwork(attrs, raw_item, cache_dir, art_urls):
     if isinstance(artwork, dict):
         url = artwork.get('url')
         if url and cache_dir:
-            art, thumb = _register_artwork(url, cache_dir, art_urls)
+            art, thumb = _register_artwork(url, cache_dir, art_urls, wide=wide)
         bg = artwork.get('bgColor')
         if bg and not art_color:
             art_color = format_color(bg)
@@ -622,15 +677,16 @@ def _extract_artwork(attrs, raw_item, cache_dir, art_urls):
     return art, thumb, art_color
 
 
-def _register_artwork(url_template, cache_dir, art_urls):
+def _register_artwork(url_template, cache_dir, art_urls, wide=False):
     """Name the cover and thumbnail files for an artwork URL template and
-    record in `art_urls` what each is fetched from."""
-    cover, small = ART_SIZES['cover'], ART_SIZES['thumb']
+    record in `art_urls` what each is fetched from: the thumbnail in its
+    thumb_box(), a video's (`wide`) by its shorter edge."""
+    cover = ART_SIZES['cover']
     full = template_artwork_url(url_template, cover, cover)
     art = artwork_cache_path(full, cache_dir)
-    thumb = thumb_cache_path(full, cache_dir)
+    thumb = thumb_cache_path(full, cache_dir, wide=wide)
     art_urls[art] = full
-    art_urls[thumb] = template_artwork_url(url_template, small, small)
+    art_urls[thumb] = template_artwork_url(url_template, *thumb_box(ART_SIZES['thumb'], wide))
     return art, thumb
 
 
@@ -1189,14 +1245,15 @@ def curator_link(raw):
             'groups': []}
 
 
-def normalize_song_as_item(raw_song, cache_dir=None, art_urls=None):
-    """Normalize an Apple Music song into the Item shape (e.g. for search results)."""
+def normalize_song_as_item(raw_song, cache_dir=None, art_urls=None, wide=False):
+    """Normalize an Apple Music song into the Item shape (e.g. for search results); `wide`
+    for a music video's, whose thumbnail is 16:9 (thumb_box())."""
     attrs = raw_song.get('attributes') or {}
     item_id = str(raw_song.get('id') or '')
     catalog_id = _extract_catalog_id(attrs, raw_song, 'songs')
 
     art, thumb, art_color = _extract_artwork(attrs, raw_song, cache_dir,
-                                             {} if art_urls is None else art_urls)
+                                             {} if art_urls is None else art_urls, wide=wide)
     duration_ms = attrs.get('durationInMillis')
     if duration_ms is None:
         duration_ms = raw_song.get('durationMs', 0)
@@ -1251,7 +1308,8 @@ def normalize_item(raw_item, cache_dir=None, include_groups=True, art_urls=None)
     elif raw_type in ('music-videos', 'library-music-videos') or raw_kind == 'video':
         # A music video is a song with a picture: the same fields, played
         # as MusicKit's own `musicVideo` queue kind.
-        item = normalize_song_as_item(raw_item, cache_dir=cache_dir, art_urls=art_urls)
+        item = normalize_song_as_item(raw_item, cache_dir=cache_dir, art_urls=art_urls,
+                                      wide=True)
         item['kind'] = 'video'
         item['play'] = {'kind': 'musicVideo', 'id': item['id']}
         _with_added(item, raw_item.get('attributes'))
@@ -2615,8 +2673,9 @@ def _artist_view_item(view, resource, cache_dir):
 
 def _link_item(resource):
     """A video about an artist (an interview, a film) as an Item the app opens on
-    music.apple.com: kind `link`, its page as `url`, its length as the subtitle, nothing to
-    play. None without a name or a page."""
+    music.apple.com: kind `link`, marked `video` (its tile a 16:9 frame: wide_art()), its
+    page as `url`, its length as the subtitle, its artwork's URL in the thumbnail's wide
+    box, nothing to play. None without a name or a page."""
     attrs = resource.get('attributes') or {}
     url = attrs.get('postUrl') or attrs.get('url')
     name = attrs.get('name')
@@ -2625,15 +2684,16 @@ def _link_item(resource):
         return None
     duration = attrs.get('durationInMilliseconds') or attrs.get('durationInMillis')
     artwork = (attrs.get('artwork') or {}).get('url')
-    small = ART_SIZES['thumb']
     return {
         'id': str(resource.get('id') or url),
         'kind': 'link',
+        'video': True,
         'title': name,
         'subtitle': (format_duration(duration) if isinstance(duration, int) and duration > 0
                      else ''),
         'year': _extract_year(attrs, resource),
-        'art': template_artwork_url(artwork, small, small) if artwork else None,
+        'art': (template_artwork_url(artwork, *thumb_box(ART_SIZES['thumb'], wide=True))
+                if artwork else None),
         'thumb': None,
         'url': url,
         'play': {},
