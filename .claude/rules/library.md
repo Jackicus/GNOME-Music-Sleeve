@@ -160,7 +160,8 @@ them before changing either. What matters most:
   `inFavorites` and keeps `dateAdded` as an Item's `added`; the file's `favourites` is
   {section: ids}, a song by its catalog id (else its library id), anything else by both.
   The Library keeps them as one set: `Item.favourite` (notified when a load or
-  `set_favourite()` changes it), `is_favourite(track)` for rows (two set lookups, no
+  `set_favourite()` changes it; `set_favourites()` changes several with one signal, a
+  selection's Remove from Favourites ahead of its writes), `is_favourite(track)` for rows (two set lookups, no
   property call), `favourites-changed` for pages to mark their bound rows again and
   refilter. The app's own hearts reach it through the Engine's `rated`
   (`Application._on_rated`); the file waits for the next sync. `recently_added` is a store

@@ -21,6 +21,7 @@ actions, the menus that offer them, and what a drop on the sidebar or the player
     actions.move_in_playlist(playlist, 3, 1)   # its 4th song 2nd (playlist_order.py)
     actions.queue_objects(tracks, later=False)  # a selection's Play Next (or Later)
     actions.remove_entries(playlist, tracks)    # a selection's Remove from Playlist, Undo
+    actions.remove_favourites(tracks)           # Favourite Songs' Remove from Favourites, Undo
     actions.ask_remove_from_library(tracks)     # one confirmation, then all of them
     actions.new_playlist_of(tracks)             # New Playlist… holding them
     actions.duplicate(playlist)                 # a copy, "<name> Copy", beside it, shown
@@ -82,7 +83,9 @@ id, the track's index, -1 or 1): Move Up or Move Down, one place in a playlist o
 (playlist_order.PlaylistOrder: shown at once, written after a pause, so a burst is one
 write); item-undo-reorder, "s" (playlist id), the toast's Undo of a new order;
 item-undo-remove, "s" (playlist id), the toast's Undo of a selection's Remove from Playlist
-(the entries put back in one write, unless the playlist changed since).
+(the entries put back in one write, unless the playlist changed since);
+item-undo-unfavourite, "s" (the toast's token), the toast's Undo of a selection's Remove from
+Favourites (the songs loved again).
 
 A track list's selection (widgets/selection_mode.py) acts through the methods above, the
 selected tracks in the order shown: Play Next and Play Later queue each run of songs as one
@@ -91,7 +94,9 @@ again without the songs MusicKit cannot find, and one song at a time goes when M
 refuses the list still); Add to Playlist is add_items_to_playlist(); Remove from
 Playlist is one write of the entries kept (Engine.remove_playlist_entries()); Remove from
 Library asks once and takes them out one after the other, hidden at once, one toast and one
-sync after.
+sync after; Favourite Songs' Remove from Favourites unloves each song (one rating write a song,
+RATING_WRITES at once), the hearts and Favourite Songs' rows changed at once and put back
+for any write that failed, one toast with Undo, Favourite Songs read again after.
 
 A target names an object the menu was built for (remembered, the last REMEMBERED of them)
 or one the library has; failing both, the target's kind and id are used as they are. Each
@@ -173,7 +178,7 @@ from .backend import api
 from .backend.errors import EngineError
 from .backend.api import is_library_id
 from .library import (REMOVABLE, ROOT_FOLDER, TRACK_KINDS, TRACK_REF_KINDS, Item, ItemRefs,
-                      Track, TreeChange, track_ref)
+                      Track, TreeChange, entries_without, track_ref)
 from .playlist_order import PlaylistOrder, refresh_playlist, sync_tracks
 
 log = logging.getLogger(__name__)
@@ -201,6 +206,9 @@ LISTING_LAG = 2
 REMEMBERED = 64
 # The songs one queue command (Play Next, Play Later of several) sends at most.
 QUEUE_BATCH = 100
+# How many rating writes a selection's Remove from Favourites (and its Undo) has under way
+# at once: one write a song, a few side by side.
+RATING_WRITES = 4
 
 WEB = 'https://music.apple.com'
 # The hosts of Apple Music's pages: the only addresses the app opens or copies.
@@ -553,6 +561,28 @@ def rating_target(obj):
             and not _synthetic(obj.id) and not obj.favourites):
         return obj.kind, obj.id
     return None
+
+
+def favourite_places(tracks, playlist, ids):
+    """What a selection's Remove from Favourites writes and takes off Favourite Songs: the
+    rating targets of `tracks` (rating_target()), each once, in order, and {target: the
+    places of its rows in Favourite Songs}, a Track's index where the Track is one of
+    `playlist`'s (Favourite Songs, None when the library has none) listed there as `ids`
+    (its track ids) says."""
+    targets, places = [], {}
+    playlist_id = playlist.id if playlist is not None else None
+    for track in tracks:
+        target = rating_target(track)
+        if target is None:
+            continue
+        if target not in places:
+            targets.append(target)
+            places[target] = []
+        index = getattr(track, 'index', -1)
+        if (isinstance(track, Track) and playlist_id and track.play.get('id') == playlist_id
+                and 0 <= index < len(ids) and ids[index] == track.id):
+            places[target].append(index)
+    return targets, places
 
 
 def library_target(obj):
@@ -1163,6 +1193,15 @@ def love_messages(kind):
     return _('Added to Favourites'), _('Removed from Favourites')
 
 
+def unfavourited_messages(count):
+    """(removed, put back) toasts after a selection's Remove from Favourites took `count`
+    songs out of Favourite Songs, and after its Undo put them back."""
+    return (ngettext('Removed {count} song from Favourite Songs',
+                     'Removed {count} songs from Favourite Songs', count).format(count=count),
+            ngettext('Put back {count} song in Favourite Songs',
+                     'Put back {count} songs in Favourite Songs', count).format(count=count))
+
+
 def suggest_less_messages():
     """(set, undone) toasts for Suggest Less and Undo Suggest Less."""
     return _('Apple Music will suggest less like this'), _('Suggest Less undone')
@@ -1183,6 +1222,11 @@ class ItemActions:
         # playlist id -> (the ids kept, the entries before, how many went) of a selection's
         # Remove from Playlist, for its toast's Undo
         self._removed = {}
+        # the toast's token -> (the rating targets that went, their places, Favourite Songs'
+        # Item dict and track ids before, the places that went) of a selection's Remove from
+        # Favourites, for its toast's Undo
+        self._unfavourited = {}
+        self._unfavourite_token = 0
         app.engine.connect('rated', self._on_rated)
         handlers = {
             'item-play': self._on_play,
@@ -1218,6 +1262,8 @@ class ItemActions:
         self._add('item-move-in-playlist', MOVE_TARGET, self._on_move_in_playlist)
         self._add('item-undo-reorder', GLib.VariantType.new('s'), self._on_undo_reorder)
         self._add('item-undo-remove', GLib.VariantType.new('s'), self._on_undo_remove)
+        self._add('item-undo-unfavourite', GLib.VariantType.new('s'),
+                  self._on_undo_unfavourite)
         self.playlist_order = PlaylistOrder(app, refresh=self._refresh_playlist)
 
     def _add(self, name, parameter_type, handler):
@@ -1329,6 +1375,7 @@ class ItemActions:
         self._menu_rated = None
         self._remembered.clear()
         self._removed.clear()
+        self._unfavourited.clear()
         self.playlist_order.forget()
 
     async def _refine(self, rated):
@@ -1945,6 +1992,124 @@ class ItemActions:
         return self._run(self.engine.put_back_playlist_entries, (playlist_id, kept, before),
                          message, after=lambda: self._follow_tracks(playlist_id),
                          playlist=playlist_id)
+
+    def remove_favourites(self, tracks):
+        """A selection's Remove from Favourites (Favourite Songs' bar): each of the songs
+        `tracks` unloved, one rating write a song (Engine.unlove, RATING_WRITES of them under
+        way at once), shown at once: their hearts go (Library.set_favourites) and their rows
+        leave Favourite Songs (entries_without()), both put back for the songs whose write
+        did not go. One toast counts the songs that went, with Undo (item-undo-unfavourite);
+        a failure is reported and the songs not yet written are not tried. Favourite Songs is
+        read again after. The task, whose result says whether all went, or None (the demo
+        library, or nothing that has a rating)."""
+        playlist = self.library.favourite_songs()
+        ids = (playlist.track_ids() if playlist is not None else None) or []
+        targets, places = favourite_places(tracks, playlist, ids)
+        if not targets:
+            self.app.toast(_('This cannot be a favourite'))
+            return None
+        if self.app.refuse_in_demo():
+            return None
+        before = dict(playlist.raw) if playlist is not None else None
+        gone = {place for target in targets for place in places[target]}
+        self.library.set_favourites([target[1] for target in targets], False)
+        shown = self._show_favourites(playlist, before, gone, ids)
+
+        async def run():
+            done, error = await self._rate_all(self.engine.unlove, targets)
+            failed = [target for target in targets if target not in done]
+            went = {place for target in done for place in places[target]}
+            if failed:  # back on the page and in the hearts
+                self.library.set_favourites([target[1] for target in failed], True)
+                self._show_favourites(playlist, before, went, shown)
+            if error is not None:
+                self.app.report(error)
+            if not done:
+                return False
+            self._unfavourite_token += 1
+            token = str(self._unfavourite_token)
+            self._unfavourited[token] = (done, places, before, ids, went)
+            self.app.toast(unfavourited_messages(len(done))[0], _('Undo'),
+                           'win.item-undo-unfavourite', GLib.Variant('s', token))
+            await self._refresh_favourites()
+            return not failed
+
+        return self.app.spawn(run())
+
+    def _on_undo_unfavourite(self, _action, parameter):
+        """The toast's Undo after a selection's Remove from Favourites: the songs loved again
+        (Engine.love, as remove_favourites() unloved them), their hearts and their rows on
+        Favourite Songs back at once (the rows only while it lists what the removal left),
+        taken away again for any whose write did not go, which is reported. The task, or
+        None (nothing to put back)."""
+        removed = self._unfavourited.pop(parameter.get_string(), None)
+        if removed is None:
+            return None
+        if self.app.refuse_in_demo():
+            return None
+        targets, places, before, ids, gone = removed
+        playlist = self.library.favourite_songs()
+        self.library.set_favourites([target[1] for target in targets], True)
+        left = [track_id for place, track_id in enumerate(ids) if place not in gone]
+        shown = self._show_favourites(playlist, before, (), left)
+
+        async def run():
+            done, error = await self._rate_all(self.engine.love, targets)
+            failed = [target for target in targets if target not in done]
+            if failed:
+                self.library.set_favourites([target[1] for target in failed], False)
+                again = {place for target in failed for place in places[target]}
+                self._show_favourites(playlist, before, again, shown)
+            if error is not None:
+                self.app.report(error)
+            if done:
+                self.app.toast(unfavourited_messages(len(done))[1])
+            await self._refresh_favourites()
+            return not failed
+
+        return self.app.spawn(run())
+
+    def _show_favourites(self, playlist, before, gone, listed):
+        """Favourite Songs (`playlist`) shown as `before`, its Item dict as a selection found
+        it, without the entries at the places `gone` (entries_without(); none: as it was),
+        while it lists the tracks `listed` (their ids), so a change made since (a sync, a
+        read of Apple's) is not undone. The ids it lists then, or None when it was left as
+        it is."""
+        if playlist is None or before is None or listed is None:
+            return None
+        if playlist.track_ids() != list(listed):
+            return None
+        update = entries_without(before, gone)
+        if update is None:
+            return None
+        playlist.merge(update)
+        return playlist.track_ids()
+
+    async def _rate_all(self, method, targets):
+        """await method(kind, id) for each rating target, RATING_WRITES at once, the engine
+        up first: (the targets it went for, in order, the first EngineError or None). After
+        a failure no more are started."""
+        try:
+            await self.app.player.ensure_engine()
+        except EngineError as error:
+            return [], error
+        went = set()
+        errors = []
+        pending = iter(targets)
+
+        async def writer():
+            for target in pending:
+                if errors:
+                    return
+                try:
+                    await method(*target)
+                except EngineError as error:
+                    errors.append(error)
+                    return
+                went.add(target)
+
+        await asyncio.gather(*(writer() for _ in range(min(RATING_WRITES, len(targets)))))
+        return [target for target in targets if target in went], (errors[0] if errors else None)
 
     def removals(self, objects):
         """What a selection's Remove from Library takes: (obj, removal_target) for each of

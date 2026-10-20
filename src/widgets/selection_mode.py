@@ -8,7 +8,7 @@ Songs table, an album's and a playlist's songs (Favourite Songs' too).
     header_bar.pack_end(mode.select_button); header_bar.pack_end(mode.cancel_button)
     mode.set_header_title(header_title); mode.set_filter_bar(filter_bar)
     mode.set_available(has_tracks)        # Select shown; no tracks leaves the mode
-    mode.set_context(playlist, library)   # which batch actions the bar offers
+    mode.set_context(playlist, library, favourites)   # which batch actions the bar offers
     mode.set_narrow(narrow)               # the bar's narrow layout (a page breakpoint's)
     if mode.activated(track): return      # the list's activate: a click or Enter
     mode.prune()                          # after a filter's or a sync's change
@@ -26,14 +26,15 @@ the bar, and the page hidden or emptied.
 In the mode the header bar shows the count as its title, a menu of Select All and Select
 None (HeaderTitle held), and Cancel in place of Select (Back, and the filter's button, which
 set_filter_bar() names, and the page's own Sort leave it their room at 360 px); a
-Gtk.ActionBar under the page
-(`[bottom]` of its toolbar view) holds the batch actions, which go through the window's item
-actions with the selected tracks in the order shown: Play Next, Play Later, Add to Playlist
-(the playlists, then New Playlist…), Remove from Playlist (a playlist of the user's: one
-write, Undo on its toast) and Remove from Library… (one confirmation). In the narrow layout
-Play Later and the removals are in a More menu, and so is Remove from Library… beside Remove
-from Playlist (_layout()). They are a `selection` action group on the
-page. The count is announced as it changes. A row's look is the page's: a check box in the
+Gtk.ActionBar under the page (`[bottom]` of its toolbar view) holds the batch actions, which
+go through the window's item actions with the selected tracks in the order shown: Play Next,
+Play Later, Add to Playlist (the playlists, then New Playlist…), Remove from Playlist (a
+playlist of the user's: one write, Undo on its toast), or on Favourite Songs Remove from
+Favourites in its place (each song unloved, Undo on the toast), and Remove from Library…
+(one confirmation). In the narrow layout Play Later and the removals are in a More menu, and
+so is Remove from Library… beside Remove from Playlist or Remove from Favourites
+(_layout()). They are a `selection` action group on the page. The count is announced as it
+changes. A row's look is the page's: a check box in the
 row (`.selection-mode`), "Selected" in its description, both from selection.has().
 
 The page holds this object, which holds the page's widgets it made, the view and the
@@ -95,6 +96,7 @@ class SelectionMode(GObject.Object):
         self._header_title = None  # the page's HeaderTitle, held while the mode is on
         self._filter_bar = None  # the page's FilterBar, whose button the mode leaves out
         self._playlist = None  # the playlist of the user's the list shows (Remove from Playlist)
+        self._favourites = False  # the list is Favourite Songs (Remove from Favourites)
         self._library = False  # the list may hold the library's songs (Remove from Library)
         self._narrow = False
         self._available = False  # the list has tracks: Select offered
@@ -127,6 +129,7 @@ class SelectionMode(GObject.Object):
                 ('add-to-playlist', self._on_add_to_playlist, GLib.VariantType.new('s')),
                 ('new-playlist', self._on_new_playlist, None),
                 ('remove-from-playlist', self._on_remove_from_playlist, None),
+                ('remove-from-favourites', self._on_remove_from_favourites, None),
                 ('remove-from-library', self._on_remove_from_library, None)):
             action = Gio.SimpleAction.new(name, parameter)
             connect_weak(action, 'activate', handler)
@@ -146,6 +149,10 @@ class SelectionMode(GObject.Object):
         self._remove_playlist = Gtk.Button(label=_('_Remove from Playlist'), use_underline=True,
                                            action_name='selection.remove-from-playlist',
                                            css_classes=['destructive-action'], visible=False)
+        self._remove_favourites = Gtk.Button(label=_('_Remove from Favourites'),
+                                             use_underline=True,
+                                             action_name='selection.remove-from-favourites',
+                                             css_classes=['destructive-action'], visible=False)
         self._remove_library = Gtk.Button(label=_('Remove from Li_brary…'), use_underline=True,
                                           action_name='selection.remove-from-library',
                                           visible=False)
@@ -155,7 +162,8 @@ class SelectionMode(GObject.Object):
         self._more.set_create_popup_func(weak_method(self._on_more_popup))
         for button in (self._play_next, self._play_later, self._add):
             self.bar.pack_start(button)
-        for button in (self._more, self._remove_library, self._remove_playlist):
+        for button in (self._more, self._remove_library, self._remove_playlist,
+                       self._remove_favourites):
             self.bar.pack_end(button)
         toolbar.add_bottom_bar(self.bar)
         self._update_actions()
@@ -187,11 +195,13 @@ class SelectionMode(GObject.Object):
         if not available:
             self.leave()
 
-    def set_context(self, playlist=None, library=False):
+    def set_context(self, playlist=None, library=False, favourites=False):
         """What the bar offers: Remove from Playlist for `playlist` (the user's playlist the
-        list shows, or None), Remove from Library… when the list may hold the library's songs
+        list shows, or None), Remove from Favourites in its place when the list is Favourite
+        Songs (`favourites`), Remove from Library… when the list may hold the library's songs
         (`library`)."""
         self._playlist = playlist
+        self._favourites = bool(favourites) and playlist is None
         self._library = bool(library)
         self._update_bar()
 
@@ -310,24 +320,30 @@ class SelectionMode(GObject.Object):
                      'remove-from-library', 'select-none'):
             self._actions[name].set_enabled(some)
         self._actions['remove-from-playlist'].set_enabled(some and self._playlist is not None)
+        self._actions['remove-from-favourites'].set_enabled(some and self._favourites)
         self._actions['select-all'].set_enabled(self.active)
         self._add.set_sensitive(some)
         self._more.set_sensitive(some)
 
     def _layout(self):
         """(the bar's buttons shown, the More menu's entries) as (action, label) pairs: Play
-        Next and Add to Playlist always; Play Later, Remove from Playlist and Remove from
-        Library… on the bar where there is room (not `narrow`; Remove from Library… there
-        only without Remove from Playlist beside it), else in More."""
+        Next and Add to Playlist always; Play Later, Remove from Playlist (or Remove from
+        Favourites) and Remove from Library… on the bar where there is room (not `narrow`;
+        Remove from Library… there only without one of the others beside it), else in
+        More."""
         later = ('selection.play-later', _('Play _Later'))
-        from_playlist = ('selection.remove-from-playlist', _('_Remove from Playlist'))
         from_library = ('selection.remove-from-library', _('Remove from Li_brary…'))
-        removals = ([from_playlist] if self._playlist is not None else []) + (
-            [from_library] if self._library else [])
+        if self._playlist is not None:
+            first = [('selection.remove-from-playlist', _('_Remove from Playlist'))]
+        elif self._favourites:
+            first = [('selection.remove-from-favourites', _('_Remove from Favourites'))]
+        else:
+            first = []
+        removals = first + ([from_library] if self._library else [])
         if self._narrow:
             return [], [later, *removals]
-        if self._playlist is not None:
-            return [later, from_playlist], removals[1:]
+        if first:
+            return [later, *first], removals[1:]
         return [later, *removals], []
 
     def _update_bar(self):
@@ -335,6 +351,7 @@ class SelectionMode(GObject.Object):
         names = {action for action, _label in shown}
         self._play_later.set_visible('selection.play-later' in names)
         self._remove_playlist.set_visible('selection.remove-from-playlist' in names)
+        self._remove_favourites.set_visible('selection.remove-from-favourites' in names)
         self._remove_library.set_visible('selection.remove-from-library' in names)
         self._more.set_visible(bool(_more))
         self._update_actions()
@@ -390,6 +407,11 @@ class SelectionMode(GObject.Object):
         tracks, actions = self._chosen()
         if tracks and actions is not None and playlist is not None:
             actions.remove_entries(playlist, tracks)
+
+    def _on_remove_from_favourites(self, _action, _parameter):
+        tracks, actions = self._chosen()
+        if tracks and actions is not None:
+            actions.remove_favourites(tracks)
 
     def _on_remove_from_library(self, _action, _parameter):
         tracks, actions = self._chosen()

@@ -26,9 +26,9 @@ from tests import ROOT
 from applemusic import library as library_module
 from applemusic.library import (PENDING_HOLD, ROOT_FOLDER, SECTIONS, Group, Item, ItemRefs,
                                 Library, PlaylistTree, Ref, SongOrder, Track, TrackRecord,
-                                TreeChange, apply_changes, change_settled, drop_index, fold,
-                                folder_of, item_ref, moved, order_for, parse, paused_gc,
-                                reorder_entries, track_ref)
+                                TreeChange, apply_changes, change_settled, drop_index,
+                                entries_without, fold, folder_of, item_ref, moved, order_for,
+                                parse, paused_gc, reorder_entries, track_ref)
 
 
 def load(cache_dir, library=None):
@@ -1596,6 +1596,32 @@ class TestReorder(unittest.TestCase):
         self.assertIsInstance(arranged[1], TrackRecord)
         self.assertEqual(dict(arranged[1]), dict(track('c', 'c', 2), index=1))
         self.assertEqual(reorder_entries([track('x', 'x', 0)], [0]), [track('x', 'x', 0)])
+
+    def test_entries_without_takes_out_and_puts_back(self):
+        raw = dict(playlist_with('p.1', ['a', 'b', 'c', 'd']), trackCount=4,
+                   durationMs=4 * 180000)
+        raw['groups'][0]['entries'][2] = TrackRecord(raw['groups'][0]['entries'][2])
+        update = entries_without(raw, {1, 3, 9})
+        entries = update['groups'][0]['entries']
+        self.assertEqual([entry['id'] for entry in entries], ['a', 'c'])
+        self.assertEqual([entry['index'] for entry in entries], [0, 1])  # the places now
+        self.assertIsInstance(entries[1], TrackRecord)
+        self.assertEqual((update['trackCount'], update['durationMs']), (2, 2 * 180000))
+        self.assertEqual(raw['groups'][0]['entries'][3]['id'], 'd')  # raw itself untouched
+        # Nothing to take out: raw's own groups and counts, as they are.
+        again = entries_without(raw, ())
+        self.assertIs(again['groups'], raw['groups'])
+        self.assertEqual((again['trackCount'], again['durationMs']), (4, 4 * 180000))
+        # The merge shows it: the rows go, and come back.
+        item = Item(dict(raw))
+        item.merge(update)
+        self.assertEqual(item.track_ids(), ['a', 'c'])
+        item.merge(entries_without(raw, ()))
+        self.assertEqual(item.track_ids(), ['a', 'b', 'c', 'd'])
+        # Without counts, none made up; not a list of one group, nothing.
+        bare = playlist_with('p.2', ['a', 'b'])
+        self.assertNotIn('trackCount', entries_without(bare, {0}))
+        self.assertIsNone(entries_without(dict(bare, groups=[]), {0}))
 
     def test_item_reorder_keeps_its_objects_and_splices_once(self):
         item = Item(playlist_with('p.1', ['a', 'b', 'c', 'd', 'e']))

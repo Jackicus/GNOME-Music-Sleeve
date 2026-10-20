@@ -297,6 +297,9 @@ def classes():
         def ask_add_songs(self, playlist):
             self.add_songs.append(playlist)
 
+        def remove_favourites(self, tracks):
+            self.batches.append(('remove-from-favourites', list(tracks)))
+
         def ask_remove_from_library(self, objects):
             self.batches.append(('remove-from-library', list(objects)))
 
