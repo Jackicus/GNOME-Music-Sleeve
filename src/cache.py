@@ -35,7 +35,8 @@ log = logging.getLogger(__name__)
 # (the catalog its search answers from).
 CACHE_ENTRIES = ('library.json', 'art', 'thumb', 'remote-art', 'lyrics', 'landing.json',
                  'categories', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
-                 'artists', 'albums', 'suggestions', 'credits', 'recent-played.json',
+                 'artists', 'albums', 'suggestions', 'credits', 'rooms', 'groupings',
+                 'multirooms', 'recent-played.json',
                  'recent-searches.json', 'items',
                  'library.lock', 'session.json', 'demo-search.json')
 

@@ -202,6 +202,9 @@ class BannerTest(RemoteTestCase):
             self.assertEqual(self.fetched, ['https://x.invalid/b/1440x480vf.jpg'])
             self.assertEqual(await remote.fetch_banner(self.WIDE, 1200), path)  # one step
             self.assertEqual(len(self.fetched), 1)
+            # Where it lands is known without asking the disk (a banner card's first path).
+            self.assertEqual(remote.banner_path(self.WIDE, 1100), path)
+            self.assertIsNone(remote.banner_path(None, 1100))
             missing = dict(self.WIDE, url='https://x.invalid/missing/{w}x{h}vf.jpg')
             self.assertIsNone(await remote.fetch_banner(missing, 1100))
         run(go())

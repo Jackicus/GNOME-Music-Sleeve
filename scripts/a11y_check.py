@@ -1459,6 +1459,45 @@ async def walkthrough(window):
         second = live.shelf.items.get_item(1)
         check('Right, Enter plays the second live station', requests == [second.play],
               requests)
+    print('-- new')
+    from applemusic.widgets.banner_tile import BannerTile
+    from applemusic.widgets.explore import LinkChild
+
+    window.select_page('new')
+    await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound
+    new = window.navigation_view.get_visible_page()
+    shelves = new._column.widgets
+    featured = shelves[0] if shelves else None
+    check('New opens with its banners as wide cards',
+          featured is not None and featured.props.banners, [w.shelf.key for w in shelves])
+    if featured is not None:
+        await key(window, '<primary>2', 0.6)
+        for _ in range(3):  # the shelf's paging arrows and See All, then its cards
+            if inside(window.get_focus(), featured.list_view):
+                break
+            await key(window, 'Tab')
+        focus = window.get_focus()
+        card = focus.get_first_child() if focus is not None else None
+        check('Tab reaches the first banner', isinstance(card, BannerTile),
+              describe(focus))
+    links = [child for child in descendants(new) if isinstance(child, LinkChild)]
+    room = next((child for child in links if child.item.kind == 'room'), None)
+    check('More to Explore ends New with its links, a room among them', room is not None,
+          [child.item.title for child in links])
+    if room is not None:
+        room.grab_focus()
+        await key(window, 'Return', 1.0)
+        page = window.navigation_view.get_visible_page()
+        check('Enter on a link opens its room as a grid',
+              getattr(page, 'item', None) is room.item
+              and page.stack.get_visible_child_name() == 'items',
+              page.get_title())
+        await key(window, '<primary>2', 0.6)
+        check("Ctrl+2 puts the focus in the room's grid",
+              inside(window.get_focus(), page.grid_view), describe(window.get_focus()))
+        await key(window, 'Escape', 0.6)
+        check('Escape goes back to New', window.navigation_view.get_visible_page() is new,
+              window.navigation_view.get_visible_page())
     print('-- charts')
     from applemusic.pages.charts import charts_item
     from applemusic.widgets.song_shelf import SongShelf
@@ -2049,7 +2088,7 @@ async def unnamed(label):
 async def names(window):
     print('-- accessible names (focusable controls without one)')
     total = 0
-    for page in ('home', 'albums', 'artists', 'songs', 'radio', 'all-playlists',
+    for page in ('home', 'new', 'albums', 'artists', 'songs', 'radio', 'all-playlists',
                  'favourite-songs'):
         window.select_page(page)
         window.split_view.set_show_content(True)
@@ -2070,6 +2109,12 @@ async def names(window):
     window.open_artist_page(app.library.artists.get_item(0))
     await asyncio.sleep(1.5)
     total += await unnamed("artist's page")
+    from applemusic.explore import link_item
+
+    for kind, item_id in (('room', 'demo.room01'), ('grouping', 'demo.grouping01')):
+        window.open_item(link_item({'title': f'Invented {kind}', 'kind': kind, 'id': item_id}))
+        await asyncio.sleep(1.0)
+        total += await unnamed(f"a More to Explore link's {kind}")
     window.select_page('search')
     await asyncio.sleep(0.5)
     search = window.navigation_view.get_visible_page()

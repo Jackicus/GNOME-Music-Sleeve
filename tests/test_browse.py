@@ -93,11 +93,131 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertEqual(shelves[3]['items'][0]['play'], {'kind': 'station', 'id': 'ra.900000601'})
 
     def test_nothing(self):
-        self.assertEqual(normalize.editorial_shelves(None, self.tmp.name), {'shelves': []})
+        nothing = {'shelves': [], 'links': []}
+        self.assertEqual(normalize.editorial_shelves(None, self.tmp.name), nothing)
         self.assertEqual(normalize.editorial_shelves({'data': ['junk', {}]}, self.tmp.name),
-                         {'shelves': []})
+                         nothing)
         answer = {'errors': [{'status': '500'}]}
-        self.assertEqual(normalize.editorial_shelves(answer, self.tmp.name), {'shelves': []})
+        self.assertEqual(normalize.editorial_shelves(answer, self.tmp.name), nothing)
+
+    def test_the_banners_carry_apples_label_line_and_wide_artwork(self):
+        # #370: a 317's label over its content's editorial artwork, a 320's own; the
+        # shelf is shown as banners since one has a banner.
+        featured = normalize.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
+        self.assertEqual(featured['form'], 'banners')
+        album_item, curator = featured['items']
+        self.assertEqual((album_item['badge'], album_item['tagline']),
+                         ('NEW ALBUM', 'An invented tagline'))  # the tagline before short
+        self.assertEqual(album_item['banner'], {
+            'url': 'https://x/lantern-hero/{w}x{h}sr.jpg', 'crop': 'sr', 'width': 3840,
+            'height': 2160, 'color': '#1a2b3c'})
+        self.assertEqual((curator['badge'], curator['tagline']),
+                         ('FEATURED CURATOR', 'Invented short notes'))  # the child's notes
+        self.assertEqual(curator['banner']['url'], 'https://x/folk-wide/{w}x{h}sr.jpg')
+        self.assertEqual((curator['banner']['width'], curator['banner']['height']),
+                         (4320, 1080))
+        # The other shelves' items have none of it, the same album among them.
+        for shelf in normalize.editorial_shelves(self.raw, self.tmp.name)['shelves'][1:]:
+            for item in shelf['items']:
+                self.assertFalse({'badge', 'banner', 'tagline'} & set(item))
+            self.assertNotIn('form', shelf)
+
+    def test_banners_without_artwork_are_a_plain_featured_shelf(self):
+        banners = self.raw['data'][0]['relationships']['tabs']['data'][0]['relationships'][
+            'children']['data'][0]['relationships']['children']['data']
+        for banner in banners:
+            banner['attributes'].pop('editorialArtwork', None)
+            for content in banner['relationships']['contents']['data']:
+                content['attributes'].pop('editorialArtwork', None)
+        featured = normalize.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
+        self.assertNotIn('form', featured)
+        self.assertEqual(featured['items'][0]['badge'], 'NEW ALBUM')
+        self.assertNotIn('banner', featured['items'][0])
+        # A category's page (no banners asked for) keeps none of it either.
+        radio = normalize.radio_shelves(self.raw, self.tmp.name)['shelves'][0]
+        self.assertNotIn('badge', radio['items'][0])
+
+    def test_more_to_explore_and_the_genres_are_links(self):
+        links = normalize.editorial_shelves(self.raw, self.tmp.name)['links']
+        self.assertEqual([(row['key'], row['title']) for row in links],
+                         [('new-links', 'More'), ('new-genres', '')])
+        self.assertEqual([(link['kind'], link['id'], link['title'], link.get('genre'))
+                          for link in links[0]['links']], [
+            ('charts', 'charts', 'Charts', None),
+            ('room', '900000701', 'Invented Room', None),  # once, though twice in the row
+            ('room', '900000703', 'Invented Collection', None),
+            ('grouping', '900000704', 'Invented Grouping', None),
+            ('multiroom', '900000705', 'Invented Multiroom', None),
+            ('charts', 'charts', 'Invented Genre Charts', '21'),
+            ('link', 'https://example.com/invented-concerts', 'Invented Concerts', None),
+        ])  # no label, no id, not https: left out
+        self.assertEqual(links[0]['links'][-1]['url'], 'https://example.com/invented-concerts')
+        self.assertEqual(links[1]['links'], [{'title': 'Invented Folk', 'kind': 'grouping',
+                                              'id': '900000706', 'url': None}])
+
+    def test_editorial_links(self):
+        store = 'https://itunes.apple.com/WebObjects/MZStore.woa/wa/'
+
+        def link(url, **more):
+            return normalize.editorial_link(dict(label='  Invented   Label ', url=url, **more))
+        self.assertEqual(link(store + 'viewRoom?fcId=1'),
+                         {'title': 'Invented Label', 'kind': 'room', 'id': '1', 'url': None})
+        self.assertEqual(link('https://music.apple.com/gb/room/6789')['id'], '6789')
+        self.assertEqual(link(store + 'viewMultiRoom?FCID=2')['kind'], 'multiroom')
+        self.assertEqual(link(store + 'viewTop?cc=gb')['kind'], 'charts')  # no genre
+        self.assertNotIn('genre', link(store + 'viewTop?cc=gb'))
+        # An in-app route marked external opens in the browser, as Apple's page would.
+        self.assertEqual(link(store + 'viewRoom?fcId=1', target='external')['kind'], 'link')
+        # An id that is not one (it goes into a path), a route without its id: none.
+        self.assertIsNone(link(store + 'viewGrouping?id=../x'))
+        self.assertIsNone(link(store + 'viewGrouping'))
+        for bad in ('ftp://example.com/x', 'http://example.com/x', 'javascript:alert(1)', ''):
+            self.assertIsNone(link(bad))
+        self.assertIsNone(normalize.editorial_link({'url': store + 'viewRoom?fcId=1'}))
+        self.assertIsNone(normalize.editorial_link('junk'))
+        self.assertEqual(link('https://example.com/elsewhere')['kind'], 'link')
+
+    def test_a_room(self):
+        raw = {'data': [{'id': '900000701', 'type': 'rooms', 'attributes': {
+            'title': 'Invented Room', 'sorts': []}, 'relationships': {'contents': {'data': [
+                album('900000201', 'Lantern Season'), station('ra.q-1', 'Quiet Radio'),
+                album('900000201', 'Lantern Season'), {'id': 'x', 'type': 'uploaded-videos',
+                                                       'attributes': {'name': 'Upload'}},
+                'junk']}}}]}
+        out = normalize.editorial_room(raw, self.tmp.name)
+        self.assertEqual((out['id'], out['title']), ('900000701', 'Invented Room'))
+        self.assertEqual([(item['kind'], item['id']) for item in out['items']],
+                         [('album', '900000201'), ('station', 'ra.q-1')])
+        self.assertEqual(normalize.editorial_room(None, self.tmp.name),
+                         {'id': '', 'title': '', 'items': []})
+
+    def test_a_grouping_is_shaped_as_new(self):
+        raw = {'data': [dict(self.raw['data'][0], id='900000704',
+                             attributes={'name': 'Invented Grouping'})]}
+        out = normalize.editorial_grouping(raw, self.tmp.name)
+        self.assertEqual((out['id'], out['title']), ('900000704', 'Invented Grouping'))
+        self.assertEqual([shelf['key'] for shelf in out['shelves']],
+                         ['grp-banners', 'grp-best-new-songs', 'grp-new-releases',
+                          'grp-stations'])
+        self.assertEqual(out['shelves'][0]['form'], 'banners')
+        self.assertEqual([row['key'] for row in out['links']], ['grp-links', 'grp-genres'])
+
+    def test_a_multiroom_is_its_shelves(self):
+        header = {'id': 'header', 'type': 'editorial-elements', 'attributes': {
+            'editorialElementKind': '404', 'title': 'Invented Header'}}
+        shelf = {'id': 'shelf-1', 'type': 'editorial-elements', 'attributes': {
+            'editorialElementKind': '345', 'title': 'Invented Shelf'},
+            'relationships': {'contents': {'data': [album('900000201', 'Lantern Season')]},
+                              'room': {'data': [{'id': '900000799', 'type': 'rooms'}]}}}
+        raw = {'data': [{'id': '900000705', 'type': 'multirooms', 'attributes': {
+            'title': 'Invented Multiroom', 'uber': {'name': 'Invented Multiroom'}},
+            'relationships': {'children': {'data': [header, shelf]}}}]}
+        out = normalize.editorial_multiroom(raw, self.tmp.name)
+        self.assertEqual((out['id'], out['title']), ('900000705', 'Invented Multiroom'))
+        self.assertEqual([(s['key'], s['title'], [i['id'] for i in s['items']])
+                          for s in out['shelves']],
+                         [('mr-shelf-1', 'Invented Shelf', ['900000201'])])
+        self.assertEqual(out['links'], [])
 
     def test_a_category_page_keeps_its_keys_and_leaves_untitled_elements_out(self):
         grouping = self.raw['data'][0]
@@ -165,6 +285,14 @@ class EditorialShelvesTest(unittest.TestCase):
 
     def test_cache_paths(self):
         self.assertEqual(normalize.browse_cache_path('/c'), os.path.join('/c', 'browse.json'))
+        self.assertEqual(normalize.room_cache_path('/c', '1.2'),
+                         os.path.join('/c', 'rooms', '1.2.json'))
+        self.assertEqual(normalize.grouping_cache_path('/c', '../x'),
+                         os.path.join('/c', 'groupings', '.._x.json'))
+        self.assertEqual(normalize.multiroom_cache_path('/c', '7'),
+                         os.path.join('/c', 'multirooms', '7.json'))
+        for folder in ('rooms', 'groupings', 'multirooms'):
+            self.assertIn(folder, normalize.ANSWER_FOLDERS)
         self.assertEqual(normalize.made_for_you_cache_path('/c'),
                          os.path.join('/c', 'made-for-you.json'))
 

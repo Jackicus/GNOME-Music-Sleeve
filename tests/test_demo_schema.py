@@ -375,6 +375,51 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertTrue(page['shelves'][0]['items'])
         self.assertEqual(kinds, {'station', 'category', 'album', 'video'})
 
+    def test_new_page_and_its_links_pages(self):
+        # The New page's answer, as the engine keeps it (normalize.editorial_shelves' shape):
+        # the banners first (Apple's label and line on each, a 16:9 banner drawn on disk for
+        # all but the last), then shelves of the library's own items; its links, each to a
+        # page written beside it, or the charts, or the web.
+        def read(*parts):
+            with open(os.path.join(self.out_dir, *parts), encoding='utf-8') as f:
+                return json.load(f)
+
+        answer = read('browse.json')
+        self.assertIs(answer['demo'], True)
+        self.assertEqual(set(answer) - {'demo', 'cached'}, {'shelves', 'links'})
+        featured, *shelves = answer['shelves']
+        self.assertEqual((featured['title'], featured['featured'], featured['form']),
+                         ('', True, 'banners'))
+        for item in featured['items']:
+            self.assertTrue(item['badge'] and item['tagline'])
+        banners = [item['banner'] for item in featured['items'] if 'banner' in item]
+        self.assertEqual(len(banners), len(featured['items']) - 1)
+        for banner in banners:
+            self.assertEqual(set(banner), {'url', 'art', 'crop', 'width', 'height', 'color'})
+            self.assertTrue(os.path.exists(banner['art']))
+            image = GdkPixbuf.Pixbuf.new_from_file(banner['art'])
+            self.assertEqual((image.get_width(), image.get_height()),
+                             (banner['width'], banner['height']))
+        library_ids = {item['id'] for section in self.data['sections'].values()
+                       for item in section}
+        for shelf in shelves:
+            self.assertTrue(shelf['key'] and shelf['title'] and shelf['items'])
+            self.assertLessEqual({item['id'] for item in shelf['items']}, library_ids)
+        kinds = set()
+        folders = {'room': 'rooms', 'grouping': 'groupings', 'multiroom': 'multirooms'}
+        for row in answer['links']:
+            for link in row['links']:
+                kinds.add(link['kind'])
+                if link['kind'] in folders:
+                    page = read(folders[link['kind']], f"{link['id']}.json")
+                    self.assertIs(page['demo'], True)
+                    self.assertEqual(page['title'], link['title'])
+                    self.assertTrue(page.get('items') or page['shelves'][0]['items'])
+                elif link['kind'] == 'link':
+                    self.assertTrue(link['url'].startswith('https://example.'))
+        self.assertEqual(kinds, {'room', 'grouping', 'multiroom', 'charts', 'link'})
+        self.assertEqual([row['title'] for row in answer['links']], ['More to Explore', ''])
+
     def test_artist_pages_and_the_shows_they_host(self):
         # Each artist's page has its shelves in Apple's order; every other one, the first
         # (which the screenshots open) among them, a Radio Shows shelf of one show, a category

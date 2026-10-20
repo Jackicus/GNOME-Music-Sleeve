@@ -42,7 +42,10 @@ artist opens as the library's page of them; artist-page:ID opens Apple Music's
 page of the artist instead, as Go to Artist does (window.open_artist_page);
 category:ID the page of a category the demo library invented (a radio show's,
 categories/<ID>.json), as its tile does; charts:top opens the Charts
-page, as its Top Charts tile does (the demo's invented charts.json). An
+page, as its Top Charts tile does (the demo's invented charts.json);
+room:ID, grouping:ID and multiroom:ID the page a New page's More to Explore link opens
+(the demo's invented rooms/, groupings/, multirooms/: demo.room01, demo.grouping01,
+demo.multiroom01), as the link does. An
 ID the library lacks opens the catalog's album or playlist of that id, as a
 shelf's tile would: one of the demo's invented catalog answers (an album page's
 or an artist page's shelves, demo.edition0010 say), else the catalog's copy of
@@ -162,7 +165,8 @@ parser.add_argument('--demo', action='store_true', help='show the demo library i
 parser.add_argument('--open', metavar='KIND:ID',
                     help='open an item (ID an item id or "first") over the page; '
                          "artist-page:ID for Apple Music's page of an artist, charts:top "
-                         'for the Charts page')
+                         'for the Charts page, room:ID, grouping:ID or multiroom:ID for '
+                         "a More to Explore link's page")
 parser.add_argument('--sidebar', action='store_true',
                     help='in the narrow layout, show the sidebar rather than the --page')
 parser.add_argument('--expand', metavar='ID[,ID…]', default='',
@@ -454,6 +458,8 @@ def open_item(window):
         item = app.library.by_id('folder', first_folder())
     elif kind == 'category':
         item = invented_category(item_id)
+    elif kind in ('room', 'grouping', 'multiroom'):
+        item = invented_link(kind, item_id)
     else:
         item = app.library.by_id(kind, item_id) or catalog_item(kind, item_id)
     if item is None:
@@ -477,6 +483,22 @@ def invented_category(item_id):
     except (OSError, ValueError):
         return None
     return Item({'id': item_id, 'kind': 'category', 'title': page.get('title') or ''})
+
+
+def invented_link(kind, item_id):
+    """The Item of a More to Explore link to a page the demo library invented (rooms/,
+    groupings/ or multirooms/<id>.json), titled as its page is; None without one."""
+    from applemusic.backend import config, normalize
+    from applemusic.explore import link_item
+
+    path = {'room': normalize.room_cache_path, 'grouping': normalize.grouping_cache_path,
+            'multiroom': normalize.multiroom_cache_path}[kind]
+    try:
+        with open(path(str(config.cache_dir()), item_id), encoding='utf-8') as file:
+            page = json.load(file)
+    except (OSError, ValueError):
+        return None
+    return link_item({'title': page.get('title') or item_id, 'kind': kind, 'id': item_id})
 
 
 def first_context_widget(widget, kind=None):

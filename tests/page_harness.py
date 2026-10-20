@@ -126,6 +126,15 @@ def classes():
         async def browse(self, refresh=False):
             return await self._answer('browse', refresh)
 
+        async def room(self, room_id, refresh=False):
+            return await self._answer('room', room_id, refresh)
+
+        async def grouping(self, grouping_id, refresh=False):
+            return await self._answer('grouping', grouping_id, refresh)
+
+        async def multiroom(self, multiroom_id, refresh=False):
+            return await self._answer('multiroom', multiroom_id, refresh)
+
         async def made_for_you(self, refresh=False):
             return await self._answer('made_for_you', refresh)
 

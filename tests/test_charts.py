@@ -103,11 +103,13 @@ class ChartsPageTest(PageTestCase):
 
 
 class NewPageTest(PageTestCase):
-    """New ends with More to Explore, whose Top Charts tile opens the Charts page."""
+    """New ends with More to Explore, whose Top Charts link opens the Charts page when
+    Apple's links have none to the charts."""
 
     async def test_more_to_explore_follows_the_shelves_and_opens_the_charts(self):
         from applemusic.pages import new
         from applemusic.sections import Destination
+        from applemusic.widgets.explore import ExploreBox, LinkChild
 
         self.app.engine.answers['browse'] = {'shelves': [
             {'key': f'new-{n}', 'title': f'Invented Shelf {n}',
@@ -118,12 +120,15 @@ class NewPageTest(PageTestCase):
         await self.settle()
         self.assertTrue(await self.until(lambda: len(page._column.widgets) == 3, timeout=3))
         last = page.shelves_box.get_last_child()
+        self.assertIsInstance(last, ExploreBox)
         self.assertIs(last.get_prev_sibling(), page._column.widgets[-1])  # after them all
-        title, tiles = last.get_first_child(), last.get_last_child()
+        section = last.get_first_child()
+        title, links = section.get_first_child(), section.get_last_child()
         self.assertEqual(title.get_label(), 'More to Explore')
-        tile = tiles.get_child_at_index(0).get_child()
-        self.assertEqual(tile.item.title, 'Top Charts')
-        tiles.emit('child-activated', tiles.get_child_at_index(0))
+        child = links.get_child_at_index(0)
+        self.assertIsInstance(child, LinkChild)
+        self.assertEqual(child.item.title, 'Top Charts')
+        links.emit('child-activated', child)
         self.assertEqual([(item.kind, item.id) for item in self.window.opened],
                          [('charts', 'charts')])
 
