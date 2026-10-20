@@ -298,6 +298,20 @@ changes, change it here, with the date. The plan they came from is in
   status line under the user's name, and the album is the cover's caption, which Discord
   prints as the card's third line. The cover is Apple's own public URL, which Discord fetches;
   nothing is uploaded anywhere.
+- **A notification when the song changes, off by default** (2026-10-20, #367). As Music on
+  macOS offers, a switch in Preferences › General shows the new song (its title, its artist
+  as the body, its cover as the icon) in a notification. Off until turned on: GNOME's
+  notifications are for what the user would otherwise miss, and most users of a music player
+  do not want one per song. Only while the app is out of sight (no window of it shown and
+  focused): a song the window shows already needs no notification. Only a change from one
+  song to another, after it has played a second: not the first song after launch or after
+  playback ended (the user started it), not the session restored or its Play, not a skip
+  within the second (the one that stays is announced), not a live station's programme. One
+  id (`song-changed`), so each replaces the last and the tray keeps one, withdrawn when
+  playback ends, when the setting goes off and at quit; another than the toasts' background
+  notification, which it never replaces. The cover is a `Gio.BytesIcon` of the remote-art
+  cache's file, read in a thread: the notification portal takes bytes where a file would need
+  sharing. Its click runs `app.show-window`.
 - **A click plays a song** (2026-10-01). A track in an album's or a playlist's list, the Songs
   table and Search's songs plays on a single click (`single-click-activate`), as GNOME Music
   plays one: the first click of a double click selected nothing anyone used, and a row that

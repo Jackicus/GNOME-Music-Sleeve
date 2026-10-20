@@ -33,6 +33,11 @@
       <summary>Show what you are listening to on Discord</summary>
       <description>Whether the title, artist and album of the playing track, and the address of its cover on Apple's servers, are sent to a running Discord as rich presence, so they show on your profile as listening to Apple Music. Nothing is sent while this is off, and nothing is sent when Discord is not running. No account information ever leaves the app.</description>
     </key>
+    <key name="notify-song-change" type="b">
+      <default>false</default>
+      <summary>Notify when the song changes</summary>
+      <description>Whether a notification with the title, the artist and the cover of each new song is shown once it has played for a second, while the window is hidden or not focused. Each replaces the last; none is shown for the first song after launch, for the session restored, or while the window is in front of you.</description>
+    </key>
     <key name="more-suggestions" type="b">
       <default>false</default>
       <summary>Show twelve suggested songs under a playlist</summary>

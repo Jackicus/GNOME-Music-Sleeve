@@ -148,6 +148,11 @@ touches widgets.
   show and Discord is there, waits for Discord's READY before sending, and sends one frame per
   change once a track change has settled. Discord being absent is not an error. At shutdown it
   clears the activity; Discord also drops it by itself when the app's socket closes.
+- **Song notification** (`song_notification.py`): while `notify-song-change` is on and no
+  window of the app is shown and focused, a `Gio.Notification` for each new song once it has
+  played a second (the title, the artist, the cover from the remote-art cache), each
+  replacing the last. It follows the player's notifications, and decides through pure
+  functions (`new_song()`, `should_notify()`).
 - **Artwork** (`widgets/artwork.py`): one loader that decodes covers in threads, at the size
   they are drawn, into a small LRU of textures. The files it decodes that the sync does not
   bring (covers, the item playing, the engine's search and browse answers) are downloaded by
@@ -156,8 +161,9 @@ touches widgets.
 ## Flows
 
 - **Startup.** `do_dbus_register` exports the search provider; `do_startup` starts reading
-  library.json in a thread, then makes the engine, the player, the sync, MPRIS and the
-  Discord presence; `do_activate` builds the window, awaits the library (then trims the
+  library.json in a thread, then makes the engine, the player, the sync, MPRIS, the
+  Discord presence and the song notification; `do_activate` builds the window, awaits the
+  library (then trims the
   caches in a thread, and reads the last session in one, which the bar shows paused) and,
   when the account is signed in and `engine-autostart` is on,
   starts the engine, whose coming up starts a sync when one is due. A search from the

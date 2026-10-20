@@ -26,6 +26,11 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
         subtitle: _("When the queue ends, keep playing similar songs, shown in Up Next");
       }
 
+      Adw.SwitchRow notify_song_row {
+        title: _("Notify When the Song Changes");
+        subtitle: _("Show each new song’s title, artist and cover while the app is in the background");
+      }
+
       Adw.SwitchRow discord_row {
         title: _("Discord Presence");
         subtitle: _("Show the song playing, with its artist, album and cover, on your Discord profile while Discord is running");

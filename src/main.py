@@ -11,9 +11,10 @@ GApplication's own object, before the app's bus name is owned. do_startup makes 
 picture of them is in CLAUDE.md): the Library, whose first load() starts reading
 library.json at once; the Engine (Chrome, stopped); the Player over it; LibrarySync
 (sync.py), which runs the syncs and schedules them; BackgroundPlayback; Mpris; the
-SessionKeeper (session.py), which keeps the last session. do_activate builds the Window
-(imported only then), shows the last session paused once the library has loaded, and starts
-the engine when the settings ask: not
+SessionKeeper (session.py), which keeps the last session; the SongNotifier
+(song_notification.py), the notification when the song changes out of sight. do_activate
+builds the Window (imported only then), shows the last session paused once the library has
+loaded, and starts the engine when the settings ask: not
 do_startup, so the app the bus starts for a search (the D-Bus service file's
 --gapplication-service, which runs startup alone) shows no window and starts no Chrome
 until a result is activated, and quits SERVICE_LINGER_MS after its last call. The library's
@@ -43,7 +44,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Adw, Gio, GLib, GObject  # noqa: E402
+from gi.repository import Adw, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from .backend import config, normalize  # noqa: E402
 from .backend.errors import EngineError  # noqa: E402
@@ -59,6 +60,7 @@ from .recent_searches import FILE_NAME as RECENT_SEARCHES, RecentSearches  # noq
 from .search_provider import OBJECT_NAME, SearchProvider  # noqa: E402
 from .session import FILE_NAME as SESSION_FILE, SessionKeeper  # noqa: E402
 from .shortcuts import ACCELS  # noqa: E402
+from .song_notification import SongNotifier, in_sight  # noqa: E402
 from .sync import LibrarySync, install_scaler  # noqa: E402
 from .timing import PROCESS_START, StartupMarks  # noqa: E402, F401  (bench.py reads it here)
 
@@ -72,7 +74,8 @@ RESOURCE_PATH = '/io/github/jackicus/MusicSleeve'
 QUIT_TIMEOUT = 6.0
 QUIT_GRACE = 3.0
 
-# The notification that stands in for a toast while the window is closed and the music plays.
+# The notification that stands in for a toast while the window is closed and the music plays
+# (the song's own, when the song changes out of sight, is song_notification.NOTIFICATION_ID).
 BACKGROUND_NOTIFICATION = 'background-error'
 
 # The settings that belong to a Chrome profile's sign-in and its library: the development
@@ -132,6 +135,7 @@ class Application(Adw.Application):
         self.library_sync = None  # created in do_startup
         self.session = None  # created in do_startup (not demo): the last session, kept
         self.background = None  # created in do_startup: the window closed, the music on
+        self.song_notifier = None  # created in do_startup (not demo): the song's notification
         self._tasks = set()  # strong references: asyncio only keeps weak ones
         self._quitting = None  # the task stopping the engine before the app quits
         self._signin = None  # the sign-in dialog while it is open
@@ -165,6 +169,9 @@ class Application(Adw.Application):
         # Refresh Library: enabled while signed in, with no sync running (_update_sync_action).
         self._sync_action = self._add_action('sync', lambda *_args: self.start_sync())
         self._add_action('now-playing', self._on_now_playing)
+        # The song notification's click: the window shown (hidden for background playback
+        # too) and raised.
+        self._add_action('show-window', self._on_show_window)
         self._add_action('start-engine', lambda *_args: self.start_engine())
         self._add_action('show-engine-preferences',
                          lambda *_args: self.show_preferences('engine'))
@@ -306,6 +313,8 @@ class Application(Adw.Application):
             self.mpris.start()
             self.presence = Presence(self)
             self.presence.start()
+            self.song_notifier = SongNotifier(self)
+            self.song_notifier.start()
 
     def do_shutdown(self):
         if self._first_load is not None:  # never activated: the read is dropped
@@ -496,6 +505,18 @@ class Application(Adw.Application):
                 if on_error is not None:
                     on_error()
         return self.spawn(command())
+
+    def _on_show_window(self, *_args):
+        window = self.get_active_window()
+        if window is not None:
+            window.present()
+        else:
+            self.activate()
+
+    def window_in_sight(self):
+        """Whether one of the app's windows is shown and focused (the main window, or
+        Preferences as a window of its own): the user sees what plays."""
+        return in_sight(Gtk.Window.list_toplevels())
 
     def _on_now_playing(self, *_args):
         window = self.get_active_window()
@@ -735,6 +756,8 @@ class Application(Adw.Application):
         SIGN_OUT_WAIT more to finish; then Chrome is killed if it still runs."""
         if self.background is not None:
             self.background.leave()
+        if self.song_notifier is not None:
+            self.song_notifier.stop()  # it names a song that stops playing
         if self._signin is not None:
             self._signin.force_close()  # cancels the sign-in, which stops the engine too
         for window in self.get_windows():
