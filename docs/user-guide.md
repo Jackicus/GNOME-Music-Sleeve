@@ -85,6 +85,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   playlists. The page is kept for a day, or until the shows on air change, and its refresh
   button asks Apple again. An artist who hosts a show on Apple Music Radio has it under
   **Radio Shows** on their page, and its episodes under **More To Hear**.
+- **Top Charts**, at the end of **New** (under **More to Explore**) and first among
+  Search's browse categories, opens Apple Music's charts: **Top Songs** as a numbered list
+  (click a song to play the chart from it; right-click for Play Next and the rest),
+  **Top Albums** and **Top Playlists** as numbered tiles, the **Daily Top 100** playlists
+  (the world's and each country's) and **City Charts** (a playlist for each of a number of
+  cities), which open their pages, and **Top Music Videos**. The charts are kept for a day;
+  the refresh button asks Apple again.
 - **Artists** lists the artists in your library beside the one you choose: their albums in
   your library, newest first (**Sort By** for titles), with **Play** and **Shuffle** for all
   their songs. A song you added without its album shows as its album. Clicking an artist you
@@ -244,6 +251,8 @@ Other limits:
   links at the end of its radio page (More to Explore, the genres) are not shown. A live
   station plays with a song's times and slider, which mean nothing for it, and Pause does
   not stop it yet.
+- The charts are your storefront's, of every genre: there is no genre to choose yet. Like
+  New, they need the engine and your sign-in (or the last copy of them).
 - A playlist moves into a folder, but not yet out of every folder to the top level, and a
   folder does not move into another folder: Apple's service has not been seen to take those
   moves from the app yet, so it does not offer them. Apple's own apps can.

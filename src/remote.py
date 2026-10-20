@@ -13,8 +13,8 @@ comes through `await fetch_remote(url, size)`: the URL re-sized to `size` px squ
 into <cache>/remote-art/ (named by the sized URL's hash; the sync trims that directory to a
 budget) and answered as its path.
 
-The engine's search, suggest, category, browse, radio and made-for-you answers name a catalog
-URL as an item's `art` when the sync has not fetched its cover (and no `thumb`):
+The engine's search, suggest, category, browse, radio, charts and made-for-you answers name a
+catalog URL as an item's `art` when the sync has not fetched its cover (and no `thumb`):
 `remote_item(data)` gives such a dict the paths fetch_remote() would use (`thumb` at
 THUMB_SIZE, `art` at COVER_SIZE, with `thumbUrl` and `artUrl` to fetch them by), so a tile
 shows the thumbnail once `await fetch_thumb(item)` has brought it and a detail page's
@@ -66,6 +66,21 @@ SEARCH_TITLES = {
     'stations': N_('Stations'),
     'radio-shows': N_('Radio Shows'),
     'curators': N_('Curators'),
+}
+
+# The headings of the Charts page's shelves when Apple's answer names none, by the chart each
+# is (normalize.charts_shelves' `chart`).
+CHART_TITLES = {
+    'songs': N_('Top Songs'),
+    'albums': N_('Top Albums'),
+    'playlists': N_('Top Playlists'),
+    'music-videos': N_('Top Music Videos'),
+    # Translators: the Charts page's shelf of Apple's daily playlists of the hundred songs
+    # played most, the world's and each country's.
+    'dailyGlobalTopCharts': N_('Daily Top 100'),
+    # Translators: the Charts page's shelf of Apple's playlists of the songs played most in
+    # each of a number of cities.
+    'cityCharts': N_('City Charts'),
 }
 
 
@@ -263,7 +278,8 @@ def shelf_title(data):
     """A shelf's heading in the app's language: the name of its kind for a search's shelf
     (SEARCH_TITLES, by key: the backend leaves them untitled), 'Featured' for the New page's
     banners, Apple's own title for the rest (it comes in the account's language: Radio's
-    `radio-shows` keeps it), and 'Made for You' for a recommendation that has none."""
+    `radio-shows` keeps it), the chart's name for a chart Apple left untitled
+    (CHART_TITLES, by `chart`), and 'Made for You' for a recommendation that has none."""
     if data.get('featured'):
         # Translators: the shelf of banners at the top of the New page.
         return _('Featured')
@@ -271,6 +287,8 @@ def shelf_title(data):
     title = SEARCH_TITLES.get(str(data.get('key') or ''))
     if title is not None and not own:
         return _(title)
+    if not own and data.get('chart') in CHART_TITLES:
+        return _(CHART_TITLES[data['chart']])
     return own or _('Made for You')
 
 
@@ -310,7 +328,10 @@ def remote_shelves(dicts):
     """ShelfModel objects for the engine's shelf dicts ({key, title, items}), titled by
     shelf_title(), the items as remote_items() makes them; a shelf with nothing in it is
     left out. A search's shelf carries the offset of Apple's next page of it as `next` (None
-    when Apple has no more), and `more` while there is one, so it offers See All."""
+    when Apple has no more), and `more` while there is one, so it offers See All. A
+    chart's shelf keeps what it is as attributes of its ShelfModel: `ranked` (its items
+    numbered, widgets.shelf) and `form` ('songs': a list of songs, widgets.song_shelf),
+    as the dict has them."""
     shelves = []
     for data in dicts or []:
         if not isinstance(data, dict):
@@ -322,6 +343,8 @@ def remote_shelves(dicts):
             shelf.next = following if isinstance(following, int) and following > 0 else None
             if shelf.next is not None:
                 shelf.more = True
+            shelf.ranked = bool(data.get('ranked'))
+            shelf.form = str(data.get('form') or '')
             shelves.append(shelf)
     return shelves
 

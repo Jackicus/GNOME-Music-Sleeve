@@ -82,6 +82,14 @@ BROWSE_PARAMS = {'name': 'music', 'platform': 'web', 'extend': 'editorialArtwork
 # and an episode's show (`radio-show`).
 RADIO_PARAMS = {'name': 'radio', 'platform': 'web', 'tabs': 'subscriber',
                 'extend': 'editorialArtwork', 'include[stations]': 'events,radio-show'}
+# The Charts page: Apple's charts of the storefront (most played), every kind at once, and the
+# Daily Top 100 and City Charts playlists with them (`with`). Without `with` the answer is the
+# documented one; CHARTS_PLAIN_PARAMS is what is asked when Apple refuses it (a 400).
+CHARTS_ENDPOINT = '/v1/catalog/{storefront}/charts'
+CHARTS_LIMIT = 100
+CHARTS_PARAMS = {'types': 'songs,albums,playlists,music-videos', 'limit': CHARTS_LIMIT,
+                 'with': 'dailyGlobalTopCharts,cityCharts'}
+CHARTS_PLAIN_PARAMS = {'types': 'songs,albums,playlists,music-videos', 'limit': CHARTS_LIMIT}
 # Made for You: the recommendations, of which the mixes and stations are kept.
 RECOMMENDATIONS_ENDPOINT = '/v1/me/recommendations'
 RECOMMENDATIONS_PARAMS = {'limit': 25}

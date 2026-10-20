@@ -144,6 +144,7 @@ def _classes():
             self.album_answer = None  # what album_page() answers, the same way
             self.suggestions = None  # what playlist_suggestions() answers, the same way
             self.radio_answer = None  # what radio() answers, the same way
+            self.charts_answer = None  # what charts() answers, the same way
 
         async def start(self, visible=None):
             self.calls.append('start')
@@ -184,6 +185,12 @@ def _classes():
             if self.radio_answer is None:
                 raise EngineError('engine-down')
             return self.radio_answer
+
+        async def charts(self, refresh=False):
+            self.calls.append('charts')
+            if self.charts_answer is None:
+                raise EngineError('engine-down')
+            return self.charts_answer
 
     class LibrarySync(GObject.Object):
         """The app's sync as the dialogs see it: never running."""
@@ -689,6 +696,24 @@ class PageLifetimeTest(WidgetTestCase):
         refs = await self.pushed_and_popped(
             radio.create(Destination('radio', 'Radio', 'broadcast-symbolic'), self.library),
             HeroTile, Tile)
+        await self.assert_freed(*refs)
+
+    async def test_charts_page(self):
+        # A shelves page of a chart's forms: numbered songs in a grid, numbered tiles.
+        from applemusic.pages import charts
+        from applemusic.widgets.shelf import RankedTile
+        from applemusic.widgets.song_shelf import SongRow, SongShelf
+
+        songs = [{'id': f'19{n}', 'kind': 'song', 'title': f'Song {n}', 'subtitle': 'Artist',
+                  'play': {'kind': 'song', 'id': f'19{n}'}} for n in range(6)]
+        self.app.engine.charts_answer = {'shelves': [
+            {'key': 'charts-songs', 'title': 'Top Songs', 'ranked': True, 'form': 'songs',
+             'items': songs},
+            {'key': 'charts-albums', 'title': 'Top Albums', 'ranked': True,
+             'items': [dict(_album(n, tracks=0), id=f'c{n}') for n in range(6)]}]}
+        self.addCleanup(setattr, self.app.engine, 'charts_answer', None)
+        refs = await self.pushed_and_popped(charts.create(charts.charts_item()), SongShelf,
+                                            SongRow, RankedTile)
         await self.assert_freed(*refs)
 
     async def test_shelf_widget(self):

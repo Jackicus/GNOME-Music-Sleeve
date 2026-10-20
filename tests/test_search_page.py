@@ -208,6 +208,16 @@ class SearchPageTest(PageTestCase):
         self.assertEqual([recent.get_item(i).kind for i in range(recent.get_n_items())],
                          ['album', 'artist'])
 
+    async def test_top_charts_leads_the_categories_and_opens_the_charts(self):
+        self.signed_in_engine()
+        page = await self.search_page()
+        tiles = [page.categories_box.get_child_at_index(n).get_child() for n in range(2)]
+        self.assertEqual([(tile.item.kind, tile.item.title) for tile in tiles],
+                         [('charts', 'Top Charts'), ('category', 'Invented Genre')])
+        page.categories_box.emit('child-activated', page.categories_box.get_child_at_index(0))
+        self.assertEqual([item.kind for item in self.window.opened], ['charts'])
+        self.assertEqual(self.app.recent_searches.items.get_n_items(), 0)
+
     async def test_recently_searched_shows_without_categories(self):
         self.signed_in_engine()
         self.app.engine.answers['landing'] = {'categories': []}
@@ -216,6 +226,7 @@ class SearchPageTest(PageTestCase):
         self.assertEqual(page.stack.get_visible_child_name(), 'landing')
         self.assertTrue(page.recent_box.get_visible())
         self.assertFalse(page.categories_title_label.get_visible())
+        self.assertIsNone(page.categories_box.get_child_at_index(0))  # nor Top Charts
 
     @staticmethod
     def songs_answer(text, kind, offset, count=40, limit=25):

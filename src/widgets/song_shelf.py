@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """AppleMusicSongShelf: a titled grid of songs, three rows high, scrolling sideways (an
-artist's Top Songs); AppleMusicSongRow: one song in it."""
+artist's Top Songs, a chart's, numbered); AppleMusicSongRow: one song in it."""
 
 from gettext import gettext as _
 from gettext import pgettext as C_
@@ -11,7 +11,7 @@ from gi.repository import Gtk, Pango
 
 from . import context_menu
 from .cover import Cover
-from .labels import song_caption, song_label, suggestion_caption
+from .labels import ranked, song_caption, song_label, suggestion_caption, suggestion_label
 from .shelf import PagedRow
 from .util import connect_weak
 
@@ -24,18 +24,29 @@ class SongRow(Gtk.Box):
     """A song in the grid: its album's cover, its title (with the explicit badge) and its
     album and year; with `suggestion`, its artist and album (a playlist's Suggested Songs,
     widgets/suggested_songs.py, where it fills the width it is given), and a stop icon over
-    the cover while its preview plays (set_previewing(): nothing that changes its size).
+    the cover while its preview plays (set_previewing(): nothing that changes its size);
+    with `ranked`, its place in a chart before the cover (set_rank(), three figures wide
+    whatever the number) and its artist and album (a chart's Top Songs).
     bind(item) and unbind() as the grid recycles it; it follows the Item for a thumbnail
     that arrives later (notify::thumb)."""
 
     __gtype_name__ = 'AppleMusicSongRow'
 
-    def __init__(self, suggestion=False):
+    def __init__(self, suggestion=False, ranked=False):
         super().__init__(spacing=12, width_request=-1 if suggestion else ROW_WIDTH)
         self.add_css_class('song-row')
-        self._suggestion = suggestion
+        self._suggestion = suggestion or ranked
         self._item = None
         self._handler = None
+        self.rank = None
+        if ranked:
+            # Decoration: the row's name says it (labels.ranked). An inscription: its width
+            # is its three characters', whatever the number.
+            self.rank = Gtk.Inscription(min_chars=3, nat_chars=3, xalign=1,
+                                        valign=Gtk.Align.CENTER,
+                                        accessible_role=Gtk.AccessibleRole.PRESENTATION,
+                                        css_classes=['chart-rank-number', 'numeric', 'dimmed'])
+            self.append(self.rank)
         self.cover = Cover(size=COVER_SIZE, valign=Gtk.Align.CENTER,
                            accessible_role=Gtk.AccessibleRole.PRESENTATION)
         self.cover.add_css_class('small')
@@ -80,6 +91,11 @@ class SongRow(Gtk.Box):
         """The song shown, for its context menu (widgets/context_menu.py)."""
         return self._item
 
+    def set_rank(self, rank):
+        """Its place in the chart (a ranked row's)."""
+        if self.rank is not None:
+            self.rank.set_text(str(rank))
+
     def bind(self, item):
         if self._item is not None:
             self.unbind()
@@ -116,7 +132,8 @@ class SongShelf(PagedRow, Gtk.Box):
     """A shelf of songs (any object with `title`, `items`, a Gio.ListStore of song Items, and
     `more`, whether Apple has more than these), as a grid three rows high under its title,
     with a shelf's paging arrows and See All (window.open_shelf, offered when the grid does
-    not show everything: wider than the window, or `more`).
+    not show everything: wider than the window, or `more`). A `ranked` shelf (a chart's:
+    remote.remote_shelves) numbers its songs, each row with its artist and album.
 
     Activating a song plays them all from it, in their order, as music.apple.com does: a
     queue of their ids ({kind: songs}) started at that song (window.play_request); a right
@@ -133,6 +150,7 @@ class SongShelf(PagedRow, Gtk.Box):
 
     shelf = None
     _see_all = True
+    _ranked = False  # the rows numbered: the shelf shown is a chart's
     _followed = None  # (items, handler id)
 
     def __init__(self, **kwargs):
@@ -153,6 +171,13 @@ class SongShelf(PagedRow, Gtk.Box):
             return
         self.clear()
         self.shelf = shelf
+        numbered = bool(getattr(shelf, 'ranked', False))
+        if numbered != self._ranked:
+            # New rows, of the other kind.
+            self._ranked = numbered
+            factory = self.grid_view.get_factory()
+            self.grid_view.set_factory(None)
+            self.grid_view.set_factory(factory)
         self._followed = (shelf.items, connect_weak(shelf.items, 'items-changed',
                                                     self._on_items_changed))
         self.title_label.set_label(shelf.title)
@@ -176,12 +201,18 @@ class SongShelf(PagedRow, Gtk.Box):
         self._update_controls()
 
     def _on_setup(self, _factory, list_item):
-        list_item.set_child(SongRow())
+        list_item.set_child(SongRow(ranked=self._ranked))
 
     def _on_bind(self, _factory, list_item):
         item = list_item.get_item()
-        list_item.get_child().bind(item)
-        list_item.set_accessible_label(song_label(item))
+        row = list_item.get_child()
+        row.bind(item)
+        if row.rank is not None:
+            rank = list_item.get_position() + 1
+            row.set_rank(rank)
+            list_item.set_accessible_label(ranked(rank, suggestion_label(item)))
+        else:
+            list_item.set_accessible_label(song_label(item))
 
     def _on_unbind(self, _factory, list_item):
         list_item.get_child().unbind()

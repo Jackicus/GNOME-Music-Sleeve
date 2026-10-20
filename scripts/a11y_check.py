@@ -1044,6 +1044,40 @@ async def walkthrough(window):
         second = live.shelf.items.get_item(1)
         check('Right, Enter plays the second live station', requests == [second.play],
               requests)
+    print('-- charts')
+    from applemusic.pages.charts import charts_item
+    from applemusic.widgets.song_shelf import SongShelf
+
+    window.open_item(charts_item())  # as New's and Search's Top Charts tile opens it
+    await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound
+    charts = window.navigation_view.get_visible_page()
+    shelves = charts._column.widgets
+    songs = shelves[0] if shelves else None
+    check('Charts shows Top Songs as a numbered grid of songs, then numbered tiles',
+          isinstance(songs, SongShelf) and songs.shelf.ranked and len(shelves) == 6
+          and shelves[1].shelf.ranked, [widget.shelf.key for widget in shelves])
+    if isinstance(songs, SongShelf):
+        await key(window, '<primary>2', 0.6)
+        check('Ctrl+2 puts the focus in Top Songs', inside(window.get_focus(), songs),
+              describe(window.get_focus()))
+        for _ in range(3):  # the shelf's paging arrows and See All, then its songs
+            if inside(window.get_focus(), songs.grid_view):
+                break
+            await key(window, 'Tab')
+        check('Tab reaches the first song', inside(window.get_focus(), songs.grid_view),
+              describe(window.get_focus()))
+        requests = []
+        play_request = window.play_request
+        window.play_request = lambda play, start_with=None, shuffle=None, start_id=None: (
+            requests.append((play, start_with)))
+        await key(window, 'Return')
+        window.play_request = play_request
+        check('Enter plays the chart from its first song',
+              requests == [(songs.queue(), 0)], requests)
+        await key(window, 'Escape', 0.6)
+        check('Escape goes back to the page it was opened from',
+              window.navigation_view.get_visible_page() is not charts,
+              window.navigation_view.get_visible_page())
     print('-- folders')
     tree = app.library.playlist_tree()
     folder = next(node for node in tree.flat if node.kind == 'folder' and node.children)

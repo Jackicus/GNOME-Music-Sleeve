@@ -30,9 +30,9 @@ log = logging.getLogger(__name__)
 # What download_art raises when it gives up (store.CacheGone, a wiped cache, is one too).
 Cancelled = store.Cancelled
 
-# How long a kept answer (landing, a category, the New page, Made for You) is answered from
-# the cache before Apple is asked again, and a song's lyrics (Apple replaces plain lyrics with
-# synced ones, and corrects them).
+# How long a kept answer (landing, a category, the New page, Made for You, Charts) is answered
+# from the cache before Apple is asked again, and a song's lyrics (Apple replaces plain lyrics
+# with synced ones, and corrects them).
 ANSWER_MAX_AGE = 24 * 60 * 60
 LYRICS_MAX_AGE = 30 * 24 * 60 * 60
 
@@ -41,7 +41,7 @@ LYRICS_MAX_AGE = 30 * 24 * 60 * 60
 REMOTE_ART_BUDGET = 32 * 1024 * 1024
 LYRICS_KEEP = 2000
 # The day-long answers in the cache's top folder, beside categories/.
-KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json')
+KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -1769,6 +1769,68 @@ def answer_expired(answer, now=None):
     return now.strftime(STAMP_FORMAT) >= stamp
 
 
+# The charts the Charts page shows, by the key each comes under in the `results` of Apple's
+# charts answer, in the page's order: Top Songs, Top Albums, Top Playlists, the Daily Top 100
+# playlists, the City Charts playlists, Top Music Videos. A chart under any other key follows
+# them, in Apple's order. The first four kinds and the videos are ranked (their order is the
+# chart's); the Daily Top 100 and City Charts are a playlist a place, not a ranking.
+CHART_ORDER = ('songs', 'albums', 'playlists', 'dailyGlobalTopCharts', 'cityCharts',
+               'music-videos')
+RANKED_CHARTS = frozenset({'songs', 'albums', 'playlists', 'music-videos'})
+
+
+def charts_shelves(raw, cache_dir):
+    """`charts`' answer from Apple's catalog charts (`/v1/catalog/<storefront>/charts` with
+    `types` and `with`): `shelves`, one per chart with something in it, in CHART_ORDER, each
+    `{key, title, items, chart}`: `chart` the key it came under in `results` (`songs`,
+    `albums`, `playlists`, `music-videos`, `dailyGlobalTopCharts`, `cityCharts`…), `title`
+    Apple's name for it ("Top Songs", in the account's language; '' without one, for the
+    app to name by `chart`), keyed `charts-<chart>` (`-<n>` after the first of a kind), the
+    items as a search's are (no groups, art as it stands), each once. A ranked chart
+    (RANKED_CHARTS) is marked `ranked`, and its songs `form: 'songs'`, a list rather than
+    tiles; a song carries its `album`'s name. Each entry of `results` is a list of charts
+    (Apple's shape), or one chart."""
+    results = (raw or {}).get('results') if isinstance(raw, dict) else None
+    if not isinstance(results, dict):
+        results = {}
+    charts = []
+    for position, (name, entries) in enumerate(results.items()):
+        entries = entries if isinstance(entries, list) else [entries]
+        for index, chart in enumerate(entries):
+            if isinstance(chart, dict) and isinstance(chart.get('data'), list):
+                rank = CHART_ORDER.index(name) if name in CHART_ORDER else len(CHART_ORDER)
+                charts.append(((rank, position, index), str(name), index, chart))
+    charts.sort(key=lambda entry: entry[0])
+    shelves = []
+    for _order, name, index, chart in charts:
+        items = _chart_items(chart['data'], cache_dir)
+        if not items:
+            continue
+        shelf = {'key': f'charts-{name}' + (f'-{index}' if index else ''),
+                 'title': str(chart.get('name') or '').strip(), 'items': items, 'chart': name}
+        if name in RANKED_CHARTS:
+            shelf['ranked'] = True
+            if name == 'songs':
+                shelf['form'] = 'songs'
+        shelves.append(shelf)
+    return {'shelves': shelves}
+
+
+def _chart_items(resources, cache_dir):
+    """The Items of one chart, in its order, each once; a song with its album's name."""
+    items = []
+    seen = set()
+    for resource in resources:
+        item = _shelf_item(resource, cache_dir, curators=False)
+        if item is None or (item['kind'], item['id']) in seen:
+            continue
+        seen.add((item['kind'], item['id']))
+        if item['kind'] == 'song':
+            item['album'] = str((resource.get('attributes') or {}).get('albumName') or '')
+        items.append(item)
+    return items
+
+
 def _is_made_for_you(raw_item):
     """A personal mix (Favourites Mix, Chill Mix, New Music Mix…, playlists
     of `playlistType` personal-mix) or a station: what Made for You holds."""
@@ -2448,11 +2510,11 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
     """Trim the caches nothing else trims (in a thread, at startup and after a sync):
     remote-art/ to `remote_bytes` (prune_remote_art), lyrics/ to the
     `lyrics_keep` played last (by mtime: a cache hit touches the file), the kept answers
-    (categories/, artists/, albums/, suggestions/, landing, New, Made for You) stamped
-    longer than `answer_age` ago (by mtime, when they were written), an items/ folder older
-    versions kept, and the temporary files of writes a crash cut short (store.is_stale_temp)
-    in the cache and its folders. Returns {what: how many went}. art/ and thumb/ are the
-    library's: prune_art keeps them."""
+    (categories/, artists/, albums/, suggestions/, landing, New, Made for You, Radio,
+    Charts) stamped longer than `answer_age` ago (by mtime, when they were written), an
+    items/ folder older versions kept, and the temporary files of writes a crash cut short
+    (store.is_stale_temp) in the cache and its folders. Returns {what: how many went}. art/
+    and thumb/ are the library's: prune_art keeps them."""
     now = time.time() if now is None else now
     gone = {'remote-art': prune_remote_art(cache_dir, remote_bytes), 'lyrics': 0,
             'answers': 0, 'items': 0, 'temps': 0}
@@ -2554,6 +2616,11 @@ def radio_cache_path(cache_dir):
     """Where the Radio page's shelves (radio_shelves) are kept: a day, or until their
     programmes run out (`expires`)."""
     return os.path.join(cache_dir, 'radio.json')
+
+
+def charts_cache_path(cache_dir):
+    """Where the Charts page's shelves (charts_shelves) are kept for a day."""
+    return os.path.join(cache_dir, 'charts.json')
 
 
 def write_answer(path, answer, cache_dir, generation=None):

@@ -44,9 +44,12 @@ from, and each playlist the songs Apple would suggest adding to it
 twenty-four of the demo's own songs it does not hold), and the Radio page's answer
 (radio.json, normalize.radio_shelves()'s shape: invented live stations, shows, episodes
 and genre stations beside the demo's own albums and videos, each show's page in
-categories/), and the catalog the demo's search answers from (demo-search.json: its
+categories/), the catalog the demo's search answers from (demo-search.json: its
 artists, albums, songs, playlists, videos and stations, the Radio page's shows, and
-invented curators with their pages in categories/). Last it writes .demo-stamp, the
+invented curators with their pages in categories/), and the Charts page's
+(charts.json, normalize.charts_shelves()'s shape: the demo's own songs, albums,
+playlists and videos ranked, and invented Daily Top 100 and City Charts playlists of
+its songs, for invented places). Last it writes .demo-stamp, the
 record of what made it (demo_stamp.py), by which the harness and demo.sh know an out-of-date
 build/demo and write it again. The other keys the app's sync adds
 (sections.songs, artUrl) are optional and left out: the demo has no loose
@@ -165,6 +168,11 @@ DEMO_LIVE = [('Lighthouse One', 'The Morning Tide with Mara Quinn'),
              ('Lighthouse Club', 'After Hours with DJ Selkie')]
 DEMO_RADIO_SHOWS = [('The Morning Tide', 'Mara Quinn'), ('Evergreen Requests', 'Theo Marsh'),
                     ('Back Roads', 'June Calloway'), ('The Long Play', 'Ines Varga')]
+# The Charts page's invented places: a Daily Top 100 for the world and each of these
+# countries, and a City Chart for each of these cities.
+DEMO_CHART_COUNTRIES = ['Northmarch', 'Isle of Avery', 'Calder Coast', 'Westerly Reach']
+DEMO_CHART_CITIES = ['Port Avery', 'Fernhollow', 'Saltmere', 'Kestrel Bay', 'Lindenford',
+                     'Marlow Heights']
 DEMO_GENRE_STATIONS = [('Coastal Indie', 'Indie & Alternative'), ('Night Jazz', 'Jazz'),
                        ('Harbour Folk', 'Folk'), ('Deep Focus', 'Ambient'),
                        ('Northern Soul Kitchen', 'R&B/Soul'), ('Tape Hiss Classics', 'Rock')]
@@ -2321,6 +2329,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     build_search_catalog(out_dir, artists[:len(ARTISTS_DATA)], albums[:len(ALBUMS_DATA)],
                          playlists, videos, radio_stations, draw_cover, thumb_for, cover_size,
                          library['generated'])
+    build_charts_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
+                      videos, draw_cover, thumb_for, cover_size, library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
 
@@ -2807,6 +2817,81 @@ def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, c
         'demo': True,  # invented: the demo engine answers only these
     }
     with open(os.path.join(out_dir, 'radio.json'), 'w', encoding='utf-8') as f:
+        json.dump(answer, f, indent=2)
+
+
+def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for, cover_size,
+                      generated):
+    """Write charts.json, the Charts page's answer (normalize.charts_shelves()'s shape, kept
+    as the engine keeps it, stamped `cached` with the library's date): Top Songs (fifty of
+    the library's songs, ranked, a list), Top Albums and Top Playlists (the library's own,
+    ranked: their pages are the library's), the Daily Top 100 (the world's and invented
+    countries') and City Charts (invented cities') as playlists of the library's songs with
+    their tracks, so their pages open without the engine, and Top Music Videos."""
+    rnd = random.Random(43)
+    art_dir = os.path.join(out_dir, 'art')
+
+    def brief(item):
+        return dict(item, groups=[])
+
+    def song(track, album):
+        return {'id': track['catalogId'], 'kind': 'song', 'title': track['title'],
+                'subtitle': track['artist'], 'year': album['year'], 'genre': album['genre'],
+                'summary': None, 'art': album['art'], 'thumb': album['thumb'],
+                'artColor': album['artColor'], 'durationMs': track['durationMs'],
+                'explicit': track['explicit'], 'catalogId': track['catalogId'], 'url': None,
+                'play': {'kind': 'song', 'id': track['catalogId']}, 'groups': [],
+                'album': album['title']}
+
+    tracks = [(track, album) for album in albums for group in album['groups']
+              for track in group['entries']]
+
+    def chart_playlist(item_id, title, count, palette_index, badge):
+        path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
+        draw_cover(out_path=path, title=title, subtitle='Apple Music', badge=badge,
+                   palette=PALETTES[palette_index % len(PALETTES)],
+                   motif=MOTIFS[palette_index % len(MOTIFS)], is_artist=False, size=cover_size)
+        play = {'kind': 'playlist', 'id': item_id}
+        entries = [dict(track, index=position)
+                   for position, (track, _album) in enumerate(rnd.sample(tracks, count))]
+        return {'id': item_id, 'kind': 'playlist', 'title': title, 'subtitle': 'Apple Music',
+                'year': None, 'genre': None, 'summary': None, 'art': path,
+                'thumb': thumb_for(path), 'artColor': PALETTES[palette_index % len(PALETTES)][1],
+                'trackCount': len(entries),
+                'durationMs': sum(entry['durationMs'] for entry in entries),
+                'explicit': any(entry['explicit'] for entry in entries), 'catalogId': None,
+                'url': None, 'play': play,
+                'groups': [{'name': '', 'play': play, 'entries': entries}]}
+
+    daily = [chart_playlist('pl.demo-top100-global', 'Top 100: Global', 40, 11, 'TOP 100')]
+    daily += [chart_playlist(f'pl.demo-top100-{number:02d}', f'Top 100: {place}', 40,
+                             number * 3 + 13, 'TOP 100')
+              for number, place in enumerate(DEMO_CHART_COUNTRIES)]
+    cities = [chart_playlist(f'pl.demo-city{number:02d}', f'Top 25: {city}', 25,
+                             number * 5 + 4, 'CITY')
+              for number, city in enumerate(DEMO_CHART_CITIES)]
+    shown = [playlist for playlist in playlists
+             if not (playlist.get('attributes') or {}).get('isFavourites')]
+    answer = {
+        'shelves': [
+            {'key': 'charts-songs', 'title': 'Top Songs', 'chart': 'songs', 'ranked': True,
+             'form': 'songs', 'items': [song(track, album)
+                                        for track, album in rnd.sample(tracks, 50)]},
+            {'key': 'charts-albums', 'title': 'Top Albums', 'chart': 'albums', 'ranked': True,
+             'items': [brief(album) for album in rnd.sample(albums, 24)]},
+            {'key': 'charts-playlists', 'title': 'Top Playlists', 'chart': 'playlists',
+             'ranked': True, 'items': [brief(playlist) for playlist in shown]},
+            {'key': 'charts-dailyGlobalTopCharts', 'title': 'Daily Top 100',
+             'chart': 'dailyGlobalTopCharts', 'items': daily},
+            {'key': 'charts-cityCharts', 'title': 'City Charts', 'chart': 'cityCharts',
+             'items': cities},
+            {'key': 'charts-music-videos', 'title': 'Top Music Videos', 'chart': 'music-videos',
+             'ranked': True, 'items': [brief(video) for video in videos]},
+        ],
+        'cached': generated,
+        'demo': True,  # invented: the demo engine answers only these
+    }
+    with open(os.path.join(out_dir, 'charts.json'), 'w', encoding='utf-8') as f:
         json.dump(answer, f, indent=2)
 
 

@@ -41,7 +41,8 @@ first of that section (for folder, the library's first playlist folder). An
 artist opens as the library's page of them; artist-page:ID opens Apple Music's
 page of the artist instead, as Go to Artist does (window.open_artist_page);
 category:ID the page of a category the demo library invented (a radio show's,
-categories/<ID>.json), as its tile does. An
+categories/<ID>.json), as its tile does; charts:top opens the Charts
+page, as its Top Charts tile does (the demo's invented charts.json). An
 ID the library lacks opens the catalog's album or playlist of that id, as a
 shelf's tile would: one of the demo's invented catalog answers (an album page's
 or an artist page's shelves, demo.edition0010 say), else the catalog's copy of
@@ -146,7 +147,8 @@ parser.add_argument('--page')
 parser.add_argument('--demo', action='store_true', help='show the demo library in build/demo')
 parser.add_argument('--open', metavar='KIND:ID',
                     help='open an item (ID an item id or "first") over the page; '
-                         "artist-page:ID for Apple Music's page of an artist")
+                         "artist-page:ID for Apple Music's page of an artist, charts:top "
+                         'for the Charts page')
 parser.add_argument('--sidebar', action='store_true',
                     help='in the narrow layout, show the sidebar rather than the --page')
 parser.add_argument('--expand', metavar='ID[,ID…]', default='',
@@ -378,6 +380,11 @@ def catalog_item(kind, item_id):
 def open_item(window):
     """--open: the item it names, opened as its tile would be."""
     kind, _sep, item_id = args.open.partition(':')
+    if kind == 'charts':
+        from applemusic.pages.charts import charts_item
+
+        window.open_item(charts_item())
+        return
     catalog = kind == 'artist-page'  # Apple Music's page of the artist, as Go to Artist opens
     if catalog:
         kind = 'artist'

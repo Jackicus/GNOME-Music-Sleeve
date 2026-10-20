@@ -337,6 +337,25 @@ class ShelfTest(RemoteTestCase):
         self.assertEqual([shelf.title for shelf in shelves],
                          ['<Top Results>', 'Best New Songs', 'Shows We Love'])
 
+    def test_a_chart_apple_left_untitled_is_named_by_its_chart(self):
+        title = remote.shelf_title
+        self.assertEqual(title({'key': 'charts-songs', 'title': '', 'chart': 'songs'}),
+                         '<Top Songs>')
+        self.assertEqual(title({'key': 'charts-cityCharts', 'title': '',
+                                'chart': 'cityCharts'}), '<City Charts>')
+        self.assertEqual(title({'key': 'charts-songs', 'title': 'Top Songs', 'chart': 'songs'}),
+                         'Top Songs')  # Apple's, in the account's language
+
+    def test_a_charts_shelf_keeps_its_rank_and_its_form(self):
+        shelves = remote.remote_shelves([
+            {'key': 'charts-songs', 'title': 'Top Songs', 'chart': 'songs', 'ranked': True,
+             'form': 'songs', 'items': [{'id': '1', 'kind': 'song'}]},
+            {'key': 'charts-cityCharts', 'title': 'City Charts', 'chart': 'cityCharts',
+             'items': [{'id': '2', 'kind': 'playlist'}]},
+        ])
+        self.assertEqual([(shelf.ranked, shelf.form) for shelf in shelves],
+                         [(True, 'songs'), (False, '')])
+
     def test_an_artist_is_subtitled_by_its_kind(self):
         shelves = remote.remote_shelves([{'key': 'top', 'title': '', 'items': [
             {'id': '1', 'kind': 'artist', 'title': 'Invented Artist'},

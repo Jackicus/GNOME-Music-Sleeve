@@ -130,6 +130,9 @@ def classes():
         async def radio(self, refresh=False):
             return await self._answer('radio', refresh)
 
+        async def charts(self, refresh=False):
+            return await self._answer('charts', refresh)
+
         async def category(self, category_id, refresh=False):
             return await self._answer('category', category_id, refresh)
 

@@ -661,6 +661,23 @@ changes, change it here, with the date. The plan they came from is in
   that the live row shows are left out of it; Apple's links (More to Explore, the genres)
   wait for #370. The page is a `ShelvesPage` with an `arrange` of its own rather than a
   class of its own: PyGObject refuses a subclass of a `Gtk.Template` class.
+- **Charts is a pushed page, reached from New and Search** (2026-10-20, #344). Apple Music
+  has no Charts destination of its own, so neither does the app: a Top Charts tile ends
+  New (under More to Explore, where Apple's New page ends with its links, #370's to fill)
+  and leads Search's browse categories, as Apple's Browse lists its chart rooms, and both
+  push one page (`pages/charts.py`, `window.open_item` for kind `charts`). The page is a
+  `ShelvesPage` over `GET /v1/catalog/<sf>/charts` (every kind at once, most played,
+  `with=dailyGlobalTopCharts,cityCharts` for the Daily Top 100 and City Charts playlists;
+  asked again without `with` if Apple refuses it), kept a day as the other editorial pages
+  are, in a fixed order (Top Songs, Top Albums, Top Playlists, Daily Top 100, City Charts,
+  Top Music Videos) whatever order the answer has. A ranking's place is its point, so the
+  rankings are numbered: Top Songs as the artist page's grid of songs (one queue from the
+  song activated, as music.apple.com plays a chart) with its number before each, the rest
+  as tiles with the number over the cover's corner (`widgets.shelf.RankedTile`, not a
+  change to every tile); the Daily Top 100 and City Charts are a playlist a place, not a
+  ranking, so plain tiles. `ShelfColumn` picks the widget by the shelf's `form` (songs or
+  tiles), so the songs need no page of their own. No genre filter yet (#404): the request
+  takes `genre=`, the page has nowhere to choose one.
 - **A playlist's header, and Add / In Library** (2026-10-20). A playlist's hero says what
   Apple Music's does: its curator under the title (the account's name for one of the
   user's, which carry none), then "Updated" and the day it last changed (today, yesterday,

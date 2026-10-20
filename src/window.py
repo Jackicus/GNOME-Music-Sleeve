@@ -6,7 +6,8 @@ player bar and the Now Playing sheet, the account button and the banners.
 
 The pages reach the window through get_root() and these seams, not its internals:
 
-    open_item(item)                   show an album, artist, playlist, folder or category;
+    open_item(item)                   show an album, artist, playlist, folder, category or
+                                      the charts;
                                       play a station, song or video (an artist of the
                                       library's: what the library holds of them)
     open_artist_page(item)            Apple Music's page of an artist (Go to Artist's)
@@ -60,7 +61,7 @@ log = logging.getLogger(__name__)
 # destinations' pages are kept for good.
 ROOT_LIMIT = 8
 # The kinds open_item shows a page for: it uncovers the content for them first.
-PAGE_KINDS = ('album', 'playlist', 'artist', 'folder', 'category')
+PAGE_KINDS = ('album', 'playlist', 'artist', 'folder', 'category', 'charts')
 # The fixed destinations whose pages show the engine's answers for the account signed in,
 # forgotten at sign-out (forget_account_pages).
 ACCOUNT_PAGES = ('new', 'radio', 'made-for-you', 'search')
@@ -369,15 +370,16 @@ class Window(Adw.ApplicationWindow):
         self._show_content_then(page.focus_entry)
 
     def open_item(self, item):
-        """Show an album, artist, playlist, folder, category, station, song or video: what
-        activating a tile does.
+        """Show an album, artist, playlist, folder, category, the charts, a station, song or
+        video: what activating a tile does.
 
         Albums and playlists push a DetailPage; an artist of the library's (a tile, a link,
         the artist page's In Your Library See All) what the library holds of them, a
         LibraryArtistPage, and any other artist Apple Music's page of them, an ArtistPage
         (open_artist_page(), which Go to Artist opens); playlist folders their
         grid of folders and playlists (the page follows the folder Item: a rename, a
-        deletion), search categories their page of shelves, over the page shown, which the
+        deletion), search categories their page of shelves, the Top Charts tile the Charts
+        page (pages/charts.py), over the page shown, which the
         Now Playing sheet then uncovers (its Go to Album and Go to Artist). A station,
         a song (a search hit, a Best New Songs tile) or a music video has no page: it plays,
         as on music.apple.com (a video as its audio, in the headless engine, as the context
@@ -411,6 +413,10 @@ class Window(Adw.ApplicationWindow):
             from .pages.shelves import category_page
 
             page = category_page(item)
+        elif item.kind == 'charts':
+            from .pages import charts
+
+            page = charts.create(item)
         elif item.kind in ('station', 'song', 'video'):
             self.play_request(item.play)
             return

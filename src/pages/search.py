@@ -5,9 +5,10 @@
 
 Two modes, an Adw.ToggleGroup beside the entry: Apple Music, which searches the catalog
 through the engine (suggestions as you type, shelves of results on Enter, Apple's browse
-categories before anything is typed), and Your Library, which filters the library's cached
-models as you type (Gtk.FilterListModel over the albums, artists, playlists and songs) and
-works with the engine down. The entry has no title over it: it names the page.
+categories before anything is typed, Top Charts first: pages/charts.py), and Your Library,
+which filters the library's cached models as you type (Gtk.FilterListModel over the albums,
+artists, playlists and songs) and works with the engine down. The entry has no title over
+it: it names the page.
 
 Apple Music's results are of every kind, or of the one the filter beside the entry names
 (FILTER_KEYS, a Gtk.DropDown: there are too many kinds for a toggle group at 360 px): every
@@ -418,6 +419,11 @@ class SearchPage(Adw.NavigationPage):
         categories = [Item(remote_item(data))
                       for data in answer.get('categories') or []
                       if isinstance(data, dict) and data.get('id')]
+        if categories:
+            # The way to the Charts page, as Apple Music's Browse has it among its rooms.
+            from .charts import charts_item
+
+            categories.insert(0, charts_item())
         self._categories.splice(0, self._categories.get_n_items(), categories)
         self.categories_title_label.set_visible(bool(categories))
         self._landing_loaded = True

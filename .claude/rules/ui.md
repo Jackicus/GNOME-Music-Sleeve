@@ -83,7 +83,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   functions): the library's stations as Recently Played after Apple's live stations, each
   live station subtitled with the programme on air as the page is shown, and Recently Played
   alone in place of the status page while Apple cannot answer; `follow(library, 'changed')`
-  arranges again. They,
+  arranges again. The Charts page (pages/charts.py) is one too, pushed, not a destination:
+  `window.open_item` opens it for `charts.charts_item()`, the Top Charts category tile that
+  ends New (More to Explore, pages/new.py, a box after the shelves) and leads Search's
+  categories. They,
   Search and the album and artist pages show what the engine's failure means through one
   `widgets.engine_status.EngineStatus` (no widget; tests/test_engine_status.py): the spinner
   while it starts, Sign In when signed out, Start Engine (through `app.start_engine()`, whose
@@ -95,7 +98,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - A page of shelves is a vertical `Gtk.Box` of a handful of `AppleMusicShelf`, each a horizontal
   `Gtk.ListView` in its own scrolled window, placed by a `widgets.shelf.ShelfColumn`: a shelf
   shown again keeps its widget (moved into place), new ones are bound a frame apart after
-  `FIRST_SHELVES`, and leftover widgets are hidden for later. A row shows at most `ROW_LIMIT`
+  `FIRST_SHELVES`, and leftover widgets are hidden for later. A shelf's form picks its widget
+  (`shelf.form_for()`): a ShelfModel whose `form` is 'songs' (a chart's Top Songs) is a
+  `SongShelf`; one `ranked` (a chart's) numbers its tiles (`shelf.RankedTile`, the number
+  over the cover) or songs, and its list items' names start with the place
+  (`labels.ranked()`). A row shows at most `ROW_LIMIT`
   tiles; See All (the whole shelf, as a grid) and the paging arrows show only when the row does
   not show everything, the arrows only on a shelf wider than `ARROWS_MIN_WIDTH` (400sp, which
   the shelf measures itself: shelves are made at run time, out of a page breakpoint's reach),
