@@ -296,9 +296,9 @@ class SearchPageTest(PageTestCase):
                     if child.get_accessible_role() == Gtk.AccessibleRole.LIST_ITEM]
 
         self.assertTrue(await self.until(lambda: len(items()) == len(FILTER_KEYS)))
-        label = Gtk.AccessibleProperty.LABEL
-        self.assertTrue(all(Gtk.test_accessible_has_property(item, label) for item in items()))
-        # Each named its kind's label, as the factories bind them again (each set again).
+        # Each list item is named its kind's label as the factories bind it (each factory set
+        # again, so every item is bound anew). Read from the Gtk.ListItem: without an
+        # accessibility bus (CI) the item's widget may keep no accessible properties.
         named, button = {}, []
         list_factory, factory = dropdown.get_list_factory(), dropdown.get_factory()
         list_factory.connect(
