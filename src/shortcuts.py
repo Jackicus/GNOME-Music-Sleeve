@@ -6,7 +6,8 @@ window handles itself, and the Keyboard Shortcuts dialog, which lists them all.
 
 main.py sets ACCELS with Gtk.Application.set_accels_for_action and builds the dialog from
 sections(); keyboard.py parses PLAYBACK into its PLAYBACK_KEYS, NOW_PLAYING_TABS into its
-TAB_KEYS and MAIN_MENU into the window's F10, widgets/context_menu.py binds CONTEXT_MENU,
+TAB_KEYS and MAIN_MENU into the window's F10, widgets/context_menu.py binds CONTEXT_MENU
+(as context_menu.MENU_KEYS, which sidebar_view.py binds on the sidebar's rows too),
 and sidebar_view.py binds FOLDER_OPEN and FOLDER_CLOSE on the sidebar (keys for the focused
 row, only with the focus in the sidebar), as widgets/queue.py binds QUEUE_REMOVE on Up Next's
 list; a playlist's page runs MOVE_UP and MOVE_DOWN on its focused song (keyboard.move_step():

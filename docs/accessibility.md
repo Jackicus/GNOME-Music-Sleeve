@@ -22,8 +22,11 @@ list and the script together.
    only move (each section is a boxed list of its own there, and libadwaita passes the focus
    on from one to the next). Enter shows the row's page (and, in the wide layout, opens or
    closes a folder); Right opens a focused folder and Left closes it, without changing the
-   page, and Left on a playlist inside a folder moves to the folder. A screen reader hears
-   whether a folder is expanded and how deep an item is nested.
+   page, and Left on a playlist inside a folder moves to the folder. Menu or Shift+F10 opens
+   the focused playlist's or folder's menu under its row (its page's More Options: a
+   folder's starts with New Playlist… and New Folder…), and Escape closes it, back on the
+   row. A screen reader hears whether a folder is expanded, how deep an item is nested and
+   that a playlist's row has a menu.
 2. Ctrl+2 puts the focus in the page: the first tile of a grid, the Songs table, the Search
    entry, an album's Play, the Artists list's selected artist; from the page's header bar
    (Back, a filter's button, Sort By) and from the sidebar too. Arrows

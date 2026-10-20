@@ -55,8 +55,8 @@ its "Performance pass" section.
 - `Gio.Settings.bind_with_mapping` exists in PyGObject 3.56, but its get-mapping closure got
   the GValue as a plain int it could not set, and GLib aborted on the rejected default; the
   refresh-interval row in Preferences is bound by hand instead.
-- Opening a sidebar row's context menu from a script worked by emitting the row's long-press
-  gesture's `pressed(x, y)`; `sidebar.activate_action('menu.popup')` did nothing. A
+- A sidebar row's context menu opens from a script through
+  `SidebarController.popup_menu(key)`, as Menu on the focused row opens it. A
   `Gtk.PopoverMenu` submenu is named by its label, mnemonic underscore and all:
   `visible-submenu` 'Add to Pla_ylist' opens it (screenshot.py's `--submenu`).
 - A stand-in texture of another size (`ArtworkSlot` showing `get_any()` while the size wanted

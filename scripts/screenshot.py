@@ -116,9 +116,9 @@ shows, else the library's first album. The demo writes nothing: the dialogs only
 folder's) as a click on it would; --main-menu the main menu (in the narrow layout, with
 --sidebar, where its button is).
 --sidebar-menu KEY pops up the sidebar's context menu for KEY (playlist:ID, folder:ID,
-all-playlists; playlist:first and folder:first are the library's first of each), drawn from
-the menu the sidebar fills for it, beside its row (--expand the folder holding it); with
---submenu NAME, its submenu of that label ("Mov_e to Folder").
+all-playlists, favourite-songs; playlist:first and folder:first are the library's first of
+each) under its row, scrolled into view, as Menu on the focused row opens it (--expand the
+folder holding it); with --submenu NAME, its submenu of that label ("Mov_e to Folder").
 --drop-target KEY marks KEY's sidebar row (as --sidebar-menu names one) as where a drop goes,
 as a drag over it that the row takes marks it (SidebarController.show_drop_target, which the
 sidebar's drop-enter calls): the drop highlight, which no headless script can drag to.
@@ -257,7 +257,7 @@ width, height = (int(n) for n in args.size.split('x'))
 
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light, size=(width, height))
 
-from gi.repository import Adw, Gdk, GLib, Graphene, Gtk  # noqa: E402  (after make_app)
+from gi.repository import Adw, GLib, Graphene, Gtk  # noqa: E402  (after make_app)
 
 if args.rtl:
     Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)  # before the window is made
@@ -565,24 +565,20 @@ def open_more_options(window):
 
 
 def open_sidebar_menu(window):
-    """--sidebar-menu: the menu the sidebar fills for the key's item (sidebar_view's
-    setup-menu handler), popped up beside its row as the sidebar shows it."""
+    """--sidebar-menu: the key's row scrolled into view and its context menu opened beside
+    it, as Menu on the focused row opens it (SidebarController.popup_menu)."""
     key = sidebar_key(args.sidebar_menu)
     sidebar = window._sidebar
     item = sidebar.item_for(key)
     row = sidebar.row(item.get_index()) if item is not None else None
-    if row is None:
-        sys.exit(f'screenshot: no sidebar row for {key}')
-    sidebar._on_setup_menu(None, item)
-    popover = Gtk.PopoverMenu.new_from_model(sidebar._sidebar_menu)
-    popover.set_has_arrow(False)
-    popover.set_parent(row)
-    rectangle = Gdk.Rectangle()
-    rectangle.x, rectangle.y = int(row.get_width() * 0.4), int(row.get_height() * 0.6)
-    rectangle.width = rectangle.height = 1
-    popover.set_pointing_to(rectangle)
-    popover.set_halign(Gtk.Align.START)
-    popover.popup()
+    if row is None or not row.get_mapped():
+        sys.exit(f'screenshot: no sidebar row shown for {key}')
+    viewport = row.get_ancestor(Gtk.Viewport)
+    if viewport is not None:
+        viewport.scroll_to(row, None)
+    popover = sidebar.popup_menu(key)
+    if popover is None:
+        sys.exit(f'screenshot: the sidebar row for {key} has no menu')
     if args.submenu:
         popover.set_property('visible-submenu', args.submenu)
 

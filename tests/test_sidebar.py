@@ -755,5 +755,153 @@ class DragDropTest(unittest.TestCase):
         self.assertTrue(wait_for(lambda: window.get_focus() is new_row))
 
 
+class MenuLibrary(StubLibrary):
+    """The stub library with the top level's folder Item (All Playlists' menu)."""
+
+    ROOT = Item({'id': 'root', 'kind': 'folder', 'title': ''})
+
+    def by_id(self, kind, item_id):
+        return self.ROOT if (kind, item_id) == ('folder', 'root') else None
+
+
+class MenuActions:
+    """The item actions' menu_for: the menu every page and tile shows (actions.build_menu),
+    each one asked for recorded."""
+
+    def __init__(self):
+        self.asked = []
+        self.menus = []
+
+    def menu_for(self, obj, queued=False, queue_entry=None):
+        from applemusic.actions import build_menu
+
+        self.asked.append(obj)
+        self.menus.append(build_menu(obj))
+        return self.menus[-1]
+
+    def move_targets(self, _obj):
+        return None
+
+
+class StubGesture:
+    def __init__(self):
+        self.states = []
+
+    def set_state(self, state):
+        self.states.append(state)
+
+
+@requires_gtk
+class ContextMenuTest(unittest.TestCase):
+    """A Playlists row's context menu is the item actions' menu for its Item (the page's),
+    opened from the row by a right click (at the pointer) or by Menu on the focused row
+    (under it); the other sections' rows have none."""
+
+    def setUp(self):
+        from gi.repository import Adw, Gio, Gtk
+
+        from applemusic.sidebar_view import SidebarController
+        from tests.gtk import SCHEMA_ID
+
+        self.Gtk = Gtk
+        self.settings = Gio.Settings.new(SCHEMA_ID)
+        self.settings.set_strv('expanded-folders', ['a', 'b', 'c'])
+        self.library = MenuLibrary(tree())
+        self.actions = MenuActions()
+        self.widget = Adw.Sidebar()
+        self.stub_window = StubWindow()
+        self.controller = SidebarController(self.stub_window, self.widget, self.library,
+                                            self.settings, self.actions)
+
+    def tearDown(self):
+        self.controller.write_expanded()
+        self.settings.reset('expanded-folders')
+
+    def present(self):
+        from tests.gtk import wait_for
+
+        actions = self.actions
+
+        class Window(self.Gtk.Window):
+            item_actions = actions  # what context_menu.popup() asks the row's root for
+
+        window = Window(child=self.widget, default_width=300, default_height=900)
+        self.addCleanup(window.destroy)
+        window.present()
+        self.assertTrue(wait_for(lambda: all(row.get_width() > 0 for row in self.controller.rows()
+                                             if row.get_child_visible())))
+        self.stub_window.get_focus = window.get_focus
+        return window
+
+    def row(self, key):
+        return self.controller.row(self.controller.item_for(key).get_index())
+
+    def test_the_menu_is_the_items_own(self):
+        from tests.gtk import wait_for
+
+        self.present()
+        for key, obj in (('playlist:p1', self.controller.entry('playlist:p1').item),
+                         ('folder:a', self.controller.entry('folder:a').item),
+                         (ALL_PLAYLISTS, MenuLibrary.ROOT)):
+            popover = self.controller.popup_menu(key)
+            self.assertIsNotNone(popover, key)
+            self.assertIs(self.actions.asked[-1], obj)
+            self.assertIs(popover.get_menu_model(), self.actions.menus[-1])
+            row = self.row(key)
+            self.assertIs(popover.get_parent(), row)  # it points at the row
+            self.assertTrue(row.has_css_class('has-open-popup'))
+            popover.popdown()
+            self.assertFalse(row.has_css_class('has-open-popup'))
+            self.assertTrue(wait_for(lambda popover=popover: popover.get_parent() is None))
+        # The fixed sections have no menu (nor Favourite Songs without its Item here).
+        self.assertIsNone(self.controller.popup_menu(HOME))
+
+    def test_a_right_click_opens_it_at_the_pointer(self):
+        self.present()
+        row = self.row('playlist:p2')
+        found, bounds = row.compute_bounds(self.widget)
+        self.assertTrue(found)
+        x, y = bounds.get_x() + 20, bounds.get_y() + bounds.get_height() / 2
+        gesture = StubGesture()
+        self.controller._on_menu_press(gesture, x, y)
+        self.assertEqual(gesture.states, [self.Gtk.EventSequenceState.CLAIMED])
+        popover = next(child for child in children(row)
+                       if isinstance(child, self.Gtk.PopoverMenu))
+        self.addCleanup(popover.popdown)
+        ok, rectangle = popover.get_pointing_to()
+        self.assertTrue(ok)
+        self.assertEqual((rectangle.x, rectangle.y), (20, int(bounds.get_height() / 2)))
+        self.assertIs(self.actions.asked[-1], self.controller.entry('playlist:p2').item)
+        # On a row without a menu, the press is left to the row.
+        found, bounds = self.row(HOME).compute_bounds(self.widget)
+        gesture = StubGesture()
+        self.controller._on_menu_press(gesture, bounds.get_x() + 20, bounds.get_y() + 5)
+        self.assertEqual(gesture.states, [])
+
+    def test_menu_and_shift_f10_open_the_focused_rows(self):
+        from applemusic.widgets import context_menu
+
+        self.present()
+        row = self.row('playlist:p1')
+        self.assertTrue(row.grab_focus())
+        # The keys are a shortcut on the sidebar: Menu and Shift+F10, as on tiles.
+        trigger = self.Gtk.ShortcutTrigger.parse_string(context_menu.MENU_KEYS)
+        shortcuts = [controller.get_item(index)
+                     for controller in self.widget.observe_controllers()
+                     if isinstance(controller, self.Gtk.ShortcutController)
+                     for index in range(controller.get_n_items())]
+        shortcut = next(found for found in shortcuts if found.get_trigger().equal(trigger))
+        self.assertTrue(shortcut.get_action().activate(
+            self.Gtk.ShortcutActionFlags.EXCLUSIVE, self.widget, None))
+        popover = next(child for child in children(row)
+                       if isinstance(child, self.Gtk.PopoverMenu))
+        self.addCleanup(popover.popdown)
+        self.assertFalse(popover.get_pointing_to()[0])  # the whole row: the menu under it
+        self.assertIs(self.actions.asked[-1], self.controller.entry('playlist:p1').item)
+        # The focus on a fixed row: nothing opens, the key goes on.
+        self.assertTrue(self.row(HOME).grab_focus())
+        self.assertFalse(self.controller._on_menu_key())
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -180,6 +180,10 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   pointer or press a key to bring them back. <kbd>Esc</kbd>, <kbd>F11</kbd> or **Leave
   Fullscreen** goes back to the window as it was. It stays from one song to the next, and
   closes on its own when nothing plays any more.
+- A playlist's or a folder's row in the sidebar has the same menu as **More Options** on
+  its page: right-click it, press and hold it, or press <kbd>Menu</kbd> (or
+  <kbd>Shift</kbd>+<kbd>F10</kbd>) on the focused row. **All Playlists** has **New
+  Playlist…** and **New Folder…**.
 - Your own playlists can be managed from their menus (right-click one in the sidebar or on
   All Playlists, or use **More Options** on its page): **Rename…** changes its name and
   description, **Delete Playlist…** deletes it from your library on all your devices, after

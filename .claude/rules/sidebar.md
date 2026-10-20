@@ -44,10 +44,14 @@ entry: it is spliced out and in, and the window selects it again by key).
   section is a boxed list of its own; Down from a section's last row moves on to the next
   only in an active window (GtkListBoxRow's focus handler reads `has-focus`), which a
   headless one never is (a11y_check steps over it).
-- Context menus: it emits `setup-menu(item)`, then shows one `Gtk.PopoverMenu` built from the
-  section's `menu-model`. An empty model still shows an empty popover (the controller pops it
-  down from an idle). `setup-menu(None)` can arrive after the next item's `setup-menu`: never clear
-  the menu on None.
+- Context menus: its own (a section's `menu-model`, `setup-menu(item)`) is not used. Its Menu
+  and Shift+F10 run `menu.popup`, which only a `menu-model` on the whole sidebar enables, and
+  which opens the selected row's menu in the sidebar mode, not the focused row's; an empty
+  model still shows an empty popover. The controller opens the item actions' menu itself
+  (`context_menu.popup()` on the row): a capture-phase right click and long press on the
+  sidebar, which claim the press before the rows' own gesture (it claims a right click even
+  with no model), and Menu and Shift+F10 in a bubble-phase shortcut controller. Without a
+  model AdwSidebar sets no `HAS_POPUP` on a row: `update_rows()` does.
 - Drops: `setup_drop_target(COPY | MOVE, [ItemRefs])` takes Python GObject classes;
   `drop-enter(index)` returns the action (0 refuses) and is told nothing of the drag, so the
   controller asks `widgets.dnd.current()` (`drop_action()`: tracks, albums or playlists
