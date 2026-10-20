@@ -1,0 +1,214 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-FileCopyrightText: 2026 Jack Tully
+
+using Gtk 4.0;
+using Adw 1;
+
+// The mini player's content (widgets/mini_player.py; its window is MiniPlayer): a flat
+// header bar with Return to Main Window, then the artwork, the title and artist, the seek
+// row (LIVE in its place for a live radio station) and Previous, Play and Next. The cover is
+// as large as the window lets it be, or small beside the titles in a low window
+// (mini_player.layout_for(), applied as the view is allocated). Under it all, the artwork's
+// tint, as the Now Playing sheet's (widgets/backdrop.py).
+template $AppleMusicMiniPlayerView: Adw.Bin {
+  styles [
+    "mini-player",
+  ]
+
+  child: Overlay overlay {
+    child: $AppleMusicArtworkBackdrop backdrop {
+      tint: true;
+    };
+
+    [overlay]
+    Adw.ToolbarView toolbar {
+      [top]
+      Adw.HeaderBar {
+        show-title: false;
+
+        styles [
+          "flat",
+        ]
+
+        // app.mini-player: back to the main window (its tooltip adds the key: mini_player.py).
+        [start]
+        Button main_window_button {
+          icon-name: "view-fullscreen-symbolic";
+          tooltip-text: _("Return to Main Window");
+          action-name: "app.mini-player";
+        }
+      }
+
+      content: Adw.ToastOverlay toast_overlay {
+        child: Box content_box {
+          orientation: vertical;
+          spacing: 12;
+          margin-start: 18;
+          margin-end: 18;
+          margin-top: 6;
+          margin-bottom: 18;
+          valign: center;
+
+          // The artwork over the titles, or beside them when the window is low.
+          Box item_box {
+            orientation: vertical;
+            spacing: 12;
+
+            $AppleMusicCover cover {
+              size: 256;
+              halign: center;
+
+              styles [
+                "large",
+              ]
+            }
+
+            Box titles_box {
+              orientation: vertical;
+              spacing: 2;
+              valign: center;
+
+              Label title_label {
+                label: _("Not Playing");
+                justify: center;
+                ellipsize: end;
+                single-line-mode: true;
+
+                styles [
+                  "heading",
+                ]
+              }
+
+              Label subtitle_label {
+                justify: center;
+                ellipsize: end;
+                single-line-mode: true;
+                visible: false;
+
+                styles [
+                  "dimmed",
+                ]
+              }
+            }
+          }
+
+          Box seek_box {
+            spacing: 6;
+            sensitive: false;
+
+            Label elapsed_label {
+              label: "0:00";
+              xalign: 1;
+              width-chars: 5;
+              valign: center;
+
+              styles [
+                "numeric",
+                "caption",
+                "dimmed",
+              ]
+            }
+
+            // The scale, or the LIVE badge in its place for a live radio station
+            // (SeekControl): one stack, so the row keeps its height.
+            Stack seek_stack {
+              hexpand: true;
+              valign: center;
+              transition-type: crossfade;
+
+              Scale seek_scale {
+                hexpand: true;
+                valign: center;
+                draw-value: false;
+                adjustment: Adjustment seek_adjustment {
+                  lower: 0;
+                  upper: 1;
+                  step-increment: 5;
+                  page-increment: 30;
+                };
+
+                accessibility {
+                  label: _("Position");
+                }
+              }
+
+              Label live_label {
+                // Translators: the badge in place of the position slider while a live radio station plays
+                label: C_("live badge", "LIVE");
+                tooltip-text: _("Live Radio");
+                halign: center;
+                valign: center;
+
+                accessibility {
+                  label: _("Live Radio");
+                }
+
+                styles [
+                  "caption-heading",
+                  "live-badge",
+                ]
+              }
+            }
+
+            Label remaining_label {
+              label: "-0:00";
+              xalign: 0;
+              width-chars: 6;
+              valign: center;
+
+              styles [
+                "numeric",
+                "caption",
+                "dimmed",
+              ]
+            }
+          }
+
+          Box transport_box {
+            spacing: 12;
+            halign: center;
+
+            Button previous_button {
+              icon-name: "media-skip-backward-symbolic";
+              tooltip-text: _("Previous");
+              action-name: "app.previous";
+              valign: center;
+
+              styles [
+                "flat",
+                "circular",
+                "skip-button",
+              ]
+            }
+
+            Button play_button {
+              icon-name: "transport-play-symbolic";
+              tooltip-text: _("Play");
+              action-name: "app.play-pause";
+              valign: center;
+
+              styles [
+                "circular",
+                "suggested-action",
+                "play-button",
+              ]
+            }
+
+            Button next_button {
+              icon-name: "media-skip-forward-symbolic";
+              tooltip-text: _("Next");
+              action-name: "app.next";
+              valign: center;
+
+              styles [
+                "flat",
+                "circular",
+                "skip-button",
+              ]
+            }
+          }
+        };
+      };
+    }
+  };
+}

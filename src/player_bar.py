@@ -32,7 +32,7 @@ children are laid out, not their order, so Tab goes from the bar to Play, then N
 
 A right click, a long press or the Menu key on the bar opens the item playing's menu (its
 `context_item`: context_menu on the bar's button), as the Now Playing sheet's More Options
-button does.
+button does, with Mini Player at its end (`context_extra`: app.mini-player).
 
 The bar takes drops (widgets/dnd.py, library.ItemRefs: drags that start in the app): songs,
 music videos, albums and playlists dragged onto it are queued at the end, as Play Later
@@ -52,7 +52,7 @@ read their level as a percentage (VolumeControl), which the window's volume keys
 
 from gettext import gettext as _
 
-from gi.repository import Adw, Gdk, GObject, Gtk
+from gi.repository import Adw, Gdk, Gio, GObject, Gtk
 
 from . import shortcuts
 from .actions import now_playing_track, queue_targets
@@ -60,7 +60,7 @@ from .library import ItemRefs
 from .widgets import context_menu, dnd
 from .widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .widgets.transport import (HeartControl, ModeControl, PlayButton, RemoteCover, SeekControl,
-                                TrackTitles, VolumeControl, track_subtitle)
+                                TrackTitles, VolumeControl, announcement, track_subtitle)
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/player_bar.ui')
 class PlayerBar(Adw.Bin):
@@ -102,6 +102,7 @@ class PlayerBar(Adw.Bin):
         self._compact = False
         self._narrow = False
         self._announced = None      # the id of the item last announced
+        self._extra = None          # the menu's section of the bar's own (context_extra)
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
                                    sensitive=(self.seek_box, self.volume_button))
@@ -176,11 +177,10 @@ class PlayerBar(Adw.Bin):
         self._strings = {
             'now-playing': _('Now Playing'),
             'not-playing': _('Not Playing'),
-            'announce': _('Now playing: {title} by {artist}'),
-            'announce-title': _('Now playing: {title}'),
-            # Translators: announced as a live radio station starts; {title} is its name.
-            'announce-live': _('Now playing live: {title}'),
         }
+        # The item playing's menu ends with Mini Player here (context_extra).
+        self._extra = Gio.Menu()
+        self._extra.append(_('_Mini Player'), 'app.mini-player')
         button = self._bar_button()
         if button is not None:
             button.update_property([Gtk.AccessibleProperty.LABEL], [self._strings['now-playing']])
@@ -193,6 +193,12 @@ class PlayerBar(Adw.Bin):
         """The item playing, as the Track its menu is for (actions.now_playing_track), or
         None."""
         return now_playing_track(self._player.track if self._player is not None else None)
+
+    @property
+    def context_extra(self):
+        """The section the item playing's menu ends with on the bar (context_menu.popup):
+        Mini Player (app.mini-player)."""
+        return self._extra
 
     def _bar_button(self):
         """The button Adw.BottomSheet puts around the bar (a click on it opens the sheet),
@@ -293,16 +299,13 @@ class PlayerBar(Adw.Bin):
         """Tell assistive technology what plays now, as a screen reader user cannot see the
         bar change. Through the window: GTK drops an announcement from a widget whose
         accessible object no client has asked for yet (the bar's, usually), and the window's
-        always is."""
-        title = self.title_label.get_label()
-        if track.live:
-            message = self._strings['announce-live'].format(title=title)
-        elif track.artist:
-            message = self._strings['announce'].format(title=title, artist=track.artist)
-        else:
-            message = self._strings['announce-title'].format(title=title)
-        (self.get_root() or self).announce(message, Gtk.AccessibleAnnouncementPriority.MEDIUM)
-
+        always is. Not from a hidden window (closed for background playback, or put away for
+        the mini player, which announces the item itself)."""
+        root = self.get_root()
+        if root is not None and not root.get_visible():
+            return
+        (root or self).announce(announcement(track, self.title_label.get_label()),
+                                Gtk.AccessibleAnnouncementPriority.MEDIUM)
 
 def tooltip_with_keys(tooltip, accel):
     """A button's tooltip followed by its shortcut: "Lyrics (Shift+Ctrl+L)" for "Lyrics" and

@@ -24,11 +24,12 @@ background playback in background.py, the words for each error in errors.py, the
 marks in timing.py, the About and Keyboard Shortcuts dialogs in dialogs/.
 
 Every coroutine the app starts goes through spawn(); every message for the user through
-toast(), and every EngineError through report(). The account's settings are read through
-account_key() (the development build has its own). Quitting (app.quit, or closing the window
-while nothing plays in the background) hides the window, stops the sync and the engine
-within QUIT_TIMEOUT, and only then quits. --demo shows an invented library without the
-engine, with settings of its own (_use_demo).
+toast() (on the window the user sees: the mini player while it shows, in the main window's
+place: mini_player.py), and every EngineError through report(). The account's settings are
+read through account_key() (the development build has its own). Quitting (app.quit, or
+closing the window while nothing plays in the background) hides the windows, stops the sync
+and the engine within QUIT_TIMEOUT, and only then quits. --demo shows an invented library
+without the engine, with settings of its own (_use_demo).
 """
 
 import asyncio
@@ -53,6 +54,7 @@ from .engine import Engine, quality_bitrate  # noqa: E402
 from .discord import Presence  # noqa: E402
 from .errors import error_message  # noqa: E402
 from .library import Library  # noqa: E402
+from .mini_player import MiniPlayerHost  # noqa: E402
 from .mpris import Mpris  # noqa: E402
 from . import playlist_order  # noqa: E402
 from .player import Player  # noqa: E402
@@ -136,6 +138,8 @@ class Application(Adw.Application):
         self.session = None  # created in do_startup (not demo): the last session, kept
         self.background = None  # created in do_startup: the window closed, the music on
         self.song_notifier = None  # created in do_startup (not demo): the song's notification
+        # The mini player (mini_player.py): its window is made as it shows, never at startup.
+        self.mini_player = MiniPlayerHost(self)
         self._tasks = set()  # strong references: asyncio only keeps weak ones
         self._quitting = None  # the task stopping the engine before the app quits
         self._signin = None  # the sign-in dialog while it is open
@@ -169,6 +173,9 @@ class Application(Adw.Application):
         # Refresh Library: enabled while signed in, with no sync running (_update_sync_action).
         self._sync_action = self._add_action('sync', lambda *_args: self.start_sync())
         self._add_action('now-playing', self._on_now_playing)
+        # The mini player in place of the main window, or back (the main menu's Mini Player,
+        # the player bar's menu, Ctrl+Shift+M; Return to Main Window there).
+        self._add_action('mini-player', self._on_mini_player)
         # The song notification's click: the window shown (hidden for background playback
         # too) and raised.
         self._add_action('show-window', self._on_show_window)
@@ -385,6 +392,8 @@ class Application(Adw.Application):
                 self._autostart_task = self.spawn(self._autostart())
         else:
             self.library_sync.check()  # launched again: a sync when one is due
+        if self.mini_player.shown:
+            window = self.mini_player.window  # in the main window's place while it shows
         self.library.resume_reading()  # present() waits for the compositor
         window.present()
 
@@ -513,9 +522,27 @@ class Application(Adw.Application):
         else:
             self.activate()
 
+    def _on_mini_player(self, *_args):
+        if self._quitting is None:  # nothing new shows while the app quits
+            self.mini_player.toggle()
+
+    def main_window(self):
+        """The main window (window.py's, hidden or not), or None before it is built: never
+        the mini player, which get_active_window() answers while it shows."""
+        return next((window for window in self.get_windows()
+                     if getattr(window, 'item_actions', None) is not None), None)
+
+    def show_main_window(self):
+        """The main window presented, the mini player left for it (do_activate builds the
+        window when there is none); the window, or None while the app quits."""
+        if self.mini_player.shown:
+            self.mini_player.leave()
+        self.activate()
+        return self.main_window()
+
     def window_in_sight(self):
-        """Whether one of the app's windows is shown and focused (the main window, or
-        Preferences as a window of its own): the user sees what plays."""
+        """Whether one of the app's windows is shown and focused (the main window, the mini
+        player, or Preferences as a window of its own): the user sees what plays."""
         return in_sight(Gtk.Window.list_toplevels())
 
     def _on_now_playing(self, *_args):
@@ -731,7 +758,7 @@ class Application(Adw.Application):
         Otherwise the app quits, which stops the engine."""
         if (self._quitting is None and self.settings.get_boolean('background-playback')
                 and self.player is not None and self.player.active):
-            window.hide_for_background()
+            window.put_away()
             self.background.enter(window)
         else:
             self.activate_action('quit')
@@ -763,6 +790,7 @@ class Application(Adw.Application):
             self.song_notifier.stop()  # it names a song that stops playing
         if self._signin is not None:
             self._signin.force_close()  # cancels the sign-in, which stops the engine too
+        self.mini_player.quit()  # gone at once, its size kept; the main window stays hidden
         for window in self.get_windows():
             if hasattr(window, 'prepare_quit'):  # a dialog's toplevel has none
                 window.prepare_quit()  # remembers its state and hides at once

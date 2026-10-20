@@ -1378,6 +1378,7 @@ async def walkthrough(window):
     check('Escape closes the sheet', not window.bottom_sheet.get_open())
     await now_playing_tabs(window)
     await fullscreen_player(window)
+    await mini_player(window)
     print('-- back')
     await key(window, '<alt>Left', 0.8)
     check('Alt+Left goes back to Albums', window.navigation_view.get_visible_page() is grid)
@@ -2304,6 +2305,67 @@ async def fullscreen_player(window):
     await until(lambda: not window.bottom_sheet.get_open())
 
 
+async def mini_player(window):
+    """The mini player: Ctrl+Shift+M in, the window hidden, the focus on its Play; Tab
+    through its controls and never out of it; Space plays or pauses, Ctrl+Right skips; Ctrl+Shift+M
+    back to the window, the focus as it was; in again, and Ctrl+W (its close) back too."""
+    print('-- mini player')
+    host = app.mini_player
+    resting = window.get_focus()
+    await key(window, '<primary><shift>m', 0.8)
+    await until(lambda: host.shown and host.window.get_focus() is host.window.view.play_button)
+    mini = host.window
+    view = mini.view if mini is not None else None
+    check('Ctrl+Shift+M shows the mini player in place of the window, the focus on Play',
+          mini is not None and mini.get_mapped() and not window.get_visible()
+          and mini.get_focus() is view.play_button,
+          describe(mini.get_focus() if mini is not None else None))
+    if mini is None:
+        return
+    if keyboard is not None:
+        await until(mini.is_active, 3.0)
+    seen, stayed = set(), True
+    for _ in range(6):
+        await key(mini, 'Tab', 0.05)
+        focus = mini.get_focus()
+        stayed = stayed and inside(focus, view)
+        seen.add(focus)
+    check('Tab goes through Return to Main Window, the slider and the transport, never out',
+          stayed and {view.main_window_button, view.seek_scale, view.previous_button,
+                      view.play_button, view.next_button} <= seen,
+          sorted(describe(widget) for widget in seen))
+    view.play_button.grab_focus()
+    actions = []
+    handlers = [(app.lookup_action(name), app.lookup_action(name).connect(
+        'activate', lambda _action, _parameter, name=name: actions.append(name)))
+        for name in ('play-pause', 'next')]
+    await key(mini, 'space')
+    view.seek_scale.grab_focus()
+    await key(mini, 'space')
+    await key(mini, '<primary>Right')
+    for action, handler in handlers:
+        action.disconnect(handler)
+    view.toast_overlay.dismiss_all()  # the demo's "not available"
+    expected = ['play-pause', 'play-pause'] + (
+        ['next'] if app.lookup_action('next').get_enabled() else [])
+    check('Space on Play and on the slider plays or pauses, Ctrl+Right skips',
+          actions == expected, actions)
+    await key(mini, '<primary><shift>m', 0.8)
+    await until(lambda: not host.shown and window.get_visible())
+    check('Ctrl+Shift+M there: back to the window, the focus as it was',
+          not host.shown and window.get_mapped() and window.get_focus() is resting,
+          describe(window.get_focus()))
+    await key(window, '<primary><shift>m', 0.8)
+    await until(lambda: host.shown and host.window.get_focus() is not None)
+    if keyboard is not None and host.window is not None:
+        await until(host.window.is_active, 3.0)
+    await key(host.window or window, '<primary>w', 0.8)
+    await until(lambda: not host.shown and window.get_visible())
+    check('Ctrl+W closes it: back to the window', not host.shown and window.get_mapped())
+    if keyboard is not None:
+        await until(window.is_active, 3.0)
+
+
 async def unnamed(label):
     process = Gio.Subprocess.new([sys.executable, os.path.abspath(__file__), '--dump'],
                                  Gio.SubprocessFlags.STDOUT_PIPE
@@ -2394,6 +2456,11 @@ async def names(window):
     total += await unnamed('Fullscreen Player')
     window.activate_action('win.fullscreen-player', None)
     await asyncio.sleep(0.5)
+    app.activate_action('mini-player', None)
+    await asyncio.sleep(1.0)
+    total += await unnamed('Mini Player')
+    app.activate_action('mini-player', None)
+    await asyncio.sleep(0.8)
     dialog = app.show_preferences()
     await asyncio.sleep(1.0)
     total += await unnamed('Preferences')

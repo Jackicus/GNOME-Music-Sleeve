@@ -242,6 +242,15 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   pointer or press a key to bring them back. <kbd>Esc</kbd>, <kbd>F11</kbd> or **Leave
   Fullscreen** goes back to the window as it was. It stays from one song to the next, and
   closes on its own when nothing plays any more.
+- **Mini Player** (in the main menu, in the player bar's menu: right-click the bar, or
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>) swaps the window for a small one with the
+  song playing: its artwork, title and artist, the position slider, and Previous, Play and
+  Next. Make it as small or as large as you like: the artwork follows, and in a low window
+  it sits beside the title. **Return to Main Window** (the button at its top left),
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> again or closing it brings the main window
+  back as it was; it remembers its size for next time. GNOME does not let an app keep its
+  own window above the others, so the mini player does not stay on top by itself: GNOME's
+  window menu (right-click its top) has **Always on Top**.
 - A playlist's or a folder's row in the sidebar has the same menu as **More Options** on
   its page: right-click it, press and hold it, or press <kbd>Menu</kbd> (or
   <kbd>Shift</kbd>+<kbd>F10</kbd>) on the focused row. **All Playlists** has **New

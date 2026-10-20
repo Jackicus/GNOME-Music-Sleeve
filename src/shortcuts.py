@@ -35,7 +35,8 @@ the volume keys (Ctrl+Up, Ctrl+Down: a text view's paragraph keys, a slider's pa
 boxed list's or the sidebar's way to move the focus without selecting; keyboard.volume_step).
 The accelerators keep off the HIG's standard ones the app has no use for, and Ctrl+N is the
 HIG's "New" here: New Playlist. Ctrl+L is Go to Current Song, as on Apple's players (no
-text field of GTK's has a Ctrl+L).
+text field of GTK's has a Ctrl+L). Ctrl+Shift+M is the mini player (app.mini-player), and
+back from it to the main window, as Apple's Windows app has it.
 Nor are the keys that open Now Playing on its Lyrics or Up Next tab (NOW_PLAYING_TABS):
 Ctrl+Shift+U is GTK's Unicode entry in a text field, so the window's key controller runs
 them only while the focus is not typed into (keyboard.tab_action), and Ctrl+Shift+L goes
@@ -51,6 +52,7 @@ ACCELS = {
     'app.preferences': ('<primary>comma',),
     'app.sync': ('<primary>r',),
     'app.now-playing': ('<primary><shift>n',),
+    'app.mini-player': ('<primary><shift>m',),
     'win.new-playlist': ('<primary>n',),
     'win.go-to-current-song': ('<primary>l',),
     'window.close': ('<primary>w',),
@@ -159,6 +161,7 @@ def sections():
             (_('Move Up in Up Next'), MOVE_UP),
             (_('Move Down in Up Next'), MOVE_DOWN),
             (_('Fullscreen Player'), 'win.fullscreen-player'),
+            (_('Mini Player or Main Window'), 'app.mini-player'),
         ]),
         (_('Playlists'), [
             (_('New Playlist'), 'win.new-playlist'),

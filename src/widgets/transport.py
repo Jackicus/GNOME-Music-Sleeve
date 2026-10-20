@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The transport pieces the player bar and the Now Playing sheet share, each a plain object
-over widgets a template built: the play/pause button's icon (PlayButton), the title and
-subtitle labels (TrackTitles), the seek slider with its times (SeekControl), the shuffle
-and repeat toggles (ModeControl), the volume button (VolumeControl), a cover following the
-item's remote artwork (RemoteCover), and the heart (HeartControl, which talks to the
-engine rather than the Player). `attach(player,
+"""The transport pieces the player bar, the Now Playing sheet, the full-screen player and the
+mini player share, each a plain object over widgets a template built: the play/pause
+button's icon (PlayButton), the title and subtitle labels (TrackTitles), the seek slider
+with its times (SeekControl), the shuffle and repeat toggles (ModeControl), the volume
+button (VolumeControl), a cover following the item's remote artwork (RemoteCover), and the
+heart (HeartControl, which talks to the engine rather than the Player). `attach(player,
 app)` makes one follow the Player's properties and send its commands through the Player,
 run by `app.player_command(coro, on_error)`: a command that fails is toasted by the app
-and the widget put back to the Player's state.
+and the widget put back to the Player's state. `detach()` lets the Player (and the engine)
+go again, for a piece whose widgets go before the app does (the mini player's).
 
 The heart (HeartControl) shows whether the item playing is loved: unloved as each item
 starts, then what the engine's rating() answers (one read per item, nothing polled), and
@@ -137,6 +138,28 @@ class Coalescer:
         """The level the engine is being asked for, or None when idle."""
         return self.waiting if self.waiting is not None else self.in_flight
 
+
+class Follower:
+    """A piece's handlers on the objects that outlive it (the Player, the engine), kept so
+    that detach() can let them go: the bar's and the sheet's pieces live as long as the
+    window, the mini player's go with their window (widgets/mini_player.py)."""
+
+    _handlers = ()
+
+    def follow(self, source, signal, callback):
+        """source.connect(signal, callback), let go of by detach()."""
+        if not self._handlers:
+            self._handlers = []
+        self._handlers.append((source, source.connect(signal, callback)))
+
+    def detach(self):
+        """Stop following: every handler attach() connected, disconnected."""
+        for source, handler in self._handlers:
+            if source.handler_is_connected(handler):
+                source.disconnect(handler)
+        self._handlers = ()
+
+
 REPEAT_ICONS = {
     'none': 'media-playlist-repeat-symbolic',
     'all': 'media-playlist-repeat-symbolic',
@@ -153,7 +176,7 @@ def track_subtitle(track):
     return subtitle
 
 
-class TrackTitles:
+class TrackTitles(Follower):
     """The title and subtitle labels of the bar and the sheet: the item's title ("Unknown
     Title" without one) and track_subtitle(), or "Not Playing" and no subtitle; the
     `sensitive` widgets (the seek box, the volume; the mode toggles are ModeControl's)
@@ -170,7 +193,7 @@ class TrackTitles:
 
     def attach(self, player):
         self._player = player
-        player.connect('notify::track', lambda *_: self.update())
+        self.follow(player, 'notify::track', lambda *_: self.update())
         self.update()
 
     def update(self):
@@ -186,6 +209,17 @@ class TrackTitles:
             self.subtitle_label.set_tooltip_text(subtitle or None)
         for widget in self._sensitive:
             widget.set_sensitive(self.playing)
+
+
+def announcement(track, title):
+    """What assistive technology is told as `track` (a NowPlaying) starts, `title` its title
+    as shown: "Now playing: {title} by {artist}", or live for a live radio station."""
+    if track.live:
+        # Translators: announced as a live radio station starts; {title} is its name.
+        return _('Now playing live: {title}').format(title=title)
+    if track.artist:
+        return _('Now playing: {title} by {artist}').format(title=title, artist=track.artist)
+    return _('Now playing: {title}').format(title=title)
 
 
 def live_description():
@@ -204,7 +238,7 @@ def play_button_look(active, live):
     return 'transport-play-symbolic', _('Play')
 
 
-class PlayButton:
+class PlayButton(Follower):
     """A play/pause button whose icon and tooltip follow the Player's state
     (play_button_look(): Stop for a live station playing), with a spinner in place of the
     icon while a play request is with the engine (`pending`); its action (app.play-pause) is
@@ -222,9 +256,8 @@ class PlayButton:
 
     def attach(self, player):
         self._player = player
-        player.connect('notify::state', lambda *_: self.update())
-        player.connect('notify::pending', lambda *_: self.update())
-        player.connect('notify::track', lambda *_: self.update())
+        for name in ('state', 'pending', 'track'):
+            self.follow(player, f'notify::{name}', lambda *_: self.update())
         self.update()
 
     def update(self):
@@ -249,7 +282,7 @@ class PlayButton:
                 self.button.reset_property(Gtk.AccessibleProperty.DESCRIPTION)
 
 
-class SeekControl:
+class SeekControl(Follower):
     """A Gtk.Scale over an adjustment, with optional elapsed and remaining labels, following
     the Player's position and duration and seeking when the user moves it; insensitive while
     MusicKit allows no seek (can_seek). For a live station `live_label` (the LIVE badge, the
@@ -281,10 +314,10 @@ class SeekControl:
     def attach(self, player, app):
         self._player = player
         self._app = app
-        player.connect('notify::position', lambda *_: self.update())
-        player.connect('notify::duration', lambda *_: self.update())
-        player.connect('notify::track', lambda *_: self._on_track())
-        player.connect('notify::can-seek', lambda *_: self._show_live())
+        self.follow(player, 'notify::position', lambda *_: self.update())
+        self.follow(player, 'notify::duration', lambda *_: self.update())
+        self.follow(player, 'notify::track', lambda *_: self._on_track())
+        self.follow(player, 'notify::can-seek', lambda *_: self._show_live())
         self._on_track()
 
     def _on_track(self):
@@ -374,6 +407,10 @@ class SeekControl:
         self._guard.release()
         self.update()
 
+    def detach(self):
+        super().detach()
+        self.cancel()
+
     def cancel(self):
         """Forget a seek being prepared (the item changed)."""
         if self._seek_timeout:
@@ -382,7 +419,7 @@ class SeekControl:
         self._guard.release()
 
 
-class ModeControl:
+class ModeControl(Follower):
     """Shuffle and repeat Gtk.ToggleButtons: a click asks the Player, the events set them.
     Each is sensitive while there is an item and the Player allows its mode (can_shuffle,
     can_repeat: not for a live station)."""
@@ -399,10 +436,10 @@ class ModeControl:
     def attach(self, player, app):
         self._player = player
         self._app = app
-        player.connect('notify::shuffle', lambda *_: self.update())
-        player.connect('notify::repeat', lambda *_: self.update())
+        self.follow(player, 'notify::shuffle', lambda *_: self.update())
+        self.follow(player, 'notify::repeat', lambda *_: self.update())
         for name in ('track', 'can-shuffle', 'can-repeat'):
-            player.connect(f'notify::{name}', lambda *_: self._update_sensitive())
+            self.follow(player, f'notify::{name}', lambda *_: self._update_sensitive())
         self.update()
         self._update_sensitive()
 
@@ -450,7 +487,7 @@ class ModeControl:
         self._app.player_command(self._player.set_repeat(mode), self.update)
 
 
-class VolumeControl:
+class VolumeControl(Follower):
     """A Gtk.ScaleButton (with the slider in its popover) following the Player's volume
     and setting it, one command at a time (Coalescer); the button and the slider are named
     "Volume" for assistive technology and read their level as a percentage."""
@@ -474,7 +511,7 @@ class VolumeControl:
         # {percent} is a whole number ("70%").
         self._strings = {'volume': _('Volume'), 'percent': _('{percent}%')}
         self._label()
-        player.connect('notify::volume', lambda *_: self.update())
+        self.follow(player, 'notify::volume', lambda *_: self.update())
         self.update()
         self._describe()
 
@@ -548,7 +585,7 @@ def find_descendant(widget, cls):
     return None
 
 
-class HeartControl:
+class HeartControl(Follower):
     """A Gtk.ToggleButton that loves the item playing: see the module. Its accessible name
     is the template's ("Favourite"); the tooltip says what a click does.
 
@@ -570,9 +607,9 @@ class HeartControl:
     def attach(self, player, app):
         self._player = player
         self._app = app
-        player.connect('notify::track', lambda *_: self._on_track())
-        app.engine.connect('rated', self._on_rated)
-        app.engine.connect('notify::state', lambda *_: self._on_engine_state())
+        self.follow(player, 'notify::track', lambda *_: self._on_track())
+        self.follow(app.engine, 'rated', self._on_rated)
+        self.follow(app.engine, 'notify::state', lambda *_: self._on_engine_state())
         self._on_track()
 
     def target(self):
@@ -615,6 +652,10 @@ class HeartControl:
         if (target is not None and engine is not None and not self._app.demo
                 and engine.state == 'up' and engine.authorized):
             self._reading = self._app.spawn(self._read(target))
+
+    def detach(self):
+        super().detach()
+        self._cancel_read()
 
     def _cancel_read(self):
         if self._reading is not None and not self._reading.done():
@@ -663,7 +704,7 @@ class HeartControl:
         self._app.player_command(coro, put_back)
 
 
-class RemoteCover:
+class RemoteCover(Follower):
     """An AppleMusicCover showing the item playing's artwork, fetched at the cover size."""
 
     def __init__(self, cover):
@@ -673,7 +714,7 @@ class RemoteCover:
 
     def attach(self, player, app):
         self._app = app
-        player.connect('notify::track', lambda *_: self._on_track(player.track))
+        self.follow(player, 'notify::track', lambda *_: self._on_track(player.track))
         self._on_track(player.track)
 
     def _on_track(self, track):

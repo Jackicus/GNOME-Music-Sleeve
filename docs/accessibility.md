@@ -191,6 +191,14 @@ list and the script together.
     picks and a screen reader hears the count), Escape closing it with the focus back on
     the page. The script walks this after step 16, and `--names` looks at the dialog, a
     song picked, in both its lists.
+18. Ctrl+Shift+M (the main menu's Mini Player, the player bar's menu) shows the mini player
+    in place of the window, a window of its own named "Mini Player", with the focus on its
+    Play; Tab goes through Return to Main Window, the position slider ("1:05 of 3:40") and
+    Previous, Play and Next, and never out of it; Space on Play or on the slider plays or
+    pauses, Ctrl+Right and Ctrl+Left skip; each new song is announced ("Now playing …").
+    Ctrl+Shift+M again, Return to Main Window or Ctrl+W (its close) brings the window back
+    with the focus where it was. The script walks this after step 10, and `--names` looks
+    at it with a song playing.
 
 ## The tools
 

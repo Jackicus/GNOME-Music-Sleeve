@@ -187,7 +187,7 @@ class FakeApp:
         self.window = FakeWindow(calls)
         self.toasts = []
 
-    def get_active_window(self):
+    def main_window(self):
         return self.window
 
     def toast(self, title, button_label=None, action_name=None):

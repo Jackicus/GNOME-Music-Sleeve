@@ -9,6 +9,7 @@
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|localized|syllable|queue]]
                           [--fullscreen-player [lyrics|localized|syllable|none]]
+                          [--mini-player]
                           [--idle] [--position SECONDS] [--playing] [--restored] [--lost]
                           [--autoplay] [--history] [--album N] [--live]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
@@ -95,6 +96,10 @@ named (syllable by default; none: a song without lyrics) and enters the full-scr
 player (win.fullscreen-player, F11's). The harness's window is not resizable, so the
 headless mutter keeps it at --size while it is full screen: the shot is the player at
 that size. --idle shoots it with the controls and the cursor hidden. With --demo only.
+--mini-player puts the same item on the Player (as --playing does; --restored, --live and
+--lost as they say) and switches to the mini player (app.mini-player, Ctrl+Shift+M's): the
+shot is the mini player's window, at --size when given, else at its default size (the
+mini-player-width and mini-player-height settings). With --demo only.
 --search TERM shows the Search page in Your Library mode with TERM typed (the
 results of the offline filter; the engine is never started here). --search-in music
 searches Apple Music instead, as Enter does: with --demo, the demo's invented catalog
@@ -170,7 +175,8 @@ parser.add_argument('out', nargs='?', default=os.path.join(harness.ROOT, 'build'
                                                             'screenshot.png'))
 parser.add_argument('--light', action='store_true')
 parser.add_argument('--rtl', action='store_true', help='lay the window out right to left')
-parser.add_argument('--size', default='1100x760')
+parser.add_argument('--size', help="the window's size, WxH (1100x760; with --mini-player, "
+                                   'its own default)')
 parser.add_argument('--page')
 parser.add_argument('--demo', action='store_true', help='show the demo library in build/demo')
 parser.add_argument('--open', metavar='KIND:ID',
@@ -195,6 +201,8 @@ parser.add_argument('--position', metavar='SECONDS', type=float,
 parser.add_argument('--fullscreen-player', metavar='LYRICS', nargs='?', const='syllable',
                     choices=['lyrics', 'localized', 'syllable', 'none'],
                     help='an invented item playing, in the full-screen player')
+parser.add_argument('--mini-player', action='store_true',
+                    help='an invented item playing, in the mini player (its window shot)')
 parser.add_argument('--idle', action='store_true',
                     help='with --fullscreen-player, the controls hidden as when idle')
 parser.add_argument('--playing', action='store_true',
@@ -272,30 +280,35 @@ if (args.search_kind or args.see_all) and not (args.search and args.search_in ==
     parser.error('--search-kind and --see-all need --search TERM --search-in music')
 if args.submenu and not (args.context_menu or args.sidebar_menu):
     parser.error('--submenu needs --context-menu or --sidebar-menu')
-if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
-        and not args.demo:
-    parser.error('--now-playing, --playing, --restored and --fullscreen-player need --demo')
+if (args.now_playing or args.playing or args.restored or args.fullscreen_player
+        or args.mini_player) and not args.demo:
+    parser.error('--now-playing, --playing, --restored, --fullscreen-player and --mini-player '
+                 'need --demo')
 if args.drop_target == 'player-bar' and not args.playing:
     parser.error('--drop-target player-bar needs --playing')
 if args.autoplay and not args.now_playing:
     parser.error('--autoplay needs --now-playing')
 if args.history and not (args.now_playing or args.fullscreen_player):
     parser.error('--history needs --now-playing or --fullscreen-player')
-if args.album and not (args.now_playing or args.playing or args.fullscreen_player):
-    parser.error('--album needs --now-playing, --playing or --fullscreen-player')
+if args.album and not (args.now_playing or args.playing or args.fullscreen_player
+                       or args.mini_player):
+    parser.error('--album needs --now-playing, --playing, --fullscreen-player or --mini-player')
 if args.position is not None and not (args.now_playing or args.playing or args.restored
-                                      or args.fullscreen_player):
-    parser.error('--position needs --now-playing, --playing, --restored or '
-                 '--fullscreen-player')
-if args.live and not (args.now_playing or args.playing or args.fullscreen_player):
-    parser.error('--live needs --now-playing, --playing or --fullscreen-player')
-if args.lost and not args.playing:
-    parser.error('--lost needs --playing')
+                                      or args.fullscreen_player or args.mini_player):
+    parser.error('--position needs --now-playing, --playing, --restored, --fullscreen-player '
+                 'or --mini-player')
+if args.live and not (args.now_playing or args.playing or args.fullscreen_player
+                      or args.mini_player):
+    parser.error('--live needs --now-playing, --playing, --fullscreen-player or --mini-player')
+if args.lost and not (args.playing or args.mini_player):
+    parser.error('--lost needs --playing or --mini-player')
 if args.idle and not args.fullscreen_player:
     parser.error('--idle needs --fullscreen-player')
-width, height = (int(n) for n in args.size.split('x'))
+width, height = (int(n) for n in (args.size or '1100x760').split('x'))
 
-app = harness.make_app('Screenshot', demo=args.demo, light=args.light, size=(width, height))
+# With --mini-player, --size is the mini player's (on_activate); the main window keeps its own.
+app = harness.make_app('Screenshot', demo=args.demo, light=args.light,
+                       size=(1100, 760) if args.mini_player else (width, height))
 
 from gi.repository import Adw, GLib, Graphene, Gtk  # noqa: E402  (after make_app)
 
@@ -325,6 +338,9 @@ def on_activate(_app):
     if args.signed_in is not None:
         app.settings.set_boolean('signed-in', True)
         app.settings.set_string('account-name', args.signed_in)  # no engine: autostart is off
+    if args.mini_player and args.size:
+        app.settings.set_int('mini-player-width', width)
+        app.settings.set_int('mini-player-height', height)
     for setting in args.setting:
         key, _sep, text = setting.partition('=')
         kind = app.settings.get_value(key).get_type_string()
@@ -337,6 +353,7 @@ SECTIONS = {'album': 'albums', 'artist': 'artists', 'playlist': 'playlists', 'st
             'video': 'videos'}
 opened = False
 sheet_opened = False
+mini_shown = False
 searched = False
 seen_all = False
 filtered = False
@@ -886,13 +903,14 @@ def shoot():
 
 
 def _shoot():
-    global opened, sheet_opened, searched, menu_opened, banner_shown, preferences, dialog
+    global opened, sheet_opened, mini_shown, searched, menu_opened, banner_shown, preferences
+    global dialog
     global seen_all, filtered, selected, sorted_, found
     global scrolled, focused, drop_line_scrolled
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
         return GLib.SOURCE_REMOVE
-    window = app.get_active_window()
+    window = app.main_window()  # not the mini player, once that shows
     split_view = window.split_view
     showing_sidebar = split_view.get_collapsed() and not split_view.get_show_content()
     if (args.page or args.open) and showing_sidebar and not args.sidebar:
@@ -904,11 +922,16 @@ def _shoot():
         open_item(window)
         GLib.timeout_add(1500, shoot)  # after the push, with the artwork decoded
         return GLib.SOURCE_REMOVE
-    if (args.now_playing or args.playing or args.restored or args.fullscreen_player) \
-            and not sheet_opened:
+    if (args.now_playing or args.playing or args.restored or args.fullscreen_player
+            or args.mini_player) and not sheet_opened:
         sheet_opened = True
         open_now_playing(window)
         GLib.timeout_add(1500, shoot)  # the sheet open, the artwork decoded
+        return GLib.SOURCE_REMOVE
+    if args.mini_player and not mini_shown:
+        mini_shown = True
+        app.activate_action('mini-player', None)
+        GLib.timeout_add(1500, shoot)  # shown, laid out, the artwork and its tint made
         return GLib.SOURCE_REMOVE
     if args.search and not searched:
         searched = True
@@ -1016,6 +1039,8 @@ def _shoot():
     if not artwork_settled():
         GLib.timeout_add(ARTWORK_POLL, shoot)
         return GLib.SOURCE_REMOVE
+    if args.mini_player:
+        window = app.mini_player.window
     for shown in (preferences, dialog):
         if shown is not None and shown.get_root() is not window:
             window = shown.get_root()  # a window of its own

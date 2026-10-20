@@ -156,7 +156,7 @@ async def sign_out(app):
             await asyncio.to_thread(_wipe, engine.profile_dir, cache_dir)
             _forget(app)
             await app.library.load()  # nothing left to read: the models empty
-            window = app.get_active_window()
+            window = app.main_window()  # hidden behind the mini player or not
             if window is not None and hasattr(window, 'forget_account_pages'):
                 window.forget_account_pages()
             # A page showing the account's library until now may have fetched a cover since

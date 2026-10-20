@@ -589,5 +589,33 @@ class PlayButtonTest(unittest.TestCase):
         self.assertIsNone(button.description)
 
 
+class DetachTest(unittest.TestCase):
+    def test_a_detached_piece_follows_nothing(self):
+        """The mini player's pieces go before the Player: detach() disconnects every
+        handler attach() made, on the Player and on the engine."""
+        from applemusic.widgets.transport import ModeControl, PlayButton
+
+        async def go():
+            heart, button, player, events, engine, app = make_heart()
+            play, shuffle, repeat = Button(), Button(), Button()
+            pieces = [PlayButton(play), ModeControl(shuffle, repeat), heart]
+            pieces[0].attach(player)
+            pieces[1].attach(player, app)
+            events.event('playbackStateDidChange', {'state': 'playing'})
+            events.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+            await app.settle()
+            self.assertEqual(play.tooltip, 'Pause')
+            for piece in pieces:
+                piece.detach()
+            events.event('playbackStateDidChange', {'state': 'paused'})
+            events.event('shuffleModeDidChange', {'shuffle': True})
+            engine.emit('rated', 'song', TRACK['catalogId'], 1)
+            await app.settle()
+            self.assertEqual(play.tooltip, 'Pause')  # not followed any more
+            self.assertFalse(shuffle.active)
+            self.assertFalse(button.active)
+            pieces[0].detach()  # twice is nothing
+        asyncio.run(go())
+
 if __name__ == '__main__':
     unittest.main()
