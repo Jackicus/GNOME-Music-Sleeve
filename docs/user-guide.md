@@ -17,7 +17,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - The app starts Chrome, its playback engine, whenever it starts. Preferences › Engine › Start
   Engine on Launch turns that off; the first thing you play then starts it.
 - The app opens with the song you last listened to in the player bar, paused where it
-  stopped, and Up Next as it was: **Play** carries on from that second. Before you press it,
+  stopped, and Up Next as it was (the songs you queued: Autoplay adds its own again once it
+  plays, when it is on): **Play** carries on from that second. Before you press it,
   the previous and next buttons and the slider move through it without playing; a song in
   Up Next plays from its start. The queue comes back in its order with Shuffle off (turn it
   on to shuffle what follows), and with Repeat as it was. A radio station comes back as the
@@ -296,8 +297,9 @@ Other limits:
   "Signed In" when the page does not show it.
 - The song you last listened to comes back at launch only as Apple still has it: a song
   since removed from your library, or not available any more in your country or region,
-  leaves it out (or, when Apple refuses the whole queue, nothing comes back, and a message
-  says why). Where the app ended without quitting (a crash, the computer switched off), it
+  is left out of the queue when you press **Play**, and the rest plays. When that song is
+  the one you were listening to, or Apple refuses the whole queue, nothing comes back, and
+  a message says why. Where the app ended without quitting (a crash, the computer switched off), it
   comes back up to half a minute earlier in the song. A queue of more than 250 songs comes
   back as the 250 around the song, unless it is still an album or playlist as it was
   started, which comes back whole.
