@@ -167,25 +167,32 @@ def _song_id(obj):
     return obj.catalog_id or obj.id
 
 
+def _queue_kind(obj):
+    """The MusicKit queue kind a song or music video plays as alone: 'musicVideo' for a
+    video (an Item's kind, a Track's by its API type), else 'song'."""
+    return 'musicVideo' if obj.kind == 'video' else 'song'
+
+
 def can_play(obj):
-    """Whether obj has something to play: a track, or an album, playlist, song or station
-    with a play target, or a catalog artist (its top songs; a library artist's id is the
-    library's own invention)."""
+    """Whether obj has something to play: a track, or an album, playlist, song, music video
+    or station with a play target, or a catalog artist (its top songs; a library artist's
+    id is the library's own invention)."""
     if isinstance(obj, Track):
         return bool(obj.id or obj.catalog_id)
     if not isinstance(obj, Item) or not obj.play.get('kind') or not obj.play.get('id'):
         return False
     if obj.kind == 'artist':
         return not is_library_id(obj.id)
-    return obj.kind in ('album', 'playlist', 'song', 'station')
+    return obj.kind in ('album', 'playlist', 'song', 'video', 'station')
 
 
 def queue_target(obj):
-    """(kind, id) that Play Next and Play Later queue, or None: a song by its catalog id, an
-    album or playlist by its play target."""
-    if isinstance(obj, Track) or (isinstance(obj, Item) and obj.kind == 'song'):
+    """(kind, id) that Play Next and Play Later queue, or None: a song by its catalog id, a
+    music video (an Item, or a Track that is one) by its catalog id as MusicKit's
+    'musicVideo', an album or playlist by its play target."""
+    if isinstance(obj, Track) or (isinstance(obj, Item) and obj.kind in ('song', 'video')):
         song_id = _song_id(obj)
-        return ('song', song_id) if song_id else None
+        return (_queue_kind(obj), song_id) if song_id else None
     if isinstance(obj, Item) and obj.kind in QUEUE_KINDS and not _synthetic(obj.id):
         kind, item_id = obj.play.get('kind'), obj.play.get('id')
         return (kind, item_id) if kind and item_id else None
@@ -669,7 +676,7 @@ class ItemActions:
             if obj.play.get('kind') and obj.play.get('id'):
                 self.window.play_request(obj.play, start_with=obj.index, start_id=obj.id)
             else:
-                self.window.play_request({'kind': 'song', 'id': _song_id(obj)})
+                self.window.play_request({'kind': _queue_kind(obj), 'id': _song_id(obj)})
         elif isinstance(obj, Item):
             self.window.play_request(obj.play)
         else:
