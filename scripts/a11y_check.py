@@ -196,6 +196,7 @@ import remote_keys  # noqa: E402  (imports Gtk, so after make_app)
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402  (after make_app)
 
 from applemusic import shortcuts  # noqa: E402  (the installed build's, after make_app)
+from applemusic.widgets import context_menu  # noqa: E402  (likewise)
 
 failures = []
 
@@ -317,6 +318,33 @@ def first_playlist():
     """The library's first playlist of the user's: one with Rename…."""
     return next(node.item for node in app.library.playlist_tree().flat
                 if node.kind == 'playlist' and node.item.editable)
+
+
+def menu_labels(menu):
+    """The labels of a Gio.MenuModel's items, its sections flattened (not its submenus')."""
+    labels = []
+    for position in range(menu.get_n_items()):
+        label = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL)
+        section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+        if section is not None:
+            labels.extend(menu_labels(section))
+        else:
+            labels.append(label.unpack() if label is not None else '')
+    return labels
+
+
+def menu_submenu(menu, label):
+    """The submenu of a Gio.MenuModel labelled `label`, its sections searched, or None."""
+    for position in range(menu.get_n_items()):
+        found = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL)
+        submenu = menu.get_item_link(position, Gio.MENU_LINK_SUBMENU)
+        if submenu is not None and found is not None and found.unpack() == label:
+            return submenu
+        section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+        inside = menu_submenu(section, label) if section is not None else None
+        if inside is not None:
+            return inside
+    return None
 
 
 def check(name, ok, detail=''):
@@ -771,6 +799,9 @@ async def walkthrough(window):
     await key(window, 'F10', 0.6)
     menu = window.primary_menu_button.get_popover()
     check('F10 opens the main menu', menu is not None and menu.get_visible())
+    first = menu_labels(window.primary_menu_button.get_menu_model())[:2]
+    check('It starts with New Playlist… and New Folder…',
+          first == ['Ne_w Playlist…', 'New _Folder…'], first)
     await key(window, 'Escape', 0.4)
     check('Escape closes it', not menu.get_visible())
     window.select_page('albums')
@@ -821,6 +852,33 @@ async def walkthrough(window):
           describe(window.get_focus()))
     await key(window, 'Left', 0.4)
     check('Left closes the folder', not child_item.get_visible())
+    print('-- Move to Folder, New Folder')
+    window.select_page('all-playlists')
+    await asyncio.sleep(0.6)
+    grid = window.navigation_view.get_visible_page()
+    await key(window, '<primary>2', 0.6)  # the page shown, in the narrow layout too
+    new_folder = [button for button in descendants(grid.header_bar)
+                  if isinstance(button, Gtk.Button) and button.get_mapped()
+                  and button.get_action_name() == 'win.item-new-folder']
+    check('All Playlists has a New Folder button named "New Folder"',
+          [button.get_tooltip_text() for button in new_folder] == ['New Folder'],
+          ([button.get_tooltip_text() for button in new_folder], describe(window.get_focus())))
+    found = None
+    for _step in range(8):  # past Favourite Songs and the folders, to a playlist
+        found = context_menu.find(grid.grid_view, window.get_focus())
+        if found is not None and window.item_actions.move_targets(found[1]) is not None:
+            break
+        await key(window, 'Right', 0.3)
+    check('Arrows reach a playlist tile that can be moved',
+          found is not None and found[1].kind == 'playlist', describe(window.get_focus()))
+    await key(window, 'Menu', 0.6)
+    shown = [each for each in harness.popovers(grid) if isinstance(each, Gtk.PopoverMenu)]
+    moves = menu_submenu(shown[0].get_menu_model(), 'Mov_e to Folder') if shown else None
+    labels = menu_labels(moves) if moves is not None else []
+    check("Menu on it opens its menu, with Move to Folder's named folders and New Folder…",
+          bool(labels) and all(labels) and labels[-1] == 'New _Folder…', labels)
+    await key(window, 'Escape', 0.4)
+    check('Escape closes it', not any(each.get_visible() for each in shown))
     print('-- Preferences')
     await key(window, '<primary>comma', 1.0)
     dialog = app._preferences

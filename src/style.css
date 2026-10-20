@@ -76,6 +76,23 @@ sidebar row.depth-3 > *:dir(rtl) {
   border-right: 84px solid transparent;
 }
 
+/* Drops (widgets/dnd.py's DropFeedback): what takes a drop is ringed and tinted in the accent
+   colour, as libadwaita marks a drop target (`:drop(active)`), a little stronger; where a
+   reorder puts a row is a 2px line inside the edge of the row it goes before or after. Inset
+   shadows only: nothing changes size, and a list's row never gets a vertical margin. */
+.drop-highlight {
+  box-shadow: inset 0 0 0 2px var(--accent-bg-color);
+  background-color: color-mix(in srgb, var(--accent-bg-color) 15%, transparent);
+}
+
+.drop-before {
+  box-shadow: inset 0 2px var(--accent-bg-color);
+}
+
+.drop-after {
+  box-shadow: inset 0 -2px var(--accent-bg-color);
+}
+
 /* Grid pages (pages/grid.blp). The top padding scrolls with the tiles and leaves room for the
    page title laid over it: the title's 24px + 12px margins and a title-1 line, which grows with
    the text size as em does. The sides are the grid view's margins (grid.blp), which its

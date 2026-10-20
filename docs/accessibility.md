@@ -68,7 +68,7 @@ list and the script together.
    typing on the page (in the table, or on the header bar's buttons) shows it too, with what
    was typed; Escape closes it, clears the filter and puts the focus back in the table.
 7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
-   it). Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
+   it); it starts with New Playlist… and New Folder…. Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
    buttons, Escape closes it. Ctrl+? lists every shortcut.
 8. With a dialog open over the window, Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N,
    Ctrl+Shift+L, Ctrl+Shift+U and Space leave the page behind it alone.
@@ -82,6 +82,11 @@ list and the script together.
     seeks to it; Escape (once a menu or a toast has had it) leaves, the window back to its
     size and the focus back where it was. Now Playing's Fullscreen button shows it too, and F11
     leaves it, back on that button. The script walks this after step 5.
+11. On All Playlists the header bar has New Playlist and New Folder, each named. A playlist's
+    tile (Ctrl+2, then the arrows) opens its menu with Menu or Shift+F10: Move to Folder
+    lists the folders it can go into by name, nested as the sidebar nests them, then New
+    Folder…, a new folder holding it. A move is confirmed by a toast (with Undo), which a
+    screen reader hears; dragging a playlist onto a sidebar folder does the same by pointer.
 
 ## The tools
 

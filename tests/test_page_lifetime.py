@@ -484,6 +484,19 @@ class PageLifetimeTest(WidgetTestCase):
                      root=False), Tile)
         await self.assert_freed(*refs)
 
+    async def test_draggable_grid_page(self):
+        # A folder's page: its tiles are drag sources (widgets/dnd.py), whose finder holds
+        # the grid only weakly.
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets.tile import Tile
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item(_album(number)) for number in range(8)])
+        refs = await self.pushed_and_popped(
+            GridPage(self.library, 'Invented Folder', store, root=False, drag=True), Tile)
+        await self.assert_freed(*refs)
+
     async def test_detail_page(self):
         from applemusic.library import Item
         from applemusic.pages.detail import DetailPage

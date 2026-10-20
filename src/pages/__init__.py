@@ -197,7 +197,7 @@ def _all_playlists(destination, library):
     page = GridPage(library, destination.title, lambda: library.folder_items(ROOT_FOLDER),
                     icon_name=destination.icon_name,
                     empty_title=_('No Playlists'),
-                    empty_description=_('Playlists in your library appear here'))
+                    empty_description=_('Playlists in your library appear here'), drag=True)
     add_folder_buttons(page, library, ROOT_FOLDER)
     return page
 
@@ -245,7 +245,8 @@ def folder(library, folder_id, title, root=True):
                     icon_name=FOLDER_ICON, empty_title=_('Empty Folder'),
                     empty_description=_('Playlists you put in this folder appear here'),
                     missing_title=_('Folder Not Found'),
-                    missing_description=_('This folder is no longer in your library'))
+                    missing_description=_('This folder is no longer in your library'),
+                    drag=True)
     item = library.by_id('folder', folder_id) if not root else None
     if item is not None:
         item.bind_property('title', page, 'title', GObject.BindingFlags.SYNC_CREATE)
@@ -255,13 +256,19 @@ def folder(library, folder_id, title, root=True):
 
 def add_folder_buttons(page, library, folder_id):
     """The header buttons of All Playlists (`folder_id` ROOT_FOLDER) and of a folder's page
-    (a GridPage): New Playlist, in that folder, and a folder's More Options menu (Rename…,
-    Delete Folder…: the item actions' menu for the folder Item, looked up by its id as it
-    opens, so it follows a reload)."""
+    (a GridPage): New Playlist and New Folder, in that folder, and a folder's More Options
+    menu (New Playlist…, New Folder…, Move to Folder, Rename…, Delete Folder…: the item
+    actions' menu for the folder Item, looked up by its id as it opens, so it follows a
+    reload)."""
+    target = GLib.Variant('(ss)', ('folder', folder_id))
     new = Gtk.Button(icon_name='list-add-symbolic', tooltip_text=_('New Playlist'),
                      action_name='win.item-new-playlist')
-    new.set_action_target_value(GLib.Variant('(ss)', ('folder', folder_id)))
+    new.set_action_target_value(target)
     page.header_bar.pack_start(new)
+    new_folder = Gtk.Button(icon_name='folder-new-symbolic', tooltip_text=_('New Folder'),
+                            action_name='win.item-new-folder')
+    new_folder.set_action_target_value(target)
+    page.header_bar.pack_start(new_folder)
     if folder_id == ROOT_FOLDER:
         return
     more = Gtk.MenuButton(icon_name='view-more-symbolic', tooltip_text=_('More Options'))

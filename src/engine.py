@@ -50,6 +50,8 @@ UI awaits.
     await engine.delete_playlist(playlist_id)
     await engine.remove_from_playlist(playlist_id, track_id, index)   # that one entry
     await engine.rename_folder(folder_id, name); await engine.delete_folder(folder_id)
+    await engine.create_folder(name, folder_id)   # the new folder's id ('root': the top level)
+    await engine.move_to_folder(kind, id, folder_id)   # a playlist (or folder) into a folder
     await engine.folder_children(folder_id)   # [{kind, id, name}] as Apple lists them now
     await engine.search(term, limit=20)    # {shelves}: a catalog search
     await engine.suggest(term, limit=10)   # {terms: [{term, display}], items}
@@ -175,8 +177,8 @@ ADDABLE_KINDS = ('song', 'album', 'playlist', 'video', 'musicVideo', 'music-vide
 
 # What library.json calls the top level of the playlist folders (library.ROOT_FOLDER), and
 # Apple's id for it.
-ROOT_FOLDER = 'root'
-APPLE_ROOT_FOLDER = 'p.playlistsroot'
+ROOT_FOLDER = api.ROOT_FOLDER
+APPLE_ROOT_FOLDER = api.APPLE_ROOT_FOLDER
 
 
 def _library_playlist(playlist_id):
@@ -1653,6 +1655,44 @@ class Engine(GObject.Object):
             else:
                 await client.bridge('deletePlaylist', child['id'])
         await client.bridge('deleteFolder', folder_id)
+
+    async def create_folder(self, name, folder_id=None):
+        """A new playlist folder named `name` (POST /v1/me/library/playlist-folders), in the
+        folder `folder_id` (None or 'root': the top level). Answers its id."""
+        name = str(name or '').strip()
+        if not name:
+            raise EngineError('usage', 'a folder needs a name')
+        parent = _folder(folder_id)
+        client = await self._require_signed_in('make playlist folders')
+        answer = await client.bridge('createFolder', {'name': name}, parent)
+        new_id = answer.get('id') if isinstance(answer, dict) else None
+        if not new_id:
+            raise EngineError('api', 'the new folder came back without its id')
+        return str(new_id)
+
+    async def move_to_folder(self, kind, item_id, folder_id=None):
+        """A library playlist (`kind` 'playlist') or folder ('folder') into the folder
+        `folder_id` (None or 'root': the top level, Apple's root folder), as the web player
+        moves one (PUT /v1/me/library/playlists/<id>/parent, or playlist-folders/<id>/parent
+        for a folder). Only the moves Apple is known to take (api.can_move_to_folder: a
+        playlist into a folder); anything else is EngineError('usage'), as is a folder into
+        itself."""
+        if kind == 'folder':
+            item_id = _folder(item_id)
+            if item_id is None:
+                raise EngineError('usage', 'the top level cannot be moved')
+        elif kind == 'playlist':
+            item_id = _library_playlist(item_id)
+        else:
+            raise EngineError('usage', f'cannot move {kind} into a folder')
+        target = _folder(folder_id)
+        if target == item_id:
+            raise EngineError('usage', 'a folder cannot go into itself')
+        if not api.can_move_to_folder(kind, target):
+            raise EngineError('usage', f'Apple is not known to take this move of a {kind}')
+        resource = 'library-playlist-folders' if kind == 'folder' else 'library-playlists'
+        client = await self._require_signed_in('move playlists')
+        await client.bridge('moveToFolder', resource, item_id, target or APPLE_ROOT_FOLDER)
 
     async def folder_children(self, folder_id=None):
         """What a playlist folder holds as Apple lists it now (None or 'root': the top

@@ -44,6 +44,25 @@ changes, change it here, with the date. The plan they came from is in
   would otherwise look like top-level playlists. The subtitle that used to name a nested
   item's folder is gone (one height for every row, as in Builder); the tooltip keeps the
   whole name, and screen readers hear each row's level.
+- **Folders made and playlists moved, at once** (2026-10-20). New Folder… (the main menu, a
+  folder's and All Playlists' menus, a folder button beside each **+**) and Move to Folder (a
+  playlist's menus, as Add to Playlist nests the folders, ending in New Folder…, a folder
+  holding it) are the keyboard's and the narrow layout's way; dragging a playlist's sidebar
+  row or tile onto a sidebar folder is the pointer's. A move is shown before Apple answers:
+  `Library.hold()` remakes the tree from library.json's folders plus the changes held, so the
+  sidebar splices only what moved, keeps its open folders and selection, and gives the moved
+  row its focus back; Apple's refusal releases the change (the playlist is back where the file
+  has it) and is reported; the toast offers Undo, a move back. Apple lists a change seconds
+  later, so the change stays held through any sync until library.json shows it, or for
+  `PENDING_HOLD` (two minutes), after which Apple's listing wins. A new folder is shown once
+  Apple answers with its id (no id, nothing to show), its page selected as a new playlist's is.
+  The sidebar highlights the folder a drop goes into and draws no insertion line, since Apple
+  orders each folder by title: where in it a drop lands means nothing. Moving to the top level
+  and a folder into another are written and tested but switched off (`api.MOVE_TO_TOP_LEVEL`,
+  `api.MOVE_FOLDERS`) until Apple has been seen to take them: the app offers no move Apple may
+  refuse, and the user guide's Known limitations says so. Drags are the app's own: one type,
+  `library.ItemRefs`, and drop targets decide from the drag in progress
+  (`widgets.dnd.current()`), so drags from other applications are not taken.
 - **Sidebar sections: titles and dividers** (2026-10-19). Library and Playlists keep their
   titles (Playlists especially, which the library's folders and playlists fill), and a thin
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider

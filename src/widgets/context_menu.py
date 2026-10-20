@@ -5,7 +5,7 @@
 Gtk.ColumnView of tiles or rows, a Gtk.FlowBox or Gtk.ListBox, or a single widget.
 
     context_menu.attach(view)              # menus on right-click, long-press, Menu, Shift+F10
-    context_menu.attach(view, drag=True)   # and its tracks dragged as a TrackRef
+    context_menu.attach(view, drag=True)   # and its items dragged (widgets/dnd.py)
     context_menu.popup(widget, obj, x, y)  # the menu for obj, at (x, y) in widget
 
 A widget offering a menu has a `context_item` attribute: the Item or Track it shows, or None
@@ -29,7 +29,8 @@ theirs, so it stays highlighted while the pointer is in the menu.
 from gi.repository import Gdk, GLib, Graphene, Gtk
 
 from .. import shortcuts
-from ..library import TrackRef
+from ..library import ItemRefs, Track
+from . import dnd
 
 # The containers whose children are rows or tiles.
 LIST_TYPES = (Gtk.ListBase, Gtk.FlowBox, Gtk.ListBox)
@@ -172,31 +173,36 @@ def _on_menu_key(view, _arguments):
     return popup_focused(view)
 
 
-def _on_prepare(source, x, y):
-    """A drag from a track row: its TrackRef, with the row as the drag icon. Not from a
-    touchscreen, where a drag scrolls the list (a long press opens the menu instead)."""
-    device = source.get_current_event_device()
-    if device is not None and device.get_source() == Gdk.InputSource.TOUCHSCREEN:
-        return None
-    view = source.get_widget()
-    found = find(view, view.pick(x, y, Gtk.PickFlags.DEFAULT))
-    if found is None:
-        return None
-    widget, obj = found
-    ref = TrackRef.for_object(obj)
-    if ref is None:
-        return None
-    point = Graphene.Point()
-    point.x, point.y = x, y
-    ok, local = view.compute_point(widget, point)
-    hot_x, hot_y = (int(local.x), int(local.y)) if ok else (0, 0)
-    source.set_icon(Gtk.WidgetPaintable.new(widget), hot_x, hot_y)
-    return Gdk.ContentProvider.new_for_value(ref)
+def drag_refs(obj):
+    """What a drag of obj carries: a library.ItemRefs of it (a track or a song or video by its
+    own id, an album, playlist, folder or station Item), with a track's list as its
+    origin; None for what cannot be dragged."""
+    play = obj.play if isinstance(obj, Track) else {}
+    origin = (play.get('kind'), play.get('id')) if play.get('kind') and play.get('id') else None
+    return ItemRefs.for_objects([obj], origin)
+
+
+def _drag_finder(view):
+    """attach_source()'s find for view: what is under (x, y) and its widget as the icon.
+    It holds the view by a GObject weak reference (a page that can be dropped owns it)."""
+    view_ref = view.weak_ref()
+
+    def found(x, y):
+        view = view_ref()
+        hit = find(view, view.pick(x, y, Gtk.PickFlags.DEFAULT)) if view is not None else None
+        if hit is None:
+            return None
+        widget, obj = hit
+        refs = drag_refs(obj)
+        return (refs, widget) if refs is not None else None
+
+    return found
 
 
 def attach(view, drag=False):
-    """Give view's items context menus (and, with drag, make its tracks draggable onto the
-    sidebar's playlists). Once per view: attaching again does nothing."""
+    """Give view's items context menus (and, with drag, make them draggable: a track onto a
+    sidebar playlist, a playlist or folder onto a sidebar folder, as widgets.dnd's
+    library.ItemRefs). Once per view: attaching again does nothing."""
     if getattr(view, '_context_menu_attached', False):
         return
     view._context_menu_attached = True
@@ -216,6 +222,4 @@ def attach(view, drag=False):
     view.add_controller(keys)
 
     if drag:
-        source = Gtk.DragSource(actions=Gdk.DragAction.COPY)
-        source.connect('prepare', _on_prepare)
-        view.add_controller(source)
+        dnd.attach_source(view, _drag_finder(view), Gdk.DragAction.COPY | Gdk.DragAction.MOVE)

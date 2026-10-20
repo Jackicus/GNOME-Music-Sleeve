@@ -77,7 +77,14 @@ them before changing either. What matters most:
   "10" before "2"), ties in the file's order. The sidebar, the folder grids, All Playlists and
   Add to Playlist follow the tree. A title changed in place (a rename merged into its Item)
   is placed by `place_playlists()`, which moves it in the stores and emits
-  `playlists-changed`, which the window follows as it follows `changed`.
+  `playlists-changed`, which the window follows as it follows `changed`. A move or a new
+  folder is shown ahead of Apple's listing by `hold(TreeChange)`: the tree is made again
+  from the file's folders (kept as the last load read them) plus the changes held
+  (`apply_changes()`, pure), folder Items and stores kept, and `playlists-changed` emitted;
+  `release()` drops one (Apple refused: back as the file has it). A reload keeps a change
+  until the file shows it (`change_settled()`) or `PENDING_HOLD` passes; a load forgets them
+  all. `PlaylistTree.can_move()` refuses a folder into itself or inside itself, a move to
+  where it is, the top level and Favourite Songs.
 - Garbage collection (`paused_gc`): the collector is paused from the call of `load()` or
   `reload()` (so the parse in the library's thread runs without it) to the load's end, and
   during a Songs build. `load()` and `build_songs()` then freeze the heap (`gc.freeze()`), so

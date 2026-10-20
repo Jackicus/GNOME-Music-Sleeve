@@ -30,7 +30,8 @@ The screenshots show an invented demo library.
   laid out as Apple Music's: the latest release, top songs, albums, About and similar
   artists.
 - Your playlists to manage: make new ones, rename and delete them, add and remove songs, and
-  pick from the songs Apple Music suggests adding.
+  pick from the songs Apple Music suggests adding; make folders and move playlists into them,
+  from a menu or by dragging them onto a folder in the sidebar.
 - A player bar, and a Now Playing view with the queue and the lyrics: lit word by word as
   they are sung when Apple Music times them so, with background vocals, duets on two sides,
   and translations and pronunciations when the song has them.
@@ -45,8 +46,8 @@ The screenshots show an invented demo library.
 
 What it does not do: Lossless, Dolby Atmos, an equaliser, crossfade or Sound Check, and
 offline listening or downloads (it plays through Apple's web player, which has none of them);
-music videos with a picture (they play as audio); reordering a playlist's songs, making
-playlist folders or moving playlists between them (Apple's own apps do those). The whole list,
+music videos with a picture (they play as audio); reordering a playlist's songs, moving a
+playlist out of its folders or a folder into another (Apple's own apps do those). The whole list,
 with the reasons, is in the [user guide](docs/user-guide.md#known-limitations).
 
 ## Requirements
