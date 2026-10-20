@@ -115,8 +115,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - **Radio** is Apple Music's radio page: the live stations first, as large cards, each with
   the show on air as you open the page, then the stations you played recently (**Recently
   Played**), then Apple's shelves of episodes, radio shows, genre stations and more. A
-  station plays when you click it; a radio show opens its page: its episodes, then its
-  playlists. The page is kept for a day, or until the shows on air change, and its refresh
+  station plays when you click it; a radio show opens its page: its name and host over the
+  show's wide banner (when Apple has one), then its episodes and its playlists. The page is kept for a day, or until the shows on air change, and its refresh
   button asks Apple again. A live station (Apple Music 1 and the others) plays as it is
   broadcast: the player bar, Now Playing and the full-screen player show **LIVE** in place
   of the slider and the times, and the play button is a stop button, since a live station

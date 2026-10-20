@@ -562,7 +562,17 @@ Radio page does not use.
 
 A show's page (the category page, "Curators and radio shows" above) carries its banner in
 the curator's `editorialArtwork`: `bannerUber`, else `subscriptionCover`, else
-`subscriptionHero`. The category page shows no banner yet.
+`subscriptionHero`. `normalize.curator_banner()` takes the first of these
+(`CURATOR_BANNER_KEYS`) that has an https template and a size, as `wide_artwork()` makes it
+(`{url, crop, width, height, color}`, cut `sr`, `CURATOR_BANNER_CROP`: the source's shape),
+whatever the curator's `kind` (a genre or an editor carrying one gets it too), and
+`category_page()` answers it as `banner` (or None), with the show's `host`
+(`showHostName`, '' for any other kind). The category page (pages/shelves.py) puts its
+title and the host in white at the foot of that banner (widgets/banner.py's
+`ArtistBanner`, fetched by `remote.fetch_banner()` as an artist's is), else on the page.
+The demo's shows carry invented 3:1 banners on disk (`art`, no `url`), but the last.
+Not checked live yet: the keys' sizes and shapes (whether `sr` answers other sizes than
+the source's), and which genres and editors carry them.
 
 ## Events
 

@@ -124,6 +124,49 @@ class ShelvesPageTest(PageTestCase):
         await self.settle()
         self.assertEqual(self.app.engine.calls, ['browse', 'browse'])
 
+    async def test_a_shows_page_puts_its_title_and_host_over_its_banner(self):
+        from gi.repository import Gtk
+
+        banner = {'url': None, 'art': '/invented/banner.jpg', 'crop': 'sr', 'width': 1920,
+                  'height': 640, 'color': '#102030'}
+        self.app.engine.answers['category'] = dict(answer(), host='Ada Vellum', banner=banner)
+        page = await self.push(self.page(
+            lambda refresh: self.app.engine.category('c1', refresh=refresh), root=False))
+        await self.settle()
+        self.assertEqual(page.stack.get_visible_child_name(), 'items')
+        self.assertTrue(page.banner.get_visible())
+        self.assertEqual(page.banner.banner, banner)
+        self.assertTrue(page.hero.has_css_class('on-banner'))
+        self.assertEqual(page.caption_label.get_label(), 'Ada Vellum')
+        self.assertTrue(page.caption_label.get_visible())
+        self.assertTrue(page.title_label.get_wrap())
+        # The text at the banner's foot, the banner as tall as its width asks or taller.
+        self.assertEqual(page.hero_box.get_valign(), Gtk.Align.END)
+        self.assertTrue(await self.until(lambda: page.hero.get_height() > 0))
+        self.assertGreaterEqual(page.hero.get_height(), page.banner.get_height())
+        # The shelves after the header.
+        self.assertIs(page._column.widgets[0].get_prev_sibling(), page.hero)
+
+        # Asked again, without a banner: the title on the page, the host under it.
+        self.app.engine.answers['category'] = dict(answer(), host='Ada Vellum', banner=None)
+        page.refresh()
+        await self.settle()
+        self.assertFalse(page.banner.get_visible())
+        self.assertIsNone(page.banner.banner)
+        self.assertFalse(page.hero.has_css_class('on-banner'))
+        self.assertFalse(page.title_label.get_wrap())
+        self.assertEqual(page.hero_box.get_valign(), Gtk.Align.FILL)
+        self.assertTrue(page.caption_label.get_visible())
+
+    async def test_a_page_without_a_banner_or_host_keeps_its_plain_title(self):
+        self.app.engine.answers['browse'] = answer()
+        page = await self.show_root(self.page(self.app.engine.browse))
+        await self.settle()
+        self.assertFalse(page.banner.get_visible())
+        self.assertFalse(page.caption_label.get_visible())
+        self.assertFalse(page.hero.has_css_class('on-banner'))
+        self.assertEqual(page.hero_box.get_margin_top(), 24)
+
     async def test_a_popped_category_page_stops_its_requests(self):
         waiting = asyncio.get_running_loop().create_future()
 

@@ -51,8 +51,9 @@ from, and each playlist the songs Apple would suggest adding to it
 twenty-four of the demo's own songs it does not hold), and the Radio page's answer
 (radio.json, normalize.radio_shelves()'s shape: invented live stations, shows, episodes
 and genre stations beside the demo's own albums and videos, each show's page in
-categories/), the catalog the demo's search answers from (demo-search.json: its
-artists, albums, songs, playlists, videos and stations, the Radio page's shows, and
+categories/, all but the last under an invented banner), the catalog the demo's search
+answers from (demo-search.json: its artists, albums, songs, playlists, videos and
+stations, the Radio page's shows, and
 invented curators with their pages in categories/), and the Charts page's
 (charts.json, normalize.charts_shelves()'s shape: the demo's own songs, albums,
 playlists and videos ranked, and invented Daily Top 100 and City Charts playlists of
@@ -2460,7 +2461,7 @@ def build_search_catalog(out_dir, artists, albums, playlists, videos, stations, 
             return {'id': item_id, 'kind': 'link', 'title': title, 'subtitle': '',
                     'year': None, 'art': path, 'thumb': thumb_for(path), 'artColor': None,
                     'url': url, 'play': {}, 'groups': [], 'curatorKind': 'curator'}
-        page = {'id': item_id, 'title': title,
+        page = {'id': item_id, 'title': title, 'host': '', 'banner': None,
                 'shelves': [{'key': f'cat-{item_id}-playlists', 'title': 'Playlists',
                              'items': [brief(playlist) for playlist in
                                        playlists[number % 3::3][:4]]}],
@@ -2674,7 +2675,7 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
         shelf('more-to-hear', 'More To Hear', episodes)
         if hosted is not None:
             show_page = {
-                'id': hosted['id'], 'title': hosted['title'],
+                'id': hosted['id'], 'title': hosted['title'], 'host': name, 'banner': None,
                 'shelves': [
                     {'key': f"cat-{hosted['id']}-episodes", 'title': 'Episodes',
                      'items': [dict(episode, subtitle=hosted['title']) for episode in episodes]},
@@ -2876,7 +2877,8 @@ def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, c
     stations first (`live`), then the latest episodes of the invented shows, the shows
     themselves (category tiles, as Apple's curators are), genre stations, albums and music
     videos from the library. Each show also gets the page its tile opens
-    (categories/<id>.json, normalize.category_page()'s shape: its episodes). No `events`
+    (categories/<id>.json, normalize.category_page()'s shape: its host, its episodes, and an
+    invented 3:1 banner drawn here for all but the last). No `events`
     and no `expires`: a demo built once cannot know what is on air when it is shown."""
     art_dir = os.path.join(out_dir, 'art')
     categories_dir = os.path.join(out_dir, 'categories')
@@ -2926,7 +2928,18 @@ def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, c
             own.append(station(f'ra.ep{number:02d}{part}', words, show, album['genre'],
                                number * 4 + part + 3))
         episodes.extend(own[:2])
-        page = {'id': show_id, 'title': show,
+        # A banner for each show but the last (whose page keeps the plain title): its host
+        # on a stage, drawn here, on disk as `art` where Apple's would be a URL to fetch.
+        banner = None
+        if number < len(DEMO_RADIO_SHOWS) - 1:
+            path = os.path.join(art_dir, hashlib.sha1(
+                f'banner.{show_id}'.encode()).hexdigest() + '.jpg')
+            draw_cover(out_path=path, banner={'palette': palette, 'figures': 1,
+                                              'seed': 100 + number})
+            width, height = BANNER_SIZE
+            banner = {'url': None, 'art': path, 'crop': normalize.CURATOR_BANNER_CROP,
+                      'width': width, 'height': height, 'color': palette[0]}
+        page = {'id': show_id, 'title': show, 'host': host, 'banner': banner,
                 'shelves': [{'key': f'cat-{show_id}-episodes', 'title': 'Episodes',
                              'items': own}],
                 'cached': generated,

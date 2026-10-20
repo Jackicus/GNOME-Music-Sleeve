@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""AppleMusicArtistBanner: the wide image at the top of an artist's page, under a scrim."""
+"""AppleMusicArtistBanner: the wide image at the top of an artist's page (pages/artist.py) or a
+curator's, a radio show's (pages/shelves.py's category page), under a scrim."""
 
 import math
 
@@ -19,6 +20,18 @@ MIN_HEIGHT = 240
 MAX_HEIGHT = 440
 # The image fades in over this long once it has decoded.
 FADE_MS = 250
+# Over a banner, the least of the image a page leaves above the text it draws at the foot, in
+# logical pixels (the banner grows to keep it when the text wraps).
+TEXT_TOP = 72
+
+
+def shown_banner(banner):
+    """The banner dict an answer carries (normalize.artist_banner's, curator_banner's) when
+    there is something to show, a URL to fetch or a file on disk (`art`, the demo's), else
+    None: the page keeps its plain header."""
+    if isinstance(banner, dict) and (banner.get('url') or banner.get('art')):
+        return banner
+    return None
 
 
 def banner_height(width):
@@ -37,8 +50,9 @@ def drawn_edge(width, height, aspect):
 
 
 class ArtistBanner(Gtk.Widget):
-    """The artist's banner (normalize.artist_banner's dict, set_banner()) filling the width it
-    is given, as tall as banner_height() says, the image cut to cover it (centred). Until the
+    """An artist's or a curator's banner (normalize.artist_banner's or curator_banner's dict,
+    set_banner()) filling the width it is given, as tall as banner_height() says, the image
+    cut to cover it (centred). Until the
     image is there, Apple's colour for it (or the card colour, style.css's `.artist-banner`)
     holds its place, so nothing moves when it comes; then it fades in. A scrim (style.css's
     `.banner-scrim`), dark at the foot, keeps white text drawn over its lower part readable
@@ -49,7 +63,7 @@ class ArtistBanner(Gtk.Widget):
     one keeps what it has), while the banner is mapped, and decoded off the main thread by an
     artwork.ArtworkSlot at the size it is drawn; a banner dict with `art`, a file on disk
     (the demo's invented banners), shows that instead. Decorative: the page's title names
-    the artist."""
+    the artist or the show."""
 
     __gtype_name__ = 'AppleMusicArtistBanner'
 

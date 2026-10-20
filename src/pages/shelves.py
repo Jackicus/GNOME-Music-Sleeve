@@ -14,19 +14,22 @@ following its Item as its thumbnail arrives. The page shows a spinner while the 
 its way, a status page with the fitting button when the engine cannot answer
 (widgets/engine_status.py), and the shelves otherwise, then the answer's rows of links
 (`links`: More to Explore, widgets/explore.py); a refresh button in the header bar asks
-Apple again past the day-long cache.
+Apple again past the day-long cache. A category's title, a radio show's above all, stands
+over the curator's banner when Apple has one (widgets/banner.py).
 """
 
 import logging
 from datetime import UTC, datetime
 from gettext import gettext as _
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gtk, Pango
 
 from .. import explore
 from ..backend.errors import EngineError
 from ..backend.normalize import ANSWER_MAX_AGE, answer_expired
 from ..remote import fetch_shelf_art, remote_shelves
+from ..widgets.banner import TEXT_TOP, shown_banner
+from ..widgets.banner import ArtistBanner  # noqa: F401  registers $AppleMusicArtistBanner
 from ..widgets.engine_status import EngineStatus
 from ..widgets.explore import ExploreBox
 from ..widgets.shelf import ShelfColumn
@@ -82,6 +85,11 @@ class ShelvesPage(Adw.NavigationPage):
     The answer's rows of links (`links`) follow the shelves (widgets.explore.ExploreBox), as
     `explore(links)` makes them Sections (explore.sections by default; New's has Top Charts
     among them).
+
+    An answer with a `banner` (a curator's, a radio show's: normalize.category_page) puts
+    the title, and the `host` under it, in white at the foot of that wide image
+    (widgets.banner.ArtistBanner), edge to edge, as the artist page does; without one the
+    title (and host) stand on the page.
     """
 
     __gtype_name__ = 'AppleMusicShelvesPage'
@@ -93,7 +101,11 @@ class ShelvesPage(Adw.NavigationPage):
     status_button = Gtk.Template.Child()
     scrolled_window = Gtk.Template.Child()
     shelves_box = Gtk.Template.Child()
+    hero = Gtk.Template.Child()
+    banner = Gtk.Template.Child()
+    hero_box = Gtk.Template.Child()
     title_label = Gtk.Template.Child()
+    caption_label = Gtk.Template.Child()
 
     def __init__(self, title, fetch, root=True, icon_name=None, hero=True, empty_title=None,
                  empty_description=None, arrange=None, explore=explore.sections):
@@ -119,7 +131,7 @@ class ShelvesPage(Adw.NavigationPage):
             'not-signed-in': _('This page appears once you sign in to Apple Music'),
             'failed': _('Could Not Load This Page'),
         })
-        self._column = ShelfColumn(self.shelves_box, anchor=self.title_label)
+        self._column = ShelfColumn(self.shelves_box, anchor=self.hero)
         # After the shelves: the column places them right after the title.
         self.explore_box = ExploreBox()
         self.shelves_box.append(self.explore_box)
@@ -212,7 +224,34 @@ class ShelvesPage(Adw.NavigationPage):
                 self._engine_status.fail(error)
             return
         self._answer = answer if isinstance(answer, dict) else {}
+        self._show_header(self._answer)
         self._show(self._answer.get('shelves'))
+
+    def _show_header(self, answer):
+        """The header's two looks: the title (and a radio show's host, the answer's `host`)
+        in white at the foot of the answer's banner (a curator's: normalize.curator_banner),
+        edge to edge, when it has one; else the title on the page, as every shelves page
+        has it."""
+        banner = shown_banner(answer.get('banner'))
+        host = answer.get('host')
+        host = host.strip() if isinstance(host, str) else ''
+        shown = banner is not None
+        self.banner.set_banner(banner)
+        self.banner.set_visible(shown)
+        self.caption_label.set_label(host)
+        self.caption_label.set_visible(bool(host))
+        self.hero_box.set_valign(Gtk.Align.END if shown else Gtk.Align.FILL)
+        self.hero_box.set_margin_top(TEXT_TOP if shown else 24)
+        self.hero_box.set_margin_bottom(24 if shown else 0)
+        # Over the banner a long title wraps, as an artist's name does; on the page it is
+        # one line.
+        self.title_label.set_wrap(shown)
+        self.title_label.set_ellipsize(Pango.EllipsizeMode.NONE if shown
+                                       else Pango.EllipsizeMode.END)
+        if shown:
+            self.hero.add_css_class('on-banner')
+        else:
+            self.hero.remove_css_class('on-banner')
 
     def _show(self, dicts):
         remote = remote_shelves(dicts)
@@ -300,7 +339,8 @@ class ShelvesPage(Adw.NavigationPage):
 def category_page(item):
     """A category's page (a tile of the search landing, a banner of New, a radio show's tile
     on Radio or an artist's page), pushed over the page it was opened from: the curator's
-    grouping as shelves, then its playlists (a show's: its episodes, then its playlists)."""
+    banner, when it has one, under its title and a show's host, then its grouping as
+    shelves and its playlists (a show's: its episodes, then its playlists)."""
     page = ShelvesPage(item.title,
                        lambda refresh: app().engine.category(item.id, refresh=refresh),
                        root=False, icon_name='view-grid-symbolic', hero=False,

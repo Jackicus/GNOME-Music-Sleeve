@@ -880,6 +880,39 @@ class PageLifetimeTest(WidgetTestCase):
         del item
         await self.assert_freed(*refs)
 
+    async def test_radio_show_page_with_its_banner(self):
+        # A radio show's page under its banner (an invented image on disk), which decodes
+        # and fades in, and goes with the page.
+        from gi.repository import Gdk, GLib
+
+        from applemusic.library import Item
+        from applemusic.pages.shelves import category_page
+        from applemusic.widgets.banner import ArtistBanner
+        from applemusic.widgets.shelf import Shelf
+        from applemusic.widgets.tile import Tile
+
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = os.path.join(folder.name, 'banner.png')
+        Gdk.MemoryTexture.new(6, 2, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(bytes(48)),
+                              24).save_to_png(path)
+        banner = {'url': None, 'art': path, 'crop': 'sr', 'width': 6, 'height': 2,
+                  'color': '#102030'}
+        self.answer('category', dict(_shelves('episodes', kind='station'),
+                                     host='Invented Host', banner=banner))
+        item = Item({'id': 'c2', 'kind': 'category', 'title': 'Invented Show', 'art': None,
+                     'thumb': None})
+        page = category_page(item)
+        await self.push(page, Shelf, Tile)
+        self.assertTrue(await self.until(lambda: page.banner.picture.get_opacity() == 1))
+        self.assertIsInstance(page.banner, ArtistBanner)
+        refs = [page.weak_ref(), page.banner.weak_ref()] + [
+            _find(page, cls).weak_ref() for cls in (Shelf, Tile)]
+        self.window.navigation_view.pop()
+        self.assertTrue(await self.until(lambda: page.get_parent() is None))
+        page = item = None
+        await self.assert_freed(*refs)
+
     async def test_new_page(self):
         # New, its banners first, with More to Explore's links after its shelves; dropped
         # at a sign-out.
