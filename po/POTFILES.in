@@ -36,6 +36,8 @@ src/pages/home.blp
 src/pages/radio.py
 src/pages/search.py
 src/pages/search.blp
+src/pages/search_all.py
+src/pages/search_all.blp
 src/pages/shelves.py
 src/pages/shelves.blp
 src/pages/new.py
@@ -58,6 +60,7 @@ src/widgets/fullscreen_player.blp
 src/widgets/queue.py
 src/widgets/transport.py
 src/widgets/labels.py
+src/widgets/search_list.py
 src/library.py
 src/radio.py
 src/remote.py

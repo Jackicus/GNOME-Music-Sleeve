@@ -18,9 +18,10 @@ URL as an item's `art` when the sync has not fetched its cover (and no `thumb`):
 `remote_item(data)` gives such a dict the paths fetch_remote() would use (`thumb` at
 THUMB_SIZE, `art` at COVER_SIZE, with `thumbUrl` and `artUrl` to fetch them by), so a tile
 shows the thumbnail once `await fetch_thumb(item)` has brought it and a detail page's
-fetch_cover() the cover. remote_shelves() makes the engine's shelf dicts into ShelfModel
-objects of such Items, titled in the app's words (shelf_title()), and fetch_shelf_art() brings
-their thumbnails a few at a time, each Item notifying `thumb` as its file arrives: the tiles
+fetch_cover() the cover. remote_items() wraps such dicts as Items, remote_shelves() makes the
+engine's shelf dicts into ShelfModel objects of them, titled in the app's words (shelf_title()),
+and fetch_shelf_art() (fetch_items_art() for a list of Items) brings their thumbnails a few at
+a time, each Item notifying `thumb` as its file arrives: the tiles
 showing it follow their Item (widgets/tile.py).
 
 Downloads run in a pool of their own (FETCH_WORKERS threads), not in asyncio's default
@@ -63,6 +64,8 @@ SEARCH_TITLES = {
     'playlists': N_('Playlists'),
     'music-videos': N_('Music Videos'),
     'stations': N_('Stations'),
+    'radio-shows': N_('Radio Shows'),
+    'curators': N_('Curators'),
 }
 
 
@@ -258,46 +261,75 @@ async def _download(path, url, generation):
 
 def shelf_title(data):
     """A shelf's heading in the app's language: the name of its kind for a search's shelf
-    (SEARCH_TITLES, by key), 'Featured' for the New page's banners, Apple's own title for the
-    rest (it comes in the account's language), and 'Made for You' for a recommendation that
-    has none."""
+    (SEARCH_TITLES, by key: the backend leaves them untitled), 'Featured' for the New page's
+    banners, Apple's own title for the rest (it comes in the account's language: Radio's
+    `radio-shows` keeps it), and 'Made for You' for a recommendation that has none."""
     if data.get('featured'):
         # Translators: the shelf of banners at the top of the New page.
         return _('Featured')
+    own = str(data.get('title') or '')
     title = SEARCH_TITLES.get(str(data.get('key') or ''))
-    if title is not None:
+    if title is not None and not own:
         return _(title)
-    return str(data.get('title') or '') or _('Made for You')
+    return own or _('Made for You')
+
+
+def remote_items(dicts):
+    """Items for the engine's item dicts, their artwork under remote-art (remote_item()); a
+    dict without an id and a kind is left out. Those the backend leaves without a subtitle
+    (it writes no words) get the app's: an artist 'Artist', which a card shows under the name
+    as an album's shows its artist; a search's curator (`curatorKind`) 'Radio Show' or
+    'Curator', a show without its host's name."""
+    items = [Item(remote_item(entry)) for entry in dicts or []
+             if isinstance(entry, dict) and entry.get('id') and entry.get('kind')]
+    words = None
+    for item in items:
+        raw = item.raw if isinstance(item.raw, dict) else {}
+        if item.subtitle or not (item.kind == 'artist' or raw.get('curatorKind')):
+            continue
+        if words is None:
+            words = {
+                # Translators: the second line of an artist's card among a search's
+                # results, where an album's card names its artist.
+                'artist': _('Artist'),
+                # Translators: the second line of a radio show's card among a search's
+                # results, when Apple names no host.
+                'show': _('Radio Show'),
+                # Translators: the second line of a curator's card among a search's results
+                # (an editor of playlists: Apple's own, or another's).
+                'curator': _('Curator'),
+            }
+        if item.kind == 'artist':
+            item.subtitle = words['artist']
+        else:
+            item.subtitle = words['show' if raw.get('curatorKind') == 'show' else 'curator']
+    return items
 
 
 def remote_shelves(dicts):
     """ShelfModel objects for the engine's shelf dicts ({key, title, items}), titled by
-    shelf_title(), the items wrapped as Items with their artwork under remote-art
-    (remote_item()); a shelf with nothing in it, or an item without an id and a kind, is left
-    out. An artist, whose dict has no subtitle (the backend writes no words), is subtitled
-    'Artist', which a card shows under the name as an album's shows its artist."""
-    # Translators: the second line of an artist's card among a search's top results, where
-    # an album's card names its artist.
-    artist = _('Artist')
+    shelf_title(), the items as remote_items() makes them; a shelf with nothing in it is
+    left out. A search's shelf carries the offset of Apple's next page of it as `next` (None
+    when Apple has no more), and `more` while there is one, so it offers See All."""
     shelves = []
     for data in dicts or []:
         if not isinstance(data, dict):
             continue
-        items = [Item(remote_item(entry)) for entry in data.get('items') or []
-                 if isinstance(entry, dict) and entry.get('id') and entry.get('kind')]
-        for item in items:
-            if item.kind == 'artist' and not item.subtitle:
-                item.subtitle = artist
+        items = remote_items(data.get('items'))
         if items:
-            shelves.append(ShelfModel(str(data.get('key') or ''), shelf_title(data), items))
+            shelf = ShelfModel(str(data.get('key') or ''), shelf_title(data), items)
+            following = data.get('next')
+            shelf.next = following if isinstance(following, int) and following > 0 else None
+            if shelf.next is not None:
+                shelf.more = True
+            shelves.append(shelf)
     return shelves
 
 
-async def fetch_shelf_art(shelves):
-    """Fetch the thumbnails of the shelves' items that are not on disk, ART_CONCURRENCY at a
-    time; each Item whose file arrives notifies `thumb` (its path unchanged), and the tiles
-    showing it look again. A store splicing the Item over itself would not do: GTK does not
-    rebind a row for that."""
+async def fetch_items_art(items):
+    """Fetch the thumbnails of the Items (remote_item()'s) that are not on disk,
+    ART_CONCURRENCY at a time; each Item whose file arrives notifies `thumb` (its path
+    unchanged), and the widgets showing it look again."""
     gate = asyncio.Semaphore(ART_CONCURRENCY)
 
     async def fetch(item):
@@ -305,5 +337,12 @@ async def fetch_shelf_art(shelves):
             if await fetch_thumb(item):
                 item.notify('thumb')
 
-    await asyncio.gather(*(fetch(item) for shelf in shelves for item in list(shelf.items)
-                           if needs_thumb(item)))
+    await asyncio.gather(*(fetch(item) for item in list(items) if needs_thumb(item)))
+
+
+async def fetch_shelf_art(shelves):
+    """Fetch the thumbnails of the shelves' items that are not on disk, ART_CONCURRENCY at a
+    time; each Item whose file arrives notifies `thumb` (its path unchanged), and the tiles
+    showing it look again. A store splicing the Item over itself would not do: GTK does not
+    rebind a row for that."""
+    await fetch_items_art([item for shelf in shelves for item in list(shelf.items)])

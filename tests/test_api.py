@@ -10,7 +10,8 @@ from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
 from applemusic.backend.api import (LIBRARY_ROUTES, api_error, http_status, is_deleted,
                                     is_final, is_library_id, item_endpoint, library_twin,
-                                    library_twin_params, lyrics_languages, page_data,
+                                    library_twin_params, lyrics_languages, next_offset,
+                                    page_data,
                                     playlist_entries, reordered_entries, resource_type,
                                     track_type)
 from applemusic.backend.errors import EngineError
@@ -157,6 +158,16 @@ class PageDataTest(unittest.TestCase):
                          [{'id': '1'}, {'id': '2'}])
         for answer in ({}, {'data': None}, {'data': 'x'}, None, [], 'text'):
             self.assertEqual(page_data(answer), [], answer)
+
+
+class NextOffsetTest(unittest.TestCase):
+    def test_the_offset_a_next_link_asks_for(self):
+        self.assertEqual(next_offset('/v1/catalog/gb/search?offset=25&term=tide&types=songs'),
+                         25)
+        self.assertEqual(next_offset('/v1/catalog/gb/search?term=x&offset=50'), 50)
+        for link in (None, '', 42, '/v1/catalog/gb/search?term=x', '/v1/x?offset=none',
+                     '/v1/x?offset=0', '/v1/x?offset=-5'):
+            self.assertIsNone(next_offset(link), link)
 
 
 class ApiErrorTest(unittest.TestCase):

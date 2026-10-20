@@ -807,12 +807,53 @@ async def walkthrough(window):
           window.lookup_action('show-queue').get_enabled() and not window.bottom_sheet.get_open()
           and inside(window.get_focus(), search.search_entry), describe(window.get_focus()))
     await key(window, 'Tab')
+    check("Tab from the entry reaches Apple Music's filter",
+          inside(window.get_focus(), search.kind_dropdown), describe(window.get_focus()))
+    await key(window, 'space', 0.6)
+    await key(window, 'Down')
+    await key(window, 'Return', 1.0)
+    check('Space, Down, Enter on the filter: one kind, its list shown',
+          search.kind == 'artists' and search.stack.get_visible_child_name() == 'kind',
+          (search.kind, search.stack.get_visible_child_name()))
+    check('the focus back on the filter once a kind is chosen',
+          inside(window.get_focus(), search.kind_dropdown), describe(window.get_focus()))
+    search.set_kind('all')
+    await asyncio.sleep(0.8)
+    await key(window, 'Tab')
     await key(window, 'Right')
     await key(window, 'space', 0.8)
     check('Tab, Right, Space: Your Library', search.mode == 'library', search.mode)
     await key(window, '<shift>Tab')
     await key(window, 'Escape')
     check('Escape in the entry clears it', search.search_entry.get_text() == '')
+    print("-- a search's See All")
+    search.set_mode('music')
+    search.search_entry.grab_focus()
+    await type_into(search.search_entry, 'tide')
+    await key(window, 'Return', 1.2)
+    songs_shelf = next((widget for widget in search._column.widgets
+                        if widget.shelf is not None and widget.shelf.key == 'songs'), None)
+    check('Enter in the entry: the shelves, Songs offering See All',
+          songs_shelf is not None and songs_shelf.see_all_button.get_visible())
+    if songs_shelf is not None:
+        songs_shelf.see_all_button.grab_focus()
+        await key(window, 'space', 1.2)
+        see_all = window.navigation_view.get_visible_page()
+        check("Space on See All: the kind's page, the focus in its list",
+              type(see_all).__name__ == 'SearchAllPage'
+              and inside(window.get_focus(), see_all.results_list.list_view),
+              (type(see_all).__name__, describe(window.get_focus())))
+        await key(window, 'End', 1.2)
+        check('End in the list: the next page loaded, the end shown',
+              see_all.pager.state == 'done' and see_all.pager.items.get_n_items() > 20,
+              (see_all.pager.state, see_all.pager.items.get_n_items()))
+        await key(window, 'Escape', 0.8)
+        check('Escape goes back to the results',
+              window.navigation_view.get_visible_page() is search
+              and search.stack.get_visible_child_name() == 'results',
+              describe(window.navigation_view.get_visible_page()))
+    search.search_entry.grab_focus()
+    await key(window, 'Escape')
     print('-- search over a pushed page, the Songs filter')
     window.open_item(app.library.albums.get_item(0))  # a result opened from Search
     await asyncio.sleep(0.6)
@@ -1362,6 +1403,19 @@ async def names(window):
     search.search_entry.set_text('the')
     await asyncio.sleep(1.5)
     total += await unnamed('search')
+    search.set_mode('music')
+    search.set_kind('songs')
+    search.search_entry.set_text('tide')
+    search.search_entry.emit('activate')
+    await asyncio.sleep(1.5)
+    total += await unnamed("search's list of one kind")
+    search.set_kind('all')
+    await asyncio.sleep(1.5)
+    window.open_shelf(next(shelf for shelf in search._column.shelves if shelf.key == 'songs'))
+    await asyncio.sleep(1.5)
+    total += await unnamed("search's See All")
+    window.navigation_view.pop()
+    await asyncio.sleep(0.5)
     app.player.apply(harness.invented_playing_state(app))
     window.bottom_sheet.set_open(True)
     await asyncio.sleep(1.0)

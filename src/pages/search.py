@@ -9,6 +9,14 @@ categories before anything is typed), and Your Library, which filters the librar
 models as you type (Gtk.FilterListModel over the albums, artists, playlists and songs) and
 works with the engine down. The entry has no title over it: it names the page.
 
+Apple Music's results are of every kind, or of the one the filter beside the entry names
+(FILTER_KEYS, a Gtk.DropDown: there are too many kinds for a toggle group at 360 px): every
+kind is a shelf each, Top Results first as cards, its See All a page of that kind alone
+(pages/search_all.py); one kind is a list of it (widgets/search_list.py) that pages on as it is
+scrolled (search_pager.py). Changing the filter searches again for what is typed. Apple's
+curators (radio shows, editors) open their category page; a third party's, its page on
+music.apple.com.
+
 What is opened from the page (a top hit, a result's tile, Your Library's albums, artists and
 playlists, a recent one again) goes to the front of app.recent_searches (recent_searches.py),
 which the landing shows as Recently Searched over the categories, with Clear.
@@ -21,30 +29,51 @@ while shown and asks again once it is up or signed in. Status titles and a searc
 are announced to assistive technology.
 """
 
+import functools
 import logging
 from gettext import gettext as _
 from gettext import ngettext
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
+from ..backend import api
 from ..backend.errors import EngineError
 from ..library import Item, Track, fold
-from ..remote import fetch_shelf_art, fetch_thumb, needs_thumb, remote_item, remote_shelves
+from ..remote import (fetch_items_art, fetch_shelf_art, fetch_thumb, needs_thumb, remote_item,
+                      remote_items, remote_shelves)
+from ..search_pager import SearchPager
 from ..widgets import context_menu
 from ..widgets.category_tile import CategoryTile
 from ..widgets.cover import Cover
 from ..widgets.engine_status import EngineStatus
 from ..widgets.shelf import Shelf, ShelfColumn  # Shelf is $AppleMusicShelf in the template
 from ..widgets.labels import accessible_label, flow_child, track_label
+from ..widgets.search_list import SearchList  # noqa: F401  $AppleMusicSearchList
+from ..widgets.search_list import end_text
 from ..widgets.track_row import PlayingMark, TrackRow
 from ..widgets.util import MappedHandlers, connect_weak, weak_method
 from . import app
+from .search_all import see_all_page
 
 log = logging.getLogger(__name__)
 
 DEBOUNCE_MS = 250
 SONG_LIMIT = 25   # songs listed in Your Library results; See All opens the Songs page
 MODES = ('music', 'library')
+# The filter's choices, in its order: every kind (the shelves), or one (api.SEARCH_KIND_TYPES).
+FILTER_KEYS = ('all', 'artists', 'songs', 'albums', 'playlists', 'music-videos', 'stations',
+               'radio-shows', 'curators')
+
+
+def filter_labels():
+    """The filter's words for each of FILTER_KEYS, translated on call."""
+    return {
+        # Translators: the Search page's filter: results of every kind.
+        'all': _('All Results'),
+        'artists': _('Artists'), 'songs': _('Songs'), 'albums': _('Albums'),
+        'playlists': _('Playlists'), 'music-videos': _('Music Videos'),
+        'stations': _('Stations'), 'radio-shows': _('Radio Shows'), 'curators': _('Curators'),
+    }
 
 
 def kind_names():
@@ -114,6 +143,7 @@ class SearchPage(Adw.NavigationPage):
     search_row = Gtk.Template.Child()
     search_entry = Gtk.Template.Child()
     mode_toggle = Gtk.Template.Child()
+    kind_dropdown = Gtk.Template.Child()
     stack = Gtk.Template.Child()
     status_page = Gtk.Template.Child()
     status_button = Gtk.Template.Child()
@@ -125,6 +155,7 @@ class SearchPage(Adw.NavigationPage):
     categories_box = Gtk.Template.Child()
     suggestions_list = Gtk.Template.Child()
     results_box = Gtk.Template.Child()
+    kind_list = Gtk.Template.Child()
     albums_shelf = Gtk.Template.Child()
     artists_shelf = Gtk.Template.Child()
     playlists_shelf = Gtk.Template.Child()
@@ -155,6 +186,9 @@ class SearchPage(Adw.NavigationPage):
         self._recent_items = (self._recent.items if self._recent is not None
                               else Gio.ListStore(item_type=Item))
         self._art_task = None
+        self._pager = None  # the one kind shown (kind_list's SearchPager), or None
+        labels = filter_labels()
+        self.kind_dropdown.set_model(Gtk.StringList.new([labels[key] for key in FILTER_KEYS]))
         # What the page says when the engine cannot answer, and what its button does; its
         # retry asks again for what failed, in Apple Music mode only.
         texts = {
@@ -172,6 +206,8 @@ class SearchPage(Adw.NavigationPage):
         connect_weak(self.search_entry, 'activate', self._on_entry_activated)
         connect_weak(self.search_entry, 'stop-search', self._on_stop_search)
         connect_weak(self.mode_toggle, 'notify::active-name', self._on_mode_changed)
+        connect_weak(self.kind_dropdown, 'notify::selected', self._on_kind_changed)
+        connect_weak(self.kind_list, 'item-activated', self._on_kind_item_activated)
         connect_weak(self.status_button, 'clicked', self._on_status_clicked)
         connect_weak(self.status_library_button, 'clicked', self._on_search_library_clicked)
         connect_weak(self.categories_box, 'child-activated', self._on_category_activated)
@@ -236,6 +272,16 @@ class SearchPage(Adw.NavigationPage):
     def set_mode(self, mode):
         """'music' or 'library' (the toggle; a change refreshes what is shown)."""
         self.mode_toggle.set_active_name(mode)
+
+    @property
+    def kind(self):
+        """What the filter shows: 'all', or one of api.SEARCH_KIND_TYPES."""
+        selected = self.kind_dropdown.get_selected()
+        return FILTER_KEYS[selected] if selected < len(FILTER_KEYS) else FILTER_KEYS[0]
+
+    def set_kind(self, kind):
+        """Show results of `kind` (FILTER_KEYS; a change searches again for the text)."""
+        self.kind_dropdown.set_selected(FILTER_KEYS.index(kind))
 
     @property
     def text(self):
@@ -314,14 +360,24 @@ class SearchPage(Adw.NavigationPage):
     def _on_mode_changed(self, _toggle, _pspec):
         self.search_entry.set_placeholder_text(
             _('Search Your Library') if self.mode == 'library' else _('Search Apple Music'))
+        self.kind_dropdown.set_visible(self.mode == 'music')
         self._cancel_debounce()
         self._refresh()
+
+    def _on_kind_changed(self, _dropdown, _pspec):
+        """The filter: Apple Music searched again for the text, if there is one."""
+        if self.mode != 'music' or not self.text:
+            return
+        self._cancel_debounce()
+        self._search(self.text)
 
     def _refresh(self):
         """Show what the mode and the text call for: the landing, suggestions or results
         (Apple Music), or the filtered library. Whatever was asked before is dropped."""
         self._next_serial()
         self._retry = None
+        if self._pager is not None:
+            self._pager.cancel()  # its list stays until something replaces it
         text = self.text
         if self.mode == 'library':
             self._filter_library(text)
@@ -374,7 +430,7 @@ class SearchPage(Adw.NavigationPage):
         self._retry = lambda: self._suggest(text)
         serial = self._next_serial()
         app().spawn(self._load_suggestions(text, serial))
-        if self.stack.get_visible_child_name() not in ('suggestions', 'results'):
+        if self.stack.get_visible_child_name() not in ('suggestions', 'results', 'kind'):
             self._show('suggestions' if self._suggestions.get_n_items() else 'loading')
 
     async def _load_suggestions(self, text, serial):
@@ -397,11 +453,17 @@ class SearchPage(Adw.NavigationPage):
             self._show_status('no-suggestions')
 
     def _search(self, text):
-        """Search Apple Music for `text` (Enter, or a suggested term)."""
+        """Search Apple Music for `text` (Enter, a suggested term, the filter changed): every
+        kind, or the one the filter names."""
         self._retry = lambda: self._search(text)
         serial = self._next_serial()
+        self._show_pager(None)
         self._show('loading')
-        app().spawn(self._load_results(text, serial))
+        kind = self.kind
+        if kind == 'all':
+            app().spawn(self._load_results(text, serial))
+        else:
+            app().spawn(self._load_kind(text, kind, serial))
 
     async def _load_results(self, text, serial):
         try:
@@ -412,12 +474,58 @@ class SearchPage(Adw.NavigationPage):
             return
         if not self._current(serial):
             return
-        self._show_results(answer.get('shelves') or [])
+        self._show_results(answer.get('shelves') or [], text)
 
-    def _show_results(self, dicts):
-        shelves = remote_shelves(dicts)
+    async def _load_kind(self, text, kind, serial):
+        """The first page of one kind, then a list that pages on as it is scrolled."""
+        try:
+            answer = await app().engine.search(text, limit=api.SEARCH_PAGE_LIMIT, kind=kind)
+        except EngineError as error:
+            if self._current(serial):
+                self._fail(error, lambda: self._search(text))
+            return
+        if not self._current(serial):
+            return
+        shelf = next((found for found in answer.get('shelves') or []
+                      if isinstance(found, dict) and found.get('key') == kind), {})
+        following = shelf.get('next')
+        application = app()
+        pager = SearchPager(text, kind, remote_items(shelf.get('items')),
+                            following if isinstance(following, int) and following > 0 else None,
+                            search=application.engine.search, spawn=application.spawn)
+        self._show_pager(pager)
+        count = pager.items.get_n_items()
+        if not count and pager.state == 'done':
+            self._show_status('no-results')
+            return
+        self._show('kind')
+        self._cancel_art()
+        self._art_task = application.spawn(fetch_items_art(list(pager.items)))
+        # How many when that is all there is, else the kind (more come as the list scrolls).
+        self._announce(end_text(kind, count) if pager.state == 'done'
+                       else filter_labels()[kind])
+
+    def _show_pager(self, pager):
+        """Show `pager`'s kind in the list (None: nothing), the one before it stopped."""
+        if self._pager is not None:
+            self._pager.cancel()
+        self._pager = pager
+        self.kind_list.set_pager(pager)
+
+    def _on_kind_item_activated(self, _list, item):
+        self.get_root().open_item(item)
+        self._remember(item)
+
+    def _cancel_art(self):
         if self._art_task is not None and not self._art_task.done():
             self._art_task.cancel()
+
+    def _show_results(self, dicts, text):
+        shelves = remote_shelves(dicts)
+        for shelf in shelves:
+            if shelf.key in api.SEARCH_KIND_TYPES:  # See All: the kind as Apple pages it
+                shelf.make_page = functools.partial(see_all_page, text)
+        self._cancel_art()
         # Top Results, Apple's best few hits of any kind, first and as cards.
         self._column.show(shelves, hero_first=bool(shelves) and shelves[0].key == 'top')
         if shelves:

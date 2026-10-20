@@ -504,6 +504,28 @@ class PageLifetimeTest(WidgetTestCase):
             GridPage(self.library, 'Invented Folder', store, root=False, drag=True), Tile)
         await self.assert_freed(*refs)
 
+    async def test_search_see_all_page(self):
+        # A search shelf's See All, paging on while shown (a page fetched, its footer bound).
+        from applemusic.library import Item
+        from applemusic.pages.search_all import SearchAllPage
+        from applemusic.search_pager import SearchPager
+        from applemusic.widgets.search_list import FooterRow, ResultRow
+
+        def song(number):
+            return {'id': f'17240{number:05d}', 'kind': 'song', 'title': f'Song {number}',
+                    'subtitle': 'Invented Artist', 'art': None, 'thumb': None}
+
+        async def search(term, kind=None, offset=0, limit=25):
+            return {'shelves': [{'key': kind, 'items': [song(n) for n in range(offset, 30)],
+                                 'next': None}]}
+
+        pager = SearchPager('invented', 'songs', [Item(song(n)) for n in range(3)], 3,
+                            search=search, spawn=self.app.spawn)
+        refs = await self.pushed_and_popped(SearchAllPage(pager, 'Songs'), ResultRow,
+                                            FooterRow)
+        del pager
+        await self.assert_freed(*refs)
+
     async def test_detail_page(self):
         from applemusic.library import Item
         from applemusic.pages.detail import DetailPage

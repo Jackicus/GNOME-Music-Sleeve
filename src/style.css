@@ -708,7 +708,7 @@ listview.queue-list > row .current .queue-title {
 }
 
 /* Recently Searched tiles (pages/search.py): a cover and two lines on the categories' tint,
-   an artist's portrait round. */
+   an artist's portrait round, as in a search's list of one kind (widgets/search_list.py). */
 .recent-tile {
   padding: 8px;
   border-radius: 8px;
@@ -716,6 +716,8 @@ listview.queue-list > row .current .queue-title {
 }
 
 .recent-tile > .cover.artist > .card,
-.recent-tile > .cover.artist > picture {
+.recent-tile > .cover.artist > picture,
+.search-result > .cover.artist > .card,
+.search-result > .cover.artist > picture {
   border-radius: 9999px;
 }

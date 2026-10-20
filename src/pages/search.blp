@@ -9,8 +9,17 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
     width-request: 360;
     height-request: 200;
 
-    // Narrow: the mode toggle under the entry, and the category tiles one a line (two would
-    // break their names mid-word).
+    // Narrow: the mode toggle under the entry (and its filter). Narrower still: the category
+    // tiles one a line too (two would break their names mid-word).
+    Adw.Breakpoint {
+      condition ("max-width: 640sp")
+
+      setters {
+        search_row.orientation: vertical;
+        mode_toggle.halign: center;
+      }
+    }
+
     Adw.Breakpoint {
       condition ("max-width: 520sp")
 
@@ -35,12 +44,12 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
           "view",
         ]
 
-        // The entry and the mode, centred as wide as the suggestions under them, with no
-        // title: the entry names the page. The page's handlers are connected in search.py
-        // (weakly: sign-out drops it).
+        // The entry, the mode and (Apple Music's) the kind of results shown, centred as wide
+        // as the suggestions under them, with no title: the entry names the page. The page's
+        // handlers are connected in search.py (weakly: sign-out drops it).
         Adw.Clamp {
-          maximum-size: 600;
-          tightening-threshold: 480;
+          maximum-size: 720;
+          tightening-threshold: 600;
           margin-start: 24;
           margin-end: 24;
           margin-top: 6;
@@ -49,12 +58,29 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
           child: Box search_row {
             spacing: 12;
 
-            SearchEntry search_entry {
+            // The entry and, in Apple Music mode, which kind of results it shows: every kind
+            // (the shelves) or one (a list that loads more as it is scrolled). search.py fills
+            // the filter from FILTER_KEYS.
+            Box {
+              spacing: 12;
               hexpand: true;
-              placeholder-text: _("Search Apple Music");
 
-              accessibility {
-                label: _("Search");
+              SearchEntry search_entry {
+                hexpand: true;
+                placeholder-text: _("Search Apple Music");
+
+                accessibility {
+                  label: _("Search");
+                }
+              }
+
+              DropDown kind_dropdown {
+                valign: center;
+                tooltip-text: _("Show Results Of");
+
+                accessibility {
+                  label: _("Show Results Of");
+                }
               }
             }
 
@@ -229,8 +255,8 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
               hscrollbar-policy: never;
 
               child: Adw.Clamp {
-                maximum-size: 600;
-                tightening-threshold: 480;
+                maximum-size: 720;
+                tightening-threshold: 600;
                 margin-start: 24;
                 margin-end: 24;
                 margin-top: 6;
@@ -262,6 +288,13 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
                 margin-bottom: 18;
               };
             };
+          }
+
+          // After Enter with a kind chosen: that kind alone, a list that loads more as it
+          // is scrolled (widgets/search_list.py).
+          StackPage {
+            name: "kind";
+            child: $AppleMusicSearchList kind_list {};
           }
 
           // Your Library: the cached models filtered as you type, three shelves and a list

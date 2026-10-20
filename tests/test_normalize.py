@@ -402,6 +402,54 @@ class TestSync(unittest.TestCase):
         self.assertEqual(video['play'], {'kind': 'musicVideo', 'id': '9'})
         self.assertIn('256x256', video['art'])
 
+    def test_search_results_shelve_curators_and_radio_shows_and_name_the_next_page(self):
+        raw = {'results': {
+            'songs': {'next': '/v1/catalog/gb/search?offset=20&term=tide&types=songs',
+                      'data': [{'id': '1', 'type': 'songs', 'attributes': {'name': 'Tide'}}]},
+            'apple-curators': {
+                'next': '/v1/catalog/gb/search?offset=20&term=tide&types=apple-curators',
+                'data': [
+                    {'id': '900000011', 'type': 'apple-curators', 'attributes': {
+                        'name': 'Invented Editors', 'kind': 'Curator',
+                        'url': 'https://music.apple.com/gb/curator/x/900000011'}},
+                    {'id': '900000012', 'type': 'apple-curators', 'attributes': {
+                        'name': 'Invented Tide Show', 'kind': 'Show',
+                        'showHostName': ' Ada Merrow ',
+                        'artwork': {'url': 'https://x/{w}x{h}bb.{f}'}}}]},
+            'curators': {'data': [{'id': '900000013', 'type': 'curators',
+                                   'attributes': {'name': 'Invented Label', 'kind': 'Show'}}]},
+        }}
+        out = normalize.search_results(raw, self.tmp_dir)
+        self.assertEqual([(s['key'], [it['id'] for it in s['items']], s['next'])
+                          for s in out['shelves']],
+                         [('songs', ['1'], 20),
+                          ('radio-shows', ['900000012'], 20),
+                          ('curators', ['900000011', '900000013'], 20)])
+        show = out['shelves'][1]['items'][0]
+        # Apple's curators are category tiles, which open their page; a show names its host.
+        self.assertEqual({key: show[key] for key in ('kind', 'curatorKind', 'title', 'subtitle',
+                                                     'play', 'groups')},
+                         {'kind': 'category', 'curatorKind': 'show',
+                          'title': 'Invented Tide Show', 'subtitle': 'Ada Merrow', 'play': {},
+                          'groups': []})
+        self.assertIn('256x256', show['art'])
+        editors, label = out['shelves'][2]['items']
+        self.assertEqual((editors['kind'], editors['curatorKind'], editors['url']),
+                         ('category', 'curator', 'https://music.apple.com/gb/curator/x/900000011'))
+        # A third party's has no page here: a link to music.apple.com's (none without one).
+        self.assertEqual((label['kind'], label['curatorKind'], label['play']),
+                         ('unknown', 'curator', {}))
+        self.assertEqual(normalize.curator_link({'id': '9', 'type': 'curators', 'attributes': {
+            'name': 'Invented Label', 'url': 'https://music.apple.com/gb/curator/x/9'}})['kind'],
+            'link')
+        # One kind alone: its shelf, even with nothing on it, for the next page's sake.
+        raw['results']['apple-curators']['data'] = raw['results']['apple-curators']['data'][:1]
+        only = normalize.search_results(raw, self.tmp_dir, kind='radio-shows')
+        self.assertEqual(only, {'shelves': [{'key': 'radio-shows', 'title': '', 'items': [],
+                                             'next': 20}]})
+        self.assertEqual(normalize.search_results({'results': {}}, self.tmp_dir, kind='songs'),
+                         {'shelves': []})
+
     def test_search_suggestions_are_terms_and_top_hits(self):
         raw = {'results': {'suggestions': [
             {'kind': 'terms', 'searchTerm': 'glow', 'displayTerm': 'glow'},

@@ -40,6 +40,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - Search shows what you opened from it lately under **Recently Searched**, above the browse
   categories; **Clear** empties it. The list stays on this computer, as music.apple.com keeps
   its own in the browser, and goes with the cache (Clear Cache, signing out).
+- Apple Music's results come as shelves of every kind, **Top Results** first, then artists,
+  songs, albums, playlists, music videos, stations, **Radio Shows** and **Curators**. The
+  menu beside the search field (**All Results**) shows one kind instead, as a list; a
+  shelf's **See All** opens its kind on a page of its own. Both lists load more as you
+  scroll, down to the last one Apple Music has, and say how many there are at the end; if
+  more cannot be loaded, **Try Again** at the end of the list asks once more. A radio show
+  or a curator opens its page (one Apple Music has no page for here opens in your browser).
 - On the Songs page, just start typing to filter the songs (or press
   <kbd>Ctrl</kbd>+<kbd>F</kbd>, or click the search button in the header bar);
   <kbd>Esc</kbd> clears the filter. Click a column title to sort by it, or use **Sort and
