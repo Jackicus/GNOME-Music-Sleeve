@@ -325,20 +325,22 @@ def remote_items(dicts):
 
 
 def remote_shelves(dicts):
-    """ShelfModel objects for the engine's shelf dicts ({key, title, items}), titled by
-    shelf_title(), the items as remote_items() makes them; a shelf with nothing in it is
-    left out. A search's shelf carries the offset of Apple's next page of it as `next` (None
-    when Apple has no more), and `more` while there is one, so it offers See All. A
-    chart's shelf keeps what it is as attributes of its ShelfModel: `ranked` (its items
-    numbered, widgets.shelf) and `form` ('songs': a list of songs, widgets.song_shelf),
-    as the dict has them."""
+    """ShelfModel objects for the engine's shelf dicts ({key, title, items, subtitle?}),
+    titled by shelf_title() (a recommendation's reason, `subtitle`, under it), the items as
+    remote_items() makes them; a shelf with nothing in it is left out. A search's shelf
+    carries the offset of Apple's next page of it as `next` (None when Apple has no more),
+    and `more` while there is one, so it offers See All. A chart's shelf keeps what it is as
+    attributes of its ShelfModel: `ranked` (its items numbered, widgets.shelf) and `form`
+    ('songs': a list of songs, widgets.song_shelf), as the dict has them."""
     shelves = []
     for data in dicts or []:
         if not isinstance(data, dict):
             continue
         items = remote_items(data.get('items'))
         if items:
-            shelf = ShelfModel(str(data.get('key') or ''), shelf_title(data), items)
+            subtitle = data.get('subtitle')
+            shelf = ShelfModel(str(data.get('key') or ''), shelf_title(data), items,
+                               subtitle if isinstance(subtitle, str) else '')
             following = data.get('next')
             shelf.next = following if isinstance(following, int) and following > 0 else None
             if shelf.next is not None:

@@ -11,6 +11,7 @@
     app.library_sync.start(quick=True, videos=True, tracks_of=ids)   # after a removal
     app.library_sync.start(playlists=True)   # the shorter one after a playlist write
     app.library_sync.start(playlists=True, tracks_of=(id,))   # and those playlists' tracks
+    app.library_sync.start(shelves=True)     # Home's Refresh: the Home shelves alone
 
 fetches, in this order, the library's songs (with their albums, which is what the Albums and
 Artists sections are built from), the playlists and each one's tracks, the playlist folders,
@@ -44,7 +45,11 @@ of the playlists it is given (`tracks_of`: after their songs were added to, take
 reordered), which it reads. Either pass leaves out the `modified` of the playlists whose
 tracks `tracks_of` had read, so the next full pass reads them again: Apple's listing may give
 the date of the change before its tracks read shows the change, and a stamp with tracks
-older than it would keep them for good.
+older than it would keep them for good. A `shelves` pass (sync_library(shelves=True),
+LibrarySync.start(shelves=True)) is Home's Refresh: it reads the Home shelves alone and
+keeps everything else of last time's file; with no file to keep from, LibrarySync runs a
+full sync instead. A recommendation's reason (normalize.recommendation_reason) is its
+shelf's `subtitle`.
 
 A playlist or folder the account deleted is still listed by Apple for a while (minutes, seen
 on 2026-10-03), nameless (api.is_deleted): the listings leave it out.
@@ -269,7 +274,7 @@ def install_scaler():
 
 
 async def sync_library(engine, library, progress=None, quick=False, playlists=False,
-                       videos=False, tracks_of=()):
+                       videos=False, tracks_of=(), shelves=False):
     """The whole sync (see the module). Returns the counts: {albums, artists, playlists,
     loose, videos, radio, folders, shelves, art: {wanted, fetched, failed}}.
 
@@ -286,7 +291,10 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     videos, stations and the playlists' tracks are last time's, but for the tracks of the
     playlists `tracks_of` names (after their songs were added to, taken from or reordered).
     Not a sync either. Tracks read for `tracks_of` are kept without a stamp (see the
-    module)."""
+    module).
+
+    `shelves`: Home's Refresh. It reads the Home shelves alone (_fetch_shelves) and keeps
+    everything else of last time's file. Not a sync either."""
     report = progress or (lambda section, done, total: None)
     generation = store.cache_generation()  # a wipe from here on leaves this sync's files out
     status = await engine.status()
@@ -300,6 +308,13 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     normalize.ART_SIZES.update(normalize.wanted_art_sizes(config.COVER_SIZE, config.THUMB_SIZE))
     raw = {}  # Apple's answers, for the build, which lets go of them once they are used
     previous = _Previous(cache_dir)  # last time's file, read (in a thread) when first asked
+
+    if shelves:
+        raw['shelves'] = await _fetch_shelves(engine, report)
+        raw['songs'] = raw['playlists'] = raw['videos'] = raw['stations'] = None
+        raw['folders'] = None
+        raw['tracks'] = {}
+        return await _build(cache_dir, storefront, raw, library, report, generation, previous)
 
     if playlists:
         report('playlists', 0, None)
@@ -586,7 +601,7 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
     counts = {}
     art_urls = {}  # every artwork path named here, and its URL
     previous = previous if previous is not None else _Previous(cache_dir)
-    if raw['songs'] is None:  # a playlists pass: last time's albums and artists
+    if raw['songs'] is None:  # a playlists or shelves pass: last time's albums and artists
         sections = {'albums': previous.section('albums'),
                     'artists': previous.section('artists')}
         counts['loose'] = 0
@@ -595,8 +610,11 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
                                                                         cache_dir, art_urls)
         sections = {'albums': albums, 'artists': artists}
         counts['loose'] = loose_count(raw['songs'])
-    sections['playlists'] = _playlists(raw['playlists'], raw['tracks'], cache_dir, art_urls,
-                                       previous, raw.get('unstamped', ()))
+    if raw['playlists'] is None:  # a shelves pass: last time's playlists, tracks and all
+        sections['playlists'] = previous.section('playlists')
+    else:
+        sections['playlists'] = _playlists(raw['playlists'], raw['tracks'], cache_dir,
+                                           art_urls, previous, raw.get('unstamped', ()))
     if raw['videos'] is None:
         sections['videos'] = previous.section('videos')
     else:
@@ -704,9 +722,9 @@ def _favourites(raw, playlists, previous):
     """library.json's `favourites`: {section: ids} (FAVOURITE_SECTIONS), each read from the
     answers' `inFavorites` (normalize.favourite_ids), the songs' albums from the albums the
     songs listing includes. A section this pass did not read (a playlists pass's songs and
-    albums, a quick pass's videos) keeps last time's. Songs read without `inFavorites` (Apple
-    refused it, or ignored it) are the Favourite Songs playlist's songs, which Apple keeps as
-    the songs favourited, by the same ids."""
+    albums, a shelves pass's playlists too, a quick pass's videos) keeps last time's. Songs
+    read without `inFavorites` (Apple refused it, or ignored it) are the Favourite Songs
+    playlist's songs, which Apple keeps as the songs favourited, by the same ids."""
     favourites = {}
     if raw['songs'] is None:
         favourites['songs'] = previous.favourites('songs')
@@ -717,7 +735,10 @@ def _favourites(raw, playlists, previous):
             normalize.included_albums(raw['songs']))[0]
         if not seen:
             favourites['songs'] = favourite_songs_ids(playlists)
-    favourites['playlists'] = normalize.favourite_ids(raw['playlists'])[0]
+    if raw['playlists'] is None:
+        favourites['playlists'] = previous.favourites('playlists')
+    else:
+        favourites['playlists'] = normalize.favourite_ids(raw['playlists'])[0]
     if raw['videos'] is None:
         favourites['videos'] = previous.favourites('videos')
     else:
@@ -1012,13 +1033,16 @@ class LibrarySync(GObject.Object):
         task = self._task
         return task if task is not None and not task.done() else None
 
-    def start(self, retry=False, quick=False, playlists=False, videos=False, tracks_of=()):
+    def start(self, retry=False, quick=False, playlists=False, videos=False, tracks_of=(),
+              shelves=False):
         """Sync the library through the engine, starting it if it is down, unless a sync is
         running already or held. Returns the task, or None. Signed out, nothing starts and
         the sign-in is offered (app.report). `retry`: the one retry after thumbnails failed.
         `quick`: the pass after a library write, `playlists` the one after a playlist write
         (sync_library), which neither stamp last-sync nor say they synced, being no
-        substitute for a full one; `videos` and `tracks_of` add to a quick pass (sync_library)."""
+        substitute for a full one; `videos` and `tracks_of` add to a quick pass (sync_library).
+        `shelves`: Home's Refresh, the Home shelves alone, likewise; a full sync instead while
+        there is no library on disk to keep the rest of (library_ok)."""
         app = self._app
         if app.refuse_in_demo():
             return None
@@ -1031,8 +1055,11 @@ class LibrarySync(GObject.Object):
         if self._task is not None and not self._task.done():
             log.debug('a sync is running already')
             return None
+        if shelves and not library_ok(app.library):
+            shelves = False
         self.running = True
-        task = self._task = app.spawn(self._run(retry, quick, playlists, videos, tracks_of))
+        task = self._task = app.spawn(self._run(retry, quick, playlists, videos, tracks_of,
+                                                shelves))
         task.add_done_callback(self._on_done)
         return task
 
@@ -1050,7 +1077,7 @@ class LibrarySync(GObject.Object):
             await asyncio.wait([task])
 
     async def _run(self, retry=False, quick=False, playlists=False, videos=False,
-                   tracks_of=()):
+                   tracks_of=(), shelves=False):
         app = self._app
         engine = app.engine
         started = time.monotonic()
@@ -1071,7 +1098,7 @@ class LibrarySync(GObject.Object):
             await engine.start()  # a start under way is joined; a running engine is kept
             counts = await sync_library(engine, app.library, progress, quick=quick,
                                         playlists=playlists, videos=videos,
-                                        tracks_of=tracks_of)
+                                        tracks_of=tracks_of, shelves=shelves)
         except store.Cancelled as error:
             log.info('sync stopped: %s', error)  # the cache was cleared under it
             return
@@ -1092,10 +1119,12 @@ class LibrarySync(GObject.Object):
             live[0] = False
             app.library.syncing = False
         self._failed_at = None
-        if quick or playlists:
-            # No last-sync stamp and no toast: the write's own toast has been shown, and a
-            # short pass must not put off the full one the clock is waiting for.
-            log.info('%s sync done in %.0f s (%s)', 'quick' if quick else 'playlists',
+        if quick or playlists or shelves:
+            # No last-sync stamp and no toast: the write's own toast has been shown (Home's
+            # Refresh shows its shelves), and a short pass must not put off the full one the
+            # clock is waiting for.
+            name = 'quick' if quick else 'playlists' if playlists else 'shelves'
+            log.info('%s sync done in %.0f s (%s)', name,
                      time.monotonic() - started, phase_text(phases, time.monotonic()))
             return
         app.settings.set_string(app.account_key('last-sync'),

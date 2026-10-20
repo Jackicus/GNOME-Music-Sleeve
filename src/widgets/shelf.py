@@ -145,7 +145,8 @@ class Shelf(PagedRow, Gtk.Box):
     ask for their artwork. With `hero`, the tiles are 260 px AppleMusicHeroTiles, the cover
     over a band in its colour; otherwise 160 px AppleMusicTiles, round for artists and 16:9
     for music videos (as tall as the rest), each numbered (a RankedTile) when the ShelfModel
-    is `ranked` (a chart's: remote.remote_shelves). The shelf follows its ShelfModel's title
+    is `ranked` (a chart's: remote.remote_shelves). The shelf follows its ShelfModel's title,
+    its subtitle (a recommendation's reason, a dimmed line under the title, when there is one)
     and its items as they change.
 
     Scrolling: the row's scrolled window scrolls only horizontally, and GtkScrolledWindow
@@ -161,6 +162,7 @@ class Shelf(PagedRow, Gtk.Box):
     __gtype_name__ = 'AppleMusicShelf'
 
     title_label = Gtk.Template.Child()
+    subtitle_label = Gtk.Template.Child()
     previous_button = Gtk.Template.Child()
     next_button = Gtk.Template.Child()
     see_all_button = Gtk.Template.Child()
@@ -234,6 +236,9 @@ class Shelf(PagedRow, Gtk.Box):
                                                self._on_items_changed))]
         if isinstance(shelf, GObject.Object):
             followed.append((shelf, connect_weak(shelf, 'notify::title', self._on_title)))
+            if shelf.find_property('subtitle') is not None:
+                followed.append((shelf, connect_weak(shelf, 'notify::subtitle',
+                                                     self._on_title)))
         self._followed = followed
         self._show_title()
         self.list_view.set_model(Gtk.NoSelection(
@@ -251,9 +256,13 @@ class Shelf(PagedRow, Gtk.Box):
 
     def _show_title(self):
         title = self.shelf.title if self.shelf is not None else ''
+        subtitle = getattr(self.shelf, 'subtitle', '') or ''
         self.title_label.set_label(title)
         self.title_label.set_visible(bool(title))
+        self.subtitle_label.set_label(subtitle)
+        self.subtitle_label.set_visible(bool(subtitle))
         self.list_view.update_property([Gtk.AccessibleProperty.LABEL], [title])
+        self.list_view.update_property([Gtk.AccessibleProperty.DESCRIPTION], [subtitle])
 
     def _on_title(self, _shelf, _pspec):
         self._show_title()
@@ -355,6 +364,10 @@ class ShelfColumn:
     def widgets(self):
         """The widgets showing shelves, in the column's order."""
         return [self._widgets[shelf] for shelf in self.shelves if shelf in self._widgets]
+
+    def widget_for(self, shelf):
+        """The widget showing `shelf`, or None while it shows none."""
+        return self._widgets.get(shelf)
 
     def show(self, shelves, hero_first=False, heroes=()):
         if self._task is not None and not self._task.done():

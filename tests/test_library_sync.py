@@ -306,7 +306,7 @@ class LibrarySyncTest(SyncTestCase):
         passes = []
 
         async def recorded(engine, library, progress=None, quick=False, playlists=False,
-                           videos=False, tracks_of=()):
+                           videos=False, tracks_of=(), shelves=False):
             passes.append((playlists, tuple(tracks_of)))
             self.assertIs(self.sync.task, task)  # the sync running, while it runs
             return {}
@@ -519,11 +519,13 @@ class SchedulerTest(unittest.IsolatedAsyncioTestCase):
                                                             'failed': 0}}
         self.runs = []
         self.quick_runs = []
+        self.shelves_runs = []
 
         async def fake_sync(engine, library, progress=None, quick=False, playlists=False,
-                            videos=False, tracks_of=()):
+                            videos=False, tracks_of=(), shelves=False):
             self.runs.append(engine)
             self.quick_runs.append(quick)
+            self.shelves_runs.append(shelves)
             return self.counts
 
         patcher = mock.patch.object(app_sync, 'sync_library', fake_sync)
@@ -613,6 +615,23 @@ class SchedulerTest(unittest.IsolatedAsyncioTestCase):
         await self.settle()
         self.assertEqual(self.runs, [])
 
+    async def test_a_shelves_pass_needs_a_library_to_keep(self):
+        # Home's Refresh: the shelves alone over a current library, no last-sync and no
+        # toast; a full sync while there is none on disk to keep the rest of.
+        self.stamp(1)
+        before = self.app.settings.get_string('last-sync')
+        self.engine.authorized = True
+        self.engine.state = 'up'
+        self.write_library(app_sync.LIBRARY_VERSION)
+        await self.library.load()
+        await self.sync.start(shelves=True)
+        self.assertEqual(self.shelves_runs, [True])
+        self.assertEqual(self.app.settings.get_string('last-sync'), before)
+        os.remove(os.path.join(self.tmp.name, 'library.json'))
+        await self.library.load()
+        await self.sync.start(shelves=True)
+        self.assertEqual(self.shelves_runs, [True, False])
+
     async def test_signed_out_or_held_starts_nothing(self):
         self.stamp(10)
         self.sync.schedule()
@@ -628,7 +647,7 @@ class SchedulerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_failed_sync_waits_before_the_next(self):
         async def failing(engine, library, progress=None, quick=False, playlists=False,
-                          videos=False, tracks_of=()):
+                          videos=False, tracks_of=(), shelves=False):
             self.runs.append(engine)
             raise EngineError('api', 'invented failure')
 

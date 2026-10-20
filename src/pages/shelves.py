@@ -251,6 +251,12 @@ class ShelvesPage(Adw.NavigationPage):
         self.status_button.set_visible(bool(button))
         self.stack.set_visible_child_name('status')
 
+    def refresh(self):
+        """Refresh (the header bar's button, and F5 through win.refresh), while the page
+        offers it (not in the demo)."""
+        if self.refresh_button.get_visible():
+            self._on_refresh_clicked(self.refresh_button)
+
     def _on_refresh_clicked(self, _button):
         if self._engine_status.status in ('engine-down', 'not-signed-in'):
             self._engine_status.activate()  # Start Engine, or Sign In

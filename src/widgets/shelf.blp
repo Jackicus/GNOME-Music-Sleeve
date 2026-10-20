@@ -18,15 +18,31 @@ template $AppleMusicShelf: Box {
       "shelf-header",
     ]
 
-    Label title_label {
-      xalign: 0;
+    // The title, and under it the line Apple gives some shelves (a recommendation's
+    // reason): shown only when the shelf has one.
+    Box {
+      orientation: vertical;
       valign: center;
       hexpand: true;
-      ellipsize: end;
 
-      styles [
-        "title-2",
-      ]
+      Label title_label {
+        xalign: 0;
+        ellipsize: end;
+
+        styles [
+          "title-2",
+        ]
+      }
+
+      Label subtitle_label {
+        xalign: 0;
+        ellipsize: end;
+        visible: false;
+
+        styles [
+          "dimmed",
+        ]
+      }
     }
 
     // Page the row sideways, for a pointer without a sideways wheel: shown while the row

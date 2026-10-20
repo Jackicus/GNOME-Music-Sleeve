@@ -121,6 +121,10 @@ them before changing either. What matters most:
   comes up or is authorized, when the library has been read. After a failure it waits
   `RETRY_DELAY`; failed thumbnails are retried once. A change to library.json's shape that
   old files lack bumps `LIBRARY_VERSION` (and demo_library.py's), so they are synced again.
+- Home's Refresh runs a **shelves pass**, `app.start_sync(shelves=True)`: the Home shelves
+  alone (recommendations, Heavy Rotation, Recently Added), everything else kept from last
+  time's file; a full sync instead while `library_ok()` is false. No last-sync, no toast. A
+  recommendation's `reason` is written as its shelf's `subtitle` (`ShelfModel.subtitle`).
 - After a library write (Add to Library) the app runs a **quick pass**,
   `app.start_sync(quick=True)`: the songs, the playlist listing and the shelves, keeping last
   time's playlist tracks, folders, videos and stations. It is what makes an added song appear

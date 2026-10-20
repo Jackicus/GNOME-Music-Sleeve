@@ -63,7 +63,7 @@
 
   <screenshots>
     <screenshot type="default" environment="gnome">
-      <caption>Home: your heavy rotation and what you added recently, a song playing below</caption>
+      <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
       <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
@@ -79,7 +79,7 @@
       <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-light.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
-      <caption>Home: your heavy rotation and what you added recently, a song playing below</caption>
+      <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
       <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">

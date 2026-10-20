@@ -99,15 +99,17 @@ class ShortcutsTest(unittest.TestCase):
                  for accels in shortcuts.ACCELS.values() for accel in accels}
         self.assertNotIn(Gtk.accelerator_parse('<primary><shift>u')[1:], taken)
 
-    def test_f11_is_the_full_screen_players(self):
-        """The HIG's Fullscreen key, the one accelerator without a modifier (a function key,
-        which no widget takes), and listed in the dialog though it is off while nothing
-        plays."""
+    def test_f11_is_the_full_screen_players_and_f5_the_pages_refresh(self):
+        """The HIG's Fullscreen key and Refresh's F5, the accelerators without a modifier
+        (function keys, which no widget takes), listed in the dialog though they are off
+        while nothing plays, or on a page without a Refresh."""
         self.assertEqual(shortcuts.ACCELS['win.fullscreen-player'], ('F11',))
+        self.assertEqual(shortcuts.ACCELS['win.refresh'], ('F5',))
         bare = [accel for accels in shortcuts.ACCELS.values() for accel in accels
                 if not Gtk.accelerator_parse(accel)[2]]
-        self.assertEqual(bare, ['F11'])
+        self.assertEqual(sorted(bare), ['F11', 'F5'])
         self.assertIn('win.fullscreen-player', listed())
+        self.assertIn('win.refresh', listed())
 
 
 if __name__ == '__main__':

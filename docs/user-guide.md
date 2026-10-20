@@ -37,6 +37,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Discord shows it only while something plays: pausing stops the clock and, five seconds
   later, takes it off until the music plays again, as playback ending or the app quitting
   does.
+- **Home** shows Apple Music's recommendations for you, your **Heavy Rotation** and what you
+  added lately, from the last library refresh, and, after the first shelf, **Recently
+  Played**: the albums, playlists and stations you played last, on any of your devices.
+  Recently Played is asked of Apple Music each time you open Home (at most once a minute),
+  showing the last one meanwhile; it comes in place, so the page does not move under you.
+  The refresh button in the header bar, or <kbd>F5</kbd>, asks Apple Music for all of
+  Home's shelves again at once. A recommendation that says why it is offered shows the
+  reason under its title. <kbd>F5</kbd> refreshes New, Made for You, Radio and Charts too.
 - Search shows what you opened from it lately under **Recently Searched**, above the browse
   categories; **Clear** empties it. The list stays on this computer, as music.apple.com keeps
   its own in the browser, and goes with the cache (Clear Cache, signing out).

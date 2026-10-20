@@ -873,6 +873,8 @@ class Item(GObject.Object):
 
 class ShelfModel(GObject.Object):
     """A titled row of Items: Apple's home page recommendations, Heavy Rotation, Recently Added.
+    `subtitle` is the line under the title, '' for none (a recommendation's reason, which
+    library.json's shelf keeps as its `subtitle`).
 
     AppleMusicShelf (widgets/shelf.py) is the widget that shows one.
     """
@@ -881,20 +883,24 @@ class ShelfModel(GObject.Object):
 
     key = model_property('key', str, '')
     title = model_property('title', str, '')
+    subtitle = model_property('subtitle', str, '')
 
-    def __init__(self, key, title, items):
+    def __init__(self, key, title, items, subtitle=''):
         super().__init__()
         self._key = key
         self._title = title
+        self._subtitle = subtitle
         self.items = Gio.ListStore(item_type=Item)
         self.items.splice(0, 0, items)
 
-    def update(self, title, items):
-        """A reload's version of this shelf: the title set if it changed, the store brought
-        to `items` with the fewest changes (the same objects in the same order change
-        nothing)."""
+    def update(self, title, items, subtitle=''):
+        """A reload's version of this shelf: the title and subtitle set if they changed, the
+        store brought to `items` with the fewest changes (the same objects in the same order
+        change nothing)."""
         if title != self._title:
             self.title = title
+        if subtitle != self._subtitle:
+            self.subtitle = subtitle
         apply_diff(self.items, items)
 
 
@@ -1827,12 +1833,13 @@ class Library(GObject.Object):
         for raw in _dicts(data.get('shelves')):
             key = _text(raw.get('key')) or ''
             title = shelf_title(key, _text(raw.get('title')))
+            subtitle = _text(raw.get('subtitle')) or ''
             items = [shelf_item(item) for item in _dicts(raw.get('items'))]
             shelf = kept.pop(key, None)
             if shelf is None:
-                shelf = ShelfModel(key, title, items)
+                shelf = ShelfModel(key, title, items, subtitle)
             else:
-                shelf.update(title, items)
+                shelf.update(title, items, subtitle)
             shelves.append(shelf)
         self._folders = _dicts(data.get('folders'))
         self._changes = self._pending(self._folders) if keep else []

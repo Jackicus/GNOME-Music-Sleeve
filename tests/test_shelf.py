@@ -144,6 +144,17 @@ class ShelfTest(PageTestCase):
         shelf_model.update('New Title', list(shelf_model.items))
         self.assertEqual(shelf.title_label.get_label(), 'New Title')
 
+    async def test_a_reason_shows_under_the_title_while_there_is_one(self):
+        shelf_model = model('reasoned', 3)
+        shelf = await self.shown(shelf_model)
+        self.assertFalse(shelf.subtitle_label.get_visible())
+        shelf_model.update(shelf_model.title, list(shelf_model.items),
+                           'Because you play invented folk')
+        self.assertTrue(shelf.subtitle_label.get_visible())
+        self.assertEqual(shelf.subtitle_label.get_label(), 'Because you play invented folk')
+        shelf_model.update(shelf_model.title, list(shelf_model.items))
+        self.assertFalse(shelf.subtitle_label.get_visible())
+
 
 def _descendants(widget):
     child = widget.get_first_child()

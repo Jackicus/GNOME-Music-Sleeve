@@ -5,7 +5,7 @@ recommendations, in GTK 4 and libadwaita.
 
 Not affiliated with Apple. Apple Music is a trademark of Apple Inc.
 
-![Home: heavy rotation and recently added music, a song playing below](data/screenshots/home-light.png)
+![Home: heavy rotation and recently played music, a song playing below](data/screenshots/home-light.png)
 
 <p align="center">
   <img src="data/screenshots/album-dark.png" width="49%" alt="An album's page, in the dark style">

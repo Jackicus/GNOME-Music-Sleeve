@@ -597,6 +597,37 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(app_sync.RADIO_ENDPOINT, paths)
         self.assertTrue(self.playlist(self.read_json(), 'p.pl123')['groups'])  # kept
 
+    async def test_the_shelves_pass_reads_the_shelves_alone(self):
+        """Home's Refresh: the recommendations and the fixed shelves read again, every other
+        part of last time's file kept as it was, favourites included; a recommendation's
+        reason written as its shelf's subtitle, and reloaded in place."""
+        engine = FakeEngine(favoured(answers()))
+        await app_sync.sync_library(engine, self.library)
+        before = self.read_json()
+        shelf = self.library.shelf('rec-rec.made-for-you')
+        self.assertEqual(shelf.subtitle, '')
+        wired = favoured(answers())
+        recommendations = json.loads(json.dumps(wired[app_sync.RECOMMENDATIONS_ENDPOINT]))
+        recommendations['data'][0]['attributes']['reason'] = {
+            'stringForDisplay': 'Mixes made from what you play'}
+        wired[app_sync.RECOMMENDATIONS_ENDPOINT] = recommendations
+        wired['/v1/me/history/heavy-rotation'] = {'data': []}
+        engine = FakeEngine(wired)
+        await app_sync.sync_library(engine, self.library, shelves=True)
+        paths = {path for path, _params in engine.calls}
+        self.assertEqual(paths, {app_sync.RECOMMENDATIONS_ENDPOINT,
+                                 '/v1/me/history/heavy-rotation',
+                                 '/v1/me/library/recently-added'})
+        after = self.read_json()
+        for key in ('sections', 'folders', 'favourites'):
+            self.assertEqual(after[key], before[key], key)
+        shelves = {entry['key']: entry for entry in after['shelves']}
+        self.assertEqual(shelves['rec-rec.made-for-you']['subtitle'],
+                         'Mixes made from what you play')
+        self.assertEqual(shelves['heavy-rotation']['items'], [])
+        self.assertIs(self.library.shelf('rec-rec.made-for-you'), shelf)  # kept, in place
+        self.assertEqual(shelf.subtitle, 'Mixes made from what you play')
+
     async def test_a_playlist_without_tracks_on_file_is_read(self):
         wired = answers()
         del wired[f'{app_sync.PLAYLISTS_ENDPOINT}/p.pl123/tracks']  # a first read that fails

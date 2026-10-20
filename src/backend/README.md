@@ -259,6 +259,20 @@ element kinds), shaped by `normalize.radio_shelves()` through New's own
 - the 391 (More to Explore) and 322 (genre links) elements have no `contents` and are left
   out, as on New, and so are `uploaded-videos`.
 
+### Home's Recently Played
+
+`Engine.recently_played()` asks Apple's documented `GET /v1/me/recent/played`
+(`api.RECENT_PLAYED_ENDPOINT`), `limit=10` (its documented most) by `offset`, up to 30,
+following `next`; a later page that fails keeps the pages read, the first must answer. The
+resources (albums, playlists, stations, the library's or the catalog's, newest first) are
+shaped by `normalize.recently_played()` into `{items: [Item]}`, each once, as a shelf's
+items (no track lists; artwork as a search hit's), and kept in `recent-played.json`. Home
+shows the kept answer at once and asks again with `refresh` once it is a minute old
+(src/home.py). Not yet checked live: which resource types the account's answer holds, and
+how far `offset` goes. Apple's recommendations (`/v1/me/recommendations`) may carry a
+`reason` (`{stringForDisplay}`, documented): `normalize.recommendation_reason()` keeps it
+as the shelf's `subtitle` unless it only says the title again.
+
 ### An artist's banner
 
 The artist page's header (#355). The web player's artist page asks `GET
@@ -441,7 +455,8 @@ album's track `index` counts on across its discs. The app syncs an older file ag
   "version": 2, "generated": "2026-09-25T12:00:00Z", "storefront": "us",
   "sections": {"albums": [Item], "artists": [Item], "playlists": [Item], "radio": [Item],
                "videos": [Item]},
-  "shelves": [{"key": "rec-<id>", "title": "…", "items": [Item]},   // Apple's recommendations
+  "shelves": [{"key": "rec-<id>", "title": "…", "items": [Item],   // Apple's recommendations
+               "subtitle": "…"},                // its reason, when Apple gives one
               {"key": "heavy-rotation", "title": "", …}, {"key": "recently-added", …}],
                                                 // empty titles: the app titles them by key
   "folders": [{"id": "root", "title": "", "parent": null,
@@ -560,7 +575,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `charts.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 `normalize.prune_caches()` runs after the library's first load and after every sync; it also
 removes what older versions kept (`items/`) and temporary files over an hour old.

@@ -79,12 +79,11 @@ class TestDemoLibrarySchema(unittest.TestCase):
 
     def test_shelves_schema(self):
         shelves = self.data['shelves']
-        self.assertEqual(len(shelves), 4)
+        self.assertEqual(len(shelves), 3)
         shelf_keys = [s.get('key') for s in shelves]
-        self.assertEqual(
-            shelf_keys,
-            ['heavy-rotation', 'recently-added', 'recently-played', 'made-for-you'],
-        )
+        self.assertEqual(shelf_keys, ['heavy-rotation', 'recently-added', 'made-for-you'])
+        # A recommendation's reason, as the sync writes Apple's (its `subtitle`).
+        self.assertTrue(shelves[2]['subtitle'])
         for shelf in shelves:
             self.assertIn('title', shelf)
             self.assertIn('items', shelf)
@@ -401,6 +400,23 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 self.assertEqual(item['kind'], 'playlist')
                 self.assertTrue(item['groups'][0]['entries'])
                 self.assertTrue(os.path.exists(item['thumb']))
+
+    def test_recently_played(self):
+        # Home's Recently Played, as the engine keeps it (normalize.recently_played's
+        # shape): the library's own albums, playlists and station, without track lists.
+        with open(os.path.join(self.out_dir, 'recent-played.json'), encoding='utf-8') as f:
+            answer = json.load(f)
+        self.assertIs(answer['demo'], True)
+        self.assertEqual(set(answer) - {'demo', 'cached'}, {'items'})
+        library = {(item['kind'], item['id'])
+                   for name in ('albums', 'playlists', 'radio')
+                   for item in self.data['sections'][name]}
+        self.assertEqual({item['kind'] for item in answer['items']},
+                         {'album', 'playlist', 'station'})
+        for item in answer['items']:
+            self._validate_item(item)
+            self.assertEqual(item['groups'], [])
+            self.assertIn((item['kind'], item['id']), library)
 
     def test_one_favourites_playlist(self):
         # The flag the app looks for (applemusic.library.FAVOURITES) is on one playlist only, and

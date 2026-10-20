@@ -687,6 +687,29 @@ changes, change it here, with the date. The plan they came from is in
   ranking, so plain tiles. `ShelfColumn` picks the widget by the shelf's `form` (songs or
   tiles), so the songs need no page of their own. No genre filter yet (#404): the request
   takes `genre=`, the page has nowhere to choose one.
+- **Home's Recently Played is asked as Home is shown; Refresh is F5** (2026-10-20, #346).
+  Home's other shelves are the library's, which the sync writes every few hours; Recently
+  Played follows what was just played, so it is not one of them: it is
+  `Engine.recently_played()` (Apple's documented `/v1/me/recent/played`, ten a read, up to
+  thirty), a kept answer like New's, which Home shows at once, then asks Apple for past
+  the cache once it is a minute old, each time the page is shown (`home.Throttle`: no
+  more often, and not for a minute after Apple failed; the engine down or signed out is
+  waited out by watching it). Nothing of it is ever toasted: the shelf stays as it was.
+  It goes after the first shelf, where music.apple.com puts it under Top Picks, and a
+  recommendation of Apple's that only repeats it is left out meanwhile. An answer comes
+  into one shelf the page keeps (`home.RecentlyPlayed`: the fewest splices, an item still
+  played keeping its object, the library's own Item where it has one), so its widget and
+  tiles stay; an answer that would move the page under the user (the shelf coming or
+  going above where they scrolled) or take the focus (it is in the shelf) waits until the
+  page is next shown, rather than adjusting the scroll behind their back. Refresh, in the
+  header bar as on New, asks for Recently Played past the throttle and has the sync read
+  the shelves again in a pass of their own (`sync_library(shelves=True)`: the
+  recommendations, Heavy Rotation and Recently Added, everything else kept from the last
+  file), not a full sync, which reads every song. Its key is F5, which GNOME's apps give
+  Refresh, as a window action that refreshes whichever page shown has a Refresh (Home,
+  New, Made for You, Radio, Charts, a category); Ctrl+R, their other Refresh key, stays
+  Refresh Library. A recommendation's `reason` is its shelf's subtitle, a dimmed line under the
+  title, when it does not just say the title again.
 - **A playlist's header, and Add / In Library** (2026-10-20). A playlist's hero says what
   Apple Music's does: its curator under the title (the account's name for one of the
   user's, which carry none), then "Updated" and the day it last changed (today, yesterday,

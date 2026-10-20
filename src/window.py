@@ -167,9 +167,12 @@ class Window(Adw.ApplicationWindow):
         # F11 (win.fullscreen-player): the full-screen player, while something plays.
         # Ctrl+N (win.new-playlist, the main menu's New Playlist…): a new playlist at the top
         # level, named in its dialog. Ctrl+L (win.go-to-current-song): the page the song
-        # playing is played from, the focus on its row, while something plays.
+        # playing is played from, the focus on its row, while something plays. F5
+        # (win.refresh): the Refresh of the page shown, while it has one (Home, New, Made for
+        # You, Radio, Charts, a category).
         self._actions = {}
         for name, callback in (('back', self._on_back), ('search', self._on_search),
+                               ('refresh', self._on_refresh),
                                ('focus-sidebar', self._on_focus_sidebar),
                                ('focus-content', self._on_focus_content),
                                ('focus-player', self._on_focus_player),
@@ -816,7 +819,8 @@ class Window(Adw.ApplicationWindow):
     def _update_actions(self, *_args):
         """The window's actions are off while a dialog is open over it (their keys go to the
         dialog, not to the pages behind it); back also while the Now Playing sheet or the
-        full-screen player is open (Escape closes those) or there is nowhere to go back to;
+        full-screen player is open (Escape closes those) or there is nowhere to go back to,
+        and refresh while either covers the page or the page shown has no Refresh;
         the full-screen player only while something plays (or to leave it); the Now Playing
         tabs' while their tab has something to show (TabActions)."""
         free = self.get_visible_dialog() is None
@@ -829,6 +833,9 @@ class Window(Adw.ApplicationWindow):
         self._actions['fullscreen-player'].set_enabled(
             free and (self.fullscreen_host.shown or playing))
         self._actions['go-to-current-song'].set_enabled(free and playing)
+        self._actions['refresh'].set_enabled(
+            free and not self.bottom_sheet.get_open() and not self.fullscreen_host.shown
+            and callable(getattr(self.navigation_view.get_visible_page(), 'refresh', None)))
         self.tab_actions.set_free(free)
 
     def _on_new_playlist(self, *_args):
@@ -912,6 +919,12 @@ class Window(Adw.ApplicationWindow):
             self.announce(_('Not Playing'), Gtk.AccessibleAnnouncementPriority.MEDIUM)
         elif not self.player_bar.play_button.grab_focus():
             self.player_bar.grab_bar_focus()
+
+    def _on_refresh(self, *_args):
+        """win.refresh (F5): the page shown refreshes, as its header bar's Refresh does."""
+        refresh = getattr(self.navigation_view.get_visible_page(), 'refresh', None)
+        if callable(refresh):
+            refresh()
 
     def _on_back(self, *_args):
         if len(self.navigation_view.get_navigation_stack()) > 1:
