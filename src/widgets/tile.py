@@ -77,9 +77,7 @@ class Tile(Gtk.Box):
     placeholder_icon = Gtk.Template.Child()
     picture = Gtk.Template.Child()
     title_label = Gtk.Template.Child()
-    subtitle_row = Gtk.Template.Child()
     subtitle_label = Gtk.Template.Child()
-    favourite_icon = Gtk.Template.Child()
 
     def __init__(self, shape=COVER, year=False, video_size=VIDEO_SIZE, **kwargs):
         super().__init__(**kwargs)
@@ -142,7 +140,7 @@ class Tile(Gtk.Box):
         self.art_box.set_size_request(*(self._video_size if video else (ART_SIZE, ART_SIZE)))
         # An artist's name, centred under the portrait, has no line under it.
         self.title_label.set_xalign(0.5 if artist else 0)
-        self.subtitle_row.set_visible(not artist)
+        self.subtitle_label.set_visible(not artist)
 
     @property
     def context_item(self):
@@ -174,13 +172,17 @@ class Tile(Gtk.Box):
         self.subtitle_label.set_text(subtitle)
 
     def show_favourite(self, favourite):
-        """The heart at the end of the subtitle line, for a favourite (Item.favourite): shown
-        by its opacity, changed only when it changes, so the tile is never laid out again for
-        it. An artist's tile has no subtitle line, so no heart."""
+        """The heart at the end of the subtitle line, for a favourite (Item.favourite): the
+        line's `favourite` style class (style.css draws it in room the line always keeps),
+        changed only when it changes, so the tile is never laid out again for it. An
+        artist's tile has no subtitle line, so no heart."""
         favourite = bool(favourite)
         if favourite != self._favourite:
             self._favourite = favourite
-            self.favourite_icon.set_opacity(1 if favourite else 0)
+            if favourite:
+                self.subtitle_label.add_css_class('favourite')
+            else:
+                self.subtitle_label.remove_css_class('favourite')
 
     def unbind(self):
         if self._handler is not None:

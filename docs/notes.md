@@ -294,6 +294,18 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   order. The edits went through Apple's library API, as music.apple.com's own do; an edit
   on a phone reaches the same cloud library, but was not tried. A single playlist's answer
   carried no `trackCount`, so the date alone did the work.
+- Favourites and dates (#347, 2026-10-20). Live (read only): `extend=inFavorites` on the
+  songs listing took no longer (1.33 s plain, 1.21 s extended, 100 songs) and every
+  included album carried `inFavorites` and `dateAdded` (a full timestamp, 50 of 50); songs
+  carry no `dateAdded`; a song rated 1 reads `inFavorites: true` (src/backend/README.md).
+  Offline, on an invented 40,000-song answer (scratch script, not in the repo): grouping
+  the songs took 270 to 300 ms either way, reading the favourites (`favourite_ids()`, the
+  songs' and their included albums') 52 to 62 ms more, in the sync's thread; the albums'
+  JSON grew 0.1 MB (12.0 to 12.1). A tile's heart as an image (a box and an image more a
+  tile) cost 129 tiles 7 ms to make and 5 ms to lay out, so a grid's first visit 12 ms
+  (All Playlists 88 to 101 ms); as a CSS background of the subtitle line it costs
+  nothing measurable (`scripts/bench.py`, headless). Recently Added, the whole library
+  now rather than Apple's hundred, opens in 89 ms (129 tiles, as Albums), 17 before.
 
 ## MPRIS and GNOME Shell
 

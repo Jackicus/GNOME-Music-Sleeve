@@ -190,11 +190,28 @@ button.artist-link:hover > label {
   font-weight: bold;
 }
 
-/* A favourite's heart in a tile's subtitle line and a track's row (widgets/tile.py,
-   track_row.py, song_title.py): in the accent colour, the user's, as the hearts of the player
-   are a control and this one a mark. Shown by the widget's opacity, not by CSS. */
-.favourite-mark {
-  color: var(--accent-color);
+/* A favourite's heart, a mark in the text's dimmed colour, as the explicit badge is one: in a
+   track's row an image shown by its opacity (widgets/track_row.py, song_title.py); at the end
+   of a tile's subtitle line (widgets/tile.py) a background image in room the line always
+   keeps, so a tile, made by the hundred, needs no widget for it. */
+.tile-subtitle {
+  padding-right: 16px;
+}
+
+.tile-subtitle:dir(rtl) {
+  padding-right: 0;
+  padding-left: 16px;
+}
+
+.tile-subtitle.favourite {
+  background-image: -gtk-icontheme("heart-filled-symbolic");
+  background-repeat: no-repeat;
+  background-size: 12px 12px;
+  background-position: right center;
+}
+
+.tile-subtitle.favourite:dir(rtl) {
+  background-position: left center;
 }
 
 /* The row of the track playing (widgets/track_row.py and song_title.py, marked by the album,

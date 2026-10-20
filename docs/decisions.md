@@ -121,8 +121,9 @@ changes, change it here, with the date. The plan they came from is in
   library's albums and playlists (and the music videos Apple dates) by `dateAdded`, to the
   second (albums carry a time, checked live, despite the documentation's date), ties in
   Apple's recently-added order; a loose song's stand-in album, which has no date, last.
-  The heart in a row or tile is a mark in the user's accent, always there and shown by its
-  opacity, so nothing is laid out again for it; Favourites Only is a check item in the
+  The heart in a row or tile is a dimmed mark, as the explicit badge is, that comes and
+  goes without a layout: an image shown by its opacity in a row, a CSS background in room a
+  tile's subtitle line always keeps (an image more a tile cost 12 ms a grid's first build); Favourites Only is a check item in the
   sort menu (Sort and Filter, as Nautilus puts Show Hidden Files beside its sort orders).
 - **A refresh on a schedule** (2026-09-28). The library is synced when the last sync is older
   than the chosen interval, or when library.json is missing, unreadable or of an older

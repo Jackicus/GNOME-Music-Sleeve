@@ -69,33 +69,18 @@ template $AppleMusicTile: Box {
   }
 
   // An artist's tile has none (tile.py); an empty one keeps its line. A favourite's heart
-  // ends it, always there and shown by its opacity (tile.py): a child shown or hidden would
-  // lay the grid out again.
-  Box subtitle_row {
-    spacing: 4;
+  // ends it: style.css's `.tile-subtitle.favourite`, a background image in room the line
+  // always keeps (tile.py), so no widget more is made by the hundred, and nothing is laid out
+  // again when it comes or goes.
+  Inscription subtitle_label {
+    xalign: 0;
+    min-lines: 1;
+    text-overflow: ellipsize_end;
 
-    Inscription subtitle_label {
-      xalign: 0;
-      min-lines: 1;
-      hexpand: true;
-      text-overflow: ellipsize_end;
-
-      styles [
-        "caption",
-        "dimmed",
-      ]
-    }
-
-    Image favourite_icon {
-      icon-name: "heart-filled-symbolic";
-      pixel-size: 12;
-      valign: center;
-      opacity: 0;
-      accessible-role: presentation;
-
-      styles [
-        "favourite-mark",
-      ]
-    }
+    styles [
+      "caption",
+      "dimmed",
+      "tile-subtitle",
+    ]
   }
 }

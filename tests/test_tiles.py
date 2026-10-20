@@ -583,10 +583,10 @@ class TileLabelTest(WidgetTestCase):
         tile.bind(Item({'id': 'l.r1', 'kind': 'artist', 'title': 'Invented Artist Name',
                         'subtitle': '3 albums'}))
         self.assertEqual(tile.title_label.get_text(), 'Invented Artist Name')
-        self.assertFalse(tile.subtitle_row.get_visible())  # its line, and so no heart
+        self.assertFalse(tile.subtitle_label.get_visible())  # its line, and so no heart
         self.assertEqual(tile.title_label.get_xalign(), 0.5)  # centred under the portrait
         tile.set_shape('cover')  # and back to an album
-        self.assertTrue(tile.subtitle_row.get_visible())
+        self.assertTrue(tile.subtitle_label.get_visible())
         self.assertEqual(tile.title_label.get_xalign(), 0)
 
     def test_the_year_in_place_of_the_artist(self):
@@ -767,18 +767,18 @@ class FavouriteMarkTest(WidgetTestCase):
         item = Item(dict(ALBUM))
         tile = self.show(Tile())
         tile.bind(item)
-        self.assertEqual(tile.favourite_icon.get_opacity(), 0)
+        self.assertFalse(tile.subtitle_label.has_css_class('favourite'))
         before = self.sizes(tile, tile.subtitle_label, tile.title_label)
         item.favourite = True  # a sync, or a heart elsewhere: notify::favourite
-        self.assertEqual(tile.favourite_icon.get_opacity(), 1)
+        self.assertTrue(tile.subtitle_label.has_css_class('favourite'))
         self.assertEqual(self.sizes(tile, tile.subtitle_label, tile.title_label), before)
         tile.unbind()
         other = Item(dict(ALBUM, id='l.a2'))
         tile.bind(other)  # recycled for an item that is no favourite
-        self.assertEqual(tile.favourite_icon.get_opacity(), 0)
+        self.assertFalse(tile.subtitle_label.has_css_class('favourite'))
         item.favourite = False  # the old item no longer reaches the tile
         other.favourite = True
-        self.assertEqual(tile.favourite_icon.get_opacity(), 1)
+        self.assertTrue(tile.subtitle_label.has_css_class('favourite'))
 
     def test_a_track_rows_heart(self):
         from applemusic.library import Track
