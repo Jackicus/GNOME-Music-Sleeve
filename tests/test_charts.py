@@ -45,6 +45,12 @@ class ChartsPageTest(PageTestCase):
         await self.settle()
         return page
 
+    async def all_shelves(self, page):
+        """Wait for the column to bind the answer's four shelves: those after FIRST_SHELVES
+        come one a frame (ShelfColumn), and a slow display's frames come late."""
+        self.assertTrue(await self.until(lambda: len(page._column.widgets) == 4, timeout=3),
+                        [widget.shelf.title for widget in page._column.widgets])
+
     def test_the_charts_item(self):
         from applemusic.pages.charts import charts_item
 
@@ -61,6 +67,7 @@ class ChartsPageTest(PageTestCase):
         self.assertEqual(page.title_label.get_label(), 'Top Charts')
         self.assertEqual(page.item.kind, 'charts')
         self.assertEqual(page.stack.get_visible_child_name(), 'items')
+        await self.all_shelves(page)
         widgets = page._column.widgets
         self.assertEqual([(type(widget), widget.shelf.title) for widget in widgets], [
             (SongShelf, 'Top Songs'), (Shelf, 'Top Albums'), (Shelf, 'Daily Top 100'),
@@ -71,6 +78,7 @@ class ChartsPageTest(PageTestCase):
     async def test_a_song_plays_the_chart_from_it_and_a_playlist_opens(self):
         self.app.engine.answers['charts'] = answer()
         page = await self.charts_page()
+        await self.all_shelves(page)
         songs, _albums, daily, _cities = page._column.widgets
         songs.grid_view.emit('activate', 1)
         self.assertEqual(self.window.played, [

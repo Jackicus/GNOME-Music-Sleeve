@@ -505,14 +505,21 @@ class PageTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def settle(self):
         """Let every task spawned so far finish (cancelling one still waiting after half a
-        second)."""
+        second). GTK's main context runs while they do: a task waiting for a frame
+        (next_frame()) or a GLib timeout is only woken by it, and asyncio's loop alone would
+        leave it waiting out the half second and cancel it."""
         for _round in range(5):
             pump(10)
             tasks, self.app.tasks = self.app.tasks, []
             if not tasks:
                 await asyncio.sleep(0)
                 continue
-            await asyncio.wait(tasks, timeout=0.5)
+            deadline = time.monotonic() + 0.5
+            while time.monotonic() < deadline:
+                _done, pending = await asyncio.wait(tasks, timeout=0.005)
+                if not pending:
+                    break
+                pump(10)
             for task in tasks:
                 if not task.done():
                     task.cancel()
