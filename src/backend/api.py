@@ -97,6 +97,29 @@ CHARTS_LIMIT = 100
 CHARTS_PARAMS = {'types': 'songs,albums,playlists,music-videos', 'limit': CHARTS_LIMIT,
                  'with': 'dailyGlobalTopCharts,cityCharts'}
 CHARTS_PLAIN_PARAMS = {'types': 'songs,albums,playlists,music-videos', 'limit': CHARTS_LIMIT}
+# A genre's charts (the Charts page's genre, a `viewTop?genreId=` link's): the same, narrowed
+# by `genre`, without the Daily Top 100 and City Charts, which are no genre's (charts_params).
+# The genres to choose from are the catalog's top-level ones (`genres`, Apple's own list).
+GENRES_ENDPOINT = '/v1/catalog/{storefront}/genres'
+GENRES_PARAMS = {}
+# What a genre's id may be: Apple's are digits; anything else is not asked for (it goes into
+# a query and the kept answer's file name).
+GENRE_ID = re.compile(r'^[0-9]{1,12}$')
+
+
+def is_genre_id(value):
+    """Whether `value` may name a catalog genre (GENRE_ID)."""
+    return isinstance(value, str) and GENRE_ID.match(value) is not None
+
+
+def charts_params(genre=None):
+    """What the charts are asked with: CHARTS_PARAMS for every genre, else
+    CHARTS_PLAIN_PARAMS narrowed to `genre` (an is_genre_id id)."""
+    if not genre:
+        return dict(CHARTS_PARAMS)
+    return dict(CHARTS_PLAIN_PARAMS, genre=genre)
+
+
 # The pages More to Explore's links open (README.md, "The editorial groupings: New and
 # Radio"): a room (a collection: its contents), a grouping (a page of shelves, New's shape,
 # which is a 400 without `platform`) and a multiroom (a page of shelves), as the web player

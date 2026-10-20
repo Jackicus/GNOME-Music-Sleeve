@@ -2843,6 +2843,7 @@ class SearchTest(EngineFixture):
         for coro in (self.engine.search('paper'), self.engine.suggest('pa'),
                      self.engine.landing(), self.engine.category('1'), self.engine.browse(),
                      self.engine.made_for_you(), self.engine.radio(), self.engine.charts(),
+                     self.engine.charts(genre='21'), self.engine.genres(),
                      self.engine.recently_played()):
             with self.assertRaises(EngineError) as raised:
                 await coro
@@ -3081,6 +3082,43 @@ class SearchTest(EngineFixture):
         self.assertEqual(self.page.api_calls, [path])  # kept
         self.assertTrue((self.cache / 'charts.json').exists())
 
+    async def test_a_genres_charts_are_asked_for_it_and_kept_apart(self):
+        self.page.storefront = 'gb'
+        await self.up()
+        path = '/v1/catalog/gb/charts'
+        self.page.api_answers[path] = self.fixture('charts.json')
+        await self.engine.charts(genre='21')
+        await self.engine.charts(genre='21')
+        self.assertEqual(self.page.api_calls, [path])  # kept
+        # Its rankings alone: the Daily Top 100 and City Charts are no genre's.
+        self.assertEqual(self.page.api_params, [{
+            'types': 'songs,albums,playlists,music-videos', 'limit': api.CHARTS_LIMIT,
+            'genre': '21'}])
+        self.assertTrue((self.cache / 'charts' / '21.json').exists())
+        self.assertFalse((self.cache / 'charts.json').exists())  # every genre's is apart
+        await self.engine.charts()
+        self.assertEqual(self.page.api_calls, [path, path])
+        for bad in ('../x', 'abc', '2 1'):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.charts(genre=bad)
+            self.assertEqual(raised.exception.code, 'usage')
+
+    async def test_the_genres_are_the_catalogs_kept_a_day(self):
+        self.page.storefront = 'gb'
+        await self.up()
+        path = '/v1/catalog/gb/genres'
+        self.page.api_answers[path] = {'data': [
+            {'id': '9000', 'type': 'genres', 'attributes': {'name': 'Invented Music'}},
+            {'id': '9001', 'type': 'genres', 'attributes': {
+                'name': 'Invented Folk', 'parentId': '9000', 'parentName': 'Invented Music'}}]}
+        answer = await self.engine.genres()
+        self.assertEqual(answer['genres'], [{'id': '9001', 'title': 'Invented Folk'}])
+        self.assertEqual(self.page.api_params, [{}])
+        await self.engine.stop()
+        self.assertEqual((await self.engine.genres())['genres'][0]['id'], '9001')  # kept
+        self.assertEqual(self.page.api_calls, [path])
+        self.assertTrue((self.cache / 'genres.json').exists())
+
     async def test_charts_refused_with_their_playlists_are_asked_without(self):
         await self.up()
         path = '/v1/catalog/us/charts'
@@ -3147,6 +3185,9 @@ class SearchTest(EngineFixture):
             'made_for_you': (self.engine.made_for_you, self.cache / 'made-for-you.json'),
             'radio': (self.engine.radio, self.cache / 'radio.json'),
             'charts': (self.engine.charts, self.cache / 'charts.json'),
+            'genre_charts': (lambda **kw: self.engine.charts(genre='21', **kw),
+                             self.cache / 'charts' / '21.json'),
+            'genres': (self.engine.genres, self.cache / 'genres.json'),
             'recently_played': (self.engine.recently_played, self.cache / 'recent-played.json'),
         }
         for name, (_command, path) in commands.items():

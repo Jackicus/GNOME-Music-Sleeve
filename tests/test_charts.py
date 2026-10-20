@@ -3,14 +3,65 @@
 
 """The Charts page (pages/charts.py) over the stand-in engine: Apple's charts as shelves in
 their forms (Top Songs a numbered grid of songs, the rankings numbered tiles, the Daily Top
-100 and City Charts playlists), the engine's failures on its status page, and the ways to it:
-New's More to Explore (pages/new.py) and the window's open_item."""
+100 and City Charts playlists), its genre menu (src/charts.py's choices), the engine's
+failures on its status page, and the ways to it: New's More to Explore (pages/new.py) and
+the window's open_item."""
 
 import unittest
 
 from tests.page_harness import PageTestCase, album
 
+from applemusic import charts as genres_menu
 from applemusic.backend.errors import EngineError
+from applemusic.library import Item
+
+GENRES = {'genres': [{'id': '21', 'title': 'Invented Rock'},
+                     {'id': '22', 'title': 'Invented Folk'}]}
+
+
+def genre_answer(genre):
+    """An invented chart of one genre: its Top Songs alone, named for it."""
+    return {'shelves': [{'key': 'charts-songs', 'title': f'Top Songs {genre}', 'chart': 'songs',
+                         'ranked': True, 'form': 'songs',
+                         'items': [song(n) for n in range(3)]}]}
+
+
+def charts_link(genre, title='Invented Rock Charts'):
+    """A More to Explore link's Item to a genre's charts (explore.link_item's)."""
+    return Item({'id': 'charts', 'kind': 'charts', 'title': title, 'subtitle': None,
+                 'art': None, 'thumb': None, 'artColor': None, 'url': None, 'play': {},
+                 'groups': [], 'genre': genre})
+
+
+class ChoicesTest(unittest.TestCase):
+    """src/charts.py: the menu's entries, without GTK."""
+
+    def test_all_genres_first_then_apples_each_once(self):
+        found = genres_menu.choices(GENRES['genres'] + [
+            {'id': '21', 'title': 'Again'}, {'id': 'x1', 'title': 'Not an Id'},
+            {'id': '23', 'title': '  '}, 'junk'])
+        self.assertEqual(found, [('', 'All Genres'), ('21', 'Invented Rock'),
+                                 ('22', 'Invented Folk')])
+        self.assertEqual(genres_menu.position(found, '22'), 2)
+        self.assertEqual(genres_menu.position(found, '99'), 0)
+        self.assertEqual(genres_menu.choices(None), [('', 'All Genres')])
+
+    def test_a_links_genre_they_lack_follows_all_genres_under_its_words(self):
+        found = genres_menu.choices([], '24', '  Invented   Jazz Charts ')
+        self.assertEqual(found, [('', 'All Genres'), ('24', 'Invented Jazz Charts')])
+        self.assertEqual(genres_menu.choices(None, '24')[1], ('24', '24'))
+        # Once Apple's list has it, it is there under Apple's name.
+        found = genres_menu.choices(GENRES['genres'], '22', 'Invented Folk Charts')
+        self.assertEqual([choice.title for choice in found],
+                         ['All Genres', 'Invented Rock', 'Invented Folk'])
+
+    def test_the_genre_a_link_names(self):
+        self.assertEqual(genres_menu.link_genre(charts_link('21')), '21')
+        for genre in (None, '', '../x', 'abc'):
+            self.assertEqual(genres_menu.link_genre(charts_link(genre)), '')
+        from applemusic.explore import charts_item
+
+        self.assertEqual(genres_menu.link_genre(charts_item()), '')
 
 
 def song(number):
@@ -93,7 +144,83 @@ class ChartsPageTest(PageTestCase):
         self.assertEqual(page.stack.get_visible_child_name(), 'status')
         self.assertEqual(page.status_page.get_icon_name(), 'view-list-ordered-symbolic')
         self.assertEqual(page.status_button.get_label(), 'Start Engine')
-        self.assertEqual(self.app.engine.calls, ['charts'])
+        self.assertEqual(self.app.engine.calls, ['charts', 'genres'])
+        self.assertFalse(page.genre_menu.drop_down.get_visible())  # nothing to choose
+
+    async def test_the_genre_menu_narrows_the_charts_to_a_genre(self):
+        asked = []
+
+        def charts(genre, refresh):
+            asked.append(genre)
+            return genre_answer(genre) if genre else answer()
+
+        self.app.engine.answers['charts'] = charts
+        self.app.engine.answers['genres'] = GENRES
+        page = await self.charts_page()
+        await self.all_shelves(page)
+        menu = page.genre_menu
+        drop_down = menu.drop_down
+        self.assertIs(drop_down.get_parent().get_ancestor(type(page.header_bar)),
+                      page.header_bar)
+        self.assertTrue(drop_down.get_visible())
+        self.assertEqual(drop_down.get_tooltip_text(), 'Genre')
+        model = drop_down.get_model()
+        self.assertEqual([model.get_string(n) for n in range(model.get_n_items())],
+                         ['All Genres', 'Invented Rock', 'Invented Folk'])
+        self.assertEqual((drop_down.get_selected(), asked), (0, [None]))
+        drop_down.set_selected(2)
+        self.assertEqual(menu.genre, '22')
+        # Started over: the other genre's shelves, not the old ones while it is asked.
+        self.assertTrue(await self.until_frames(page, lambda: [
+            widget.shelf.title for widget in page._column.widgets if widget.get_visible()]
+            == ['Top Songs 22']))
+        self.assertEqual(asked, [None, '22'])
+        self.assertEqual(self.app.engine.calls.count('genres'), 1)  # read once
+        page.refresh()
+        await self.settle()
+        self.assertEqual(asked, [None, '22', '22'])  # Refresh asks for the genre shown
+        drop_down.set_selected(0)
+        await self.all_shelves(page)
+        self.assertEqual(asked, [None, '22', '22', None])
+
+    async def test_a_genre_that_fails_says_so_rather_than_the_old_shelves(self):
+        def charts(genre, refresh):
+            return EngineError('api') if genre else answer()
+
+        self.app.engine.answers['charts'] = charts
+        self.app.engine.answers['genres'] = GENRES
+        page = await self.charts_page()
+        await self.all_shelves(page)
+        page.genre_menu.drop_down.set_selected(1)
+        self.assertTrue(await self.until(
+            lambda: page.stack.get_visible_child_name() == 'status'))
+        self.assertEqual(self.app.reported, [])  # the page says it: no toast
+
+    async def test_a_link_to_a_genres_charts_opens_on_it(self):
+        from applemusic.pages import charts
+
+        asked = []
+        self.app.engine.answers['charts'] = lambda genre, refresh: (
+            asked.append(genre) or genre_answer(genre))
+        self.app.engine.answers['genres'] = GENRES
+        page = await self.push(charts.create(charts_link('21')))
+        await self.settle()
+        self.assertEqual(asked, ['21'])
+        self.assertEqual(page.title_label.get_label(), 'Top Charts')
+        drop_down = page.genre_menu.drop_down
+        self.assertEqual(drop_down.get_selected_item().get_string(), 'Invented Rock')
+
+    async def test_a_links_genre_shows_under_its_words_while_the_genres_cannot_be_read(self):
+        from applemusic.pages import charts
+
+        self.app.engine.answers['charts'] = lambda genre, refresh: genre_answer(genre)
+        page = await self.push(charts.create(charts_link('24', 'Invented Jazz Charts')))
+        await self.settle()
+        drop_down = page.genre_menu.drop_down
+        self.assertTrue(drop_down.get_visible())
+        self.assertEqual(drop_down.get_selected_item().get_string(), 'Invented Jazz Charts')
+        drop_down.set_selected(0)
+        self.assertEqual(page.genre_menu.genre, '')
 
     async def test_no_charts(self):
         self.app.engine.answers['charts'] = {'shelves': []}

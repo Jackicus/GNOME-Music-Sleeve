@@ -137,8 +137,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   (click a song to play the chart from it; right-click for Play Next and the rest),
   **Top Albums** and **Top Playlists** as numbered tiles, the **Daily Top 100** playlists
   (the world's and each country's) and **City Charts** (a playlist for each of a number of
-  cities), which open their pages, and **Top Music Videos**. The charts are kept for a day;
-  the refresh button asks Apple again.
+  cities), which open their pages, and **Top Music Videos**. The genre menu in its header
+  bar (**All Genres** to start with) narrows the charts to a genre: its top songs, albums,
+  playlists and music videos (the Daily Top 100 and City Charts are every genre's). A link
+  on **New** to a genre's charts opens the page on that genre. The page always opens on all
+  genres otherwise: the choice is not remembered. The charts, each genre's and the list of
+  genres are kept for a day; the refresh button asks Apple again.
 - **Artists** lists the artists in your library beside the one you choose: their albums in
   your library, newest first (**Sort By** for titles), with **Play** and **Shuffle** for all
   their songs. A song you added without its album shows as its album. Clicking an artist you
@@ -347,9 +351,9 @@ Other limits:
 - Radio's shelves need the engine and your sign-in (or the last copy of them): without them
   the page shows only the stations you played recently, or says what is missing. Apple's
   links at the end of its radio page (More to Explore, the genres) are not shown.
-- The charts are your storefront's, of every genre: there is no genre to choose yet (a
-  link to a genre's charts opens them all). Like New and the pages its links open, they need
-  the engine and your sign-in (or the last copy of them).
+- The charts are your storefront's. Like New and the pages its links open, they need the
+  engine and your sign-in (or the last copy of them); a genre you have not opened before
+  needs them too, and without the list of genres the genre menu is not shown.
 - A playlist moves into a folder, but not yet out of every folder to the top level, and a
   folder does not move into another folder: Apple's service has not been seen to take those
   moves from the app yet, so it does not offer them. Apple's own apps can.

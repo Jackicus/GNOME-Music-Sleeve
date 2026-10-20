@@ -901,8 +901,21 @@ changes, change it here, with the date. The plan they came from is in
   as tiles with the number over the cover's corner (`widgets.shelf.RankedTile`, not a
   change to every tile); the Daily Top 100 and City Charts are a playlist a place, not a
   ranking, so plain tiles. `ShelfColumn` picks the widget by the shelf's `form` (songs or
-  tiles), so the songs need no page of their own. No genre filter yet (#404): the request
-  takes `genre=`, the page has nowhere to choose one.
+  tiles), so the songs need no page of their own.
+- **Charts' genre menu: in the header bar, not remembered** (2026-10-20, #404). A
+  `Gtk.DropDown` (All Genres, then the catalog's genres, `Engine.genres()`) packed at the
+  end of the Charts page's header bar, beside Refresh, so it stays in reach however far
+  the page is scrolled, as a view's filter does; libadwaita leaves a drop-down raised there.
+  A genre's charts are its rankings alone (`genre=<id>`, no `with`): the Daily Top 100 and
+  City Charts are every genre's. Choosing one starts the page over (`ShelvesPage.start_over`:
+  the spinner, then that genre's shelves or the status page), never the old genre's shelves
+  under a new name. The choice is the page's: Top Charts opens on all genres, as
+  music.apple.com's charts do, and a `viewTop?genreId=` link on its genre (titled Top
+  Charts, the genre's name, or the link's own words until the genres are read, in the
+  menu); a setting would have a Top Charts tile open on a genre chosen days before. Each
+  genre's answer is kept a day beside every genre's (`charts/<id>.json`), the genres too
+  (`genres.json`). The page is still a `ShelvesPage`: the menu is a small class it holds
+  (`pages.charts.GenreMenu`), its pure parts src/charts.py's.
 - **New's banners, and More to Explore as links to in-app pages** (2026-10-20, #370). New
   opens as Apple's does: the hero row's items as wide banner cards (Apple's `designBadge`
   over the title and the content's tagline, over the 320's own editorial artwork or the

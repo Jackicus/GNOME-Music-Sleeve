@@ -27,6 +27,7 @@ class CacheTest(unittest.TestCase):
         files = {
             'library.json': 100, 'library.lock': 0, 'landing.json': 10, 'browse.json': 10,
             'made-for-you.json': 10, 'radio.json': 10, 'charts.json': 10,
+            'charts/21.json': 10, 'genres.json': 10,
             'recent-played.json': 10, 'art/l.alb1.jpg': 1000, 'art/.sizes': 20,
             'thumb/l.alb1.jpg': 300, 'remote-art/abc.jpg': 400, 'items/album-1.json': 50,
             'lyrics/1000000001.json': 30, 'categories/c1.json': 40,
@@ -56,6 +57,7 @@ class CacheTest(unittest.TestCase):
         for path in (normalize.landing_cache_path(root), normalize.category_cache_path(root, 'c'),
                      normalize.browse_cache_path(root), normalize.made_for_you_cache_path(root),
                      normalize.radio_cache_path(root), normalize.charts_cache_path(root),
+                     normalize.charts_cache_path(root, '21'), normalize.genres_cache_path(root),
                      normalize.recent_played_cache_path(root),
                      normalize.artist_cache_path(root, '1'), normalize.album_cache_path(root, '2'),
                      normalize.suggestions_cache_path(root, 'p.1'),

@@ -159,8 +159,11 @@ list and the script together.
     as a grid, Ctrl+2 puts the focus in the grid, and Escape goes back to New. Charts (New's
     or Search's Top Charts tile) shows Top
     Songs as a numbered grid of songs, then numbered tiles: Ctrl+2 and Tab reach the first
-    song, Enter plays the chart from it, and Escape goes back. The script walks this before
-    step 14.
+    song, and Enter plays the chart from it. Its header bar's genre menu is named (Genre) and
+    shows All Genres; Enter on it opens its list, each genre named, and Down, Enter chooses
+    the first genre, whose charts replace the page's, the focus staying on the menu. Escape
+    goes back. The script walks this before step 14, and `--names` looks at Charts and its
+    open genre menu.
 16. On a playlist's song (Songs and an album's songs alike), Ctrl+A selects every song: the
     selection mode, its count in the header bar ("12 Selected", announced) with Cancel, and a
     bar of actions under the list (Play Next, Play Later, Add to Playlist, Remove from

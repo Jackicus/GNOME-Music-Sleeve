@@ -1544,10 +1544,35 @@ async def walkthrough(window):
         window.play_request = play_request
         check('Enter plays the chart from its first song',
               requests == [(songs.queue(), 0)], requests)
-        await key(window, 'Escape', 0.6)
-        check('Escape goes back to the page it was opened from',
-              window.navigation_view.get_visible_page() is not charts,
-              window.navigation_view.get_visible_page())
+    menu = charts.genre_menu
+    drop_down = menu.drop_down
+    check('The header bar has the genre menu, named, on All Genres',
+          drop_down.get_visible() and drop_down.get_tooltip_text() == 'Genre'
+          and drop_down.get_selected_item() is not None
+          and drop_down.get_selected_item().get_string() == 'All Genres',
+          drop_down.get_selected_item() and drop_down.get_selected_item().get_string())
+    if drop_down.get_visible():
+        drop_down.grab_focus()
+        await key(window, 'Return', 0.6)  # opens the menu
+        popover = next((widget for widget in descendants(drop_down)
+                        if isinstance(widget, Gtk.Popover)), None)
+        check('Enter opens the genre menu', popover is not None and popover.get_visible(),
+              describe(window.get_focus()))
+        await key(window, 'Down')
+        await key(window, 'Return', 1.0)  # the first genre: the page starts over on it
+        wanted = menu._choices[1].id if len(menu._choices) > 1 else None
+        shelves = charts._column.widgets
+        check('Down, Enter chooses the first genre: its charts, the focus on the menu',
+              menu.genre == wanted and wanted
+              and [widget.shelf.key for widget in shelves if widget.get_visible()]
+              == ['charts-songs', 'charts-albums']
+              and inside(window.get_focus(), drop_down),
+              (menu.genre, [widget.shelf.key for widget in shelves], describe(
+                  window.get_focus())))
+    await key(window, 'Escape', 0.6)
+    check('Escape goes back to the page it was opened from',
+          window.navigation_view.get_visible_page() is not charts,
+          window.navigation_view.get_visible_page())
     print('-- home')
     window.select_page('home')
     await asyncio.sleep(1.0)  # the demo's invented Recently Played, then the shelves bound
@@ -2141,6 +2166,19 @@ async def names(window):
         window.open_item(link_item({'title': f'Invented {kind}', 'kind': kind, 'id': item_id}))
         await asyncio.sleep(1.0)
         total += await unnamed(f"a More to Explore link's {kind}")
+    from applemusic.pages.charts import charts_item
+
+    window.open_item(charts_item())
+    await asyncio.sleep(1.0)
+    total += await unnamed('Charts')
+    drop_down = window.navigation_view.get_visible_page().genre_menu.drop_down
+    drop_down.emit('activate')  # the genre menu open: its genres, each named
+    await asyncio.sleep(1.0)
+    total += await unnamed("Charts' genre menu, open")
+    for widget in descendants(drop_down):
+        if isinstance(widget, Gtk.Popover):
+            widget.popdown()
+    await asyncio.sleep(0.5)
     window.select_page('search')
     await asyncio.sleep(0.5)
     search = window.navigation_view.get_visible_page()

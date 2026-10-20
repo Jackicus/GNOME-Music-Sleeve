@@ -141,8 +141,11 @@ def classes():
         async def radio(self, refresh=False):
             return await self._answer('radio', refresh)
 
-        async def charts(self, refresh=False):
-            return await self._answer('charts', refresh)
+        async def charts(self, genre=None, refresh=False):
+            return await self._answer('charts', genre, refresh)
+
+        async def genres(self, refresh=False):
+            return await self._answer('genres', refresh)
 
         async def recently_played(self, refresh=False):
             # Each ask's refresh beside its name in `calls`.

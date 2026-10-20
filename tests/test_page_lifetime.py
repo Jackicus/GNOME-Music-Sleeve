@@ -149,6 +149,7 @@ def _classes():
             self.suggestions = None  # what playlist_suggestions() answers, the same way
             self.radio_answer = None  # what radio() answers, the same way
             self.charts_answer = None  # what charts() answers, the same way
+            self.genres_answer = None  # what genres() answers, the same way
             self.credits_answer = None  # what credits() answers, the same way
 
         async def start(self, visible=None):
@@ -196,11 +197,17 @@ def _classes():
                 raise EngineError('engine-down')
             return self.radio_answer
 
-        async def charts(self, refresh=False):
+        async def charts(self, genre=None, refresh=False):
             self.calls.append('charts')
             if self.charts_answer is None:
                 raise EngineError('engine-down')
             return self.charts_answer
+
+        async def genres(self, refresh=False):
+            self.calls.append('genres')
+            if self.genres_answer is None:
+                raise EngineError('engine-down')
+            return self.genres_answer
 
         async def credits(self, song_id, refresh=False):
             self.calls.append('credits')
@@ -829,8 +836,19 @@ class PageLifetimeTest(WidgetTestCase):
             {'key': 'charts-albums', 'title': 'Top Albums', 'ranked': True,
              'items': [dict(_album(n, tracks=0), id=f'c{n}') for n in range(6)]}]}
         self.addCleanup(setattr, self.app.engine, 'charts_answer', None)
+        # Its genre menu too, filled from the genres and changed once: the page starts over.
+        self.app.engine.genres_answer = {'genres': [{'id': '21', 'title': 'Invented Genre'}]}
+        self.addCleanup(setattr, self.app.engine, 'genres_answer', None)
+        async def choose(page):
+            menu = page.genre_menu
+            self.assertTrue(await self.until(lambda: menu.drop_down.get_visible()))
+            menu.drop_down.set_selected(1)
+            self.assertEqual(menu.genre, '21')
+            self.assertTrue(await self.until(lambda: _find(page, SongShelf) is not None))
+            return [menu.drop_down.weak_ref()]
+
         refs = await self.pushed_and_popped(charts.create(charts.charts_item()), SongShelf,
-                                            SongRow, RankedTile)
+                                            SongRow, RankedTile, during=choose)
         await self.assert_freed(*refs)
 
     async def test_shelf_widget(self):

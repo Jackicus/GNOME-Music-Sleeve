@@ -42,7 +42,9 @@ artist opens as the library's page of them; artist-page:ID opens Apple Music's
 page of the artist instead, as Go to Artist does (window.open_artist_page);
 category:ID the page of a category the demo library invented (a radio show's,
 categories/<ID>.json), as its tile does; charts:top opens the Charts
-page, as its Top Charts tile does (the demo's invented charts.json);
+page, as its Top Charts tile does (the demo's invented charts.json), and
+charts:GENRE on a genre's charts, as a link to them does (charts/<GENRE>.json:
+9001 to 9007);
 room:ID, grouping:ID and multiroom:ID the page a New page's More to Explore link opens
 (the demo's invented rooms/, groupings/, multirooms/: demo.room01, demo.grouping01,
 demo.multiroom01), as the link does. An
@@ -167,8 +169,8 @@ parser.add_argument('--demo', action='store_true', help='show the demo library i
 parser.add_argument('--open', metavar='KIND:ID',
                     help='open an item (ID an item id or "first") over the page; '
                          "artist-page:ID for Apple Music's page of an artist, charts:top "
-                         'for the Charts page, room:ID, grouping:ID or multiroom:ID for '
-                         "a More to Explore link's page")
+                         'for the Charts page (charts:GENRE on a genre), room:ID, '
+                         "grouping:ID or multiroom:ID for a More to Explore link's page")
 parser.add_argument('--sidebar', action='store_true',
                     help='in the narrow layout, show the sidebar rather than the --page')
 parser.add_argument('--expand', metavar='ID[,ID…]', default='',
@@ -454,9 +456,14 @@ def open_item(window):
     """--open: the item it names, opened as its tile would be."""
     kind, _sep, item_id = args.open.partition(':')
     if kind == 'charts':
+        from applemusic.explore import link_item
         from applemusic.pages.charts import charts_item
 
-        window.open_item(charts_item())
+        if item_id in ('', 'top'):
+            window.open_item(charts_item())
+        else:  # a genre's, as a More to Explore link to it opens them
+            window.open_item(link_item({'title': 'Top Charts', 'kind': 'charts',
+                                        'id': 'charts', 'genre': item_id}))
         return
     catalog = kind == 'artist-page'  # Apple Music's page of the artist, as Go to Artist opens
     if catalog:

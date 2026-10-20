@@ -70,6 +70,7 @@ src/widgets/queue.py
 src/widgets/transport.py
 src/widgets/labels.py
 src/widgets/search_list.py
+src/charts.py
 src/home.py
 src/library.py
 src/radio.py
