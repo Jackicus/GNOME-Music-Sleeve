@@ -29,6 +29,10 @@ from ..sidebar import FOLDER_ICON, PLAYLIST_ICON
 from ..widgets.util import MappedHandlers, connect_weak
 
 
+# A genre's icon: the Genres destination's (sections.py), bundled.
+GENRE_ICON = 'tag-symbolic'
+
+
 def app():
     """The application (Gio.Application.get_default()): its engine, settings, spawn() and
     report(). How every page reaches it; None only in a test without one."""
@@ -203,6 +207,36 @@ def _songs(destination, library):
     return SongsPage(library, destination.title, icon_name=destination.icon_name)
 
 
+def _genres(destination, library):
+    # The library's genres (Library.genres(), made when this page is first built), by name;
+    # a genre's tile opens its albums (genre()).
+    from .grid import GridPage
+
+    return GridPage(library, destination.title, library.genres, icon_name=destination.icon_name,
+                    empty_title=_('No Genres'),
+                    empty_description=_('The genres of the albums in your library appear here'))
+
+
+def genre(library, item):
+    """A genre's page, pushed by its tile (window.open_item): the library's albums whose
+    genre it is, as the Albums page shows them (its sorts and filter), following the Albums
+    store through every load (a Gtk.StringFilter, exact, on Item.genre: a reload that changes
+    an album's genre splices the album over itself, library.SORT_KEYS)."""
+    from ..library import Item
+    from .grid import GridPage
+
+    albums = Gtk.FilterListModel(model=library.albums, filter=Gtk.StringFilter(
+        expression=Gtk.PropertyExpression.new(Item, None, 'genre'),
+        match_mode=Gtk.StringFilterMatchMode.EXACT, ignore_case=False, search=item.title))
+    page = GridPage(library, item.title, albums, sorts=('title', 'artist', 'year', 'added'),
+                    root=False, icon_name=GENRE_ICON,
+                    empty_title=_('No Albums'),
+                    empty_description=_('Albums of this genre in your library appear here'),
+                    filter_words=(_('Filter Albums'), _album_count))
+    page.item = item
+    return page
+
+
 def _all_playlists(destination, library):
     # The top level of the playlist folders: Favourite Songs, the folders, then the playlists in
     # none, each by title, as the sidebar lists them (library.PlaylistTree).
@@ -312,6 +346,7 @@ PAGES = {
     'artists': _artists,
     'recently-added': _recently_added,
     'songs': _songs,
+    'genres': _genres,
     'all-playlists': _all_playlists,
     'favourite-songs': _favourite_songs,
     'music-videos': _music_videos,

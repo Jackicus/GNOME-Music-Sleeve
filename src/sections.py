@@ -21,9 +21,13 @@ HOME = 'home'
 
 @dataclass(frozen=True)
 class Destination:
+    """A fixed destination: its key, title and icon, and the boolean setting that has the
+    sidebar list it (None: always listed)."""
+
     key: str
     title: str
     icon_name: str
+    setting: str = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,9 @@ def sidebar_sections():
             Destination('artists', _('Artists'), 'audio-input-microphone-symbolic'),
             Destination('albums', _('Albums'), 'media-optical-cd-audio-symbolic'),
             Destination('songs', _('Songs'), 'music-note-symbolic'),
+            # Listed while show-genres is on (Preferences), as Apple Music lists it once
+            # chosen in its sidebar's settings; the tag is bundled.
+            Destination('genres', _('Genres'), 'tag-symbolic', setting='show-genres'),
             Destination('music-videos', _('Music Videos'), 'video-display-symbolic'),
             Destination('made-for-you', _('Made for You'), 'avatar-default-symbolic'),
         )),

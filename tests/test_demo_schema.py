@@ -58,7 +58,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
         self.assertEqual(stamp.returncode, 0)
 
     def test_top_level_schema(self):
-        self.assertEqual(self.data.get('version'), 4)  # sync.LIBRARY_VERSION
+        self.assertEqual(self.data.get('version'), 5)  # sync.LIBRARY_VERSION
         self.assertEqual(self.data.get('storefront'), 'us')
         self.assertIn('generated', self.data)
         self.assertTrue(isinstance(self.data['generated'], str))
@@ -97,10 +97,13 @@ class TestDemoLibrarySchema(unittest.TestCase):
         for field in (
             'id', 'catalogId', 'title', 'artist', 'album',
             'trackNumber', 'discNumber', 'durationMs', 'durationLabel',
-            'explicit', 'index', 'type'
+            'explicit', 'index', 'type', 'genre', 'year'
         ):
             self.assertIn(field, track, f'Track missing field: {field}')
         self.assertEqual(track['type'], 'library-songs')  # the API's, as the sync keeps it
+        # The tables' Genre and Year columns (library.json version 5).
+        self.assertTrue(isinstance(track['genre'], str) and track['genre'])
+        self.assertIsInstance(track['year'], int)
 
         self.assertTrue(isinstance(track['id'], str) and track['id'])
         self.assertTrue(isinstance(track['title'], str) and track['title'])

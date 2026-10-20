@@ -40,5 +40,6 @@
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/transport-pause-symbolic.svg">icons/transport-pause-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/transport-stop-symbolic.svg">icons/transport-stop-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/translate-symbolic.svg">icons/translate-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/tag-symbolic.svg">icons/tag-symbolic.svg</file>
   </gresource>
 </gresources>

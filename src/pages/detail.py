@@ -16,8 +16,10 @@ header, where it does reach an item's.
 A playlist's tracks are a table while the page is at least 720sp wide (`table`, which
 follows detail.blp's table_breakpoint): each row's title, artist and album in columns
 (TrackRow's table rows, the artist and the album links), under a header of column titles
-(the tracks' section's list header, TrackTableHeader). An album's stay a numbered list, and
-so does any page in a narrower window.
+(the tracks' section's list header, TrackTableHeader), and the optional Genre and Year
+columns chosen in Sort By (song_columns.py, the song-columns setting the Songs table shares),
+whose items Sort By lists only while the songs are a table. An album's stay a numbered list,
+and so does any page in a narrower window.
 
 Under a playlist the user can change (wants_suggestions()), the songs Apple suggests adding
 to it (Engine.playlist_suggestions), as music.apple.com shows them: one more section after
@@ -56,10 +58,11 @@ mode, the songs selected), one removal at a time, the focus going to the row in 
 once the songs show again; an empty playlist of the user's offers Add Songs… in its status.
 
 A playlist's Sort By (sort_button, the header bar's, beside the filter's: PLAYLIST_SORTS,
-either way round) orders what the page shows, never the playlist: each group's store passes
-through a Gtk.SortListModel of playlist_sorter() before the filter, a text's descending
-order shown backwards (ShownModel), as the grids sort. It lasts for the page's life; in any
-order but Playlist Order, first to last, no song moves (can_reorder()).
+Genre and Year among them, either way round) orders what the page shows, never the
+playlist: each group's store passes through a Gtk.SortListModel of playlist_sorter() before
+the filter, a text's descending order shown backwards (ShownModel), as the grids sort. It
+lasts for the page's life; in any order but Playlist Order, first to last, no song moves
+(can_reorder()).
 
 A playlist's songs (Favourite Songs' too) have the library pages' filter bar
 (widgets/filter_bar.py: Filter Songs, Ctrl+F through focus_filter(), typing on the page,
@@ -95,7 +98,7 @@ from gettext import ngettext
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango
 
 from ..backend.api import is_library_id
-from .. import keyboard
+from .. import keyboard, song_columns
 from ..backend.errors import EngineError
 from ..library import (HELD_KINDS, TRACK_REF_KINDS, Item, ItemRefs, ShelfModel, Track,
                        drop_index)
@@ -141,10 +144,12 @@ PLAYLIST_SORTS = {
     'title': (lambda: _('_Title'), ('title', 'artist', 'album')),
     'artist': (lambda: _('_Artist'), ('artist', 'album', 'disc-number', 'track-number')),
     'album': (lambda: _('Al_bum'), ('album', 'disc-number', 'track-number')),
+    'genre': (lambda: _('_Genre'), ('genre', 'artist', 'album', 'disc-number', 'track-number')),
+    'year': (lambda: _('_Year'), ('year', 'artist', 'album', 'disc-number', 'track-number')),
     'time': (lambda: _('T_ime'), ('duration-ms', 'title')),
 }
 # The Track properties compared as numbers; the rest are text.
-TRACK_NUMBERS = frozenset({'disc-number', 'track-number', 'duration-ms'})
+TRACK_NUMBERS = frozenset({'disc-number', 'track-number', 'duration-ms', 'year'})
 # Playlist Order, first to last: the one order a playlist's songs can be moved in.
 OWN_ORDER = ('playlist', False)
 
@@ -359,10 +364,11 @@ class _Row(Gtk.Box):
             self.append(widget)
         self.track_row.set_visible(False)
 
-    def show_track(self, track, album_artist, table=False, playing=False, favourite=False):
+    def show_track(self, track, album_artist, table=False, playing=False, favourite=False,
+                   columns=frozenset()):
         self._remove_widgets()
         self.track_row.set_visible(True)
-        self.track_row.bind(track, album_artist, table, playing, favourite)
+        self.track_row.bind(track, album_artist, table, playing, favourite, columns)
 
     def clear(self):
         self._remove_widgets()
@@ -440,8 +446,7 @@ class DetailPage(Adw.NavigationPage):
         if table != self._table:
             self._table = table
             self._update_headers()
-            for list_item in self._bound:
-                self._show_track(list_item, list_item.get_item())
+            self._update_columns()  # the rows shown again, as the table has them or not
 
     table = GObject.Property(type=bool, default=False, getter=_get_table, setter=_set_table,
                              nick='Table', blurb="A playlist's tracks as a table (wide)")
@@ -629,6 +634,14 @@ class DetailPage(Adw.NavigationPage):
         sort_menu = Gio.Menu()
         sort_menu.append_section(None, keys_menu)
         sort_menu.append_section(None, directions)
+        # The table's optional columns (song_columns.py, the song-columns setting the Songs
+        # table shares), offered while the songs show as a table.
+        self._settings = getattr(app(), 'settings', None)
+        self._optional = song_columns.shown(self._settings)
+        self._column_actions = song_columns.make_actions(
+            sort_actions, weak_method(self._on_column_chosen))
+        sort_menu.append_section(None, song_columns.menu_section('tracks'))
+        song_columns.show_states(self._column_actions, self._optional, False)
         self.sort_button = Gtk.MenuButton(icon_name='view-sort-descending-symbolic',
                                           tooltip_text=_('Sort By'), menu_model=sort_menu,
                                           visible=False)
@@ -652,10 +665,11 @@ class DetailPage(Adw.NavigationPage):
             self._handlers.add(self._playing.player, 'notify::preview',
                                self._on_preview_changed)
         self._previewing = ''  # the song whose preview this page started, while it may play
-        self._settings = getattr(app(), 'settings', None)
         if self._settings is not None:
             self._handlers.add(self._settings, 'changed::more-suggestions',
                                self._on_count_changed)
+            self._handlers.add(self._settings, 'changed::' + song_columns.SETTING,
+                               self._on_columns_changed)
 
         self._hero_section = Gio.ListStore(item_type=GObject.Object)
         self._hero_section.append(_Hero())
@@ -683,6 +697,7 @@ class DetailPage(Adw.NavigationPage):
             self._fetch(self.item)  # a fetch cancelled when the page was hidden
         self._suggest()
         self._ask_catalog()
+        self._on_columns_changed()  # the columns chosen while the page was hidden
         if self._suggestions is not None and self._suggestions.count != self._count():
             self._on_count_changed()  # the setting changed while the page was hidden
         self._on_preview_changed()  # a preview that ended while the page was hidden
@@ -828,6 +843,7 @@ class DetailPage(Adw.NavigationPage):
 
         self._groups = len(groups)
         self._update_headers()
+        song_columns.show_states(self._column_actions, self._optional, self._is_table())
         self._track_total = sum(group.entries.get_n_items() for group in groups)
         sections = [self._hero_section] + self._track_models
         self._suggestions_start = None
@@ -1545,12 +1561,13 @@ class DetailPage(Adw.NavigationPage):
     def _show_track(self, list_item, track):
         """A track's row, in a table or not, marked when its track is the one playing, and
         its name: the artist when the row shows one (not an album's own: TrackRow's rule),
-        the album too in a table."""
+        the album too in a table, and the optional columns it shows."""
         table = self._is_table()
         playing = self._playing.matches(track)
         favourite = self._library.is_favourite(track)
         row = list_item.get_child()
-        row.show_track(track, self._album_artist, table, playing, favourite)
+        row.show_track(track, self._album_artist, table, playing, favourite,
+                       self._shown_columns(table))
         selection = self.selection_mode.selection
         selected = selection.has(track)
         row.track_row.set_selected(selection.active, selected)
@@ -1560,7 +1577,37 @@ class DetailPage(Adw.NavigationPage):
 
     def _track_label(self, track, table, favourite):
         show_artist = self._album_artist is None or track.artist != self._album_artist
-        return track_label(track, show_artist, show_album=table, favourite=favourite)
+        return track_label(track, show_artist, show_album=table, favourite=favourite,
+                           columns=self._shown_columns(table))
+
+    # The table's optional columns (song_columns.py).
+
+    def _shown_columns(self, table):
+        """The optional columns a table shows (none but in a table)."""
+        return self._optional if table else frozenset()
+
+    def _on_column_chosen(self, name, show):
+        """Genre Column or Year Column in Sort By: the setting, which every song table
+        follows (this one at once)."""
+        song_columns.set_shown(self._settings, name, show)
+        self._on_columns_changed()
+
+    def _on_columns_changed(self, *_args):
+        optional = song_columns.shown(self._settings)
+        if optional != self._optional:
+            self._optional = optional
+            self._update_columns()
+
+    def _update_columns(self):
+        """The menu's column items (offered in a table), the table's column titles and the
+        bound rows, after the table came or went or the columns chosen changed."""
+        table = self._is_table()
+        song_columns.show_states(self._column_actions, self._optional, table)
+        for header in self._table_headers:
+            if header.get_child() is not None:
+                header.get_child().set_columns(self._shown_columns(table))
+        for list_item in self._bound:
+            self._show_track(list_item, list_item.get_item())
 
     def _update_favourites(self, *_args):
         """The account's favourites changed (a sync, or a heart): the bound rows' hearts and
@@ -2017,6 +2064,7 @@ class DetailPage(Adw.NavigationPage):
         # The tracks' section only: the hero's and the suggestions' have none.
         header.get_child().set_visible(isinstance(header.get_item(), Track))
         header.get_child().set_selecting(self.selection_mode.active)
+        header.get_child().set_columns(self._shown_columns(True))
         self._table_headers.add(header)
 
     def _on_bind_header(self, _factory, header):

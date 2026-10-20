@@ -133,10 +133,14 @@ class SidebarController:
                 for destination in spec.destinations:
                     item = Adw.SidebarItem(title=destination.title,
                                            icon_name=destination.icon_name,
-                                           drag_motion_activate=False)
+                                           drag_motion_activate=False,
+                                           visible=self._offered(destination))
                     section.append(item)
                     self._destinations[item] = destination
                     self._items_by_key[destination.key] = item
+                    if destination.setting:
+                        self._settings.connect('changed::' + destination.setting,
+                                               self._on_offered_changed, destination)
             self._sidebar.append(section)
 
         self._sidebar.connect('notify::selected-item', self._on_selected_item)
@@ -193,6 +197,21 @@ class SidebarController:
         position = self._positions.get(key)
         return self._playlist_store.get_item(position) if position is not None else None
 
+    def _offered(self, destination):
+        """Whether the sidebar lists a fixed destination: always, but for one its setting
+        (Destination.setting: Genres' show-genres) leaves out."""
+        return not destination.setting or self._settings.get_boolean(destination.setting)
+
+    def _on_offered_changed(self, _settings, _key, destination):
+        """A destination's setting changed: its item shown or hidden, and Home shown in
+        place of its page when it was the one selected."""
+        item = self._items_by_key[destination.key]
+        offered = self._offered(destination)
+        item.set_visible(offered)
+        if not offered and self.selected_key() == destination.key:
+            self.select(HOME)
+        self.update_rows()
+
     def entries_by_key(self):
         """Every key the sidebar has -> its Destination (a fixed item) or SidebarEntry (the
         Playlists section's)."""
@@ -232,7 +251,8 @@ class SidebarController:
         An item in a collapsed folder is shown first: its folders are expanded.
         """
         item = self.item_for(key)
-        if item is None:
+        destination = self._destination_keys.get(key)
+        if item is None or (destination is not None and not self._offered(destination)):
             key = HOME
             item = self._items_by_key[key]
         elif not item.get_visible():

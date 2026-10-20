@@ -101,8 +101,18 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Music Videos, shows them alone, until you choose it again; each page remembers it.
 - **Recently Added** is everything in your library, newest first: albums and playlists, and
   music videos when Apple Music dates them. Albums can also be sorted by **Date Added**.
+- **Genres** lists your library's genres, each with how many of your albums are in it;
+  click one for its albums, which sort and filter as Albums do. It is in the sidebar once
+  you turn on Preferences › General › Library › Show Genres. An album's genre is Apple
+  Music's first for it; an album without one is in none.
 - In a wide window a playlist's songs are a table, as the Songs page is: click an artist
   or an album there to open its page.
+- The Songs table and a playlist's table can also show each song's **Genre** and **Year**:
+  choose **Genre Column** or **Year Column** in **Sort and Filter** (Songs) or **Sort By**
+  (a playlist), where you can also sort by either. Both tables show the columns you chose,
+  where the window is wide enough for them; a narrower one leaves them out (and the menu
+  its two items). Songs from a library refreshed before Music Sleeve had these columns
+  show them after the next refresh, which runs at once.
 - A playlist's page names its curator under its title (your name, for your own playlists,
   once Music Sleeve knows it from the sign-in), then when it was last updated and how long
   it is. An album or playlist from Apple Music that is not in your library has **Add**

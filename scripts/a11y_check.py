@@ -991,6 +991,87 @@ async def radio_step(window):
               requests)
 
 
+async def genres_step(window):
+    """Genres (show-genres): its sidebar row, the grid of genres by keyboard, a genre's
+    albums opened with Enter, Alt+Left back to the genre's tile."""
+    print('-- Genres')
+    item = window._sidebar.item_for('genres')
+    check('Genres is not in the sidebar until chosen', not item.get_visible())
+    app.settings.set_boolean('show-genres', True)
+    await asyncio.sleep(0.4)
+    check('Show Genres lists it', item.get_visible())
+    row = window._sidebar.row(item.get_index())
+    narrow = window.split_view.get_collapsed()  # a page-mode row has its title (an action row)
+    check('Its row shows', row is not None and row.get_visible()
+          and (not narrow or row_title(row) == 'Genres'), row_title(row))
+    window.select_page('genres')
+    window.split_view.set_show_content(True)
+    await asyncio.sleep(1.0)
+    genres = window.navigation_view.get_visible_page()
+    check('Genres shows a grid of the genres', getattr(genres, 'grid_view', None) is not None
+          and genres.stack.get_visible_child_name() == 'items',
+          getattr(genres, 'get_title', lambda: genres)())
+    genres.title_label.grab_focus()  # anywhere on the page: Ctrl+2 takes it into the grid
+    window.split_view.set_show_content(True)
+    await key(window, '<primary>2', 0.6)
+    check('Ctrl+2 puts the focus on the first genre', inside(window.get_focus(),
+                                                             genres.grid_view),
+          describe(window.get_focus()))
+    from applemusic.widgets.labels import accessible_label
+
+    first = genres.grid_view.get_model().get_item(0)
+    label = accessible_label(first) if first is not None else None
+    check('A genre is read with its count ("Ambient, 3 albums")',
+          label == f'{first.title}, {first.subtitle}' and first.subtitle.endswith(
+              ('album', 'albums')), label)
+    await key(window, 'Return', 1.0)
+    pushed = window.navigation_view.get_visible_page()
+    albums = pushed.grid_view.get_model() if hasattr(pushed, 'grid_view') else None
+    shown = [albums.get_item(n) for n in range(albums.get_n_items())] if albums else []
+    check("Enter opens the genre's albums", getattr(pushed, 'item', None) is first and shown
+          and all(album.genre == first.title for album in shown),
+          (pushed, [album.title for album in shown]))
+    await key(window, '<alt>Left', 0.8)
+    check('Alt+Left goes back to Genres, the focus on the genre',
+          window.navigation_view.get_visible_page() is genres
+          and inside(window.get_focus(), genres.grid_view), describe(window.get_focus()))
+    app.settings.reset('show-genres')
+    await asyncio.sleep(0.6)
+    check('Hidden again, Home shows in its place', window.shown == 'home', window.shown)
+
+
+async def song_columns_step(window):
+    """The Songs table's Genre and Year columns, from its Sort and Filter menu by keyboard
+    (the menu's mnemonics all its own); hidden, with their items, in a narrow window."""
+    print("-- Songs' Genre and Year columns")
+    window.select_page('songs')
+    window.split_view.set_show_content(True)
+    await asyncio.sleep(1.0)
+    songs = window.navigation_view.get_visible_page()
+    songs.sort_button.grab_focus()
+    await key(window, 'Return', 0.6)
+    popover = songs.sort_button.get_popover()
+    check('Return opens Sort and Filter', popover is not None and popover.get_visible())
+    labels = menu_labels(songs.sort_button.get_menu_model())
+    letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label]
+    check('Each of its items, the columns too, has a mnemonic of its own',
+          len(letters) == len(labels) == len(set(letters)), labels)
+    room = songs._column_actions['genre'].get_enabled()
+    check('The column items show only where the table has room for them',
+          room != window.split_view.get_collapsed(), room)
+    if room:
+        await key(window, 'c', 0.6)
+        check('C, its mnemonic, shows the Genre column',
+              songs.genre_column.get_visible()
+              and app.settings.get_strv('song-columns') == ['genre'],
+              app.settings.get_strv('song-columns'))
+    else:
+        await key(window, 'Escape', 0.4)
+    app.settings.reset('song-columns')
+    await asyncio.sleep(0.4)
+    check('Off again, the column goes', not songs.genre_column.get_visible())
+
+
 async def walkthrough(window):
     narrow = window.split_view.get_collapsed()
     print('-- sidebar')
@@ -1624,6 +1705,8 @@ async def walkthrough(window):
           and all(item.favourite for item in shown), len(shown))
     grid.activate_action('page.favourites-only', None)  # every album again
     app.settings.reset('favourites-only')
+    await genres_step(window)
+    await song_columns_step(window)
     print("-- the library pages' filters (Ctrl+F)")
     for key_name, name in (('albums', 'Albums'), ('music-videos', 'Music Videos'),
                            ('artists', 'Artists'), ('songs', 'Songs'),
@@ -2423,12 +2506,16 @@ async def unnamed(label):
 async def names(window):
     print('-- accessible names (focusable controls without one)')
     total = 0
-    for page in ('home', 'new', 'albums', 'artists', 'songs', 'radio', 'all-playlists',
-                 'favourite-songs'):
+    app.settings.set_boolean('show-genres', True)  # Genres listed, as Preferences offers
+    app.settings.set_strv('song-columns', ['genre', 'year'])  # and the optional columns
+    for page in ('home', 'new', 'albums', 'artists', 'songs', 'genres', 'radio',
+                 'all-playlists', 'favourite-songs'):
         window.select_page(page)
         window.split_view.set_show_content(True)
         await asyncio.sleep(1.0)
         total += await unnamed(page)
+    app.settings.reset('show-genres')
+    app.settings.reset('song-columns')
     for kind, store in (('album', app.library.albums), ('playlist', app.library.playlists),
                         ('artist', app.library.artists)):
         window.open_item(store.get_item(0))  # an artist: the library's page of them

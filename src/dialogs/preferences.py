@@ -4,17 +4,18 @@
 """AppleMusicPreferencesDialog: app.preferences (Ctrl+,).
 
 General: Background Playback (background-playback), Autoplay (autoplay), Notify When the Song
-Changes (notify-song-change) and Discord Presence (discord-presence);
-how often the library refreshes (sync-interval); Last Refreshed, saying when it last did
-(last-sync, as sync.last_sync_text() words it) or "Refreshing…" while it does, with Refresh
-(app.sync, off while it cannot run); the cache's size, measured in a thread and again after
-each sync, with Clear (asked first: Application.clear_cache()). Engine: the engine's state
-with Start and Stop; the streaming quality (streaming-quality: High Quality or High
-Efficiency, which the Application sets on MusicKit), saying the bitrate MusicKit streams at
-while the engine runs (Engine.bitrate, read again as the dialog opens); the browser program
-(browser-command, kept when it is applied and found); whether Chrome runs hidden
-(engine-headless) and starts with the app (engine-autostart); Sign In while signed out
-(insensitive in the demo), Sign Out while signed in (app.sign-out).
+Changes (notify-song-change) and Discord Presence (discord-presence); Show Genres, the
+sidebar's Genres (show-genres); how often the library refreshes (sync-interval); Last
+Refreshed, saying when it last did (last-sync, as sync.last_sync_text() words it) or
+"Refreshing…" while it does, with Refresh (app.sync, off while it cannot run); the cache's
+size, measured in a thread and again after each sync, with Clear (asked first:
+Application.clear_cache()). Engine: the engine's state with Start and Stop; the streaming
+quality (streaming-quality: High Quality or High Efficiency, which the Application sets on
+MusicKit), saying the bitrate MusicKit streams at while the engine runs (Engine.bitrate,
+read again as the dialog opens); the browser program (browser-command, kept when it is
+applied and found); whether Chrome runs hidden (engine-headless) and starts with the app
+(engine-autostart); Sign In while signed out (insensitive in the demo), Sign Out while
+signed in (app.sign-out).
 
 The switches are bound to their settings with Gio.Settings.bind, the browser program one way
 (the setting into the row: the row's text is kept only on apply), the refresh interval and
@@ -49,6 +50,7 @@ BINDINGS = (
     ('discord_row', 'active', 'discord-presence'),
     ('more_suggestions_row', 'active', 'more-suggestions'),
     ('preview_suggestions_row', 'active', 'preview-suggestions'),
+    ('genres_row', 'active', 'show-genres'),
     ('headless_row', 'active', 'engine-headless'),
     ('autostart_row', 'active', 'engine-autostart'),
 )
@@ -66,6 +68,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     discord_row = Gtk.Template.Child()
     more_suggestions_row = Gtk.Template.Child()
     preview_suggestions_row = Gtk.Template.Child()
+    genres_row = Gtk.Template.Child()
     interval_row = Gtk.Template.Child()
     last_refreshed_row = Gtk.Template.Child()
     refresh_button = Gtk.Template.Child()

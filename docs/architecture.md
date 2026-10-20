@@ -77,7 +77,13 @@ touches widgets.
   Albums, Artists, Music Videos, Songs and a playlist's songs filter as the user types
   through one `widgets/filter_bar.py` (`FilterBar`, a search bar under the header bar, over
   `ShownModel`, the list's own model, which shows a filter's change without rebuilding the
-  rows, and one that brings many back a few rows a frame).
+  rows, and one that brings many back a few rows a frame). Genres (listed while
+  `show-genres` is on: `sections.Destination.setting`) is a grid over `Library.genres()`, a
+  store of one Item a genre made when first asked for and kept up to date by every load; a
+  genre's page is the Albums store through a filter on the album's genre (`pages.genre()`).
+  The Songs table and a playlist's table show the optional Genre and Year columns the
+  `song-columns` setting names (`song_columns.py`: the menus' check items and the setting,
+  shared by both), where the table has room for them.
   Songs, an album's and a playlist's songs select several in a selection mode
   (`widgets/selection_mode.py` over `selection.py`'s `Selection`, a set of the Track objects
   the lists' binds read; the lists themselves select nothing), whose bar runs the item

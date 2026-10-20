@@ -820,10 +820,13 @@ def normalize_track(raw_track, index=0, cache_dir=None, art_urls=None):
       "album": "...", "trackNumber": int, "discNumber": int, "durationMs": int,
       "durationLabel": "3:36", "explicit": bool, "index": int,
       "thumb": "<cache>/thumb/<x>.jpg" | null,
-      "type": "songs" | "library-songs" | "music-videos" | "library-music-videos" | ""
+      "type": "songs" | "library-songs" | "music-videos" | "library-music-videos" | "",
+      "genre": "..." | null, "year": int | null
     }
 
-    `type` is the API's, so a music video in a playlist is rated and added as one.
+    `type` is the API's, so a music video in a playlist is rated and added as one. `genre`
+    is the first of its `genreNames` and `year` its `releaseDate`'s (track_year()): the
+    Songs and playlist tables' Genre and Year columns.
 
     `thumb` is named only when `cache_dir` is given: a playlist's rows show
     their own artwork, an album's tracks share the album's. `art_urls` is the
@@ -891,6 +894,8 @@ def normalize_track(raw_track, index=0, cache_dir=None, art_urls=None):
         'index': int(index),
         'thumb': thumb,
         'type': str(raw_track.get('type') or ''),
+        'genre': _extract_genre(attrs, raw_track),
+        'year': track_year(attrs, raw_track),
     }
 
 
@@ -922,6 +927,19 @@ def track_released(raw_track):
     if not isinstance(attrs, dict):
         return raw_track.get('unreleased') is not True
     return bool(attrs.get('playParams'))
+
+
+def track_year(attrs, raw_track):
+    """A track's year: its `releaseDate`'s (a date, or a year alone), else a `year` it
+    carries already (a Track dict normalised again); None without one. Unlike an Item's
+    (_extract_year), never a playlist's modification date."""
+    released = attrs.get('releaseDate') or raw_track.get('releaseDate')
+    if isinstance(released, str) and len(released) >= 4 and released[:4].isdigit():
+        return int(released[:4])
+    year = raw_track.get('year')
+    if isinstance(year, int) and not isinstance(year, bool) and year > 0:
+        return year
+    return None
 
 
 def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):

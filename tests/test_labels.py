@@ -50,6 +50,17 @@ class TrackLabelTest(unittest.TestCase):
         self.assertEqual(labels.track_label(track, show_artist=False), 'T, B')
         self.assertEqual(labels.track_label(track, show_album=False), 'T, A')
 
+    def test_the_optional_columns_shown_are_read(self):
+        # A table showing Genre and Year (song_columns.py): after the album, an unknown one
+        # left out as a missing part is.
+        track = self.track(artist='A', album='B', genre='G', year=2019)
+        self.assertEqual(labels.track_label(track, columns={'genre', 'year'}),
+                         'T, A, B, G, 2019')
+        self.assertEqual(labels.track_label(track, columns={'year'}), 'T, A, B, 2019')
+        self.assertEqual(labels.track_label(track), 'T, A, B')  # columns hidden
+        self.assertEqual(labels.track_label(self.track(album='B'), columns={'genre', 'year'}),
+                         'T, B')
+
 
 
 class FavouriteLabelTest(unittest.TestCase):

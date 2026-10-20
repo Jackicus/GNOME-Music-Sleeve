@@ -55,6 +55,12 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
     Adw.PreferencesGroup {
       title: _("Library");
 
+      // The sidebar's Genres (sections.py).
+      Adw.SwitchRow genres_row {
+        title: _("Show Genres");
+        subtitle: _("List the library’s albums by genre in the sidebar");
+      }
+
       Adw.ComboRow interval_row {
         title: _("Refresh Library");
 

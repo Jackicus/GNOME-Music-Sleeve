@@ -168,9 +168,10 @@ SHELF_DEFS = (
 # library.json's format: 2 since each album's tracks are numbered across its discs, 3 since
 # Items carry `added` and the file `favourites`, 4 (the same shape) since only a full pass
 # writes the current version (a short pass keeps its file's): 1.0.0's short passes stamped 3
-# on a version 2 file they had not rebuilt, so a 3 may lack the dates and the favourites. A
-# file of an older version is synced again at once (sync_due's library_ok).
-LIBRARY_VERSION = 4
+# on a version 2 file they had not rebuilt, so a 3 may lack the dates and the favourites; 5
+# since a Track carries its `genre` and `year` (the tables' Genre and Year columns). A file
+# of an older version is synced again at once (sync_due's library_ok).
+LIBRARY_VERSION = 5
 
 # A playlist's key for the listing's `lastModifiedDate` its tracks were read under
 # (playlist_unchanged), apart from `modified`, the listing's date the page shows. A file

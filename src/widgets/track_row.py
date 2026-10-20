@@ -9,6 +9,7 @@ from gettext import gettext as _
 
 from gi.repository import Gtk
 
+from ..song_columns import year_text
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .track_links import TrackLink
 
@@ -18,6 +19,9 @@ COVER_SIZE = 40
 # A favourite's heart before a row's time (track_row.blp's favourite_icon), which the header
 # leaves room for before Time.
 FAVOURITE_SIZE = 12
+# A table's Year column (song_columns.py), its rows' years and the header's title alike:
+# four digits, or "Year" in the header's caption-heading.
+YEAR_WIDTH = 40
 
 _words = {}
 
@@ -110,8 +114,9 @@ class TrackRow(Gtk.Box):
     """A leading track number (albums) or 40 px thumbnail (playlists), the title with an
     explicit badge, the artist under it when it says something, and the duration; or, as a
     playlist's table row (`table`), the thumbnail, the title, the artist and the album in
-    three equal columns (the artist and the album links: widgets/track_links.py), and the
-    duration.
+    three equal columns (the artist and the album links: widgets/track_links.py), the genre
+    as a fourth and the year before the duration when the table shows those columns
+    (bind()'s `columns`: song_columns.OPTIONAL names), and the duration.
 
     bind() and unbind() are called by a list factory as rows are recycled; the thumbnail is
     drawn only while the row is on screen (Cover). Activating the row is the list's business:
@@ -159,7 +164,12 @@ class TrackRow(Gtk.Box):
         self.album_link = TrackLink('album', hexpand=True, visible=False)
         self.columns.append(self.artist_link)
         self.columns.append(self.album_link)
+        # The optional columns, made the first time the row shows them (_optional_labels():
+        # most rows never do): the genre among the equal ones, the year beside the time.
+        self.genre_label = None
+        self.year_label = None
         self._table = False
+        self._columns = frozenset()  # the optional columns the row shows
 
     @property
     def context_item(self):
@@ -171,16 +181,18 @@ class TrackRow(Gtk.Box):
         """Whether the row is marked as the track playing."""
         return self._playing
 
-    def bind(self, track, album_artist=None, table=False, playing=False, favourite=False):
+    def bind(self, track, album_artist=None, table=False, playing=False, favourite=False,
+             columns=frozenset()):
         """Show track. album_artist given: an album's row, numbered, with the artist shown only
         when it is not the album's; None: a playlist's row, with thumbnail and artist, under
-        the title, or with `table`, in a column of its own beside the album's. `playing`:
-        the track is the one playing (is_playing()); `favourite`: one of the account's
+        the title, or with `table`, in a column of its own beside the album's, and the
+        optional `columns` (song_columns.OPTIONAL names) the table shows. `playing`: the
+        track is the one playing (is_playing()); `favourite`: one of the account's
         (Library.is_favourite), a heart before the time."""
         self._track = track
         album = album_artist is not None
         table = table and not album
-        self._set_table(table)
+        self._set_table(table, columns)
         self.number_stack.set_visible(album)
         self.cover_slot.set_visible(not album)
         if album:
@@ -196,6 +208,10 @@ class TrackRow(Gtk.Box):
         if table:
             self.artist_link.show(track)
             self.album_link.show(track)
+            if 'genre' in self._columns:
+                self.genre_label.set_text(track.genre)
+            if 'year' in self._columns:
+                self.year_label.set_text(year_text(track.year))
         self.duration_label.set_text(track.duration_label)
         self.set_playing(playing)
         self.set_favourite(favourite)
@@ -248,9 +264,19 @@ class TrackRow(Gtk.Box):
         else:
             self.remove_css_class('playing')
 
-    def _set_table(self, table):
-        """The table's columns, or the list's title and artist (only when it changes: a row
-        shown or hidden lays the list out again)."""
+    def _set_table(self, table, columns=frozenset()):
+        """The table's columns, the optional ones among them, or the list's title and artist
+        (only when it changes: a row shown or hidden lays the list out again)."""
+        columns = frozenset(columns) if table else frozenset()
+        if columns != self._columns:
+            self._columns = columns
+            self._optional_labels()
+            self.genre_label.set_visible('genre' in columns)
+            self.year_label.set_visible('year' in columns)
+            if 'genre' not in columns:
+                self.genre_label.set_text(None)
+            if 'year' not in columns:
+                self.year_label.set_text(None)
         if table == self._table:
             return
         self._table = table
@@ -261,15 +287,29 @@ class TrackRow(Gtk.Box):
             self.artist_link.show(None)
             self.album_link.show(None)
 
+    def _optional_labels(self):
+        """Make the optional columns' inscriptions, once."""
+        if self.genre_label is not None:
+            return
+        self.genre_label = Gtk.Inscription(xalign=0, valign=Gtk.Align.CENTER, hexpand=True,
+                                           text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END,
+                                           visible=False)
+        self.columns.append(self.genre_label)
+        self.year_label = Gtk.Inscription(xalign=0, valign=Gtk.Align.CENTER,
+                                          width_request=YEAR_WIDTH, visible=False,
+                                          css_classes=['numeric'])
+        self.insert_child_after(self.year_label, self.columns)
+
     def unbind(self):
         self._track = None
         self.cover.set_paths()
 
 
 class TrackTableHeader(Gtk.Box):
-    """The column titles over a playlist's table (Title, Artist, Album, Time), laid out as its
-    rows are (TrackRow with `table`), so that each title is over its column, and in the
-    look of the Songs table's Gtk.ColumnView header (style.css's `.track-table-header`)."""
+    """The column titles over a playlist's table (Title, Artist, Album, Time, and Genre and
+    Year when it shows them: set_columns()), laid out as its rows are (TrackRow with
+    `table`), so that each title is over its column, and in the look of the Songs table's
+    Gtk.ColumnView header (style.css's `.track-table-header`)."""
 
     def __init__(self, **kwargs):
         super().__init__(spacing=12, **kwargs)
@@ -284,7 +324,12 @@ class TrackTableHeader(Gtk.Box):
         self.columns = columns = Gtk.Box(spacing=12, homogeneous=True, hexpand=True)
         for title in (_('Title'), _('Artist'), _('Album')):
             columns.append(self._title(Gtk.Label(label=title, xalign=0)))
+        self._genre = self._title(Gtk.Label(label=_('Genre'), xalign=0, visible=False))
+        columns.append(self._genre)
         self.append(columns)
+        self._year = self._title(Gtk.Label(label=_('Year'), xalign=0, visible=False,
+                                           width_request=YEAR_WIDTH))
+        self.append(self._year)
         self.append(Gtk.Box(width_request=FAVOURITE_SIZE))  # over the rows' hearts
         # "Time", as wide as the rows' durations: a stack sized by its widest child, an
         # inscription of the rows' duration_label's chars and classes that it never shows
@@ -300,6 +345,11 @@ class TrackTableHeader(Gtk.Box):
     def set_selecting(self, selecting):
         """Leave room for the rows' check boxes (the list's selection mode), or not."""
         self._check.set_visible(bool(selecting))
+
+    def set_columns(self, columns):
+        """Title the optional columns the rows show (song_columns.OPTIONAL names)."""
+        self._genre.set_visible('genre' in columns)
+        self._year.set_visible('year' in columns)
 
     @staticmethod
     def _title(label):

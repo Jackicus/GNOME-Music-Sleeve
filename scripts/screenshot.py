@@ -50,6 +50,7 @@ charts:GENRE on a genre's charts, as a link to them does (charts/<GENRE>.json:
 9001 to 9007); replay:latest opens the Replay page, as More for You's link
 does (the demo's invented replay.json), and replay:YEAR on a past year's, as its
 year menu shows it (replay/<YEAR>.json: 2025, 2024);
+genre:NAME (or genre:first) a genre's albums, as its tile on the Genres page does;
 room:ID, grouping:ID and multiroom:ID the page a New page's More to Explore link opens
 (the demo's invented rooms/, groupings/, multirooms/: demo.room01, demo.grouping01,
 demo.multiroom01), as the link does. An
@@ -137,8 +138,8 @@ nothing: the dialogs only show.
 --sort KEY (a playlist's Sort By: title, artist, album, time, playlist; KEY:descending the
 other way) shows the playlist's songs in that order.
 --more-options pops up the More Options menu of the page shown (an album's, a playlist's, a
-folder's) as a click on it would; --main-menu the main menu (in the narrow layout, with
---sidebar, where its button is).
+folder's) as a click on it would; --sort-menu its Sort By or Sort and Filter menu;
+--main-menu the main menu (in the narrow layout, with --sidebar, where its button is).
 --sidebar-menu KEY pops up the sidebar's context menu for KEY (playlist:ID, folder:ID,
 all-playlists, favourite-songs; playlist:first and folder:first are the library's first of
 each) under its row, scrolled into view, as Menu on the focused row opens it (--expand the
@@ -250,6 +251,8 @@ parser.add_argument('--dialog', choices=['about', 'shortcuts', 'new-playlist', '
                          'Library or the View Credits dialog; shoot it')
 parser.add_argument('--song', metavar='N', type=int, default=0,
                     help="with --dialog credits, the album's Nth song (-1: its last)")
+parser.add_argument('--sort-menu', action='store_true',
+                    help="pop up the page's Sort By (or Sort and Filter) menu")
 parser.add_argument('--more-options', action='store_true',
                     help='pop up the More Options menu of the page shown')
 parser.add_argument('--main-menu', action='store_true',
@@ -541,6 +544,10 @@ def open_item(window):
         item = getattr(app.library, SECTIONS[kind]).get_item(0)
     elif item_id == 'first' and kind == 'folder':
         item = app.library.by_id('folder', first_folder())
+    elif kind == 'genre':  # a genre's albums, as its tile on the Genres page opens them
+        genres = list(app.library.genres())
+        item = (genres[0] if genres and item_id == 'first'
+                else next((genre for genre in genres if genre.title == item_id), None))
     elif kind == 'category':
         item = invented_category(item_id)
     elif kind in ('room', 'grouping', 'multiroom'):
@@ -699,6 +706,17 @@ def open_credits_dialog(window):
     track = tracks[args.song]
     window.item_actions.menu_for(track)  # its menu, which the action finds the track by
     window.activate_action('win.item-view-credits', GLib.Variant('(ss)', ('song', track.id)))
+
+
+def open_sort_menu(window):
+    """--sort-menu: the page's Sort By (or Sort and Filter) menu, popped up."""
+    page = window.navigation_view.get_visible_page()
+    button = next((found for found in harness_descendants(page, Gtk.MenuButton)
+                   if found.get_tooltip_text() in ('Sort By', 'Sort and Filter')
+                   and found.get_mapped()), None)
+    if button is None:
+        sys.exit('screenshot: the page shown has no Sort By menu')
+    button.popup()
 
 
 def open_more_options(window):
@@ -963,6 +981,11 @@ def _shoot():
     if args.context_menu and not menu_opened:
         menu_opened = True
         open_context_menu(window)
+        GLib.timeout_add(800, shoot)  # the popover shown and placed
+        return GLib.SOURCE_REMOVE
+    if args.sort_menu and not menu_opened:
+        menu_opened = True
+        open_sort_menu(window)
         GLib.timeout_add(800, shoot)  # the popover shown and placed
         return GLib.SOURCE_REMOVE
     if args.more_options and not menu_opened:

@@ -9,6 +9,13 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
     width-request: 360;
     height-request: 200;
 
+    // Medium: no room for the optional Genre and Year columns (song_columns.py), which
+    // songs.py leaves out while this applies, or the narrow one: the six fixed widths are
+    // 630 px. No setters: the columns shown follow a setting.
+    Adw.Breakpoint medium_breakpoint {
+      condition ("max-width: 760sp")
+    }
+
     // Narrow: the album and artist columns go, the artist shown under the title instead
     // (songs.py stacks the title cells as this applies), so that the title has the room and
     // title and time fit a 360 px window; Play and Shuffle go under the page's title.
@@ -190,6 +197,23 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
                       resizable: true;
                     }
 
+                    // The optional columns (song_columns.py, the song-columns setting):
+                    // songs.py shows them.
+                    ColumnViewColumn genre_column {
+                      title: _("Genre");
+                      fixed-width: 100;
+                      expand: true;
+                      resizable: true;
+                      visible: false;
+                    }
+
+                    // Four digits and the cell's padding.
+                    ColumnViewColumn year_column {
+                      title: _("Year");
+                      fixed-width: 64;
+                      visible: false;
+                    }
+
                     // Room for an hour or more ("1:02:03", 56 px at Adwaita Sans 11) beside
                     // the cell's 6 px and the page margin's 24 px.
                     ColumnViewColumn time_column {
@@ -220,8 +244,9 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
 }
 
 // The Sort and Filter menu (songs.py's songs.* actions): the keyboard's way to sort, as the
-// column headers take no focus, and Favourites Only. Each label's mnemonic is its own in the
-// menu; the directions' and Favourites Only's are grid.sort_labels()'.
+// column headers take no focus, and Favourites Only; songs.py adds the optional columns'
+// section (song_columns.menu_section()). Each label's mnemonic is its own in the menu; the
+// directions' and Favourites Only's are grid.sort_labels()', the columns' song_columns'.
 menu sort_menu {
   section {
     item {
@@ -240,6 +265,18 @@ menu sort_menu {
       label: _("Al_bum");
       action: "songs.sort-column";
       target: "album";
+    }
+
+    item {
+      label: _("_Genre");
+      action: "songs.sort-column";
+      target: "genre";
+    }
+
+    item {
+      label: _("_Year");
+      action: "songs.sort-column";
+      target: "year";
     }
 
     item {

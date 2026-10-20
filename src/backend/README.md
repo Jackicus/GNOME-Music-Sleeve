@@ -632,15 +632,16 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 ## library.json
 
 `<cache>/library.json`, written by `src/sync.py` (and `scripts/demo_library.py`), read by
-`src/library.py`. Version 4: the shape of 3, written by a full sync (a short pass keeps the
-version of the file it kept from, and 1.0.0's could stamp 3 on a file without 3's keys);
+`src/library.py`. Version 5: a Track carries its `genre` and `year`; version 4: the shape
+of 3, written by a full sync (a short pass keeps the version of the file it kept from, and
+1.0.0's could stamp 3 on a file without 3's keys);
 version 3: Items carry `added` and the file `favourites`; version 2: an album's track
 `index` counts on across its discs. The app syncs an older file again at once (an older one
 still reads: no dates, no hearts, Recently Added Apple's shelf).
 
 ```jsonc
 {
-  "version": 4, "generated": "2026-09-25T12:00:00Z", "storefront": "us",
+  "version": 5, "generated": "2026-09-25T12:00:00Z", "storefront": "us",
   "sections": {"albums": [Item], "artists": [Item], "playlists": [Item], "radio": [Item],
                "videos": [Item]},
   "shelves": [{"key": "rec-<id>", "title": "…", "items": [Item],   // Apple's recommendations
@@ -695,6 +696,8 @@ Track = {"id": "i.…", "catalogId": "…" /* or null */, "title": "…", "artis
          "type": "library-songs",        // the API's: songs, music-videos, library-…, or ''
                                          // (the item playing may carry MusicKit's own
                                          // 'song' or 'musicVideo' instead)
+         "genre": "…" /* or null */,     // the first of its genreNames (version 5)
+         "year": 2007 /* or null */,     // its releaseDate's year (version 5)
          "artUrl": "…" /* or null */,    // the bridge's: the artwork at 256x256, for MPRIS
          "unreleased": true,             // a pre-release album's track not out yet: Apple
                                          // gives it no playParams (only then:

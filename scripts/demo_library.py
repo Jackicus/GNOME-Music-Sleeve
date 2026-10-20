@@ -2009,6 +2009,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                     'index': overall_index,
                     'thumb': None,
                     'type': 'library-songs',
+                    'genre': alb_data['genre'],
+                    'year': alb_data['year'],
                 }
                 global_trk_counter += 1
                 overall_index += 1
@@ -2163,6 +2165,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                 'index': i,
                 'thumb': raw_thumb,
                 'type': 'library-songs',
+                'genre': raw_trk['genre'],
+                'year': raw_trk['year'],
             })
 
         total_ms = sum(t['durationMs'] for t in playlist_tracks)
@@ -2232,6 +2236,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
             'index': i,
             'thumb': raw_thumb,
             'type': 'library-songs',
+            'genre': raw_trk['genre'],
+            'year': raw_trk['year'],
         })
     favourites_play = {'kind': 'playlist', 'id': favourites_id}
     playlists.append({
@@ -2406,7 +2412,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                                           favourite_tracks)
 
     library = {
-        'version': 4,  # sync.LIBRARY_VERSION
+        'version': 5,  # sync.LIBRARY_VERSION
         'generated': '2026-09-25T12:00:00Z',
         'storefront': 'us',
         'sections': {

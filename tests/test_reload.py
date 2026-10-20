@@ -260,17 +260,29 @@ class TestReloadTells(ReloadCase):
         self.load()
         in_albums = self.splices(self.library.albums)
         in_shelf = self.splices(self.library.shelf('recently-added').items)
-        # l.a1 and l.a2 renamed (next to each other in both stores), l.a4's genre changed: the
-        # views neither sort nor filter by the genre.
+        # l.a1 and l.a2 renamed (next to each other in both stores), l.a4's notes changed: the
+        # views neither sort nor filter by the notes.
         for position in (1, 2):
             albums[position]['title'] += ' renamed'
-        albums[4]['genre'] = 'Jazz'
+        albums[4]['summary'] = 'Notes written again'
         self.write(albums, shelves=[shelf('recently-added', [albums[3], albums[1], albums[2]])])
         self.reload()
         self.assertEqual(in_albums, [(1, 2, 2)])  # one splice for the run
         self.assertEqual(in_shelf, [(1, 2, 2)])
         self.assertEqual([item.title for item in self.library.albums],
                          ['l.a0', 'l.a1 renamed', 'l.a2 renamed', 'l.a3', 'l.a4'])
+
+    def test_a_new_genre_is_spliced_for_the_genre_pages_filter(self):
+        # A genre's page filters the Albums store by Item.genre (pages.genre()): a reload
+        # that changes an album's genre has the filter test it again.
+        albums = [album(f'l.a{n}') for n in range(3)]
+        self.write(albums)
+        self.load()
+        in_albums = self.splices(self.library.albums)
+        albums[2]['genre'] = 'Nu-Jazz'
+        self.write(albums)
+        self.reload()
+        self.assertEqual(in_albums, [(2, 1, 1)])
 
     def test_a_retitled_shelf_notifies_its_title(self):
         items = [album('l.a0')]

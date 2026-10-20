@@ -600,6 +600,37 @@ class PageLifetimeTest(WidgetTestCase):
             GridPage(self.library, 'Invented Folder', store, root=False), Tile)
         await self.assert_freed(*refs)
 
+    async def test_genre_pages(self):
+        # The Genres destination (a root page over Library.genres()) and a genre's albums,
+        # pushed (pages.genre(): a filter over the library's Albums store).
+        from applemusic import pages
+        from applemusic.library import Item, Library
+        from applemusic.sections import Destination
+        from applemusic.widgets.tile import Tile
+
+        library = Library()
+        library.albums.splice(0, 0, [Item(_album(number)) for number in range(8)])
+        destination = Destination('genres', 'Genres', 'tag-symbolic', 'show-genres')
+        refs = await self.rooted_and_dropped(pages.create(destination, library), Tile)
+        genre = library.genres().get_item(0)
+        refs += await self.pushed_and_popped(pages.genre(library, genre), Tile)
+        del genre
+        await self.assert_freed(*refs)
+
+    async def test_playlist_table_page_with_genre_and_year(self):
+        # The optional columns shown (the song-columns setting): the rows' genre and year,
+        # the header's titles, the menu's column actions.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.widgets.track_row import TrackRow, TrackTableHeader
+
+        self.app.settings.set_strv('song-columns', ['genre', 'year'])
+        self.addCleanup(self.app.settings.reset, 'song-columns')
+        item = Item(dict(_album(1, tracks=12), kind='playlist'))
+        refs = await self.pushed_and_popped(DetailPage(self.library, item), TrackRow,
+                                            TrackTableHeader)
+        await self.assert_freed(*refs)
+
     async def test_search_see_all_page(self):
         # A search shelf's See All, paging on while shown (a page fetched, its footer bound).
         from applemusic.library import Item

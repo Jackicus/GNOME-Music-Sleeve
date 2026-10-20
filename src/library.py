@@ -29,6 +29,11 @@ set_favourites() several at once, a selection's ahead of its writes) and
 playlists and dated videos, newest added first (recently_added_order()), or, from a file
 without dates, Apple's own recently-added shelf.
 
+Since version 5 a Track carries its `genre` and `year` (TRACK_FIELDS), the song tables'
+optional columns, which SongOrder sorts by too. `genres()` is the Genres page's store, an Item
+of kind 'genre' for each genre the albums have (genre_items()), made at its first call and
+kept up to date by every load after it.
+
 load() makes new objects for everything; reload() (after a sync) reads the file again and brings
 the models up to date in place: an Item or Track still in the library keeps its object, so open
 pages and scroll positions survive. hide() makes every load leave out what was just removed
@@ -140,9 +145,9 @@ TRACK_KINDS = {'songs': 'song', 'library-songs': 'song',
                'music-videos': 'video', 'library-music-videos': 'video'}
 
 # The Item properties that views over the stores sort and filter by (pages/grid.py's SORTS,
-# the search page's filters). When a reload changes one, the stores holding the Item splice
-# it over itself so that those models place it again.
-SORT_KEYS = frozenset(('title', 'subtitle', 'year', 'added'))
+# the search page's filters, a genre's page). When a reload changes one, the stores holding
+# the Item splice it over itself so that those models place it again.
+SORT_KEYS = frozenset(('title', 'subtitle', 'year', 'added', 'genre'))
 
 # The sections of library.json's `favourites` (sync.FAVOURITE_SECTIONS), read as one set.
 FAVOURITE_SECTIONS = ('songs', 'albums', 'playlists', 'videos')
@@ -238,8 +243,8 @@ def duration_text(duration_ms):
 
 
 def albums_text(count):
-    """An artist's caption: '3 albums'."""
-    # Translators: how many albums of an artist the library has.
+    """An artist's caption, or a genre's: '3 albums'."""
+    # Translators: how many albums of an artist, or of a genre, the library has.
     return ngettext('{count} album', '{count} albums', count).format(count=f'{count:n}')
 
 
@@ -306,7 +311,8 @@ def raw_property(key, type, default=None, writable=False):
 # The keys of a Track dict (src/backend/README.md's Track shape, and the API `type`), in the
 # order a TrackRecord keeps their values.
 TRACK_FIELDS = ('id', 'catalogId', 'title', 'artist', 'album', 'trackNumber', 'discNumber',
-                'durationMs', 'durationLabel', 'explicit', 'index', 'thumb', 'type')
+                'durationMs', 'durationLabel', 'explicit', 'index', 'thumb', 'type', 'genre',
+                'year')
 _FIELDS = {name: position for position, name in enumerate(TRACK_FIELDS)}
 _CATALOG_ID = _FIELDS['catalogId']
 _ABSENT = object()  # a TRACK_FIELDS key the dict did not have
@@ -414,6 +420,10 @@ class Track(GObject.Object):
     index = raw_property('index', int, 0)
     # A track of a pre-release album that is not out yet (`unreleased`): shown, not played.
     unreleased = raw_property('unreleased', bool, False)
+    # Its genre (the first of Apple's genreNames) and its release's year: the tables' Genre
+    # and Year columns. '' and 0 for a library.json from before version 5.
+    genre = raw_property('genre', str, '')
+    year = raw_property('year', int, 0)
     kind = GObject.Property(type=str, default='',
                             getter=lambda self: TRACK_KINDS.get(_text(self.raw.get('type')), ''),
                             flags=GObject.ParamFlags.READABLE)
@@ -1385,6 +1395,8 @@ class Library(GObject.Object):
         self.radio = Gio.ListStore(item_type=Item)
         self.videos = Gio.ListStore(item_type=Item)
         self.recently_added = Gio.ListStore(item_type=Item)
+        self._genres = Gio.ListStore(item_type=Item)
+        self._genres_wanted = False  # genres() was called: every load brings it up to date
         self.shelves = []
         self.batch_size = BATCH_SIZE
         self._songs = Gio.ListStore(item_type=Track)
@@ -1425,6 +1437,31 @@ class Library(GObject.Object):
     def song_count(self):
         """How many tracks `songs` holds or will hold, without building it."""
         return self._songs.get_n_items() if self.songs_ready else self._song_count
+
+    def genres(self):
+        """The Genres store: an Item of kind 'genre' for each genre the library's albums
+        have (genre_items()), by name.
+
+        Filled at the first call, from the albums as they are (a few milliseconds for 3,000),
+        and from then on brought up to date by every load and reload, a genre still there
+        keeping its Item (merged) and its place (apply_diff). Nothing before the first call:
+        the app starts without it."""
+        if not self._genres_wanted:
+            self._genres_wanted = True
+            self._fill_genres(keep=True)
+        return self._genres
+
+    def _fill_genres(self, keep):
+        kept = {item.id: item for item in self._genres} if keep else {}
+        items = []
+        for raw in genre_items(self.albums):
+            item = kept.get(raw['id'])
+            if item is None:
+                item = Item(raw)
+            else:
+                item.merge(raw, replace=True)
+            items.append(item)
+        apply_diff(self._genres, items)
 
     async def build_songs(self):
         """Fill the Songs store, unless it is filled or being filled already.
@@ -1941,6 +1978,8 @@ class Library(GObject.Object):
             await self._pause(generation)
         apply_diff(self.recently_added, recently_added_order(
             candidates, list(recent.items) if recent is not None else []))
+        if self._genres_wanted:
+            self._fill_genres(keep)
         for item in tree.changed:
             changed[item] = None
         if changed:
@@ -2129,6 +2168,8 @@ class SongOrder:
         'title': ('artist', 'album', 'track'),
         'artist': ('album', 'track'),
         'album': ('artist', 'track'),
+        'genre': ('artist', 'album', 'track'),
+        'year': ('artist', 'album', 'track'),
         'time': ('title', 'artist'),
     }
 
@@ -2174,7 +2215,8 @@ class SongOrder:
         self._searched = True
 
     def tracks(self, column, descending=False):
-        """The tracks in column's order: 'title', 'artist', 'album' or 'time'."""
+        """The tracks in column's order: 'title', 'artist', 'album', 'genre', 'year' or
+        'time'."""
         ties = self._ties.get(column)
         if ties is None:
             order = list(range(len(self._tracks)))
@@ -2202,16 +2244,20 @@ class SongOrder:
         array. The raw dicts are read, not the properties: a property read costs a
         microsecond, and this reads every track.
 
-        'time' is the duration, 'track' the disc and track numbers as one number, which sorts
-        as the pair does. A text column's key is a rank: its distinct texts are collated,
-        sorted in runs of STEP and merged (40,000 distinct titles take 40 ms to sort in one
-        go), and each takes the next rank but for one that collates as the one before it."""
+        'time' is the duration, 'year' the year (0 unknown), 'track' the disc and track
+        numbers as one number, which sorts as the pair does. A text column's key is a rank:
+        its distinct texts are collated, sorted in runs of STEP and merged (40,000 distinct
+        titles take 40 ms to sort in one go), and each takes the next rank but for one that
+        collates as the one before it."""
         tracks, step = self._tracks, self.STEP
         keys = array('l')
-        if name in ('time', 'track'):
+        if name in ('time', 'track', 'year'):
             for start in range(0, len(tracks), step):
                 if name == 'time':
                     keys.extend(_clamp(_number(track.raw.get('durationMs')))
+                                for track in tracks[start:start + step])
+                elif name == 'year':
+                    keys.extend(_clamp(_number(track.raw.get('year')))
                                 for track in tracks[start:start + step])
                 else:
                     keys.extend(_clamp(_number(track.raw.get('discNumber')) * 1_000_000
@@ -2361,6 +2407,39 @@ def recently_added_order(items, recent):
         start = end
     undated.sort(key=lambda item: title_key(item.title))
     return dated + undated
+
+
+# The id of a genre's Item (genre_items()): the prefix, then the genre's name.
+GENRE_PREFIX = 'genre:'
+
+
+def genre_items(albums):
+    """The Genres page's Item dicts, one for each genre the albums (Items) have, by name
+    (title_key()): {id, kind 'genre', title (the name), subtitle ("3 albums"), albumCount,
+    thumb and art (its first album's that has a cover)}. An album's genre is its `genre`,
+    the first of Apple's genreNames; an album without one is in no genre. Albums are read in
+    their order, by their raw dicts (no property calls)."""
+    found = {}  # name -> [count, the first album dict with a cover, or None]
+    for album in albums:
+        raw = album.raw
+        name = _text(raw.get('genre'))
+        name = name.strip() if name else ''
+        if not name:
+            continue
+        entry = found.get(name)
+        if entry is None:
+            entry = found[name] = [0, None]
+        entry[0] += 1
+        if entry[1] is None and (raw.get('thumb') or raw.get('art')):
+            entry[1] = raw
+    items = []
+    for name in sorted(found, key=title_key):
+        count, cover = found[name]
+        cover = cover or {}
+        items.append({'id': GENRE_PREFIX + name, 'kind': 'genre', 'title': name,
+                      'subtitle': albums_text(count), 'albumCount': count,
+                      'thumb': _text(cover.get('thumb')), 'art': _text(cover.get('art'))})
+    return items
 
 
 def _without_item(entry):
@@ -2642,22 +2721,23 @@ def _left_out(item, gone, entries):
 
 
 # The keys of a track dict whose values repeat across a library's tracks: an album's
-# tracks all name the album and its artist, "3:07" is the length of a great many songs, and
-# nearly every track's API type is "library-songs".
-SHARED_KEYS = ('artist', 'album', 'durationLabel', 'thumb', 'type')
+# tracks all name the album and its artist, "3:07" is the length of a great many songs,
+# nearly every track's API type is "library-songs", a genre is the genre of many, and so is
+# a year (an int past 256 is an object of its own for each track the decoder reads).
+SHARED_KEYS = ('artist', 'album', 'durationLabel', 'thumb', 'type', 'genre', 'year')
 
 
 def _share_strings(item, strings):
-    """Make the tracks of an Item dict (or a loose song's dict) share one string object per
-    distinct value of SHARED_KEYS, through `strings` (value -> the object kept): the JSON
-    decoder makes a new string for every occurrence, and 40,000 tracks' repeated names cost
-    5 MB that way."""
+    """Make the tracks of an Item dict (or a loose song's dict) share one string (or int)
+    object per distinct value of SHARED_KEYS, through `strings` (value -> the object kept):
+    the JSON decoder makes a new one for every occurrence, and 40,000 tracks' repeated names
+    cost 5 MB that way, their years 1.8 MB more."""
     entries = [item] if 'entries' not in item and 'groups' not in item else [
         entry for group in _dicts(item.get('groups')) for entry in _dicts(group.get('entries'))]
     for entry in entries:
         for key in SHARED_KEYS:
             value = entry.get(key)
-            if isinstance(value, str):
+            if type(value) is str or type(value) is int:  # not a bool: True would be 1
                 entry[key] = strings.setdefault(value, value)
 
 

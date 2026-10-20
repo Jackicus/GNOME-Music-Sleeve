@@ -314,6 +314,22 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   Music Videos scrolled at 4,000 px/s, 2.5 ms of work a frame before and 2.0 after (longest
   23.5 and 9.1 ms), no slower to decode. At 2x a video tile's texture is 569x320 (728 KB)
   where it was 320x180 (230 KB), within the cache's 32 MB budget at that scale.
+- Genres and the tracks' genre and year (2026-10-20, issue 363; library.json version 5).
+  build/demo-big's library.json went from 58 to 64 MB (each track's `genre` and `year`).
+  Kept in the TrackRecord's two more slots, the genre's strings and the years' ints shared
+  across tracks (`SHARED_KEYS`: a year past 256 decoded is an int object of its own, 1.8 MB
+  over 57,000 tracks), they cost about 1 MB: anonymous memory at library ready 137 MB before,
+  138 after; after every page browsed twice 249 before (runs 249-251), 250 after with Genres
+  off, 253 with Genres on and browsed (a grid page more, its covers decoded). Startup's own
+  share 231 ms before, 217-246 after (a noisier machine that day: the bare window 797 ms
+  before, 810-891 after). Genres' first visit 33-36 ms (19 tiles made); `Library.genres()`
+  over 3,000 albums is one walk of their dicts, not on the startup path. Songs scrolled
+  40,000 px at 4,000 px/s: 4.4 ms of work a frame before (longest 9.0), 4.6 after with the
+  columns off (8.1), 5.2 with Genre and Year shown (13.0), no frame over 16.7 ms. The long
+  playlist's table: 4.3 ms a frame with the columns off, 4.5 with them on. A TrackRow makes
+  its genre and year inscriptions only the first time it shows them: made in every row,
+  Favourite Songs' first visit took 121 ms against 98, made lazily 101-110 (it was 98-144
+  before, the one switch near the 100 ms target).
 
 ### What a page visit leaves behind (2026-10-20)
 

@@ -7,7 +7,7 @@ into its filter and report what each key cost.
 
     scripts/scroll_test.py [--page KEY] [--speed PX_PER_S] [--distance PX] [--size WxH]
                            [--light] [--sidebar] [--open KIND:ID]
-                           [--type TEXT [--key-interval MS]]
+                           [--type TEXT [--key-interval MS]] [--setting KEY=VALUE]…
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) on the
 demo library, as screenshot.py --demo does (scripts/harness.py), with the desktop's
@@ -81,6 +81,10 @@ parser.add_argument('--type', metavar='TEXT',
                     help="type TEXT into the page's filter, then delete it, a key at a time")
 parser.add_argument('--key-interval', type=float, default=250,
                     help='milliseconds between keys (default 250)')
+parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[],
+                    help="a setting (GVariant text), as screenshot.py's: "
+                         "--setting \"song-columns=['genre','year']\" scrolls Songs with "
+                         'its optional columns')
 args = parser.parse_args()
 width, height = (int(n) for n in args.size.split('x'))
 
@@ -111,6 +115,10 @@ artwork._load = counting_load
 
 def on_activate(_app):
     app.settings.set_string('last-page', args.page)
+    for setting in args.setting:
+        key, _sep, text = setting.partition('=')
+        kind = app.settings.get_value(key).get_type_string()
+        app.settings.set_value(key, GLib.Variant.parse(GLib.VariantType(kind), text))
     GLib.timeout_add(1000, start)
 
 

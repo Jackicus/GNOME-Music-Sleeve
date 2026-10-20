@@ -205,6 +205,14 @@ list and the script together.
     Ctrl+Shift+M again, Return to Main Window or Ctrl+W (its close) brings the window back
     with the focus where it was. The script walks this after step 10, and `--names` looks
     at it with a song playing.
+19. With Show Genres on (Preferences › General › Library), Genres is in the sidebar's
+    Library section; off, it is not, and Home shows in its place. On Genres, Ctrl+2 puts the
+    focus on the first genre, read with its count ("Ambient, 3 albums"), Enter opens its
+    albums and Alt+Left goes back with the focus on the genre. On Songs, Sort and Filter
+    lists Genre Column and Year Column (C and L) where the window has room for the
+    columns, every item with a mnemonic of its own; C shows the Genre column at once. In a
+    narrow window the items are not listed. The script walks this after Albums' Favourites
+    Only, and `--names` looks at Genres, and at Songs with both columns shown.
 
 ## The tools
 
