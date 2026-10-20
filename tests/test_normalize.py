@@ -1161,6 +1161,66 @@ class TestArtistPage(unittest.TestCase):
     def test_an_answer_without_an_artist(self):
         page = normalize.artist_page({'data': []}, self.tmp_dir)
         self.assertEqual((page['latest'], page['topSongs'], page['shelves']), (None, None, []))
+        self.assertIsNone(page['banner'])
+
+    def test_no_banner_without_hero_or_editorial_artwork(self):
+        self.assertIsNone(self.page['banner'])  # the fixture has neither: the portrait
+
+
+class TestArtistBanner(unittest.TestCase):
+    """artist_banner: an artist's wide header as music.apple.com chooses it, from invented
+    attributes in the shape Apple answers with `extend=editorialArtwork,hero`."""
+
+    PORTRAIT = 'https://example.invalid/image/thumb/aW52ZW50ZWQ/{w}x{h}bb.jpg'
+    BACKGROUND = 'https://example.invalid/image/thumb/ZWRpdG9yaWFs/{w}x{h}{c}.{f}'
+
+    def hero(self, crops, url=PORTRAIT, size=3000):
+        return [{'content': [{'artwork': {'url': url, 'width': size, 'height': size,
+                                          'bgColor': '2a1f3d',
+                                          'recommendedCropCodes': crops}}]}]
+
+    def editorial(self):
+        return {'centeredFullscreenBackground': {'url': self.BACKGROUND, 'width': 4320,
+                                                 'height': 2160, 'bgColor': '#102030'}}
+
+    def test_the_template_cut_with_a_crop(self):
+        self.assertEqual(normalize.banner_template(self.PORTRAIT, 'vf'),
+                         'https://example.invalid/image/thumb/aW52ZW50ZWQ/{w}x{h}vf.jpg')
+        self.assertEqual(normalize.banner_template(self.BACKGROUND, 'sr'),
+                         'https://example.invalid/image/thumb/ZWRpdG9yaWFs/{w}x{h}sr.jpg')
+        self.assertIsNone(normalize.banner_template('https://example.invalid/a/600x600bb.jpg',
+                                                    'vf'))  # not a template
+        self.assertIsNone(normalize.banner_template('http://example.invalid/{w}x{h}bb.jpg',
+                                                    'vf'))
+        self.assertIsNone(normalize.banner_template(None, 'vf'))
+
+    def test_the_editorial_background_first(self):
+        banner = normalize.artist_banner({'editorialArtwork': self.editorial(),
+                                          'hero': self.hero(['vf', 'va'])})
+        self.assertEqual(banner, {
+            'url': 'https://example.invalid/image/thumb/ZWRpdG9yaWFs/{w}x{h}sr.jpg',
+            'crop': 'sr', 'width': 4320, 'height': 2160, 'color': '#102030'})
+
+    def test_else_the_hero_portrait_cut_wide(self):
+        banner = normalize.artist_banner({'editorialArtwork': {}, 'hero': self.hero(['va', 'vf'])})
+        self.assertEqual(banner, {
+            'url': 'https://example.invalid/image/thumb/aW52ZW50ZWQ/{w}x{h}vf.jpg',
+            'crop': 'vf', 'width': 3000, 'height': 3000, 'color': '#2a1f3d'})
+
+    def test_none_where_apple_recommends_no_wide_crop(self):
+        for attrs in ({}, {'hero': self.hero(['va', 'vb'])}, {'hero': [{}]},
+                      {'hero': [{'content': []}]}, {'hero': []}, {'hero': 'x'},
+                      {'hero': self.hero(['vf'], url='https://example.invalid/a/600x600bb.jpg')},
+                      {'hero': self.hero(['vf'], size=0)},
+                      {'editorialArtwork': {'centeredFullscreenBackground': {'url': None}}}):
+            with self.subTest(attrs=attrs):
+                self.assertIsNone(normalize.artist_banner(attrs))
+
+    def test_the_page_carries_it(self):
+        raw = {'data': [{'id': '1724049001', 'type': 'artists',
+                         'attributes': {'name': 'Invented', 'hero': self.hero(['vf'])}}]}
+        page = normalize.artist_page(raw, tempfile.gettempdir())
+        self.assertEqual(page['banner']['crop'], 'vf')
 
     def test_the_cache_path(self):
         self.assertEqual(normalize.artist_cache_path('/c', '1724049001'),

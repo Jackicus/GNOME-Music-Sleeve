@@ -15,7 +15,8 @@ paths:
 Targets, on a 3,000-album, 40,000-song invented library: content within about a second of
 launch, page switches under 100 ms, no dropped frames while scrolling Albums and Songs,
 anonymous memory under 250 MB after every page has been browsed twice, and pages opened and
-closed (20 albums, 5 artists, 5 See All, after a warm-up round) leaving at most 5 MB behind.
+closed (20 albums, 5 artists, 5 artist pages, 5 See All, after a warm-up round) leaving at
+most 5 MB behind.
 bench.py checks all but scrolling. The numbers behind these rules are in docs/notes.md.
 
 ## Measure
@@ -51,7 +52,8 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   ours: signal handlers cost 0.6 KB a widget), which asks in an idle after the frame, lets go on
   unmap, falls through its paths, shows another size of one meanwhile, and always hands the
   widget a texture or `empty()`. Tile, Cover (and so SongTitle, TrackRow, HeroTile),
-  CategoryTile and the artist portrait use one; a new artwork widget does too.
+  CategoryTile, the artist portrait and the artist banner use one; a new artwork widget
+  does too.
 - A model change that removes the items a `Gtk.ListView` or `ColumnView` shows destroys those
   rows and builds new ones. To replace a list's contents, insert the new items first,
   `scroll_to(0)`, then remove the old ones (`SongsPage._show()`): the rows are only rebound.

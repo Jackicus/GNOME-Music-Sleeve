@@ -166,6 +166,47 @@ class FetchRemoteTest(RemoteTestCase):
         self.assertTrue(self.threads[0].startswith('art-fetch'), self.threads)
 
 
+class BannerTest(RemoteTestCase):
+    """An artist's banner (normalize.artist_banner's dict): asked at the header's width in
+    steps, no wider than Apple has it, in the shape its crop gives."""
+
+    WIDE = {'url': 'https://x.invalid/b/{w}x{h}vf.jpg', 'crop': 'vf', 'width': 3000,
+            'height': 3000, 'color': None}
+    EDITORIAL = {'url': 'https://x.invalid/e/{w}x{h}sr.jpg', 'crop': 'sr', 'width': 4320,
+                 'height': 2160, 'color': '#102030'}
+
+    def test_the_size_asked(self):
+        step = remote.BANNER_STEP
+        self.assertEqual(remote.banner_size(self.WIDE, 1), (step, round(step / 3)))
+        self.assertEqual(remote.banner_size(self.WIDE, step), (step, round(step / 3)))
+        self.assertEqual(remote.banner_size(self.WIDE, step + 1),
+                         (2 * step, round(2 * step / 3)))
+        # Never wider than the source: a 3000 px portrait cut at 3:1 is 3000x1000 at most.
+        self.assertEqual(remote.banner_size(self.WIDE, 5000), (3000, 1000))
+        # The editorial background keeps its own shape, 2:1.
+        self.assertEqual(remote.banner_size(self.EDITORIAL, 1300), (3 * step, 3 * step // 2))
+        small = dict(self.WIDE, width=902, height=902)
+        self.assertEqual(remote.banner_size(small, 2000), (902, 301))
+
+    def test_the_url(self):
+        self.assertEqual(remote.banner_url(self.WIDE, 1100), 'https://x.invalid/b/1440x480vf.jpg')
+        self.assertIsNone(remote.banner_url(dict(self.WIDE, url='http://x.invalid/{w}x{h}vf.jpg'),
+                                            1100))
+        self.assertIsNone(remote.banner_url(None, 1100))
+
+    def test_fetched_into_remote_art(self):
+        async def go():
+            path = await remote.fetch_banner(self.WIDE, 1100)
+            self.assertEqual(os.path.dirname(path), self.path('remote-art'))
+            self.assertTrue(os.path.exists(path))
+            self.assertEqual(self.fetched, ['https://x.invalid/b/1440x480vf.jpg'])
+            self.assertEqual(await remote.fetch_banner(self.WIDE, 1200), path)  # one step
+            self.assertEqual(len(self.fetched), 1)
+            missing = dict(self.WIDE, url='https://x.invalid/missing/{w}x{h}vf.jpg')
+            self.assertIsNone(await remote.fetch_banner(missing, 1100))
+        run(go())
+
+
 class FetchCoverTest(RemoteTestCase):
     """fetch_cover: True only when this call brought the cover."""
 

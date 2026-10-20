@@ -82,7 +82,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   their songs. A song you added without its album shows as its album. Clicking an artist you
   have anywhere else (a song's artist, an album's) shows the same; their name at the top, or
   **Go to Artist** in a menu, opens their page on Apple Music, whose **In Your Library**
-  leads back with **See All**. In a narrow window the list comes first, and choosing an
+  leads back with **See All**. That page opens with Apple's wide picture of the artist, their
+  name over it, when Apple has one (about half of its artists do), else with their round
+  portrait; their latest release sits beside their top songs unless the window is narrow. In a narrow window the list comes first, and choosing an
   artist shows their albums, with a back button.
 - A title too long for its tile ends in "…": rest the pointer on the tile to read all of it.
   Music videos are wide tiles, with a play symbol under the pointer.

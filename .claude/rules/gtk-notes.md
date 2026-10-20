@@ -52,7 +52,10 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
 - A Python `do_measure` on a widget with a layout manager (an `Adw.Bin`) is never called: set
   the layout manager to None and implement both `do_measure` and `do_size_allocate`.
 - A `Gtk.Overlay` gives an overlay child its natural size, and a `Gtk.Picture`'s natural size is
-  its image's: give the picture an overlay whose main child is a sized placeholder.
+  its image's: give the picture an overlay whose main child is a sized placeholder. An
+  overlay child with `layout { measure: true; }` counts in the overlay's size, so the
+  overlay is as tall as the taller of it and the main child, and as that child alone while
+  the main child is hidden (the artist page's hero over its banner).
 - A `Gtk.Stack` that holds the focus moves it into the child it switches to at once, before
   a layout: a `Gtk.ScrolledWindow` there whose lists have no rows yet (they come at the
   layout) takes the focus itself, where no key reaches a row (`ShelvesPage._focus_shelves`

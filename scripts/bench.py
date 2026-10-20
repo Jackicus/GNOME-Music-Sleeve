@@ -39,8 +39,10 @@ page has been browsed twice, and pages opened and closed leaving at most 5 MB be
 - memory: RSS (and the anonymous part of it, the app's own) from /proc/self/status
   after the window is mapped, the library is loaded, and every page has been browsed
   twice, and the peak (VmHWM).
-- pages: 20 albums, 5 artists and 5 See All grids opened (window.open_item and
-  open_shelf, as a tile or See All does) and popped one after the other, --settle ms
+- pages: 20 albums, 5 artists, 5 of Apple Music's artist pages (the demo's invented
+  ones: window.open_artist_page, as Go to Artist does) and 5 See All grids opened
+  (window.open_item and open_shelf, as a tile or See All does) and popped one after
+  the other, --settle ms
   each, twice: a first round that warms the caches (the artwork's LRU fills once, the
   page modules load), then the measured one: the RSS and anonymous RSS it left behind,
   after gc.collect() and malloc_trim(0), and how many of the pages pushed in either
@@ -80,7 +82,8 @@ SWITCH_TARGET = 100  # ms
 ANON_TARGET = 250
 PAGES_TARGET = 5  # MB the pages step's measured round may leave behind
 FRAME_TIMEOUT = 3000  # ms to wait for a frame before calling it missing
-PAGES = (('album', 20), ('artist', 5), ('shelf', 5))  # what the pages step opens and pops
+# What the pages step opens and pops: 'artist-page' is Apple Music's page of an artist.
+PAGES = (('album', 20), ('artist', 5), ('artist-page', 5), ('shelf', 5))
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cache', default=os.environ.get('APPLE_MUSIC_CACHE')
@@ -240,7 +243,8 @@ def parent():
               f'{median(page["anon"] for page in pages):+.1f} MB) after gc.collect() and '
               f'malloc_trim(0), {verdict(grown, PAGES_TARGET)} the {PAGES_TARGET} MB '
               f'target; still alive (run 1): {alive}')
-        names = {'album': 'an album', 'artist': 'an artist', 'shelf': 'See All'}
+        names = {'album': 'an album', 'artist': 'an artist', 'artist-page': 'an artist page',
+                 'shelf': 'See All'}
         timings = ', '.join(
             f'{names[kind]} {fmt(median(page["open_ms"].get(kind) for page in pages), "ms")}'
             for kind, _count in PAGES if any(kind in page.get('open_ms', {}) for page in pages))
@@ -583,6 +587,12 @@ def child():
         for kind, count in PAGES:
             if kind == 'shelf':
                 plan += [(kind, shelves[i % len(shelves)]) for i in range(count if shelves else 0)]
+            elif kind == 'artist-page':  # the artists the demo invented a catalog page for
+                pages_dir = os.path.join(os.environ['APPLE_MUSIC_CACHE'], 'artists')
+                found = [library.artists.get_item(i)
+                         for i in range(library.artists.get_n_items())]
+                plan += [(kind, artist) for artist in found if os.path.exists(os.path.join(
+                    pages_dir, f"{artist.raw.get('catalogId')}.json"))][:count]
             else:
                 store = stores[kind]
                 plan += [(kind, store.get_item(i))
@@ -595,6 +605,8 @@ def child():
                 started = time.perf_counter()
                 if kind == 'shelf':
                     window.open_shelf(target)
+                elif kind == 'artist-page':
+                    window.open_artist_page(target)
                 else:
                     window.open_item(target)
                 page = window.navigation_view.get_visible_page()
@@ -614,7 +626,8 @@ def child():
         rss_after, anon_after = memory()
         opened = {}
         for kind, _target in plan:
-            name = {'album': 'albums', 'artist': 'artists', 'shelf': 'See All'}[kind]
+            name = {'album': 'albums', 'artist': 'artists', 'artist-page': 'artist pages',
+                    'shelf': 'See All'}[kind]
             opened[name] = opened.get(name, 0) + 1
         return {
             'opened': opened,

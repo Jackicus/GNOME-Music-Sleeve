@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // SPDX-FileCopyrightText: 2026 Jack Tully
-
 using Gtk 4.0;
 using Adw 1;
 
@@ -8,11 +7,10 @@ template $AppleMusicArtistPage: Adw.NavigationPage {
   child: Adw.BreakpointBin {
     width-request: 360;
     height-request: 200;
-
-    // Narrower than a release card beside two columns of songs: the release goes above the
+    // Narrower than a release card beside a column of songs: the release goes above the
     // songs.
     Adw.Breakpoint {
-      condition ("max-width: 900sp")
+      condition ("max-width: 700sp")
 
       setters {
         top_row.orientation: vertical;
@@ -78,75 +76,90 @@ template $AppleMusicArtistPage: Adw.NavigationPage {
           margin-top: 24;
           margin-bottom: 24;
 
-          Box hero_row {
-            spacing: 24;
-            margin-start: 24;
-            margin-end: 24;
-
-            // Decorative: the name follows it.
-            Adw.Avatar avatar {
-              size: 200;
-              show-initials: true;
+          // The hero: Apple's wide banner of the artist, when it has one, with the name and
+          // the buttons over its foot (artist.py's _show_banner); else the round portrait
+          // beside them. The overlay is as tall as the taller of the two.
+          Overlay hero {
+            child: $AppleMusicArtistBanner banner {
+              visible: false;
               accessible-role: presentation;
-            }
+            };
 
-            Box {
-              orientation: vertical;
-              valign: center;
-              hexpand: true;
-              spacing: 6;
+            [overlay]
+            Box hero_row {
+              spacing: 24;
+              margin-start: 24;
+              margin-end: 24;
 
-              Label name_label {
-                xalign: 0;
-                wrap: true;
-                wrap-mode: word_char;
-
-                styles [
-                  "title-1",
-                ]
+              layout {
+                measure: true;
               }
 
-              Label caption_label {
-                xalign: 0;
-                wrap: true;
-
-                styles [
-                  "caption",
-                  "dimmed",
-                ]
+              // Decorative: the name follows it.
+              Adw.Avatar avatar {
+                size: 200;
+                show-initials: true;
+                accessible-role: presentation;
               }
 
-              // Play (the artist's top songs, from the catalog) and the artist's own menu.
-              Box buttons_box {
-                spacing: 12;
-                margin-top: 12;
+              Box {
+                orientation: vertical;
+                valign: center;
+                hexpand: true;
+                spacing: 6;
 
-                Button play_button {
-                  visible: false;
-
-                  child: Adw.ButtonContent {
-                    icon-name: "media-playback-start-symbolic";
-                    label: _("Play");
-                  };
+                Label name_label {
+                  xalign: 0;
+                  wrap: true;
+                  wrap-mode: word_char;
 
                   styles [
-                    "pill",
-                    "suggested-action",
+                    "title-1",
                   ]
                 }
 
-                MenuButton more_button {
-                  icon-name: "view-more-symbolic";
-                  tooltip-text: _("More Options");
-                  valign: center;
-
-                  accessibility {
-                    label: _("More Options");
-                  }
+                Label caption_label {
+                  xalign: 0;
+                  wrap: true;
 
                   styles [
-                    "circular",
+                    "caption",
+                    "dimmed",
                   ]
+                }
+
+                // Play (the artist's top songs, from the catalog) and the artist's own menu.
+                Box buttons_box {
+                  spacing: 12;
+                  margin-top: 12;
+
+                  Button play_button {
+                    visible: false;
+
+                    child: Adw.ButtonContent {
+                      icon-name: "media-playback-start-symbolic";
+                      label: _("Play");
+                    };
+
+                    styles [
+                      "pill",
+                      "suggested-action",
+                    ]
+                  }
+
+                  MenuButton more_button {
+                    icon-name: "view-more-symbolic";
+                    tooltip-text: _("More Options");
+                    valign: center;
+
+                    accessibility {
+                      label: _("More Options");
+                    }
+
+                    styles [
+                      "circular",
+                    ]
+                  }
                 }
               }
             }

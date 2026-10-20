@@ -102,7 +102,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   so the title has their room at 360 px. Anything unbounded gets a page of its own (See All), since a
   `Gtk.GridView` cannot sit under a shelf in the same scrolled window.
 - The artist page (pages/artist.py) is Apple's artist page over `Engine.artist_page`: the
-  release card beside Top Songs (`widgets.song_shelf.SongShelf`, a horizontal `Gtk.GridView`
+  hero over the answer's banner when it has one (`widgets.banner.ArtistBanner`, an overlay's
+  main child, the name and buttons a measured overlay in white on its scrim), else the round
+  portrait; the release card beside Top Songs from 700sp (`widgets.song_shelf.SongShelf`, a horizontal `Gtk.GridView`
   three rows high, which plays the songs as one queue from the one activated), then two
   `ShelfColumn`s, before About and after it (Similar Artists), Essential Albums as hero cards
   (`show(heroes=…)`). Shelf titles are Apple's (`view_title()`, not `remote.shelf_title()`), and

@@ -33,7 +33,8 @@ is (the thumbnails 320 x 180). Each hand-written artist also gets the page
 Apple's catalog would answer for it (artists/<catalog id>.json, the shape
 normalize.artist_page() gives: its top songs, latest release and shelves, made
 of the demo's own albums, songs and videos and a few invented singles,
-playlists, radio episodes and interviews), each hand-written album what the
+playlists, radio episodes and interviews, and for every third artist an invented
+3:1 banner drawn here, the first artist's among them), each hand-written album what the
 catalog would show under its tracks (albums/<catalog id>.json, the shape
 normalize.album_page() gives: its release date, copyright and label, and its
 shelves, made of the demo's own albums, videos and playlists and an invented
@@ -455,11 +456,15 @@ def draw_cover(out_path, title, subtitle, badge, palette, motif, is_artist=False
             ctx.move_to(bx + 8, by + 18)
             ctx.show_text(badge)
 
-    # 5. Save as JPEG via GdkPixbuf, straight from the surface's pixels
-    # rather than through a PNG (which was most of a build's time). The
-    # picture is opaque, so premultiplied or not is all one; cairo keeps it
-    # as native-endian 32-bit xRGB words, a stride of exactly size * 4, and
-    # GdkPixbuf wants R, G, B bytes.
+    # 5. Save as JPEG via GdkPixbuf
+    save_jpeg(surf, width, height, out_path)
+
+
+def save_jpeg(surf, width, height, out_path):
+    """Save an opaque cairo ARGB32 surface as a JPEG via GdkPixbuf, straight from its pixels
+    rather than through a PNG (which was most of a build's time). The picture is opaque, so
+    premultiplied or not is all one; cairo keeps it as native-endian 32-bit xRGB words, a
+    stride of exactly width * 4, and GdkPixbuf wants R, G, B bytes."""
     surf.flush()
     xrgb = bytes(surf.get_data())
     red, green, blue = (2, 1, 0) if sys.byteorder == 'little' else (1, 2, 3)
@@ -470,6 +475,72 @@ def draw_cover(out_path, title, subtitle, badge, palette, motif, is_artist=False
     pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
         GLib.Bytes.new(bytes(rgb)), GdkPixbuf.Colorspace.RGB, False, 8, width, height, width * 3)
     pixbuf.savev(out_path, 'jpeg', ['quality'], ['85'])
+
+
+# An invented artist banner's size: the 3:1 shape the app asks Apple's wide cut at
+# (remote.BANNER_ASPECT), as wide as a large window's header at a scale of 1.
+BANNER_SIZE = (1920, 640)
+
+
+def draw_banner(out_path, palette, figures=1, seed=0, size=BANNER_SIZE):
+    """Draw an invented artist banner, as Apple's wide cut of an artist's photograph is: on a
+    stage-lit field in the palette's colours, `figures` head-and-shoulders silhouettes right
+    of the middle, the lower left kept plain where the page puts the name. Laid out on a
+    1536 x 512 canvas scaled to `size`; saved as a JPEG."""
+    dark_rgb, mid_rgb, light_rgb = (hex_to_rgb(colour) for colour in palette)
+    width, height = size
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+    ctx = cairo.Context(surf)
+    ctx.scale(width / 1536, height / 512)
+    rnd = random.Random(seed)
+
+    field = cairo.LinearGradient(0, 0, 1536, 512)
+    field.add_color_stop_rgb(0.0, *dark_rgb)
+    field.add_color_stop_rgb(0.6, *mid_rgb)
+    field.add_color_stop_rgb(1.0, *dark_rgb)
+    ctx.set_source(field)
+    ctx.paint()
+
+    # Stage lights from above, fanning out.
+    for x in (420, 900, 1300):
+        ray = cairo.LinearGradient(x, 0, x, 512)
+        ray.add_color_stop_rgba(0.0, *light_rgb, 0.35)
+        ray.add_color_stop_rgba(1.0, *light_rgb, 0.0)
+        ctx.move_to(x - 24, 0)
+        ctx.line_to(x + 24, 0)
+        ctx.line_to(x + 230, 512)
+        ctx.line_to(x - 230, 512)
+        ctx.close_path()
+        ctx.set_source(ray)
+        ctx.fill()
+
+    # A glow behind the figures, and dust in the light.
+    glow = cairo.RadialGradient(1000, 240, 20, 1000, 240, 420)
+    glow.add_color_stop_rgba(0.0, *light_rgb, 0.5)
+    glow.add_color_stop_rgba(1.0, *light_rgb, 0.0)
+    ctx.set_source(glow)
+    ctx.paint()
+    for _speck in range(90):
+        ctx.arc(rnd.uniform(500, 1536), rnd.uniform(0, 420), rnd.uniform(1, 3.5), 0,
+                2 * math.pi)
+        ctx.set_source_rgba(*light_rgb, rnd.uniform(0.2, 0.6))
+        ctx.fill()
+
+    # The figures, the first the tallest, in the middle of the light.
+    for number in range(figures):
+        x = 1000 + (number - (figures - 1) / 2) * 190
+        scale = 1.0 if number == (figures - 1) // 2 else 0.85
+        ctx.save()
+        ctx.translate(x, 512)
+        ctx.scale(scale, scale)
+        ctx.set_source_rgb(*dark_rgb)
+        ctx.arc(0, -262, 66, 0, 2 * math.pi)
+        ctx.fill()
+        ctx.arc(0, 40, 200, math.pi, 2 * math.pi)
+        ctx.fill()
+        ctx.restore()
+
+    save_jpeg(surf, width, height, out_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1704,6 +1775,9 @@ def generated_playlists(count):
 
 def _draw_one(job):
     out_path, kwargs, thumb_path, thumb_size = job
+    if 'banner' in kwargs:  # an artist's banner: no thumbnail
+        draw_banner(out_path, **kwargs['banner'])
+        return
     draw_cover(out_path, **kwargs)
     pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(out_path, thumb_size, thumb_size, True)
     pixbuf.savev(thumb_path, 'jpeg', ['quality'], ['90'])
@@ -2412,10 +2486,25 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
             for other in rnd.sample(others, min(8, len(others)))])
 
         released = f"{newest['year']}-0{index % 9 + 1}-1{index % 9}"
+        # A banner for every third artist (the first among them), as Apple has one for about
+        # half: drawn here, on disk as `art` where Apple's would be a URL to fetch.
+        banner = None
+        if index % 3 == 0:
+            palette = PALETTES[(index * 5) % len(PALETTES)]
+            path = os.path.join(art_dir, hashlib.sha1(
+                f'banner.{catalog_id}'.encode()).hexdigest() + '.jpg')
+            # Queued, drawn with the covers (in their pool: nothing may decode or save an
+            # image in this process before it forks).
+            draw_cover(out_path=path,
+                       banner={'palette': palette, 'figures': 3 if group else 1, 'seed': index})
+            width, height = BANNER_SIZE
+            banner = {'url': None, 'art': path, 'crop': 'vf', 'width': width,
+                      'height': height, 'color': palette[0]}
         page = {
             'id': catalog_id,
             'artist': brief(artist, id=catalog_id, origin=origin, bornOrFormed=born,
                             isGroup=group, play={'kind': 'artist', 'id': catalog_id}),
+            'banner': banner,
             'latest': {'key': 'latest-release', 'title': 'Latest Release',
                        'item': brief(newest, subtitle=str(newest['year']),
                                      releaseDate=released)},

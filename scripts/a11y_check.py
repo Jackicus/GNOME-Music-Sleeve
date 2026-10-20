@@ -583,6 +583,19 @@ async def walkthrough(window):
     song = artist.top_songs.shelf.items.get_item(1)
     check('Down, Enter plays the top songs from the second', requests == [('songs', 1, song.id)],
           requests)
+    # The other look of the hero: the demo's first artist has a banner, its second none.
+    banner = artist.banner.get_visible()
+    window.navigation_view.pop()
+    await asyncio.sleep(0.6)
+    window.open_artist_page(app.library.by_id('artist', 'l.art002' if banner else 'l.art001'))
+    await asyncio.sleep(1.5)
+    other = window.navigation_view.get_visible_page()
+    look = 'the portrait' if banner else 'a banner'
+    check(f'an artist with {look} opens with the focus on Play',
+          other.banner.get_visible() != banner
+          and inside(window.get_focus(), other.play_button), describe(window.get_focus()))
+    await key(window, 'Tab')
+    check(f'Tab: More Options, over {look}', inside(window.get_focus(), other.more_button))
     window.navigation_view.pop()  # back to the album, as the steps below expect
     await asyncio.sleep(0.6)
     print('-- the idle player bar')

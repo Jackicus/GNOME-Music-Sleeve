@@ -361,10 +361,10 @@ def artist(albums, artist_id='l.artist001'):
             'thumb': None, 'groups': groups, 'play': {}}
 
 
-def artist_answer(artist_id='42', songs=4, group=False):
+def artist_answer(artist_id='42', songs=4, group=False, banner=None):
     """An invented catalog artist's page, as Engine.artist_page answers (normalize.artist_page):
     a latest release, `songs` top songs, Essential Albums, Albums (with more to fetch) and
-    Similar Artists."""
+    Similar Artists; `banner` its banner dict (normalize.artist_banner's), None by default."""
     def entry(kind, number, **extra):
         data = {'id': f'{kind}{number}', 'kind': kind, 'title': f'Invented {kind} {number}',
                 'subtitle': '2026', 'year': 2026, 'art': None, 'thumb': None,
@@ -378,6 +378,7 @@ def artist_answer(artist_id='42', songs=4, group=False):
                         summary='An invented biography.', genre='Pop',
                         origin='Invented Town, Nowhere', bornOrFormed='1 May 2001',
                         isGroup=group, play={'kind': 'artist', 'id': artist_id}),
+        'banner': banner,
         'latest': {'key': 'latest-release', 'title': 'Latest Release',
                    'item': entry('album', 99, releaseDate='2026-09-24', trackCount=12)},
         'topSongs': {'key': 'top-songs', 'title': 'Top Songs', 'more': False,

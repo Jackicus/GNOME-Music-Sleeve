@@ -607,11 +607,30 @@ class PageLifetimeTest(WidgetTestCase):
         from applemusic.widgets.song_shelf import SongRow, SongShelf
         from applemusic.widgets.tile import Tile
 
-        self.app.engine.artist_answer = artist_answer()
+        from applemusic.widgets.banner import ArtistBanner
+
+        # With a banner on disk (an invented image): the page's banner decodes it and fades
+        # it in, and goes with the page.
+        from gi.repository import Gdk, GLib
+
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = os.path.join(folder.name, 'banner.png')
+        Gdk.MemoryTexture.new(6, 2, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(bytes(48)),
+                              24).save_to_png(path)
+        banner = {'url': None, 'art': path, 'crop': 'vf', 'width': 6, 'height': 2,
+                  'color': '#102030'}
+        self.app.engine.artist_answer = artist_answer(banner=banner)
         self.addCleanup(setattr, self.app.engine, 'artist_answer', None)
-        refs = await self.pushed_and_popped(
-            ArtistPage(self.library, Item(dict(_artist([_album(1)]), catalogId='42'))),
-            SongShelf, SongRow, HeroTile, Tile)
+        page = ArtistPage(self.library, Item(dict(_artist([_album(1)]), catalogId='42')))
+        await self.push(page, SongShelf, SongRow, HeroTile, Tile)
+        self.assertTrue(await self.until(lambda: page.banner.picture.get_opacity() == 1))
+        refs = [page.weak_ref(), page.banner.weak_ref()] + [
+            _find(page, cls).weak_ref() for cls in (SongShelf, SongRow, HeroTile, Tile)]
+        self.assertIsInstance(page.banner, ArtistBanner)
+        self.window.navigation_view.pop()
+        self.assertTrue(await self.until(lambda: page.get_parent() is None))
+        page = None
         await self.assert_freed(*refs)
 
     async def test_shelves_page(self):

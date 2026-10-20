@@ -261,6 +261,31 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertNotIn(item['id'], held)
                     self.assertEqual(item['play'], {'kind': 'song', 'id': item['id']})
 
+    def test_artist_pages(self):
+        # Each hand-written artist has the catalog's page of them, as the engine keeps it
+        # (normalize.artist_page's keys); every third one an invented banner on disk, 3:1,
+        # the first artist's among them, the second without one (the screenshots show both).
+        real = normalize.artist_page({}, None)
+        banners = []
+        for artist in self.data['sections']['artists']:
+            with self.subTest(id=artist['id']):
+                path = os.path.join(self.out_dir, 'artists', f"{artist['catalogId']}.json")
+                with open(path, encoding='utf-8') as f:
+                    answer = json.load(f)
+                self.assertIs(answer['demo'], True)
+                self.assertEqual(set(answer) - {'demo', 'cached'}, set(real))
+                banners.append(answer['banner'])
+                if answer['banner'] is not None:
+                    banner = answer['banner']
+                    self.assertEqual(set(banner), {'url', 'art', 'crop', 'width', 'height',
+                                                   'color'})
+                    _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(banner['art'])
+                    self.assertEqual((width, height), (banner['width'], banner['height']))
+                    self.assertEqual(width, 3 * height)
+        self.assertIsNotNone(banners[0])
+        self.assertIsNone(banners[1])
+        self.assertEqual(sum(banner is not None for banner in banners), 5)
+
     def test_album_pages(self):
         # Each album has what the catalog would show under its tracks, as the engine keeps
         # it (normalize.album_page's keys), every shelf in Apple's order, More By untitled.

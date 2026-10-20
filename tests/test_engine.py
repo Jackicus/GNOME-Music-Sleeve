@@ -1584,7 +1584,8 @@ class ArtistTest(EngineFixture):
         params = self.page.api_params[0]
         self.assertIn('top-songs', params['views'].split(','))
         self.assertIn('more-to-see', params['views'].split(','))
-        self.assertEqual(params['extend'], 'artistBio,bornOrFormed,isGroup,origin')
+        self.assertEqual(params['extend'],
+                         'artistBio,bornOrFormed,editorialArtwork,hero,isGroup,origin')
         self.assertEqual(answer['artist']['title'], 'Paper Parachutes')
         self.assertEqual(answer['latest']['item']['title'], 'Ladders of Rain')
         self.assertIn('cached', answer)
