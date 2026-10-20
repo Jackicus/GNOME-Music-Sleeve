@@ -17,8 +17,8 @@ body:
     id: version
     attributes:
       label: App version
-      description: Main menu › About Music Sleeve shows it under the name (for example 0.11.0).
-      placeholder: 0.11.0
+      description: Main menu › About Music Sleeve shows it under the name (for example 0.13.0).
+      placeholder: 0.13.0
     validations:
       required: true
   - type: dropdown
@@ -26,7 +26,7 @@ body:
     attributes:
       label: How did you install it?
       options:
-        - AUR package (music-sleeve)
+        - PKGBUILD from build-aux/aur (makepkg)
         - Built from source with Meson
         - Flatpak (development manifest)
         - Other (say below)
@@ -36,7 +36,7 @@ body:
     id: system
     attributes:
       label: Distribution and GNOME version
-      description: For example "Arch Linux, GNOME 50" or "Fedora 43, GNOME 49". GNOME Settings › System › About shows both.
+      description: For example "Arch Linux, GNOME 50" or "Fedora 44, GNOME 50". GNOME Settings › System › About shows both.
     validations:
       required: true
   - type: input

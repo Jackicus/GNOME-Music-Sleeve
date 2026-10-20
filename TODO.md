@@ -9,8 +9,11 @@ the library's Artists view and Suggested Songs, and
 lyrics as Apple Music's in GNOME's look (Show Translations and Show Pronunciations, words lit
 as they are sung, background vocals on a line of their own, duets on two sides, dots in
 instrumental breaks), a full-screen player (F11), and the sidebar's section dividers and
-indented folders. A release is a tag and a GitHub release (`docs/release.md`); why the app is
-built the way it is, is in `docs/decisions.md`.
+indented folders. On main since v0.13.0, for the next release:
+the engine takes any Chromium-based browser with Widevine, which the page is asked for when it
+starts ([#327](https://github.com/Jackicus/GNOME-Music-Sleeve/pull/327)). A release is a tag
+and a GitHub release (`docs/release.md`); why the app is built the way it is, is in
+`docs/decisions.md`.
 
 ## Open
 
