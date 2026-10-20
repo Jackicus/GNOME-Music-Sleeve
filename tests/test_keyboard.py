@@ -135,6 +135,26 @@ class MoveStepTest(unittest.TestCase):
         self.assertIsNone(self.step(shortcuts.MOVE_DOWN, in_popover=True))
 
 
+class RemoveKeyTest(unittest.TestCase):
+    """Delete on a playlist's focused song (shortcuts.REMOVE_SONG): Remove from Playlist."""
+
+    def remove(self, accel, focus_type=ListItemWidget, dialog_open=False, in_popover=False):
+        _ok, keyval, mods = Gtk.accelerator_parse(accel)
+        return keyboard.remove_key(keyval, mods, focus_type, dialog_open, in_popover)
+
+    def test_the_keys(self):
+        self.assertTrue(self.remove(shortcuts.REMOVE_SONG))
+        self.assertTrue(self.remove('KP_Delete'))
+        self.assertTrue(self.remove('Delete', Gtk.Button))  # a table row's link
+        for other in ('BackSpace', '<shift>Delete', '<primary>Delete', 'Escape'):
+            self.assertFalse(self.remove(other), other)
+
+    def test_typing_a_dialog_or_a_menu_keeps_it(self):
+        self.assertFalse(self.remove('Delete', Gtk.Text))  # the filter's entry
+        self.assertFalse(self.remove('Delete', dialog_open=True))
+        self.assertFalse(self.remove('Delete', in_popover=True))
+
+
 class SelectionKeyTest(unittest.TestCase):
     """A track list's selection mode's keys (shortcuts.SELECT_*, LEAVE_SELECTION): the
     window asks before the playback keys, so Space selects a song in the mode and plays or

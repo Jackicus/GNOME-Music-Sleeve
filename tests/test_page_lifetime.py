@@ -1341,6 +1341,42 @@ class DialogLifetimeTest(WidgetTestCase):
         ref = await self.presented_and_closed(CreditsDialog(self.app, '1000000001'))
         await self.assert_freed(ref)
 
+    async def test_add_songs_dialog(self):
+        from applemusic.dialogs.add_songs import AddSongsDialog, PickRow
+        from applemusic.library import Library, Track
+
+        # The library's songs listed and one picked, then Apple Music's for a search, a
+        # page of them shown; closed as Escape would.
+        library = Library()
+        library.songs_ready = True
+        library.songs.splice(0, 0, [Track({'id': f'i.s{n}', 'title': f'Song {n}',
+                                           'type': 'library-songs', 'index': n})
+                                    for n in range(6)])
+        self.answer('search', {'shelves': [{'key': 'songs', 'next': None, 'items': [
+            {'id': str(3000 + n), 'kind': 'song', 'title': f'Found {n}', 'art': None,
+             'thumb': None, 'play': {'kind': 'song', 'id': str(3000 + n)}, 'groups': []}
+            for n in range(4)]}]})
+
+        async def shown_and_closed():
+            dialog = AddSongsDialog(self.app, library, 'Road Trip')
+            dialog.present(self.window)
+            self.assertTrue(await self.until(lambda: _find(dialog.library_view, PickRow)
+                                             is not None))
+            await self.until(lambda: False, timeout=0.1)  # the entry's text input answered
+            dialog.library_view.emit('activate', 0)
+            refs = [dialog.weak_ref(), _find(dialog.library_view, PickRow).weak_ref(),
+                    dialog.catalog_list.weak_ref(), dialog.stack.weak_ref()]
+            dialog.scope_toggle.set_active_name('catalog')
+            dialog.search_entry.set_text('found')
+            self.assertTrue(await self.until(
+                lambda: _find(dialog.catalog_list, PickRow) is not None
+                and _find(dialog.catalog_list, PickRow).context_item is not None, timeout=2))
+            refs += [_find(dialog.catalog_list, PickRow).weak_ref(), dialog.picks.weak_ref()]
+            dialog.force_close()
+            return refs
+
+        await self.assert_freed(*await shown_and_closed())
+
     async def test_name_dialog(self):
         from applemusic.dialogs.playlist import NameDialog
 

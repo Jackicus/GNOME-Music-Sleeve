@@ -8,6 +8,8 @@ src/credits.py
 src/errors.py
 src/explore.py
 src/dialogs/about.py
+src/dialogs/add_songs.py
+src/dialogs/add_songs.blp
 src/dialogs/credits.py
 src/dialogs/credits.blp
 src/dialogs/playlist.py

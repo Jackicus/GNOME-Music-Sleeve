@@ -27,6 +27,7 @@ foreach blueprint : files(
     'pages/search_all.blp',
     'pages/shelves.blp',
     'pages/songs.blp',
+    'dialogs/add_songs.blp',
     'dialogs/credits.blp',
     'dialogs/preferences.blp',
     'dialogs/signin.blp',
@@ -165,6 +166,7 @@ install_data(
 install_data(
   'dialogs/__init__.py',
   'dialogs/about.py',
+  'dialogs/add_songs.py',
   'dialogs/credits.py',
   'dialogs/playlist.py',
   'dialogs/preferences.py',

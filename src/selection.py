@@ -22,11 +22,23 @@ rows recycled), so the selection would go with each; and its Select All would ta
 page's hero and footer rows. A Library reload keeps its Track objects, so they are stable
 keys, and a song a playlist holds twice is two Tracks, each selected by itself.
 
-`changed` is emitted after every change of the selected set or of `active`. GObject only, no
-GTK: tests/test_selection.py.
+`changed` is emitted after every change of the selected set or of `active`.
+
+Picks is the songs Add Songs… (dialogs/add_songs.py) has picked for a playlist from lists
+that come and go (the library's songs, each search's): kept by what a playlist add takes
+(library.track_ref(): the song's kind and id), so a song is picked once wherever it shows, in
+the order picked, which is the order they are added in.
+
+    picks = Picks()
+    picks.toggle(obj)                     # picked, or not any more; False for no song
+    picks.has(obj); picks.count; picks.objects()
+
+GObject only, no GTK: tests/test_selection.py.
 """
 
 from gi.repository import GObject
+
+from .library import track_ref
 
 
 class Selection(GObject.Object):
@@ -140,3 +152,49 @@ class Selection(GObject.Object):
         if not selected:
             return []
         return [track for track in shown if track in selected]
+
+
+class Picks(GObject.Object):
+    """The songs picked to add to a playlist: see the module. `changed` after every change."""
+
+    __gtype_name__ = 'AppleMusicPicks'
+
+    __gsignals__ = {
+        'changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self._picked = {}  # (kind, id) -> the object picked, in the order picked
+
+    @staticmethod
+    def key(obj):
+        """What a song is picked by: (kind, id) as a playlist add takes it, or None for
+        anything that is no song or music video."""
+        ref = track_ref(obj)
+        return (ref.kind, ref.id) if ref is not None else None
+
+    @property
+    def count(self):
+        return len(self._picked)
+
+    def has(self, obj):
+        key = self.key(obj)
+        return key is not None and key in self._picked
+
+    def toggle(self, obj):
+        """Pick obj, or unpick it (the one picked by its key, from whichever list); False,
+        and nothing changes, for what is no song."""
+        key = self.key(obj)
+        if key is None:
+            return False
+        if key in self._picked:
+            del self._picked[key]
+        else:
+            self._picked[key] = obj
+        self.emit('changed')
+        return True
+
+    def objects(self):
+        """What was picked, in the order picked."""
+        return list(self._picked.values())

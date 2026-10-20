@@ -272,6 +272,8 @@ def classes():
             self.favourites = []  # (artist Item, favourite, its task) per favourite_artist()
             self.ratings = {}  # what known_rating() answers, by (kind, id)
             self.batches = []  # (what, the objects, …) per selection's action of the bar
+            self.removal = None  # the task remove_entries() answers (None: one done, True)
+            self.add_songs = []  # the playlist per ask_add_songs()
 
         # A selection's batch actions (widgets/selection_mode.py), recorded.
 
@@ -286,6 +288,14 @@ def classes():
 
         def remove_entries(self, playlist, tracks):
             self.batches.append(('remove-from-playlist', list(tracks), playlist.id))
+            if self.removal is not None:
+                return self.removal
+            task = asyncio.get_running_loop().create_future()
+            task.set_result(True)
+            return task
+
+        def ask_add_songs(self, playlist):
+            self.add_songs.append(playlist)
 
         def ask_remove_from_library(self, objects):
             self.batches.append(('remove-from-library', list(objects)))
@@ -353,6 +363,8 @@ def classes():
             self.item_actions.favourites = []
             self.item_actions.ratings = {}
             self.item_actions.batches = []
+            self.item_actions.removal = None
+            self.item_actions.add_songs = []
             self.opened = []
             self.artist_pages = []  # open_artist_page()'s, Apple Music's pages of artists
             self.shelves_opened = []

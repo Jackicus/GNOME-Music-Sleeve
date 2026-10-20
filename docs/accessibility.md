@@ -175,6 +175,19 @@ list and the script together.
     a song in the mode selects it rather than playing it; outside the mode they play, as
     before. The script walks this after step 12, and `--names` looks at Songs while
     selecting.
+17. On a playlist of your own, Delete on the focused song takes it out (Remove from
+    Playlist, with Undo on the toast that a screen reader hears), and once the songs show
+    again the focus is on the song that took its place; while selecting, Delete takes out
+    the songs selected; on Favourite Songs, one of Apple's or an album, Delete does nothing.
+    Sort By in the header bar is named; Space opens it, each order and direction with a
+    mnemonic (T for Title), and while it shows another order than the playlist's, Alt+Up and
+    Alt+Down move nothing. The playlist's menu lists Add Songs… and Duplicate: Add Songs…
+    opens a dialog with the focus in its search (named "Search Songs"), Your Library and
+    Apple Music a toggle beside it ("Search In"), Enter in the search moving to the first
+    song, Enter on a song picking it (its row says "Selected", the header bar counts the
+    picks and a screen reader hears the count), Escape closing it with the focus back on
+    the page. The script walks this after step 16, and `--names` looks at the dialog, a
+    song picked, in both its lists.
 
 ## The tools
 

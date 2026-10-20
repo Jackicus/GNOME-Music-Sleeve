@@ -82,7 +82,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   bar, and a folder's page its More Options menu (`pages.add_folder_buttons()`); their tiles
   drag onto the sidebar's folders (every `GridPage`'s and `Shelf`'s tiles are drag
   sources: an album or a playlist onto a sidebar playlist, its songs added, or the bar). The playlists' dialogs (the name, the confirmation
-  before a delete) are `dialogs/playlist.py`'s, presented by the item actions.
+  before a delete) are `dialogs/playlist.py`'s, presented by the item actions, and Add
+  Songs… is `dialogs/add_songs.py`'s `AddSongsDialog` (the library's songs and a search's,
+  `selection.Picks`, one write); Delete on a playlist's focused song is
+  `DetailPage.remove_focused()` (`keyboard.remove_key()`, `ItemActions.remove_entries()`).
 - New, Made for You, Radio and a search category are `ShelvesPage`s over the engine's
   answers (a shelf's `subtitle`, a recommendation's reason, is a dimmed line under its
   title). Radio's has an `arrange` of its own (pages/radio.py over src/radio.py's pure
@@ -171,8 +174,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `track_links.attach(view)` (the Songs table, a playlist's table).
 - A playlist's page is a table from 720sp (`DetailPage.table`, set by detail.blp's
   breakpoint): TrackRow's table rows under a `TrackTableHeader` (the tracks' section header);
-  an album's tracks stay a numbered list. A playlist of the user's (`DetailPage.can_reorder()`;
-  the page lists it in its own order, and a sort of its view would turn this off) takes a
+  an album's tracks stay a numbered list. A playlist's Sort By (the header bar's, beside the
+  filter: `detail.PLAYLIST_SORTS` through `playlist_sorter()`, a `Gtk.SortListModel` before the
+  filter, for the page's life) orders the view only. A playlist of the user's
+  (`DetailPage.can_reorder()`: in Playlist Order, first to last, unfiltered) takes a
   drop of one of its own songs (`dnd.current()`'s origin is the playlist) with an insertion
   line (`dnd.DropFeedback.insert()` on the row, `drop_place()`), and Alt+Up and Alt+Down on
   the focused song; both go through `item_actions.move_in_playlist()` (playlist_order.py),
@@ -303,7 +308,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `CONTEXT_MENU`, the sidebar's `FOLDER_OPEN` and `FOLDER_CLOSE` (sidebar_view.py binds
   them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it), a playlist page's and Up
   Next's `MOVE_UP` and `MOVE_DOWN` (Alt+Up, Alt+Down on the focused song or entry:
-  `keyboard.move_step()`, asked by the page's or the list's own key controller), the window's `VOLUME_UP` and `VOLUME_DOWN` (Ctrl+Up, Ctrl+Down:
+  `keyboard.move_step()`, asked by the page's or the list's own key controller), a playlist
+  page's `REMOVE_SONG` (Delete: `keyboard.remove_key()`, asked by the page's own key
+  controller too), the window's `VOLUME_UP` and `VOLUME_DOWN` (Ctrl+Up, Ctrl+Down:
   `keyboard.volume_step()`, the bar's volume button stepped and announced) and `sections()`
   (the Keyboard Shortcuts dialog), and a track list's selection keys (`SELECT_TOGGLE`,
   `SELECT_RANGE`, `SELECT_ALL`, `SELECT_NONE`, `LEAVE_SELECTION`: `keyboard.selection_key()`,
