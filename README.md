@@ -9,7 +9,7 @@ Not affiliated with Apple. Apple Music is a trademark of Apple Inc.
 
 <p align="center">
   <img src="data/screenshots/album-dark.png" width="49%" alt="An album's page, in the dark style">
-  <img src="data/screenshots/now-playing-light.png" width="49%" alt="Now Playing, a duet's lyrics lit word by word as they are sung">
+  <img src="data/screenshots/now-playing-light.png" width="49%" alt="Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung">
 </p>
 
 The screenshots show an invented demo library.
@@ -25,19 +25,26 @@ The screenshots show an invented demo library.
 ## What it does
 
 - Your library: Recently Added, Artists, Albums, Songs, Music Videos and Made for You,
-  with your playlists and playlist folders in the sidebar.
-- Home, New, Radio and Search, with a page for every album and playlist, and artist pages
-  laid out as Apple Music's: the artist's wide banner where Apple has one, the latest
-  release, top songs, albums, About and similar artists.
-- Your playlists to manage: make new ones, rename and delete them, add and remove songs, and
-  pick from the songs Apple Music suggests adding; make folders and move playlists into them,
-  from a menu or by dragging them onto a folder in the sidebar.
-- A player bar (drop songs and playlists on it to queue them), and a Now Playing view,
-  tinted by the song's artwork, with the queue (covers, the History of what played, remove
-  songs from Up Next, clear it, and Autoplay's similar songs when it ends) and the lyrics:
-  lit word by word as
-  they are sung when Apple Music times them so, with background vocals, duets on two sides,
-  and translations and pronunciations when the song has them.
+  with your playlists and playlist folders in the sidebar. Your favourites carry a heart
+  (Favourites Only shows them alone), and the library's lists and a playlist's songs filter
+  as you type.
+- Home, New, Charts, Radio and Search, with a page for every album and playlist, and artist
+  pages laid out as Apple Music's: the artist's wide banner where Apple has one, the latest
+  release, top songs, albums, radio shows, About and similar artists. An album's page ends
+  with its release date, its other versions, music videos and more by the artist; Search
+  remembers what you searched for and lists every result with See All.
+- Menus on songs, albums, playlists and artists, as each allows: Add to Library or Remove
+  from Library, Favourite, Suggest Less, Create Station, and Add to Playlist, for a whole
+  album or playlist too.
+- Your playlists to manage: make new ones, rename and delete them, add, remove and reorder
+  songs, and pick from the songs Apple Music suggests adding; make folders and move
+  playlists into them, from a menu or by dragging them onto a folder in the sidebar.
+- A player bar (drop songs and playlists on it to queue them; the last song you played is
+  there, paused, when the app starts), and a Now Playing view, tinted by the song's artwork,
+  with the queue (covers, the History of what played, remove songs from Up Next, clear it,
+  and Autoplay's similar songs when it ends) and the lyrics: lit word by word as they are
+  sung when Apple Music times them so, with background vocals, duets on two sides, and
+  translations and pronunciations when the song has them.
 - A full-screen player (<kbd>F11</kbd>): the artwork, the controls and the lyrics over the
   artwork's own colours.
 - GNOME's media controls (MPRIS) and the keyboard's media keys.
@@ -47,11 +54,12 @@ The screenshots show an invented demo library.
   profile.
 - Light and dark styles; the window adapts down to 360 px wide.
 
-What it does not do: Lossless, Dolby Atmos, an equaliser, crossfade or Sound Check, and
-offline listening or downloads (it plays through Apple's web player, which has none of them);
-music videos with a picture (they play as audio); moving a playlist out of its folders or a
-folder into another (Apple's own apps do those). The whole list,
-with the reasons, is in the [user guide](docs/user-guide.md#known-limitations).
+What it does not do: Lossless, Dolby Atmos, an equaliser, crossfade or Sound Check,
+offline listening or downloads, Apple Music Sing, and collaborative or smart playlists (it
+plays through Apple's web player, which has none of them); music videos with a picture (they
+play as audio); moving a playlist out of its folders or a folder into another (Apple's own
+apps do those). The whole list, with the reasons, is in the
+[user guide](docs/user-guide.md#known-limitations).
 
 ## Requirements
 
@@ -81,7 +89,7 @@ sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3
     meson gettext                                                                             # Fedora 44+
 sudo apt install libgtk-4-dev libadwaita-1-dev python3-gi python-gi-dev meson gettext        # Ubuntu 26.04
 
-tar xf music-sleeve-0.13.0.tar.xz && cd music-sleeve-0.13.0
+tar xf music-sleeve-1.0.0.tar.xz && cd music-sleeve-1.0.0
 meson setup _build --prefix=/usr
 meson compile -C _build
 sudo meson install -C _build --skip-subprojects

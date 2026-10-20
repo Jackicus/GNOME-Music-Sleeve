@@ -64,35 +64,35 @@
   <screenshots>
     <screenshot type="default" environment="gnome">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/home-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
-      <caption>Your albums in a grid, sorted the way you choose</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-light.png</image>
+      <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/albums-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/album-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
-      <caption>Now Playing, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-light.png</image>
+      <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/now-playing-light.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/home-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
-      <caption>Your albums in a grid, sorted the way you choose</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-dark.png</image>
+      <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/albums-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/album-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
-      <caption>Now Playing, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-dark.png</image>
+      <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.0.0/data/screenshots/now-playing-dark.png</image>
     </screenshot>
   </screenshots>
 
@@ -102,6 +102,27 @@
   </branding>
 
   <releases>
+    <release version="1.0.0" date="2026-10-20">
+      <description>
+        <p>
+          The first release to stand behind: Apple Music's pages and the ways to look after
+          your library that its own apps have, as far as the web player allows.
+        </p>
+        <ul>
+          <li>Charts, with Top Songs, Top Albums, Top Playlists, the Daily Top 100 and City Charts, and Apple Music's own Radio page</li>
+          <li>An album's page ends with its release date and its other versions, music videos, more by the artist and what else you might like; album and playlist pages name their curator and when they were updated, and add to your library from the header</li>
+          <li>Artist pages wear the artist's banner, show their latest release beside their top songs and their radio shows, and an artist can be made a favourite with the star</li>
+          <li>Search shows what you searched for recently, filters by kind and lists every result with See All, radio shows and curators among them</li>
+          <li>Your favourite songs, albums, playlists and music videos show a heart, and Favourites Only shows them alone; Recently Added holds everything you added, and albums sort by Date Added; Albums, Artists, Songs, Music Videos and a playlist's songs filter as you type</li>
+          <li>Create Station from a song or an artist, Suggest Less, and Remove from Library</li>
+          <li>Playlist folders: New Folder and Move to Folder, from a menu or by dragging in the sidebar; reorder a playlist's songs by dragging or with Alt+Up and Alt+Down; add whole albums and playlists to a playlist, or drag them onto one in the sidebar; drop songs on the player bar to queue them</li>
+          <li>Up Next shows covers and what played before, removes songs, clears with Undo and carries on with similar songs through Autoplay; Now Playing is tinted by the artwork</li>
+          <li>The last song you played is back, paused, when the app starts; live radio shows LIVE and Stop</li>
+          <li>Lyrics and Up Next buttons on the player bar, and new keys: Ctrl+N for a new playlist, Ctrl+Up and Ctrl+Down for the volume, Ctrl+L to go to the current song, F5 to refresh Home</li>
+          <li>Any Chromium-based browser with Widevine can play the music in place of Google Chrome</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.13.0" date="2026-10-19">
       <description>
         <p>
