@@ -52,6 +52,31 @@ class GridTest(PageTestCase):
         self.assertEqual(332 // VIDEO_COLUMN_WIDTH, 1)  # 360 px, its 14 px margins
         self.assertEqual(columns_for(360, VIDEO_COLUMN_WIDTH), 2)  # never fewer
 
+    async def test_a_grid_of_albums_decodes_covers_at_the_size_drawn(self):
+        # Every grid tile is made with GRID_VIDEO_SIZE; an album's square cover is still
+        # asked for at ART_SIZE times the scale factor, not the frame's height (#399).
+        from unittest import mock
+
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets import artwork
+        from applemusic.widgets.tile import ART_SIZE
+        from tests.test_artwork import FakeLoader
+
+        loader = FakeLoader()
+        patcher = mock.patch.object(artwork, '_default', loader)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item(dict(album(n), thumb=f'/cache/thumb/a{n}.jpg'))
+                            for n in range(6)])
+        page = await self.show_root(GridPage(self.library, 'Invented Albums', store))
+        self.assertTrue(await self.until(lambda: loader.requests))
+        self.assertEqual({size for _path, size in loader.requests},
+                         {ART_SIZE * page.get_scale_factor()})
+
     async def test_a_grid_of_videos_shows_16_9_tiles(self):
         from gi.repository import Gio
 
