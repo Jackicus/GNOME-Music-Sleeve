@@ -1764,20 +1764,29 @@ class RestoreTest(unittest.TestCase):
 
     def test_a_reloaded_page_gets_the_autoplay_setting_while_restored(self):
         async def go():
-            player, engine, app = self.restored(state='up')
+            player, engine, app = make_player(state='up')
             await app.settle()
-            app.settings.autoplay = False
+            engine.event('autoplayEnabledDidChange', {'autoplay': True})  # the page's own
+            self.assertTrue(player.restore(session()))
+            app.settings.autoplay = False  # the app's setting differs from the page's
             engine.calls.clear()
-            engine.event('bridgeReset', {})  # the page set its own as it loaded
+            engine.event('bridgeReset', {})  # the new page set its own as it loaded
             await app.settle()
             self.assertIn(('set_autoplay', False), engine.calls)
-            self.assertNotIn(('now_playing',), engine.calls)
+            self.assertFalse(player.autoplay)  # MusicKit's answer: the setting's
+            self.assertNotIn(('now_playing',), engine.calls)  # the session stays as it is
             self.assertTrue(player.restored)
-            self.assertEqual(player.track.id, 'i.demo0001')
-            engine.event('autoplayEnabledDidChange', {'autoplay': True})
-            self.assertTrue(player.autoplay)
-            self.assertTrue(player.restored)
+            self.assertEqual((player.track.id, player.position), ('i.demo0001', 83.0))
         asyncio.run(go())
+
+    def test_musickits_autoplay_is_taken_while_restored(self):
+        player, engine, app = self.restored(state='up')
+        self.assertFalse(player.autoplay)
+        engine.event('autoplayEnabledDidChange', {'autoplay': True})
+        self.assertTrue(player.autoplay)
+        self.assertTrue(player.restored)
+        engine.event('autoplayEnabledDidChange', {'autoplay': False})
+        self.assertFalse(player.autoplay)
 
     def test_forget_session(self):
         player, engine, app = self.restored()
