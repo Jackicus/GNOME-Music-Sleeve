@@ -558,7 +558,8 @@ changes, change it here, with the date. The plan they came from is in
   a weekday within the week, else the date: Apple's `lastModifiedDate`, the `modified` the
   sync keeps), then its songs and time; the genre and the year that were there (the year
   was the modified date's) are gone. An album's caption is unchanged. An album or playlist
-  of the catalog's has **Add** beside Play and Shuffle, which becomes **In Library**, a
+  of the catalog's has **Add** beside Play and Shuffle (an album opened from a shelf, which
+  is subtitled with its year, is by its `artistName`: `release.album_artist()`), which becomes **In Library**, a
   state with no action (the menu has the rest), once the library holds it; the library's
   own pages show neither, being the library's (#351). Whether the library holds it is
   answered from what is loaded (`Library.holds()`), never with a request on the page's

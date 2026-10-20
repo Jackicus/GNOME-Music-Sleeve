@@ -11,7 +11,7 @@ from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 from applemusic.library import Item
 from gi.repository import GLib
 
-from applemusic.release import (album_shelves, album_target, curator, footer_lines,
+from applemusic.release import (album_artist, album_shelves, album_target, curator, footer_lines,
                                 hero_caption, length_text, release_date_text, shelf_title,
                                 updated_text)
 
@@ -97,6 +97,15 @@ class HeroTest(unittest.TestCase):
                        modified=self.utc(2026, 10, 19))
         self.assertEqual(hero_caption(record, self.NOW), 'Pop · 2001 · 12 songs, 43 min')
         self.assertEqual(hero_caption(None), '')
+
+    def test_an_albums_artist(self):
+        self.assertEqual(album_artist(album()), 'Invented Artist')
+        # A shelf's album (an artist page's, Other Versions') is subtitled with its year.
+        shelf = album('1724049100', subtitle='2018', artistName='Invented Band')
+        self.assertEqual(album_artist(shelf), 'Invented Band')
+        self.assertEqual(curator(shelf, 'Alex'), 'Invented Band')
+        self.assertEqual(album_artist(playlist(subtitle='Invented Curator')), '')
+        self.assertEqual(album_artist(None), '')
 
     def test_the_curator(self):
         self.assertEqual(curator(playlist(subtitle='Invented Curator'), 'Alex'),

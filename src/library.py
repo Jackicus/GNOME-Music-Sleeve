@@ -1889,8 +1889,10 @@ def _clamp(number):
 
 def _album_key(raw):
     """An album's title and artist as holds() matches a catalog album to the library's: case
-    and accents ignored."""
-    return fold(_text(raw.get('title')) or ''), fold(_text(raw.get('subtitle')) or '')
+    and accents ignored; the artist its artistName when it has one (a shelf's album is
+    subtitled with its year), else its subtitle."""
+    artist = _text(raw.get('artistName')) or _text(raw.get('subtitle')) or ''
+    return fold(_text(raw.get('title')) or ''), fold(artist)
 
 
 def fold(text):

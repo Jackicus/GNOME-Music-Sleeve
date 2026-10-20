@@ -300,6 +300,27 @@ class DetailPageTest(PageTestCase):
         page = await self.push(self.page(album(3)))
         self.assertFalse(page.artist_button.get_visible())
 
+    async def test_a_shelf_album_subtitled_with_its_year_is_by_its_artist(self):
+        # An artist page's or Other Versions' album: subtitled with its year, its artist in
+        # artistName. The page means the artist wherever it says one: the link, the rows.
+        data = dict(album(1), id='1000000310', subtitle='2018', artistName='Invented Artist')
+        page = await self.push(self.page(data))
+        self.assertTrue(page.artist_button.get_visible())
+        self.assertEqual(page.artist_label.get_label(), 'Invented Artist')
+        self.assertEqual(page._album_artist, 'Invented Artist')  # its rows leave it out
+        # One that came without its tracks: the answer merged in keeps the artist.
+        answer = dict(album(2), id='1000000311')  # subtitled with the artist, as item() is
+        self.app.engine.answers['item'] = answer
+        data = dict(album(2, tracks=0), id='1000000311', subtitle='2019',
+                    artistName='Invented Artist')
+        page = await self.push(self.page(data))
+        self.assertEqual(page.artist_label.get_label(), 'Invented Artist')
+        await self.settle()
+        self.assertTrue(await self.until(lambda: self.rows(page) > 1))
+        self.assertEqual(self.item.subtitle, 'Invented Artist')
+        self.assertEqual(page.artist_label.get_label(), 'Invented Artist')
+        self.assertEqual(page._album_artist, 'Invented Artist')
+
     async def test_a_wide_playlist_is_a_table(self):
         # The stand-in window is 1000 px wide: the page's breakpoint makes it a table, its
         # column titles the tracks' header and each row's artist and album links.

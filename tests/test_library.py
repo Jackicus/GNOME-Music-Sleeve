@@ -1463,6 +1463,10 @@ class TestHolds(unittest.TestCase):
         self.assertTrue(self.library.holds(self.catalog('600', songs=('501', '999'))))
         self.assertFalse(self.library.holds(self.catalog('600', songs=('998', '999'))))
         self.assertFalse(self.library.holds(self.catalog('600', artist='Someone Else')))
+        # A shelf's album, subtitled with its year: its artistName is the artist.
+        shelf = self.catalog('602', artist='2001')
+        shelf.raw['artistName'] = 'Test Artist'
+        self.assertTrue(self.library.holds(shelf))
         self.assertFalse(self.library.holds(self.catalog('601', title='Harbour Lights (Deluxe)',
                                                          songs=('500', '501'))))
 

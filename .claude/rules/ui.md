@@ -71,7 +71,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   the library has them (`detail.resolve_artist()`). A catalog album's or playlist's hero
   has Add, or In Library once `Library.holds()` it (`detail.library_state()`: no request);
   a playlist's says its curator and when it was updated (`release.curator()`,
-  `release.hero_caption()`). All Playlists and a folder's page have
+  `release.hero_caption()`). Wherever an album's page means its artist (the line under the
+  title, the link, the rows, More By) it is `release.album_artist()`: a shelf's album is
+  subtitled with its year, its artist in `artistName`. All Playlists and a folder's page have
   New Playlist (`list-add-symbolic`) and New Folder (`folder-new-symbolic`) in the header
   bar, and a folder's page its More Options menu (`pages.add_folder_buttons()`); their tiles
   drag onto the sidebar's folders (`GridPage(drag=True)`). The playlists' dialogs (the name, the confirmation

@@ -55,7 +55,8 @@ from ..backend.api import is_library_id
 from ..backend.errors import EngineError
 from ..library import HELD_KINDS, Item, ShelfModel, Track
 from ..related import catalog_target
-from ..release import album_shelves, album_target, curator, footer_lines, hero_caption
+from ..release import (album_artist, album_shelves, album_target, curator, footer_lines,
+                       hero_caption)
 from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
@@ -76,26 +77,28 @@ FETCHED_KINDS = ('album', 'playlist')
 
 
 def resolve_artist(library, item):
-    """The artist Item an album's subtitle names, for the link to their page: by the artist
-    id the album carries, if any, else the library's artist of that name (case folded), else
-    None (the subtitle stays plain text). Only albums: a playlist's subtitle is its curator."""
-    if item is None or item.kind != 'album' or not item.subtitle:
+    """The artist Item an album is by (album_artist(): a shelf's album is subtitled with its
+    year), for the link to their page: by the artist id the album carries, if any, else the
+    library's artist of that name (case folded), else None (the name stays plain text). Only
+    albums: a playlist's subtitle is its curator."""
+    name = album_artist(item)
+    if not name:
         return None
     artist_id = item.raw.get('artistId')
     if artist_id:
         found = library.by_id('artist', artist_id)
         if found is not None:
             return found
-    name = item.subtitle.casefold()
+    name = name.casefold()
     return next((artist for artist in library.artists if artist.title.casefold() == name),
                 None)
 
 
 def links_catalog_artist(item):
-    """Whether an album's subtitle links to its catalog artist, which the engine looks up
+    """Whether an album's artist links to its catalog artist, which the engine looks up
     (related.catalog_target): a catalog album with an artist's name, outside the demo."""
     application = app()
-    return (item is not None and item.kind == 'album' and bool(item.subtitle)
+    return (item is not None and item.kind == 'album' and bool(album_artist(item))
             and catalog_target(item) is not None
             and application is not None and not application.demo)
 
@@ -541,7 +544,7 @@ class DetailPage(Adw.NavigationPage):
             self._sections.remove_all()
             self._update_state()
             return
-        self._album_artist = item.subtitle if item.kind == 'album' else None
+        self._album_artist = album_artist(item) if item.kind == 'album' else None
         self._show_hero(item)
 
         self._shown_groups = item.groups
@@ -643,7 +646,7 @@ class DetailPage(Adw.NavigationPage):
         """Show Engine.album_page()'s answer: the footer's release lines, the shelves after
         it (appended, the tracks' rows left as they are), and their thumbnails."""
         self._album_answer = answer
-        self._album_shelves = album_shelves(answer, item.subtitle)
+        self._album_shelves = album_shelves(answer, album_artist(item))
         for shelf in self._album_shelves:
             shelf.complete = album_completer(answer, shelf)
         groups = [group for group in item.groups if group.entries.get_n_items()]
@@ -909,7 +912,7 @@ class DetailPage(Adw.NavigationPage):
         subtitle = curator(item, self._account_name())
         self.subtitle_label.set_label(subtitle)
         self.subtitle_label.set_visible(bool(subtitle) and not linked)
-        self.artist_label.set_label(item.subtitle)
+        self.artist_label.set_label(album_artist(item))
         self.artist_button.set_visible(linked)
         caption = hero_caption(item)
         self.caption_label.set_label(caption)

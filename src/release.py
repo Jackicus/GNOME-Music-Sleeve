@@ -5,7 +5,8 @@
 Apple Music's clients show them: the hero's curator and caption, and under an album's tracks
 the release footer, then the catalog's shelves.
 
-    curator(item, 'Alex')         a playlist's curator, the user for one of theirs; '' else
+    album_artist(item)            an album's artist: its artistName, else its subtitle
+    curator(item, 'Alex')         an album's artist, a playlist's curator (the user's own: theirs)
     hero_caption(item)            'Pop · 2001 · 12 songs, 43 min'; 'Updated 3 March · 22 songs…'
     updated_text('2026-03-03T09:00:00Z')             'Updated 3 March' (or today, yesterday…)
     album_target(item)            (album id, song id) Engine.album_page() is asked by, or None
@@ -37,6 +38,7 @@ from gi.repository import GLib
 
 from .backend.api import is_library_id
 from .library import Item, ShelfModel
+from .related import artist_name
 from .remote import remote_item
 
 
@@ -60,12 +62,24 @@ def album_target(item):
     return None
 
 
+def album_artist(item):
+    """The artist an album is by, wherever its page means them (the line under its title, its
+    link, its rows, More By): its `artistName` when it carries one (a shelf's album, an
+    artist page's, subtitled with its year), else its subtitle; '' for anything else."""
+    if item is None or item.kind != 'album':
+        return ''
+    return artist_name(item)
+
+
 def curator(item, account_name=''):
-    """The line under a playlist's or album's title: its subtitle (an album's artist, a
-    playlist's curator), else for a playlist of the user's (Item.editable, or Favourite
-    Songs) `account_name`, the account's (the user's own carry no curator); else ''."""
+    """The line under a playlist's or album's title: an album's artist (album_artist()), a
+    playlist's curator (its subtitle), else for a playlist of the user's (Item.editable, or
+    Favourite Songs) `account_name`, the account's (the user's own carry no curator); else
+    ''."""
     if item is None:
         return ''
+    if item.kind == 'album':
+        return album_artist(item)
     if item.subtitle:
         return item.subtitle
     if item.kind == 'playlist' and (item.editable or item.favourites):
