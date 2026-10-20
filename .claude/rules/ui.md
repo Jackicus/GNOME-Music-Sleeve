@@ -117,7 +117,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `SongShelf`; one `ranked` (a chart's) numbers its tiles (`shelf.RankedTile`, the number
   over the cover) or songs, and its list items' names start with the place
   (`labels.ranked()`). A row shows at most `ROW_LIMIT`
-  tiles; See All (the whole shelf, as a grid) and the paging arrows show only when the row does
+  tiles (`FIRST_TILES` at once, the rest over the next frames: `PagedRow.give_items()`, a
+  chart's songs too); See All (the whole shelf, as a grid) and the paging arrows show only when the row does
   not show everything, the arrows only on a shelf wider than `ARROWS_MIN_WIDTH` (400sp, which
   the shelf measures itself: shelves are made at run time, out of a page breakpoint's reach),
   so the title has their room at 360 px. Anything unbounded gets a page of its own (See All),
@@ -209,8 +210,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   focus was on as the bar opened, by `widgets.util.focus_position()`, else the first; False
   and the button takes it), `changed` with `search` folded; Ctrl+F
   reaches it through the page's `focus_filter()`. Matching is `library.filter_matches()` on
-  each object's `search_key`, in C through `filter_bar.text_filter()` (the Songs table in
-  Python); it combines with Favourites Only, says the new count through `announce()`, shows
+  each object's `search_key`, in C through `filter_bar.SearchText`'s `text_filter()` (the
+  Songs table in Python); it combines with Favourites Only, says the new count through `announce()`, shows
   No Results Found (`edit-find-symbolic`) when it leaves none, and turns a playlist's
   reordering off (`can_reorder()`, and Move Up and Move Down in its songs' menus). A grid
   takes it with `filter_words` (its label, and its count's words).

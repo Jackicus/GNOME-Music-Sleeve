@@ -4,7 +4,9 @@
 """connect_weak(): a signal connection that does not keep the handler's widget alive (and
 weak_method(), the same for any other callback a child holds); MappedHandlers: a widget's
 handlers on objects that outlive it (the library, the engine), connected only while it is
-mapped; next_frame(): wait for a widget's next frame; HeaderTitle: a page's title in its
+mapped; next_frame(): wait for a widget's next frame; each_frame(), rows_kept(), grown(),
+holds_in_order() and GrowBack: a list's rows given to it a few a frame; HeaderTitle: a page's
+title in its
 header bar only while its big title is out of view; descendants(), first_descendant() and
 has_ancestor(): the widget tree by class; focus_position(): the focus on a list's item.
 
@@ -171,6 +173,161 @@ def next_frame(widget):
     else:
         GLib.idle_add(done)
     return future
+
+
+def each_frame(widget, step):
+    """Call step(), a bound method, at each of widget's frames (a tick callback: while it is
+    mapped) until it answers false: work spread over frames a little at a time, such as a
+    list's rows given to it a few a frame (grown()). step's object is held weakly, as
+    connect_weak() holds it (the widget is its child), and the calls stop once it is freed.
+    Returns the tick callback's id."""
+    call = weak_method(step)
+    return widget.add_tick_callback(lambda _widget, _clock: bool(call()))
+
+
+# The rows a Gtk.ListView (or ColumnView) keeps whatever it shows: one for each item up to about
+# this many; a Gtk.GridView keeps this many rows of its `max-columns` (gtk-notes.md).
+LIST_ROWS_KEPT = 200
+GRID_ROWS_KEPT = 30
+
+
+def rows_kept(view):
+    """About how many items `view`, a Gtk.ListView, ColumnView or GridView, makes a row or a
+    tile for, however few of them show."""
+    if isinstance(view, Gtk.GridView):
+        return GRID_ROWS_KEPT * view.get_max_columns()
+    return LIST_ROWS_KEPT
+
+
+def grown(shown, total, step, kept):
+    """How many of a list's `total` items to show next while it is given them `step` a frame,
+    `shown` showing now: a view makes a row for each item up to `kept` (rows_kept()) whatever
+    it shows, about half a millisecond a row, so `step` more until that, then all at once
+    (the rows past it are never made)."""
+    size = shown + step
+    return total if size >= min(total, kept) else size
+
+
+def holds_in_order(old, new):
+    """Whether the list `new` holds every item of `old`, in the same order (a filter loosened:
+    what the stricter text matched still matches, where it was)."""
+    index, count = 0, len(old)
+    if count > len(new):
+        return False
+    for item in new:
+        if index == count:
+            break
+        if item == old[index]:
+            index += 1
+    return index == count
+
+
+class GrowBack:
+    """A list that shows a few items given the many it grows back to (a filter loosened from
+    five albums back to three hundred) a few a frame, in place. A view makes a row for each
+    item it gets up to the rows it keeps (rows_kept()), about a millisecond each, and keeps
+    the row of an item that a change removes and puts back.
+
+    start(old, new) makes the list `old` (what it shows) into `new`, when `new` holds all of
+    `old` in order (holds_in_order(); False otherwise, and nothing is done): from the top,
+    each change puts in the next `step` new items with the old ones among them, which keep
+    their rows, `step` at once and `step` more at each of `view`'s frames, until the rest
+    would be past the rows the view keeps, where it makes none: then the rest in one change.
+    The old items that will be past those rows are taken out at once, at the end of the
+    list: a row is laid out again whenever a change above moves it (six rows inserted above
+    65 cost a frame three times what six at the end do), and theirs would go in the end.
+    replace(position, removed, items) makes each change (a store's splice, a model's
+    items_changed()). It is the owner's method, held weakly: the owner holds this object.
+    """
+
+    def __init__(self, view, replace, step):
+        self._view = view.weak_ref()
+        self._replace = weak_method(replace)
+        self._step = step
+        self._new = None  # the list it grows into, while it does
+        self._old = None  # the list it showed
+        self._done = 0  # new[:done] shows, then old[old_done:]
+        self._old_done = 0
+        self._tick = None  # the view's tick callback while it grows
+
+    @property
+    def pending(self):
+        """Whether some items are still to come."""
+        return self._new is not None
+
+    def start(self, old, new):
+        """Grow `old` into `new`: the first `step` new items now, the rest a few a frame.
+        False when `new` does not hold `old` in order (an earlier growth goes on then)."""
+        if not holds_in_order(old, new):
+            return False
+        self.stop()
+        if len(new) == len(old):
+            return True  # the same items
+        view = self._view()
+        kept = rows_kept(view) if view is not None else 0
+        self._new, self._done = new, 0
+        # The old items before position `kept` in new keep their rows; the rest go now.
+        near = 0
+        for item in new[:kept]:
+            if near < len(old) and item == old[near]:
+                near += 1
+        self._old, self._old_done = old[:near], 0
+        if near < len(old):
+            self._replace(near, len(old) - near, [])
+        if self._grow() and view is not None:
+            self._tick = each_frame(view, self._on_frame)
+        return True
+
+    def finish(self):
+        """Show everything still to come, now, in one change (the old items there keep their
+        rows; the view makes the new ones' up to the rows it keeps)."""
+        if self._new is not None:
+            self._stop_ticking()
+            self._rest()
+
+    def stop(self):
+        """Nothing more: the list stays as it is."""
+        self._stop_ticking()
+        self._new = self._old = None
+
+    def _grow(self):
+        """The next change; whether there are more to come."""
+        view = self._view()
+        if view is None or self._done >= rows_kept(view):
+            self._rest()
+            return False
+        new, old = self._new, self._old
+        end, old_end, added = self._done, self._old_done, 0
+        while end < len(new) and added < self._step:
+            if old_end < len(old) and new[end] == old[old_end]:
+                old_end += 1
+            else:
+                added += 1
+            end += 1
+        if end == len(new):
+            self._rest()
+            return False
+        start, removed = self._done, old_end - self._old_done
+        self._done, self._old_done = end, old_end
+        self._replace(start, removed, new[start:end])
+        return True
+
+    def _rest(self):
+        new, start, removed = self._new, self._done, len(self._old) - self._old_done
+        self._new = self._old = None
+        self._replace(start, removed, new[start:])
+
+    def _on_frame(self):
+        if self._new is not None and self._grow():
+            return True
+        self._tick = None  # answering False removes the tick callback
+        return False
+
+    def _stop_ticking(self):
+        view = self._view()
+        if self._tick is not None and view is not None:
+            view.remove_tick_callback(self._tick)
+        self._tick = None
 
 
 class HeaderTitle:

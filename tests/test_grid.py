@@ -478,6 +478,44 @@ class GridTest(PageTestCase):
         self.assertEqual(page.grid_view.get_model().get_n_items(), 300)
         self.assertLess(len(made), 6)  # rebound, not built again
 
+    async def test_a_filter_bringing_many_back_gives_the_grid_a_few_tiles_a_frame(self):
+        # From six albums back to 600 the grid would make a tile for each new one it keeps
+        # (30 rows of them) in one frame: it keeps the six and gets GROW_STEP more at a time.
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets import tile
+        from applemusic.widgets.filter_bar import GROW_STEP
+
+        store = Gio.ListStore(item_type=Item)
+        names = ['Rare' if n % 100 == 7 else 'Common' for n in range(600)]
+        store.splice(0, 0, [Item(dict(album(n), title=f'{n:03d} {name}'))
+                            for n, name in enumerate(names)])
+        page = GridPage(self.library, 'Invented Grid', store, sorts=('title',),
+                        filter_words=('Filter Albums', lambda shown, total: ''))
+        await self.show_root(page)
+        page.filter_bar.set_text('rare')
+        await self.turn()
+        model = page.grid_view.get_model()
+        self.assertEqual(model.get_n_items(), 6)
+        made = []
+        init = tile.Tile.__init__
+
+        def counting(self, *args, **kwargs):
+            made.append(True)
+            init(self, *args, **kwargs)
+
+        tile.Tile.__init__ = counting
+        self.addCleanup(setattr, tile.Tile, '__init__', init)
+        page.filter_bar.set_text('')
+        self.assertLessEqual(len(made), GROW_STEP)  # the key's own share
+        self.assertLess(model.get_n_items(), 600)
+        self.assertTrue(await self.until_frames(
+            page.grid_view, lambda: model.get_n_items() == 600, 60))
+        titles = [model.get_item(n).title for n in range(600)]
+        self.assertEqual(titles, sorted(titles))
+
     async def test_a_page_without_filter_words_has_none(self):
         from gi.repository import Gio
 

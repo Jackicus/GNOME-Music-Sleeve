@@ -25,8 +25,11 @@ what holds the whole of it in one of the texts of its `search_key` (library.filt
 a Track's title, artist and album, an Item's title and subtitle (an album's or a video's
 artist). The pages over a Gtk.FilterListModel filter with text_filter(), a Gtk.StringFilter
 over that key, which matches in C, refilters only what matched when the text grows
-(GTK_FILTER_CHANGE_MORE_STRICT) and, for no text, matches everything without reading a key;
-the Songs page tests the keys itself (pages/songs.py). The filter combines with the page's
+(GTK_FILTER_CHANGE_MORE_STRICT) and, for no text, matches everything without reading a key,
+set through a SearchText, which leaves the models alone on a Backspace known to bring
+nothing back; they show the change through a ShownModel, which keeps or recycles the rows
+(and gives a list growing back its rows a few a frame). The Songs page tests the keys
+itself (pages/songs.py). The filter combines with the page's
 Favourites Only (both must match), and the page announces the new count once the typing has
 paused (announce()).
 
@@ -44,7 +47,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 
 from ..library import fold
 from . import context_menu
-from .util import connect_weak, weak_method
+from .util import GrowBack, connect_weak, holds_in_order, rows_kept, weak_method
 
 
 def _search_key(obj):
@@ -59,10 +62,77 @@ def text_filter():
                             match_mode=Gtk.StringFilterMatchMode.SUBSTRING, ignore_case=False)
 
 
+def widens(old, new):
+    """Whether the folded filter text `new` matches everything `old` matched (`new` is part
+    of `old`: a Backspace), so that it can only bring items back."""
+    return new in old
+
+
+class SearchText:
+    """A page's filter text as its Gtk.FilterListModels filter by it: `filter`, a
+    text_filter() for them, set through set_search().
+
+    A shorter text (a Backspace) makes GTK test every item the longer one left out, one Python
+    call each (7 to 9 ms on 3,000 albums), though often it brings none back: from "midnight"
+    to "mid" every key matched the same five albums. A text cannot match fewer items than a
+    longer one containing it, so when it is known to have matched as many as show now it
+    matches the same ones, and the models are left as they are: the filter's `changed` is
+    stopped before it reaches them (this object's handler, connected first, stops it). What
+    each text matched is known from the keys before, until the items or the page's other
+    filters change: forget(), or watch() what says so."""
+
+    def __init__(self):
+        self.filter = text_filter()
+        self.search = ''
+        self._counts = {}  # text -> how many items it matched, since the items last changed
+        self._setting = False  # within set_search(): the changes are its own
+        self._quiet = False  # the filter's change stops before the models
+        # Connected before any model is given the filter: it runs first.
+        connect_weak(self.filter, 'changed', self._on_changed)
+
+    def set_search(self, search, models):
+        """Filter by the folded text `search` (none: everything). `models` are the
+        Gtk.FilterListModels over the filter: their items are what it matches."""
+        old, self.search = self.search, search
+        known = self._counts.get(search)
+        self._quiet = (bool(search) and known is not None and widens(old, search)
+                       and known == self._count(models))
+        self._setting = True
+        try:
+            self.filter.set_search(search or None)
+        finally:
+            self._setting = self._quiet = False
+        self._counts[search] = self._count(models)
+
+    def forget(self, *_args):
+        """The items, or what the page's other filters let through, changed: what each
+        text matched is not known any more."""
+        if not self._setting:
+            self._counts.clear()
+
+    def watch(self, obj, signal):
+        """forget() whenever obj emits signal, but for set_search()'s own changes (a source
+        model's items-changed, another filter's changed)."""
+        connect_weak(obj, signal, self.forget)
+
+    @staticmethod
+    def _count(models):
+        return sum(model.get_n_items() for model in models)
+
+    def _on_changed(self, string_filter, _change):
+        if self._quiet:
+            string_filter.stop_emission_by_name('changed')
+
+
+# The items a ShownModel growing back gives its view at a frame by default (widgets.util.
+# GrowBack): a tile about 0.7 ms to make, bind and lay out.
+GROW_STEP = 12
+
+
 class ShownModel(GObject.Object, Gio.ListModel):
     """`model`'s items as a list or grid shows them: in its own order or, set `backwards`,
     from the last to the first (a grid's descending text order: grid.make_sorter()), and a
-    change made under replacing() as a replacement its view can recycle its rows for.
+    change made under replacing() shown so that its view keeps or recycles its rows.
 
     A Gtk.GridView or Gtk.ListView destroys the rows of the items a change removes and builds
     new ones for the items it adds, about half a millisecond a tile: a filter's change of a
@@ -72,24 +142,46 @@ class ShownModel(GObject.Object, Gio.ListModel):
     moved down), `scroll()` (the view back to the top, onto the new: the old rows, out of
     view now, are rebound to them), then the old ones removed, rows and all gone already.
 
+    That recycles only rows that the insertion pushes past the rows the view keeps
+    (widgets.util.rows_kept()). A list of a few items keeps a row for each, and when a change
+    brings many back (a Backspace from five albums to three hundred) the view would make a
+    row for every new one up to the rows it keeps, 65 to 135 ms in one frame. Given its
+    `view`, the model shows that change in place instead, when everything shown still is
+    (widgets.util.holds_in_order()): the old items keep their rows, and the new ones go in
+    between, `step` at once and `step` more at each of the view's frames until the
+    view would make no more rows (widgets.util.GrowBack), `scroll()` after the first. Until
+    then it shows fewer items than its model has (`growing`); finish() shows them all at
+    once, and any other change does first. find() answers where an item will be.
+
     The model's items are kept in a list (a position here is one in it, mapped for
     `backwards`), so that the old ones can be shown beside the new while it changes."""
 
-    def __init__(self, model):
+    def __init__(self, model, view=None, step=GROW_STEP):
         super().__init__()
         self._model = model
         self._items = [model.get_item(n) for n in range(model.get_n_items())]
         self._backwards = False
         self._scroll = None  # while replacing(): the view's move to the top
+        # What shows while it is not the items in order: a replacement's new and old items,
+        # or those a growth back has given the view so far.
+        self._shown = None
+        self._view = view.weak_ref() if view is not None else None  # it holds this model
+        self._grow = GrowBack(view, self._replace, step) if view is not None else None
         connect_weak(model, 'items-changed', self._on_items_changed)
 
     @property
     def backwards(self):
         return self._backwards
 
+    @property
+    def growing(self):
+        """Whether it shows fewer items than its model has, on their way."""
+        return self._grow is not None and self._grow.pending
+
     def set_backwards(self, backwards):
         if backwards == self._backwards:
             return
+        self.finish()
         self._backwards = backwards
         count = len(self._items)
         if count > 1:
@@ -97,8 +189,8 @@ class ShownModel(GObject.Object, Gio.ListModel):
 
     @contextlib.contextmanager
     def replacing(self, scroll):
-        """Show the model's changes meanwhile as replacements (see the class), calling
-        scroll() between the insertion and the removal."""
+        """Show the model's changes meanwhile as replacements, or growing back (see the
+        class), calling scroll() once the first new items show."""
         self._scroll = scroll
         try:
             yield
@@ -106,37 +198,73 @@ class ShownModel(GObject.Object, Gio.ListModel):
             self._scroll = None
 
     def find(self, item):
-        """The position `item` is shown at, or None."""
+        """The position `item` is shown at (once grown back, if it is growing: finish()
+        first for a row to focus), or None."""
         try:
             index = self._items.index(item)
         except ValueError:
             return None
         return len(self._items) - 1 - index if self._backwards else index
 
+    def finish(self):
+        """Show every item now, if it was growing back."""
+        if self.growing:
+            self._grow.finish()
+
     def do_get_item_type(self):
         return self._model.get_item_type()
 
     def do_get_n_items(self):
-        return len(self._items)
+        return len(self._shown if self._shown is not None else self._items)
 
     def do_get_item(self, position):
+        if self._shown is not None:
+            return self._shown[position] if position < len(self._shown) else None
         count = len(self._items)
         if position >= count:
             return None
         return self._items[count - 1 - position if self._backwards else position]
 
+    def _in_order(self, items):
+        """`items` (in the model's order) as shown."""
+        return items[::-1] if self._backwards else items
+
+    def _replace(self, position, removed, items):
+        """GrowBack's change: items shown at position, in place of `removed`."""
+        self._shown[position:position + removed] = items
+        if not self._grow.pending:
+            self._shown = None  # all of them: the items in order
+        self.items_changed(position, removed, len(items))
+
     def _on_items_changed(self, model, position, removed, added):
         new = [model.get_item(n) for n in range(position, position + added)]
-        if self._scroll is not None and removed and added:
-            old = self._items
-            items = old[:position] + new + old[position + removed:]
-            # The new list in front of the old one, as shown: backwards, behind it here.
-            self._items = old + items if self._backwards else items + old
-            self.items_changed(0, 0, len(items))
-            self._scroll()
-            self._items = items
-            self.items_changed(len(items), len(old), 0)
-            return
+        if self._scroll is not None and (removed or added):
+            old = self._shown if self._shown is not None else self._in_order(self._items)
+            items = self._items[:position] + new + self._items[position + removed:]
+            view = self._view() if self._view is not None else None
+            if (view is not None and len(old) < rows_kept(view)
+                    and holds_in_order(old, self._in_order(items))):
+                # In place, a few a frame: the old items keep their rows (from what an
+                # earlier growth showed).
+                self._items, self._shown = items, list(old)
+                self._grow.start(old, self._in_order(items))
+                if not self._grow.pending:
+                    self._shown = None
+                self._scroll()
+                return
+            if removed and added:
+                # The new items in front of the old, the view moved onto them, the old gone.
+                if self._grow is not None:
+                    self._grow.stop()  # what an earlier growth showed is the old
+                head = self._in_order(items)
+                self._shown = head + old
+                self.items_changed(0, 0, len(head))
+                self._scroll()
+                self._shown = None
+                self._items = items
+                self.items_changed(len(head), len(old), 0)
+                return
+        self.finish()
         self._items[position:position + removed] = new
         if self._backwards:
             position = len(self._items) - position - added

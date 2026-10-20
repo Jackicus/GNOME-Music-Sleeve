@@ -120,6 +120,35 @@ class ArtistsPageTest(PageTestCase):
         self.assertIs(page.list_view.get_model().get_selected_item(), zed)
         del page.detail.set_artist
 
+    async def test_a_list_growing_back_keeps_the_artist_selected_past_its_first_rows(self):
+        # Cleared from one match back to 300 artists, the list gets its rows a few a frame
+        # (ShownModel); the artist selected far down it is selected again once its row is
+        # there, and the albums shown never change meanwhile.
+        self.library.state = 'ready'
+        for number in range(300):
+            band, _album = self.add_artist(f'l.art{number}', f'Invented Artist {number:03d}',
+                                           number)
+            if number == 250:
+                far = band
+        page = await self.page()
+        self.assertTrue(await self.until(lambda: len(self.listed(page)) == 300))
+        selection = page.list_view.get_model()
+        selection.set_selected(250)
+        self.assertIs(page.detail.artist, far)
+        shown = []
+        page.detail.set_artist = lambda artist: shown.append(artist)
+        self.assertTrue(page.focus_filter())
+        page.filter_bar.set_text('artist 250')
+        self.assertEqual(self.listed(page), ['Invented Artist 250'])
+        page.filter_bar.set_text('')
+        self.assertLess(len(self.listed(page)), 300)  # growing back
+        self.assertTrue(await self.until_frames(
+            page.list_view, lambda: len(self.listed(page)) == 300, 60))
+        self.assertTrue(await self.until(lambda: selection.get_selected_item() is far))
+        self.assertEqual(shown, [])
+        self.assertTrue(selection.get_autoselect())
+        del page.detail.set_artist
+
     async def test_escape_from_the_filter_goes_back_to_the_artist_it_was_on(self):
         # The filter selects its first match meanwhile; Escape selects the artist again.
         self.library.state = 'ready'

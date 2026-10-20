@@ -4,6 +4,7 @@
 """AppleMusicSongShelf: a titled grid of songs, three rows high, scrolling sideways (an
 artist's Top Songs, a chart's, numbered); AppleMusicSongRow: one song in it."""
 
+import functools
 from gettext import gettext as _
 from gettext import pgettext as C_
 
@@ -18,6 +19,20 @@ from .util import connect_weak
 # A song's width in the grid: two columns and a margin fit a 720 px window, one a 360 px.
 ROW_WIDTH = 300
 COVER_SIZE = 48
+
+# The songs a shelf's grid is given at once (four columns: what a wide window shows), then
+# MORE_SONGS a frame (PagedRow.give_items()): the grid makes a row for each song up to 90 (30
+# columns of three) whatever it shows, about a millisecond each with its layout, and a
+# chart's 100 songs at once held the main loop 80-90 ms as the Charts page filled.
+FIRST_SONGS = 9
+MORE_SONGS = 6
+
+
+@functools.cache
+def badge_texts():
+    """The explicit badge's text and tooltip, looked up once: a chart makes 90 rows."""
+    # Translators: the badge marking a song with explicit lyrics, as Apple Music shows it
+    return C_('explicit badge', 'E'), _('Explicit')
 
 
 class SongRow(Gtk.Box):
@@ -71,9 +86,9 @@ class SongRow(Gtk.Box):
                                single_line_mode=True)
         line.append(self.title)
         # Decoration: the row's name says "explicit" (song_label).
+        badge, tooltip = badge_texts()
         self.badge = Gtk.Label(
-            # Translators: the badge marking a song with explicit lyrics, as Apple Music shows it
-            label=C_('explicit badge', 'E'), tooltip_text=_('Explicit'), visible=False,
+            label=badge, tooltip_text=tooltip, visible=False,
             valign=Gtk.Align.CENTER, accessible_role=Gtk.AccessibleRole.PRESENTATION)
         self.badge.add_css_class('caption')
         self.badge.add_css_class('explicit-badge')
@@ -182,7 +197,9 @@ class SongShelf(PagedRow, Gtk.Box):
                                                     self._on_items_changed))
         self.title_label.set_label(shelf.title)
         self.grid_view.update_property([Gtk.AccessibleProperty.LABEL], [shelf.title])
-        self.grid_view.set_model(Gtk.NoSelection(model=shelf.items))
+        # The first songs now, the rest a few a frame (positions are the shelf's own).
+        self.grid_view.set_model(Gtk.NoSelection(
+            model=self.give_items(shelf.items, FIRST_SONGS, MORE_SONGS)))
         self.scrolled_window.get_hadjustment().set_value(0)
         self._update_controls()
 
@@ -191,6 +208,7 @@ class SongShelf(PagedRow, Gtk.Box):
             items, handler = self._followed
             items.disconnect(handler)
             self._followed = None
+        self.stop_growing()
         self.shelf = None
         self.grid_view.set_model(None)
 

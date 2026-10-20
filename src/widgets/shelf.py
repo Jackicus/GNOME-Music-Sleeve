@@ -5,18 +5,24 @@
 tile, numbered; ShelfColumn: a page's shelves, one under another; PagedRow: the paging arrows
 and See All, which song_shelf.py's grid of songs shares."""
 
-from gi.repository import Adw, Gio, GObject, Gtk
+from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from . import context_menu
 from .hero_tile import HeroTile
 from .labels import bind_label, unbind_label
 from .tile import Tile, shape_for
-from .util import connect_weak, next_frame
+from .util import connect_weak, each_frame, grown, next_frame, rows_kept
 
 # The tiles a shelf's row shows at most: See All opens the whole shelf. A horizontal
 # Gtk.ListView makes a tile for every item up to about 200, whatever is on screen (100 items
 # made 100 tiles, 2.4 MB and 15-20 ms), and music.apple.com's rows show about this many.
 ROW_LIMIT = 30
+
+# The tiles a row is given at once (what a maximized window shows of it), then MORE_TILES a
+# frame up to ROW_LIMIT: a page's first shelves are built in one frame, and their every tile
+# is made then whether it shows or not.
+FIRST_TILES = 10
+MORE_TILES = 6
 
 # How long a click on a paging arrow takes to scroll the row, in milliseconds.
 PAGE_DURATION = 250
@@ -41,11 +47,51 @@ class PagedRow:
     row's view as `_row`: See All while the row does not show everything (`_truncated()`,
     or wider than the window); the arrows while it overflows, on a shelf wider than
     ARROWS_MIN_WIDTH, each sensitive while there is more that way; a click on one scrolls
-    a width and focuses the first item wholly shown."""
+    a width and focuses the first item wholly shown.
+
+    give_items() makes the row's model: the first of the items at once and the rest a few
+    a frame (its row makes a widget for each item up to rows_kept() as it gets it, whether it
+    shows or not), which stop_growing() stops."""
 
     _animation = None
+    _slice = None  # the row's items: its first ones, then more a frame (give_items())
+    _growing = None  # [the tick callback's id, the items a frame, the most, drawn] meanwhile
 
     def _truncated(self):
+        return False
+
+    def give_items(self, items, first, step, most=GLib.MAXUINT32):
+        """A Gtk.SliceListModel of `items` (a list model) for the row: its first `first`
+        now, then `step` more at each frame after the one that draws them, up to `most` (all
+        of them by default: "the rest", gtk-notes.md, so items added later show too)."""
+        self.stop_growing()
+        self._slice = Gtk.SliceListModel(model=items, offset=0, size=min(first, most))
+        if items.get_n_items() > first and most > first:
+            self._growing = [each_frame(self._row, self._grow), step, most, False]
+        else:
+            self._slice.set_size(most)
+        return self._slice
+
+    def stop_growing(self):
+        if self._growing is not None:
+            self._row.remove_tick_callback(self._growing[0])
+            self._growing = None
+
+    def _grow(self):
+        """At a frame while the row has some of its items: more, or the rest (once its view
+        makes no more widgets for them: widgets.util.grown()). False when done."""
+        _tick, step, most, drawn = self._growing
+        if not drawn:  # the frame that lays out and draws the first ones: nothing more
+            self._growing[3] = True
+            return True
+        model = self._slice
+        total = min(model.get_model().get_n_items(), most)
+        size = grown(model.get_size(), total, step, rows_kept(self._row))
+        if size < total:
+            model.set_size(size)
+            return True
+        model.set_size(most)
+        self._growing = None
         return False
 
     def _update_controls(self):
@@ -145,9 +191,10 @@ class Shelf(PagedRow, Gtk.Box):
     opens its context menu (context_menu.py), and a tile drags (widgets/dnd.py: an album or
     a playlist onto a sidebar playlist or the player bar).
 
-    The row is a horizontal Gtk.ListView of the first ROW_LIMIT items, the scrolled window's
-    own child. It builds a tile for each of them, but only the tiles on screen are mapped and
-    ask for their artwork. With `hero`, the tiles are 260 px AppleMusicHeroTiles, the cover
+    The row is a horizontal Gtk.ListView of the first ROW_LIMIT items (FIRST_TILES at once,
+    the rest over the next frames: give_items()), the scrolled window's own child. It builds
+    a tile for each of them, but only the tiles on screen are mapped and ask for their
+    artwork. With `hero`, the tiles are 260 px AppleMusicHeroTiles, the cover
     over a band in its colour; otherwise 160 px AppleMusicTiles, round for artists and 16:9
     for music videos (as tall as the rest), each numbered (a RankedTile) when the ShelfModel
     is `ranked` (a chart's: remote.remote_shelves). The shelf follows its ShelfModel's title,
@@ -247,7 +294,7 @@ class Shelf(PagedRow, Gtk.Box):
         self._followed = followed
         self._show_title()
         self.list_view.set_model(Gtk.NoSelection(
-            model=Gtk.SliceListModel(model=shelf.items, offset=0, size=ROW_LIMIT)))
+            model=self.give_items(shelf.items, FIRST_TILES, MORE_TILES, ROW_LIMIT)))
         self.scrolled_window.get_hadjustment().set_value(0)  # a new shelf starts at its start
         self._update_controls()
 
@@ -257,6 +304,7 @@ class Shelf(PagedRow, Gtk.Box):
             obj.disconnect(handler)
         self._followed = ()
         self.shelf = None
+        self.stop_growing()
         self.list_view.set_model(None)
 
     def _show_title(self):

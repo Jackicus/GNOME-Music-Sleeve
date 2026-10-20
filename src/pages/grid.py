@@ -5,10 +5,11 @@
 
 The chain is the page's store → Gtk.SortListModel (the header's sort choice, or none) →
 Gtk.FilterListModel (a Gtk.EveryFilter of the filter bar's text, on a page that has one:
-widgets/filter_bar.text_filter(), matching everything until there is text, and Favourites
+widgets/filter_bar.SearchText's, matching everything until there is text, and Favourites
 Only, on a page that offers it: a Gtk.BoolFilter on Item.favourite) → ShownModel (that
 order backwards, for a descending text, and a filter's change shown so that the grid rebinds
-its tiles rather than building new ones) → Gtk.SliceListModel (the rows the first frame
+its tiles rather than building new ones, and a grid growing back given its tiles a few a
+frame) → Gtk.SliceListModel (the rows the first frame
 shows, then a few more a frame until it holds them all: GROW_TILES) → Gtk.NoSelection →
 Gtk.GridView, whose factory recycles AppleMusicTiles. Sorting uses
 Gtk.StringSorter and Gtk.NumericSorter over Gtk.PropertyExpressions, which compute one key per
@@ -22,7 +23,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from ..library import Item
 from ..widgets import context_menu
-from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
+from ..widgets.filter_bar import FilterBar, SearchText, ShownModel
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
 from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
@@ -263,13 +264,15 @@ class GridPage(Adw.NavigationPage):
         # The filter bar's text and Favourites Only: an item shows when it passes both. With
         # neither, the Gtk.EveryFilter matches everything without reading an item.
         self._filters = Gtk.EveryFilter()
-        self._text_filter = text_filter()
-        self._filters.append(self._text_filter)
+        self._text = SearchText()  # a Backspace that brings nothing back filters nothing
+        self._filters.append(self._text.filter)
         # After the sort: a new filter leaves the order as it is, and only takes items out of
         # it and puts them back (a sort over the filter's output would place each again).
         self._sorted = Gtk.SortListModel(model=self._model(), sorter=sorter)
         self._filtered = Gtk.FilterListModel(model=self._sorted, filter=self._filters)
-        self._shown = ShownModel(self._filtered)
+        self._text.watch(self._sorted, 'items-changed')
+        self._text.watch(self._filters, 'changed')  # Favourites Only, and the favourites
+        self._shown = ShownModel(self._filtered, self.grid_view)
         self._shown.set_backwards(backwards)
         # Every signal of a child or of an object the page holds is connected weakly
         # (widgets/util.py): a bound method would keep the page alive once popped.
@@ -454,7 +457,7 @@ class GridPage(Adw.NavigationPage):
         (and Favourites Only), from the top, and the new count is announced."""
         self._show_all()
         with self._shown.replacing(self._scroll_top):  # the tiles recycled (ShownModel)
-            self._text_filter.set_search(bar.search or None)
+            self._text.set_search(bar.search, [self._filtered])
         self._update_state()
         self._scroll_top()
         shown, total = self._filtered.get_n_items(), self._sorted.get_n_items()
@@ -478,6 +481,7 @@ class GridPage(Adw.NavigationPage):
         if self.stack.get_visible_child_name() != 'items' or not self._shown.get_n_items():
             return False
         self._show_all()
+        self._shown.finish()  # every tile there, if the grid was growing back
         position = self._shown.find(obj) if obj is not None else None
         focus_position(self.grid_view, position or 0)
         return True

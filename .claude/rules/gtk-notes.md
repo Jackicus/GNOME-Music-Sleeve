@@ -30,7 +30,12 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
 - A `Gtk.StringFilter` over `Gtk.ClosureExpression.new(str, lambda item: item.search_key, None)`
   filters tens of thousands of items in one pass (fold the text first, `ignore-case: false`).
   With no search it matches everything without reading an item; a longer search refilters
-  only what matched.
+  only what matched, a shorter one only what did not (every key read again on a Backspace
+  that brings nothing back: `filter_bar.SearchText` stops the filter's `changed` then).
+- A `Gtk.ListView`, `ColumnView` or `GridView` keeps the row of an item that one change
+  removes and adds back (by identity), unbound; a row that a change above it moves is laid
+  out again (six rows inserted above 65 cost a frame 8.8 ms, at the end 3.1 ms), so a list
+  grown back in place moves as few rows as it can (`widgets.util.GrowBack`).
 - `Gtk.ListView.scroll_to(position, FOCUS)` focuses the row only when the focus is in the
   list already; from elsewhere (a header bar, an entry, the sidebar) it only moves the list's
   own focus there, and `list_view.grab_focus()` then focuses that row
