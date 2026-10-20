@@ -156,6 +156,35 @@ def submenu_of(menu, label):
     return None
 
 
+def section_of(menu, label):
+    """The section headed `label` among a menu's items and sections, or None."""
+    for position in range(menu.get_n_items()):
+        found = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL)
+        section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+        if section is None:
+            continue
+        if found is not None and found.unpack() == label:
+            return section
+        inside = section_of(section, label)
+        if inside is not None:
+            return inside
+    return None
+
+
+def submenu_labels(menu):
+    """The labels of every submenu in a menu, nested ones too, in order."""
+    found = []
+    for position in range(menu.get_n_items()):
+        label = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL)
+        submenu = menu.get_item_link(position, Gio.MENU_LINK_SUBMENU)
+        if submenu is not None:
+            found.append(label.unpack())
+        for linked in (submenu, menu.get_item_link(position, Gio.MENU_LINK_SECTION)):
+            if linked is not None:
+                found.extend(submenu_labels(linked))
+    return found
+
+
 class MenuTest(unittest.TestCase):
     def test_library_album(self):
         self.assertEqual(names(build_menu(LIBRARY_ALBUM)), [
@@ -179,9 +208,9 @@ class MenuTest(unittest.TestCase):
                          if action == 'win.item-add-to-playlist']
                 if obj is PLAYLIST:
                     self.assertEqual(added, [('p.pl3', 'playlist', 'p.pl1')])
-                    self.assertIsNone(submenu_of(menu, 'Evenings'))
+                    self.assertIsNone(section_of(menu, 'Evenings'))
                 else:
-                    self.assertEqual(added, [('p.pl1', *describe(obj)), ('p.pl3', *describe(obj))])
+                    self.assertEqual(added, [('p.pl3', *describe(obj)), ('p.pl1', *describe(obj))])
                 self.assertIn(('win.item-new-playlist', describe(obj)), actions_of(menu))
         # Nothing else takes it: a folder, a station, an artist.
         for obj in (FOLDER, STATION, CATALOG_ARTIST):
@@ -235,21 +264,25 @@ class MenuTest(unittest.TestCase):
             ('win.item-unlove', ('song', 'i.song1')),
             ('win.item-suggest-less', ('song', 'i.song1')),
             ('win.item-undo-suggest-less', ('song', 'i.song1')),
-            ('win.item-add-to-playlist', ('p.pl5', 'song', 'i.song1')),
-            ('win.item-add-to-playlist', ('p.pl2', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl1', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl3', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl4', 'song', 'i.song1')),
+            ('win.item-add-to-playlist', ('p.pl2', 'song', 'i.song1')),
+            ('win.item-add-to-playlist', ('p.pl5', 'song', 'i.song1')),
             ('win.item-new-playlist', ('song', 'i.song1')),
             ('win.item-open-in-browser', ('song', 'i.song1')),
             ('win.item-copy-link', ('song', 'i.song1'))])
         # A playlist's name is shown as it is: its underscores are not mnemonics.
         self.assertIn('work__focus', labels_of(menu))
-        # A folder is a submenu of what it holds, named by the folder, nested as it is.
-        listed = submenu_of(submenu_of(menu, 'Add to Pla_ylist'), 'Evenings')
-        self.assertEqual(labels_of(listed), ['Untitled Folder', 'Late', 'Dusk'])
-        self.assertEqual(names(submenu_of(listed, 'Untitled Folder')),
-                         ['win.item-add-to-playlist'])
+        # The top level's playlists, then each folder's in a section headed by its name (a
+        # section's header is plain text: no mnemonic), a folder inside another after that
+        # one's own playlists, headed by both names. No folder is a submenu.
+        listed = submenu_of(menu, 'Add to Pla_ylist')
+        self.assertEqual(labels_of(listed), [
+            'Road Trip', 'Untitled Playlist', 'work__focus',
+            'Evenings', 'Dusk', 'Evenings › Untitled Folder', 'Late', 'Ne_w Playlist…'])
+        self.assertEqual(names(section_of(listed, 'Evenings')), ['win.item-add-to-playlist'])
+        self.assertEqual(submenu_labels(menu), ['Add to Pla_ylist'])
         self.assertEqual(mnemonic_escaped('a_b__c'), 'a__b____c')
         # No playlists: the submenu has New Playlist… alone. A catalog track can be added to
         # the library.
@@ -508,12 +541,20 @@ class MenuTest(unittest.TestCase):
             ('win.item-move-to-folder', ('p.fd3', 'playlist', 'p.pl1')),
             ('win.item-move-to-folder', ('p.fd2', 'playlist', 'p.pl1')),
             ('win.item-move-to-folder', ('', 'playlist', 'p.pl1'))])  # New Folder…
-        self.assertEqual(labels_of(submenu), ['Evenings', 'Late__Night', 'Mornings',
+        # One list: a folder inside another named with the one holding it (its own folder,
+        # Evenings, not offered), underscores no mnemonics; no folder is a submenu.
+        self.assertEqual(labels_of(submenu), ['Evenings › Late__Night', 'Mornings',
                                               'New _Folder…'])
+        # A Gtk.PopoverMenu names a submenu's page by its label: with the same folders in
+        # Add to Playlist, still no two submenus of one label (test_context_menu opens them).
+        both = build_menu(playlist, moves=moves, playlists=[
+            ('p.fd1', 'Evenings', [('p.fd3', 'Late_Night', [('p.pl7', 'Owls', None)])]),
+            ('p.fd2', 'Mornings', [('p.pl8', 'Larks', None)])])
+        self.assertEqual(submenu_labels(both), ['Add to Pla_ylist', 'Mov_e to Folder'])
         # Every level has mnemonics of its own (a popover shows one level at a time).
         for level in (set(labels_of(menu)) - set(labels_of(submenu)), labels_of(submenu)):
             letters = [label[label.index('_') + 1].lower() for label in level
-                       if '_' in label and label != 'Late__Night']
+                       if '_' in label and '__' not in label]
             self.assertEqual(len(letters), len(set(letters)), level)
         # Apple's own playlist at the top level: every folder; Favourite Songs: never.
         self.assertEqual(move_targets(tree, playlists[1])[1][1][:3], ('p.fd2', 'Mornings', True))
@@ -1790,7 +1831,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.actions.playlists(),
                          [('p.fd1', 'Evenings', [('p.pl1', 'Road Trip', None)])])
         menu = self.actions.menu_for(LIBRARY_TRACK)
-        evenings = submenu_of(submenu_of(menu, 'Add to Pla_ylist'), 'Evenings')
+        evenings = section_of(submenu_of(menu, 'Add to Pla_ylist'), 'Evenings')
         self.assertEqual(actions_of(evenings),
                          [('win.item-add-to-playlist', ('p.pl1', 'song', 'i.song1'))])
 

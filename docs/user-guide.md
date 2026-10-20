@@ -209,14 +209,17 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - Playlist folders: **New Folder…** is in the main menu, in a folder's menu (a folder inside
   it) and in All Playlists' menu, and is the folder button beside the **+** of All Playlists
   and of a folder's page. A playlist's menu (in the sidebar, on its tile, or **More Options**
-  on its page) has **Move to Folder**: the folders it can go into, and **New Folder…**, a new
+  on its page) has **Move to Folder**: the folders it can go into, in one list (a folder
+  inside another is named after both, "Evenings › Late Night"), and **New Folder…**, a new
   folder beside it with the playlist inside. Or drag the playlist's row in the sidebar, or its
   tile in All Playlists or a folder's page, onto a folder in the sidebar: the folder lights
   up when it can take it, a closed folder opens when you hold the drag over it, and the
   sidebar scrolls when you drag near its top or bottom. The playlist moves at once; if Apple
   refuses, it goes back and the app says why. The toast after a move has **Undo**.
-- **Add to Playlist** in an album's or a playlist's menu (on its tile, or **More Options**
-  on its page) adds all its songs, in order, to the playlist you choose; **New Playlist…**
+- **Add to Playlist** lists your playlists that take songs: those at the top level, then
+  each folder's under the folder's name. In an album's or a playlist's menu (on its tile,
+  or **More Options** on its page) it adds all its songs, in order, to the playlist you
+  choose; **New Playlist…**
   at its end makes one of them, named after the album or playlist. One message says how many
   were added. Or drag the album's or playlist's tile (or a playlist's row in the sidebar)
   onto a playlist in the sidebar. An album or playlist from Apple Music's catalogue has its

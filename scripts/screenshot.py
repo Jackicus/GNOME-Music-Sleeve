@@ -99,8 +99,8 @@ first shown widget with a context_item; with KIND, the first whose item is of
 that kind, such as category), as a right click on it would, and
 draws the popover into the shot where the compositor put it. --submenu NAME
 shows its submenu labelled NAME (a GtkPopoverMenu names each submenu by its
-label, mnemonic underscore and all: "Add to Pla_ylist", a folder's name inside
-it) rather than its top level.
+label, mnemonic underscore and all: "Add to Pla_ylist" or "Mov_e to Folder",
+the only two) rather than its top level.
 --preferences opens the Preferences dialog (app.preferences) on its General page, or
 on Engine, and shoots it: inside the window when libadwaita put it there, else its
 own window (a fixed-size window that is neither maximized nor tiled gets one), at

@@ -84,14 +84,15 @@ shows those whose actions are enabled: rating_actions(), by the item's rating; a
 Apple's players, a favourite offers no Suggest Less; an artist whose catalog id is known has
 Favourite or Remove from Favourites alone: favourite_items()), Add to Library (not what the
 library holds already), Add to Playlist (a song's, a video's, an album's or a playlist's: the
-library's playlists that take songs, each folder a submenu, a playlist not offered to
-itself, then New Playlist…), Move to Folder (a playlist's or folder's: Top Level, the
-folders it can go into, a folder holding others a submenu headed by itself, then New
-Folder…: move_targets()), Remove from Playlist and, where it can go, Move Up and Move Down
-(a track shown in a playlist of the user's: `container`); Open in Browser, Copy Link
-(only an address anyone can open: not the web player's library routes; a library artist's is
-the catalog artist's page, which the engine finds through their songs); Rename… and Delete
-Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs),
+library's playlists that take songs, each folder's in a section headed by its name, a
+playlist not offered to itself, then New Playlist…), Move to Folder (a playlist's or
+folder's: Top Level, the folders it can go into in one list, then New Folder…:
+move_targets(); in neither is a folder a submenu: playlist_submenu()), Remove from
+Playlist and, where it can go, Move Up and Move Down (a track shown in a playlist of the
+user's: `container`); Open in Browser, Copy Link (only an address anyone can open: not
+the web player's library routes; a library artist's is the catalog artist's page, which
+the engine finds through their songs); Rename… and Delete Playlist… or Delete Folder… (a
+playlist of the user's, Item.editable; a folder of theirs),
 Remove from Library… (what the library holds: removal_target; a playlist of Apple's, which
 cannot be deleted as the user's own are); a folder's menu starts with New Playlist… and New
 Folder… (in it); each only where it applies. A category (an Apple curator: a genre's page, a
@@ -684,24 +685,47 @@ def mnemonic_escaped(title):
     return title.replace('_', '__')
 
 
+def folder_path(titles):
+    """A folder's name as a menu shows it, `titles` the names of the folders holding it and
+    its own, outermost first: "Evenings › Late Night" for a folder inside another, Untitled
+    Folder for one without a name."""
+    names = [title or _('Untitled Folder') for title in titles]
+    path = names[0]
+    for name in names[1:]:
+        # Translators: a folder inside another, as Add to Playlist and Move to Folder name
+        # it: "Evenings › Late Night".
+        path = _('{outer} › {inner}').format(outer=path, inner=name)
+    return path
+
+
 def playlist_submenu(entries, named):
     """The Add to Playlist items for `entries` ((id, title, children), as
-    ItemActions.playlists() lists them), each folder a submenu of its own entries: adding
-    the song or video `named` ((kind, id)), or an album's or a playlist's songs, to the
-    playlist chosen. A playlist is not offered its own songs (nor a folder holding only
-    it)."""
+    ItemActions.playlists() lists them), adding the song or video `named` ((kind, id)), or
+    an album's or a playlist's songs, to the playlist chosen: the top level's playlists,
+    then each folder's in a section headed by its name (folder_path()), a folder inside
+    another after that one's own playlists. No folder is a submenu: a Gtk.PopoverMenu names
+    a submenu's page by its label, and two of one name (a folder in Move to Folder too, two
+    Untitled Folders) would open one page (docs/decisions.md). A playlist is not offered its
+    own songs (nor a folder holding only it)."""
     menu = Gio.Menu()
-    for entry_id, title, children in entries:
-        if children is not None:
-            inside = playlist_submenu(children, named)
-            if inside.get_n_items():
-                menu.append_submenu(mnemonic_escaped(title or _('Untitled Folder')), inside)
-        elif tuple(named) == ('playlist', entry_id):
-            continue
-        else:
-            menu.append_item(menu_item(
-                'item-add-to-playlist', GLib.Variant('(sss)', (entry_id, *named)),
-                label=mnemonic_escaped(title or _('Untitled Playlist'))))
+
+    def add(entries, path):
+        section = Gio.Menu()
+        folders = []
+        for entry_id, title, children in entries:
+            if children is not None:
+                folders.append((children, (*path, title)))
+            elif tuple(named) != ('playlist', entry_id):
+                section.append_item(menu_item(
+                    'item-add-to-playlist', GLib.Variant('(sss)', (entry_id, *named)),
+                    label=mnemonic_escaped(title or _('Untitled Playlist'))))
+        if section.get_n_items():
+            # A section's header is plain text, not a mnemonic label: the name as it is.
+            menu.append_section(folder_path(path) if path else None, section)
+        for children, inside in folders:
+            add(children, inside)
+
+    add(entries, ())
     return menu
 
 
@@ -739,32 +763,26 @@ def move_targets(tree, obj):
     return top_level, entries(tree.root)
 
 
-def folder_submenu(entries, named):
+def folder_items(entries, named, path=(), menu=None):
     """The Move to Folder items for `entries` (move_targets()'s), moving the playlist or
-    folder `named` ((kind, id)): a folder an item, or, when it holds folders, a submenu of
-    its own whose first item is the folder itself (when obj can go there), then its
-    folders."""
-    menu = Gio.Menu()
+    folder `named` ((kind, id)), in one list in the sidebar's order: each folder it can go
+    into, one inside another named with the folders holding it (folder_path()). No folder
+    is a submenu, as in Add to Playlist (playlist_submenu())."""
+    menu = Gio.Menu() if menu is None else menu
     for folder_id, title, movable, children in entries:
-        label = mnemonic_escaped(title or _('Untitled Folder'))
-        target = GLib.Variant('(sss)', (folder_id, *named))
-        if children:
-            submenu = Gio.Menu()
-            if movable:
-                itself = Gio.Menu()
-                itself.append_item(menu_item('item-move-to-folder', target, label=label))
-                submenu.append_section(None, itself)
-            submenu.append_section(None, folder_submenu(children, named))
-            menu.append_submenu(label, submenu)
-        else:
-            menu.append_item(menu_item('item-move-to-folder', target, label=label))
+        inside = (*path, title)
+        if movable:
+            menu.append_item(menu_item('item-move-to-folder',
+                                       GLib.Variant('(sss)', (folder_id, *named)),
+                                       label=mnemonic_escaped(folder_path(inside))))
+        folder_items(children, named, inside, menu)
     return menu
 
 
 def move_submenu(moves, named):
     """Move to Folder's submenu for the playlist or folder `named` ((kind, id)), from
     move_targets()'s `moves`: Top Level (when it can go there), the folders
-    (folder_submenu()), then New Folder…, a folder holding it. Never empty."""
+    (folder_items()), then New Folder…, a folder holding it. Never empty."""
     top_level, entries = moves
     submenu = Gio.Menu()
     if top_level:
@@ -773,7 +791,7 @@ def move_submenu(moves, named):
                                   GLib.Variant('(sss)', (ROOT_FOLDER, *named)),
                                   label=_('Top Level')))
         submenu.append_section(None, top)
-    listed = folder_submenu(entries, named)
+    listed = folder_items(entries, named)
     if listed.get_n_items():
         submenu.append_section(None, listed)
     created = Gio.Menu()
@@ -807,7 +825,7 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     page's More Options, a sidebar row's (a folder's, All Playlists' too: New Playlist… and
     New Folder… in it). `playlists` are the entries the Add to
     Playlist submenu lists (ItemActions.playlists(): (id, title, children), a folder's
-    children its own entries, a submenu); `here` is the Item of the page shown (Go to Album
+    children its own entries, a section); `here` is the Item of the page shown (Go to Album
     and Go to Artist are left out where they would go nowhere: related.shows); `queued`, obj
     is in the player's queue (no Play); `container`, the playlist Item the track obj is
     shown in (Remove from Playlist, when it is one of the user's); `moves`, where a playlist
@@ -850,7 +868,7 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if library_target(obj) is not None and removable is None:
         keep.append_item(menu_item('item-add-to-library', target))
     if playlist_song(obj) or adds_songs(obj):
-        # The playlists that take songs, folders as submenus, then New Playlist…, one
+        # The playlists that take songs, folders as sections, then New Playlist…, one
         # holding this song (an album's or a playlist's songs).
         submenu = Gio.Menu()
         listed = playlist_submenu(playlists, named)

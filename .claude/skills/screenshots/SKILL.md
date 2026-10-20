@@ -37,7 +37,7 @@ What to shoot: $ARGUMENTS
      follows the name); `--banner sign-in|expired`: the sign-in banner;
    - `--sidebar` (the narrow layout: the sidebar rather than the page), `--expand first`,
      `--search TERM`, `--context-menu` (`--submenu NAME` for one of its submenus, by its
-     label, underscore and all: `"Add to Pla_ylist"`, a folder's name), `--preferences [general|engine]`,
+     label, underscore and all: `"Add to Pla_ylist"`, `"Mov_e to Folder"`), `--preferences [general|engine]`,
      `--dialog about|shortcuts`; `--scroll PX` for the rest of a page taller than the
      window (an artist's: `--open artist:first --scroll 900`; an album's footer and shelves:
      `--open album:first --scroll 650`, and `1400` for the last of them; a playlist's Suggested Songs:
