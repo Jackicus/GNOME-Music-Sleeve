@@ -16,18 +16,26 @@ The screenshots show an invented demo library.
 
 > [!IMPORTANT]
 > The app plays music through **Google Chrome**, or another Chromium-based browser that
-> has Widevine. Apple Music's streams are protected with Widevine DRM, which Google's own
-> Chrome ships and Chromium does not (without its distribution's Widevine package), and
-> Apple offers no public streaming API. The app starts Chrome on a private profile, shows
-> music.apple.com in it and drives Apple's own player there. Chrome opens a window once, for you to sign in, and runs hidden after
-> that; the sound comes out of Chrome, so your system's per-app volume lists it as Chrome.
+> has Widevine. Apple Music's streams are protected with Widevine DRM, which Google Chrome
+> ships and plain Chromium lacks, and Apple offers no public streaming API. The app starts
+> Chrome on a private profile, shows music.apple.com in it and drives Apple's own player
+> there. Chrome opens a window once, for you to sign in, and runs hidden after that; the
+> sound comes out of Chrome, so your system's per-app volume lists it as Chrome.
 
 ## What it does
 
 - Your library: Recently Added, Artists, Albums, Songs, Music Videos and Made for You,
   with your playlists and playlist folders in the sidebar.
-- Home, New, Radio and Search, with a page for every album, playlist and artist.
-- A player bar, and a Now Playing view with synced lyrics and the queue.
+- Home, New, Radio and Search, with a page for every album and playlist, and artist pages
+  laid out as Apple Music's: the latest release, top songs, albums, About and similar
+  artists.
+- Your playlists to manage: make new ones, rename and delete them, add and remove songs, and
+  pick from the songs Apple Music suggests adding.
+- A player bar, and a Now Playing view with the queue and the lyrics: lit word by word as
+  they are sung when Apple Music times them so, with background vocals, duets on two sides,
+  and translations and pronunciations when the song has them.
+- A full-screen player (<kbd>F11</kbd>): the artwork, the controls and the lyrics over the
+  artwork's own colours.
 - GNOME's media controls (MPRIS) and the keyboard's media keys.
 - Your library in the Activities overview's search: an album, artist, playlist or song
   typed there opens, or plays, from the results.
@@ -36,8 +44,9 @@ The screenshots show an invented demo library.
 - Light and dark styles; the window adapts down to 360 px wide.
 
 What it does not do: offline listening or downloads (it streams, as the web player does);
-music videos with a picture (they play as audio); creating, renaming or reordering playlists
-(adding songs to one works). The whole list is in the [user guide](docs/user-guide.md).
+music videos with a picture (they play as audio); reordering a playlist's songs, making
+playlist folders or moving playlists between them (Apple's own apps do those). The whole list
+is in the [user guide](docs/user-guide.md).
 
 ## Requirements
 
