@@ -41,7 +41,8 @@ What to shoot: $ARGUMENTS
      `--dialog about|shortcuts`; `--scroll PX` for the rest of a page taller than the
      window (an artist's: `--open artist:first --scroll 900`; an album's footer and shelves:
      `--open album:first --scroll 650`, and `1400` for the last of them; a playlist's Suggested Songs:
-     `--page playlist:l.pl002 --scroll 1600`); `--focus` focuses the page's first tile or
+     `--page playlist:l.pl002 --scroll 1600`; a catalog playlist's shelves:
+     `--open playlist:pl.demo001 --scroll 700`); `--focus` focuses the page's first tile or
      row with its focus ring (a music video's play symbol); `--setting KEY=VALUE` sets a setting first
      (`--setting more-suggestions=true` shows twelve suggestions);
    - the main menu: `--main-menu` (with `--sidebar` at a narrow `--size`);

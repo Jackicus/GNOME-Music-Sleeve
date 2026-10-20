@@ -1,0 +1,89 @@
+{
+  "data": [
+    {
+      "id": "pl.aW52ZW50ZWRwbA",
+      "type": "playlists",
+      "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA",
+      "attributes": {
+        "name": "Invented Night Drive",
+        "curatorName": "Apple Music Invented",
+        "lastModifiedDate": "2026-10-16T07:00:00Z",
+        "playlistType": "editorial",
+        "artwork": {"url": "https://example.invalid/image/thumb/cGxheWxpc3Q/{w}x{h}cc.jpg",
+                    "width": 1080, "height": 1080, "bgColor": "203040"},
+        "url": "https://music.apple.com/gb/playlist/invented-night-drive/pl.aW52ZW50ZWRwbA",
+        "playParams": {"id": "pl.aW52ZW50ZWRwbA", "kind": "playlist"}
+      },
+      "relationships": {
+        "curator": {
+          "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA/curator",
+          "data": [
+            {"id": "1724049500", "type": "apple-curators",
+             "href": "/v1/catalog/gb/apple-curators/1724049500",
+             "attributes": {
+               "name": "Apple Music Invented",
+               "shortName": "Invented",
+               "kind": "Curator",
+               "artwork": {"url": "https://example.invalid/image/thumb/Y3VyYXRvcg/{w}x{h}cc.jpg",
+                           "width": 1080, "height": 1080, "bgColor": "402030"},
+               "url": "https://music.apple.com/gb/curator/apple-music-invented/1724049500"
+             }}
+          ]
+        },
+        "tracks": {
+          "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA/tracks",
+          "data": [
+            {"id": "1724049601", "type": "songs",
+             "attributes": {"name": "Invented Song", "artistName": "Mara Lind",
+                            "albumName": "Ladders of Rain", "durationInMillis": 200000,
+                            "playParams": {"id": "1724049601", "kind": "song"}}}
+          ]
+        }
+      },
+      "views": {
+        "featured-artists": {
+          "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA/view/featured-artists",
+          "attributes": {"title": "Featured Artists"},
+          "data": [
+            {"id": "1724049001", "type": "artists",
+             "attributes": {"name": "Paper Parachutes",
+                            "artwork": {"url": "https://example.invalid/image/thumb/YXJ0aXN0MQ/{w}x{h}bb.jpg",
+                                        "width": 2400, "height": 2400},
+                            "url": "https://music.apple.com/gb/artist/paper-parachutes/1724049001"}},
+            {"id": "1724049002", "type": "artists",
+             "attributes": {"name": "Mara Lind",
+                            "artwork": {"url": "https://example.invalid/image/thumb/YXJ0aXN0Mg/{w}x{h}bb.jpg",
+                                        "width": 2400, "height": 2400},
+                            "url": "https://music.apple.com/gb/artist/mara-lind/1724049002"}}
+          ]
+        },
+        "more-by-curator": {
+          "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA/view/more-by-curator",
+          "next": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA/view/more-by-curator?offset=3",
+          "attributes": {"title": "More By Apple Music Invented"},
+          "data": [
+            {"id": "pl.aW52ZW50ZWRwbA", "type": "playlists",
+             "attributes": {"name": "Invented Night Drive", "curatorName": "Apple Music Invented",
+                            "playParams": {"id": "pl.aW52ZW50ZWRwbA", "kind": "playlist"}}},
+            {"id": "pl.aW52ZW50ZWRwMg", "type": "playlists",
+             "attributes": {"name": "Invented Morning Run", "curatorName": "Apple Music Invented",
+                            "artwork": {"url": "https://example.invalid/image/thumb/cGwy/{w}x{h}cc.jpg",
+                                        "width": 1080, "height": 1080},
+                            "playParams": {"id": "pl.aW52ZW50ZWRwMg", "kind": "playlist"}}},
+            {"id": "1724049500", "type": "apple-curators",
+             "attributes": {"name": "Apple Music Invented"}}
+          ]
+        },
+        "you-might-also-like": {
+          "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA/view/you-might-also-like",
+          "attributes": {"title": "You Might Also Like"},
+          "data": [
+            {"id": "pl.aW52ZW50ZWRwMw", "type": "playlists",
+             "attributes": {"name": "Invented Slow Hours", "curatorName": "Harbour Editors",
+                            "playParams": {"id": "pl.aW52ZW50ZWRwMw", "kind": "playlist"}}}
+          ]
+        }
+      }
+    }
+  ]
+}

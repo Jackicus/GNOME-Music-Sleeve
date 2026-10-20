@@ -919,6 +919,17 @@ changes, change it here, with the date. The plan they came from is in
   not the page. They live inside the track list, in rows of its own (a `Gtk.ListView`
   recycles only as its scrolled window's child), each shelf a horizontal list as the artist
   page's are. The demo library invents an answer for each hand-written album.
+- **A catalog playlist ends with the catalog's shelves, its curator a link** (2026-10-20,
+  #371). As an album's page does: Featured Artists, More By the curator and You Might Also
+  Like, from one read of the playlist with its curator and views (`Engine.playlist_page`),
+  kept a day (`playlists/`), asked after the tracks' first paint and appended to the list,
+  only for a playlist of the catalog's (Apple's or a curator's, in the library or not:
+  `release.playlist_target()`); a playlist of the user's has Suggested Songs there instead.
+  The curator's name under the title stays plain text until that answer names the curator,
+  then is the same flat link an album's artist is: an Apple curator's page is the category
+  page the app already has; a third party's (`curators`) has no page the app can read, so it
+  opens on music.apple.com, as a third-party curator found by Search does. No answer leaves
+  the plain name and the songs, and nothing is toasted.
 - **Radio is Apple's radio page, with Recently Played as one shelf** (2026-10-20, #336).
   The page is the editorial grouping behind music.apple.com's own Radio page
   (`groupings?name=radio`, asked as New's is, with the stations' programmes and shows),

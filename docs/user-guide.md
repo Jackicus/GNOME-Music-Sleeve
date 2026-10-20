@@ -104,6 +104,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   remasters), **Music Videos**, **More By** the artist, **Featured On** (playlists with its
   songs) and **You Might Also Like**, each shown when Apple Music has some. They come a
   moment after the songs and are kept for a day.
+- A playlist from Apple Music (one of its editors' or a curator's, in your library or not)
+  ends the same way: **Featured Artists**, **More By** its curator and **You Might Also
+  Like**, a moment after the songs. Its curator's name under its title then becomes a link:
+  an Apple Music curator's page opens in Music Sleeve, any other curator's on
+  music.apple.com in your browser.
 - An album that is not out yet says when it comes ("Coming 4 December 2026") under its
   title and under its songs. Its songs still to come are dimmed and say **Not yet
   released**; **Play** and **Shuffle** play the ones out already (its singles), and are

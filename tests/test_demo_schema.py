@@ -358,6 +358,44 @@ class TestDemoLibrarySchema(unittest.TestCase):
                       encoding='utf-8') as f:
                 self.assertNotIn('prerelease', json.load(f)['latest']['item'])
 
+    def test_playlist_pages(self):
+        # Each catalog playlist of the artists' pages has what the catalog would show under
+        # its tracks (normalize.playlist_page's keys): its curator, whose page is there too,
+        # and every shelf in Apple's order, the playlist itself on none of them.
+        real = normalize.playlist_page({}, None)
+        playlists = []
+        for name in sorted(os.listdir(os.path.join(self.out_dir, 'artists'))):
+            with open(os.path.join(self.out_dir, 'artists', name), encoding='utf-8') as f:
+                playlists += [item for shelf in json.load(f)['shelves']
+                              if shelf['key'] == 'playlists' for item in shelf['items']]
+        self.assertEqual(len(playlists), 30)
+        for playlist in playlists:
+            with self.subTest(id=playlist['id']):
+                path = os.path.join(self.out_dir, 'playlists', f"{playlist['id']}.json")
+                with open(path, encoding='utf-8') as f:
+                    answer = json.load(f)
+                self.assertIs(answer['demo'], True)
+                self.assertEqual(set(answer) - {'demo', 'cached'}, set(real))
+                self.assertEqual(answer['id'], playlist['id'])
+                curator = answer['curator']
+                self.assertEqual((curator['kind'], curator['title']),
+                                 ('category', playlist['subtitle']))
+                self.assertTrue(os.path.isfile(normalize.category_cache_path(
+                    self.out_dir, curator['id'])))
+                self.assertEqual([shelf['key'] for shelf in answer['shelves']],
+                                 list(normalize.PLAYLIST_SHELVES))
+                for shelf in answer['shelves']:
+                    self.assertTrue(shelf['title'])
+                    self.assertTrue(shelf['items'])
+                    self.assertNotIn(playlist['id'], [item['id'] for item in shelf['items']])
+                for artist in answer['shelves'][0]['items']:  # each with a page of theirs
+                    self.assertEqual(artist['kind'], 'artist')
+                    self.assertTrue(os.path.isfile(normalize.artist_cache_path(
+                        self.out_dir, artist['id'])))
+                for item in answer['shelves'][2]['items']:  # with their tracks: they open
+                    self.assertEqual(item['kind'], 'playlist')
+                    self.assertTrue(item['groups'][0]['entries'])
+
     def test_album_pages(self):
         # Each album has what the catalog would show under its tracks, as the engine keeps
         # it (normalize.album_page's keys), every shelf in Apple's order, More By untitled.

@@ -40,7 +40,9 @@ list and the script together.
    a dialog: Tab reaches each person, read with their roles, and Escape closes it, the focus
    back on the track. On an album, Tab from the last track goes past the footer into Apple Music's
    shelves of it (Other Versions, More By…), and Shift+Tab from there goes back to the last
-   track. One of Apple Music's the library lacks has Add between Shuffle and More Options;
+   track; on one of Apple Music's playlists, Tab from the last track goes into its shelves
+   (Featured Artists, More By…) the same way, and Shift+Tab from Play reaches its curator's
+   name, a link Enter opens. One of Apple Music's the library lacks has Add between Shuffle and More Options;
    once added, the focus goes to More Options and "In Library" is read as text. Alt+Left
    (or Escape inside the page) goes back. On an artist: Play, the star (Space stars the
    artist or takes it back; read as the toggle "Favourite", pressed or not), More Options,

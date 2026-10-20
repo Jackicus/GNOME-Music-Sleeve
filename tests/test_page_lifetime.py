@@ -146,6 +146,7 @@ def _classes():
             self.status_bitrate = 256  # what status() reads of MusicKit
             self.artist_answer = None  # what artist_page() answers: engine-down while None
             self.album_answer = None  # what album_page() answers, the same way
+            self.playlist_answer = None  # what playlist_page() answers, the same way
             self.suggestions = None  # what playlist_suggestions() answers, the same way
             self.radio_answer = None  # what radio() answers, the same way
             self.charts_answer = None  # what charts() answers, the same way
@@ -183,6 +184,12 @@ def _classes():
             if self.album_answer is None:
                 raise EngineError('engine-down')
             return self.album_answer
+
+        async def playlist_page(self, playlist_id, refresh=False):
+            self.calls.append('playlist_page')
+            if self.playlist_answer is None:
+                raise EngineError('engine-down')
+            return self.playlist_answer
 
         async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
                                        selected=(), more=False, basis=None):
@@ -659,6 +666,34 @@ class PageLifetimeTest(WidgetTestCase):
         self.addCleanup(setattr, self.app.engine, 'album_answer', None)
         item = Item(dict(_album(1, tracks=3), catalogId='1724049100'))
         refs = await self.pushed_and_popped(DetailPage(self.library, item), Shelf, Tile)
+        await self.assert_freed(*refs)
+
+    async def test_catalog_playlist_page_with_the_catalogs_shelves(self):
+        # A catalog playlist's shelves under its tracks, and its curator's link.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.widgets.shelf import Shelf
+        from applemusic.widgets.tile import Tile
+
+        def entry(number, kind='playlist'):
+            return {'id': f'pl.aW52{number}', 'kind': kind, 'title': f'Other {number}',
+                    'subtitle': 'Apple Music Invented', 'art': None, 'thumb': None,
+                    'groups': [], 'play': {'kind': kind, 'id': f'pl.aW52{number}'}}
+
+        self.app.engine.playlist_answer = {
+            'id': 'pl.aW52ZW50ZWRwbA',
+            'curator': {'id': '1724049500', 'kind': 'category', 'title': 'Apple Music Invented',
+                        'subtitle': None, 'art': None, 'artColor': None, 'url': None},
+            'shelves': [{'key': key, 'title': '', 'more': key == 'more-by-curator',
+                         'items': [entry(number, kind) for number in range(1, 5)]}
+                        for key, kind in (('featured-artists', 'artist'),
+                                          ('more-by-curator', 'playlist'),
+                                          ('you-might-also-like', 'playlist'))]}
+        self.addCleanup(setattr, self.app.engine, 'playlist_answer', None)
+        data = dict(_album(1, tracks=3), kind='playlist', id='pl.aW52ZW50ZWRwbA',
+                    subtitle='Apple Music Invented')
+        data['play'] = {'kind': 'playlist', 'id': 'pl.aW52ZW50ZWRwbA'}
+        refs = await self.pushed_and_popped(DetailPage(self.library, Item(data)), Shelf, Tile)
         await self.assert_freed(*refs)
 
     async def test_playlist_table_page(self):

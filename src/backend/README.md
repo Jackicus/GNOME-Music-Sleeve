@@ -453,7 +453,10 @@ Link alone (`actions.curator_menu()`), and its tile opens its page:
   third parties): `api.SEARCH_TYPES` asks for both. `normalize.search_results()` shelves
   Apple's of kind Show as `radio-shows` and the rest as `curators`, each marked
   `curatorKind`; a third party's has no page the app can read (`category()` asks
-  `apple-curators`), so it is a link to music.apple.com's (`curator_link()`).
+  `apple-curators`), so it is a link to music.apple.com's (`curator_link()`);
+- a catalog playlist's curator (its `curator` relationship, `include=curator`) is the link
+  under its title: an Apple curator's category page, a third party's page in the browser
+  (`normalize.playlist_curator()`; its shape under library.json below).
 
 ### The Charts page
 
@@ -734,6 +737,30 @@ by its own id and one of its songs' catalog ids, through which the engine finds 
 album (`api.SONG_ALBUMS_PARAMS`); the answer is kept under the id it was asked by, with the
 views asked as its `basis`, so one kept with other views is asked again.
 
+What a catalog playlist's page shows under its tracks (`Engine.playlist_page()`,
+`normalize.playlist_page()`; #371) is `{id, curator, shelves: [{key, title, items, more}]}`
+from one read, `GET /v1/catalog/<sf>/playlists/<id>` with `api.PLAYLIST_PARAMS`
+(`include=curator`, `views=featured-artists,more-by-curator,you-might-also-like`), kept a
+day in `playlists/<id>.json` with the views as its `basis`. `curator` is the playlist's
+`curator` relationship (`normalize.playlist_curator()`): an `apple-curators` is its
+category tile, titled with its whole name (its page the category page, "Curators and radio
+shows" above; with its id alone, named by the playlist's `curatorName`), a third party's
+`curators` a `link` to its `url` on music.apple.com (none without an https page), anything
+else None. The shelves are the views in that order, titled as Apple titles them (the app
+names an untitled one: Featured Artists, "More By <curator>", You Might Also Like), each
+under the playlist's `views` as the album's are; the curator's and the alike playlists
+leave the playlist itself out; `more` when `Engine.playlist_view()` has more. Only a
+playlist of the catalog's is asked (`release.playlist_target()`: a `pl.` id, its own or the
+catalog id a library playlist of Apple's carries; never the user's, Favourite Songs or a
+`pl.u-` one shared from an account). Not checked live yet, so to confirm: that
+`include=curator` answers the curator's `name`, `kind` and `url` (the documented default is
+its id alone); that Apple titles the two documented views and which words it uses; that a
+playlist has a `you-might-also-like` view (the album's name, asked of a playlist too: Apple
+leaves a view it does not have out of the answer, as the album's `related-albums` was), and
+whether the web player asks for more views (`contributors` was seen in its requests as
+remembered); and that the read answers no 400 for the views (a 400 is asked again with the
+two documented ones alone, `api.PLAYLIST_PLAIN_PARAMS`).
+
 A playlist's suggested songs (`Engine.playlist_suggestions()`,
 `normalize.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are
 (with their `album`), in Apple's order, each once. Apple may suggest a song the playlist
@@ -762,7 +789,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 | `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
 | `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |

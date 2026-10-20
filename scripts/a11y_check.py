@@ -656,6 +656,51 @@ async def moving_songs(window):
     check('Escape closes it', not any(each.get_visible() for each in shown))
 
 
+async def catalog_playlist(window, artist):
+    """One of the catalog's playlists, from the artist page's Artist Playlists: its curator's
+    name a link (Shift+Tab from Play reaches it, Enter opens the curator's page), and its
+    shelves after the tracks, Tab into them and Shift+Tab back to the last track."""
+    print('-- catalog playlist')
+    shelf = next((shelf for shelf in artist._shelves if shelf.key == 'playlists'), None)
+    check("the artist's page has playlists", shelf is not None and shelf.items.get_n_items())
+    if not shelf or not shelf.items.get_n_items():
+        return
+    window.open_item(shelf.items.get_item(0))
+    await asyncio.sleep(1.0)
+    page = window.navigation_view.get_visible_page()
+    await until(lambda: page.artist_button.get_visible() and page._shelves_start is not None)
+    check("the curator's name is a link", page.artist_button.get_visible()
+          and not page.subtitle_label.get_visible())
+    page.play_button.grab_focus()
+    await key(window, '<shift>ISO_Left_Tab')
+    check("Shift+Tab from Play: the curator's link", window.get_focus() is page.artist_button,
+          describe(window.get_focus()))
+    await key(window, 'Return', 1.0)
+    curator = window.navigation_view.get_visible_page()
+    check("Enter opens the curator's page", curator is not page
+          and getattr(curator, 'item', None) is not None and curator.item.kind == 'category',
+          type(curator).__name__)
+    if curator is not page:
+        window.navigation_view.pop()
+        await asyncio.sleep(0.6)
+    last = page._shelves_start - 1 if page._shelves_start is not None else None
+    if last is not None:
+        page.list_view.scroll_to(last, Gtk.ListScrollFlags.FOCUS, None)
+        await asyncio.sleep(0.3)
+        await key(window, 'Tab', 0.3)
+        check('Tab from the last track: the first shelf',
+              inside(window.get_focus(), page.shelves_box), describe(window.get_focus()))
+        await key(window, '<shift>ISO_Left_Tab', 0.3)
+        focus = window.get_focus()
+        check('Shift+Tab: back to the last track', inside(focus, page.list_view)
+              and not inside(focus, page.shelves_box)
+              and focus.__gtype__.name == 'GtkListItemWidget'
+              and focus.get_first_child().track_row.context_item
+              is page._rows.get_item(last), describe(focus))
+    window.navigation_view.pop()  # back to the artist, as the steps below expect
+    await asyncio.sleep(0.6)
+
+
 async def view_credits(window, detail):
     """Step 3's View Credits, from the focused track's menu: its dialog (the demo's invented
     answer) with each person a row Tab reaches, Escape closing it, the focus back on the
@@ -1049,7 +1094,7 @@ async def walkthrough(window):
     # One of the catalog's the library lacks (Other Versions' first): Add between Shuffle and
     # More Options.
     other = None
-    for shelf in detail._album_shelves:
+    for shelf in detail._catalog_shelves:
         other = next((shelf.items.get_item(position)
                       for position in range(shelf.items.get_n_items())
                       if shelf.items.get_item(position).kind == 'album'), None)
@@ -1111,6 +1156,7 @@ async def walkthrough(window):
     song = artist.top_songs.shelf.items.get_item(1)
     check('Down, Enter plays the top songs from the second', requests == [('songs', 1, song.id)],
           requests)
+    await catalog_playlist(window, artist)
     # The other look of the hero: the demo's first artist has a banner, its second none.
     banner = artist.banner.get_visible()
     window.navigation_view.pop()

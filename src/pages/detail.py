@@ -36,6 +36,13 @@ Versions, Music Videos, More By, Featured On, You Might Also Like) in a ShelfCol
 artist page's are. An album the catalog cannot answer for shows the footer's counts alone:
 the failure is only logged.
 
+A catalog playlist (release.playlist_target(): one of Apple's or a curator's, in the library or
+not) ends the same way, without the footer: once the catalog has answered
+(Engine.playlist_page, asked after the tracks' first paint, kept for a day), a section whose row
+holds its shelves (Featured Artists, More By <curator>, You Might Also Like), and the curator's
+name under the title becomes a link to their page (release.curator_item(): an Apple curator's
+category page, a third party's page on music.apple.com in the browser).
+
 On a playlist of the user's (PlaylistOrder.can_reorder(): not Favourite Songs, nor one of
 Apple's) a song moves within the list: dragged (the row's own drag, widgets/dnd.py, dropped
 here as a MOVE: an insertion line where it would go, the list scrolling near its edges, a
@@ -95,8 +102,9 @@ from ..library import (HELD_KINDS, TRACK_REF_KINDS, Item, ItemRefs, ShelfModel, 
 from ..actions import adds_to, is_manageable
 from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
-from ..release import (album_artist, album_shelves, album_target, curator, footer_lines,
-                       hero_caption, is_prerelease, released_play)
+from ..release import (album_artist, album_shelves, album_target, curator, curator_item,
+                       footer_lines, hero_caption, is_prerelease, playlist_shelves,
+                       playlist_target, released_play)
 from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
@@ -262,18 +270,31 @@ def album_completer(answer, shelf):
     if shelf.key == 'more-by-artist':
         if not artist_id:
             return None
-        key = artist_id
+        return _completer(shelf, artist_id, album_id,
+                          lambda engine: engine.artist_view(artist_id, 'full-albums'))
+    if album_id:
+        return _completer(shelf, album_id, album_id,
+                          lambda engine: engine.album_view(album_id, shelf.key))
+    return None
 
-        def fetch(engine):
-            return engine.artist_view(artist_id, 'full-albums')
-    elif album_id:
-        key = album_id
 
-        def fetch(engine):
-            return engine.album_view(album_id, shelf.key)
-    else:
+def playlist_completer(answer, shelf):
+    """See All's coroutine function for a shelf under a catalog playlist Apple has more of:
+    the whole view (Engine.playlist_view), less the playlist, the Items shown kept. None for
+    a shelf Apple sent whole."""
+    if not getattr(shelf, 'more', False) or not isinstance(answer, dict):
         return None
+    playlist_id = str(answer.get('id') or '')
+    if not playlist_id:
+        return None
+    return _completer(shelf, playlist_id, playlist_id,
+                      lambda engine: engine.playlist_view(playlist_id, shelf.key))
 
+
+def _completer(shelf, key, own_id, fetch):
+    """See All's coroutine function: `fetch(engine)`'s Items for the shelf, the one with
+    `own_id` (the page's own album or playlist) left out, the Items shown kept; a failure
+    is only logged (by `key` and the shelf's)."""
     async def complete():
         try:
             dicts = await fetch(app().engine)
@@ -283,7 +304,7 @@ def album_completer(answer, shelf):
         shown = {item.id: item for item in shelf.items}
         items = [shown.get(data.get('id')) or Item(remote_item(data)) for data in dicts
                  if isinstance(data, dict) and data.get('id') and data.get('kind')
-                 and album_id not in (data.get('id'), data.get('catalogId'))]
+                 and own_id not in (data.get('id'), data.get('catalogId'))]
         if items:
             shelf.more = False
             shelf.update(shelf.title, items)
@@ -310,8 +331,8 @@ class _Footer(GObject.Object):
 
 
 class _Shelves(GObject.Object):
-    """The last item of an album's list, while the catalog has shelves of it: where they
-    go."""
+    """The last item of an album's or a catalog playlist's list, while the catalog has
+    shelves of it: where they go."""
 
     __gtype_name__ = 'AppleMusicDetailShelves'
 
@@ -392,7 +413,8 @@ class DetailPage(Adw.NavigationPage):
     while none is. Its Add is Pre-Add.
 
     The hero: under the title, an album's artist or a playlist's curator (release.curator():
-    the account's name for one of the user's), then the caption (release.hero_caption(): a
+    the account's name for one of the user's; a catalog playlist's a link to the curator's
+    page once Engine.playlist_page has named them), then the caption (release.hero_caption(): a
     playlist's "Updated" date and its songs, an album's genre, year and songs). Beside Play
     and Shuffle, an album or playlist of the catalog's has Add, which adds it to the library
     (window.item_actions.add_to_library()), or In Library once the library holds it
@@ -501,15 +523,18 @@ class DetailPage(Adw.NavigationPage):
         self._more_task = None
         self._suggestion_art_task = None
         self.suggested_songs = None
-        # What the catalog shows under an album's tracks (Engine.album_page): the Item it
-        # was asked for, the request under way and the art's, its answer, and its shelves,
-        # shown by a ShelfColumn in shelves_box, made with the first of them (a playlist's
-        # page, the first page built, never imports the shelves).
-        self._album_asked_for = None
-        self._album_task = None
-        self._album_art_task = None
-        self._album_answer = None
-        self._album_shelves = []
+        # What the catalog shows under an album's or a catalog playlist's tracks
+        # (Engine.album_page, Engine.playlist_page): the Item it was asked for, the request
+        # under way and the art's, its answer, its shelves, shown by a ShelfColumn in
+        # shelves_box, made with the first of them (a library playlist's page, the first
+        # page built, never imports the shelves), and a playlist's curator, the Item its
+        # link opens (release.curator_item()).
+        self._catalog_asked_for = None
+        self._catalog_task = None
+        self._catalog_art_task = None
+        self._catalog_answer = None
+        self._catalog_shelves = []
+        self._curator = None
         self._shelf_column = None
         # What the status box says when the engine cannot answer, and what its button does.
         self._engine_status = EngineStatus(app(), self._show_status, self._refetch, {
@@ -641,7 +666,7 @@ class DetailPage(Adw.NavigationPage):
         self._footer_section.append(_Footer())
         self._shelves_section = Gio.ListStore(item_type=GObject.Object)
         self._shelves_section.append(_Shelves())
-        self._shelves_start = None  # the list position of an album's shelves, while shown
+        self._shelves_start = None  # the list position of the catalog's shelves, while shown
         self._sections = Gio.ListStore(item_type=Gio.ListModel)
         self._rows = Gtk.FlattenListModel(model=self._sections)
         self.list_view.set_model(Gtk.NoSelection(model=self._rows))
@@ -657,7 +682,7 @@ class DetailPage(Adw.NavigationPage):
         if should_fetch(self.item, self._fetched):
             self._fetch(self.item)  # a fetch cancelled when the page was hidden
         self._suggest()
-        self._ask_album()
+        self._ask_catalog()
         if self._suggestions is not None and self._suggestions.count != self._count():
             self._on_count_changed()  # the setting changed while the page was hidden
         self._on_preview_changed()  # a preview that ended while the page was hidden
@@ -695,13 +720,13 @@ class DetailPage(Adw.NavigationPage):
             self._fetched = None
             self._engine_status.clear()
         for task in (self._suggestions_task, self._more_task, self._suggestion_art_task,
-                     self._album_task, self._album_art_task):
+                     self._catalog_task, self._catalog_art_task):
             if task is not None and not task.done():
                 task.cancel()
         if self._suggestions is None or not self._suggestions.shown:
             self._suggested_for = None  # asked again when shown: none came this time
-        if self._album_answer is None:
-            self._album_asked_for = None  # the same
+        if self._catalog_answer is None:
+            self._catalog_asked_for = None  # the same
         self._stop_preview()
         self.selection_mode.leave()  # the mode is the page's while it shows
         self._visible = False
@@ -809,13 +834,19 @@ class DetailPage(Adw.NavigationPage):
         self._shelves_start = None
         if groups and item.kind == 'album':
             # The footer, then the catalog's shelves once they have come (_take_album).
-            if self._album_asked_for is not item:
-                self._album_answer = None
-                self._album_shelves = []
+            if self._catalog_asked_for is not item:
+                self._forget_catalog()
             self._update_footer(item, groups)
             sections.append(self._footer_section)
             position += 1
-            if self._album_shelves:
+            if self._catalog_shelves:
+                self._shelves_start = position
+                sections.append(self._shelves_section)
+        elif groups and playlist_target(item) is not None:
+            # The catalog's shelves once they have come (_take_playlist), no footer.
+            if self._catalog_asked_for is not item:
+                self._forget_catalog()
+            if self._catalog_shelves:
                 self._shelves_start = position
                 sections.append(self._shelves_section)
         shown = []
@@ -836,7 +867,7 @@ class DetailPage(Adw.NavigationPage):
         if shown:
             self._want_more()
         if groups:
-            self._ask_album()
+            self._ask_catalog()
             if self._reveal_wanted:
                 self._start_reveal()  # the tracks Go to Current Song waited for
         self._take_refocus(item)
@@ -860,8 +891,8 @@ class DetailPage(Adw.NavigationPage):
             bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
 
     def _place_sections(self, *_args):
-        """The positions of the sections of tracks, and of the suggestions after them, as
-        the filter changes what they show."""
+        """The positions of the sections of tracks, and of the suggestions or the catalog's
+        shelves after them, as the filter changes what they show."""
         if len(self._starts) != len(self._track_models):
             return  # the sections are being made (_show_item places them)
         position = 1  # after the hero
@@ -870,6 +901,9 @@ class DetailPage(Adw.NavigationPage):
             position += model.get_n_items()
         if self._suggestions_start is not None:
             self._suggestions_start = position
+        if self._shelves_start is not None:  # after an album's footer
+            footer = self.item is not None and self.item.kind == 'album'
+            self._shelves_start = position + (1 if footer else 0)
 
     def _scroll_top(self):
         self.list_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
@@ -965,26 +999,37 @@ class DetailPage(Adw.NavigationPage):
         copyright (release.footer_lines), from the catalog's answer once it has come."""
         count = sum(group.entries.get_n_items() for group in groups)
         duration = sum(track.duration_ms for group in groups for track in group.entries)
-        answer = self._album_answer if self._album_asked_for is item else None
+        answer = self._catalog_answer if self._catalog_asked_for is item else None
         lines = footer_lines(item, answer, count, duration)
         self.footer_label.set_label('\n'.join(lines))
         self.footer_label.set_visible(bool(lines))
 
-    def _ask_album(self):
-        """Ask the catalog for the rest of the album shown (release.album_target), once,
-        while the page is mapped and its tracks are shown: the page's first build never
-        waits for it."""
+    def _forget_catalog(self):
+        """The catalog's answer for another Item than the one shown let go of."""
+        self._catalog_answer = None
+        self._catalog_shelves = []
+        self._curator = None
+
+    def _ask_catalog(self):
+        """Ask the catalog for the rest of the album or catalog playlist shown
+        (release.album_target, release.playlist_target), once, while the page is mapped and
+        its tracks are shown: the page's first build never waits for it."""
         item = self.item
-        if (item is None or item.kind != 'album' or self._album_asked_for is item
+        if (item is None or item.kind not in FETCHED_KINDS or self._catalog_asked_for is item
                 or not self.get_mapped() or not self._groups):
             return
-        self._album_asked_for = item
-        target = album_target(item)
-        if target is None:
+        self._catalog_asked_for = item
+        if item.kind == 'album':
+            target = album_target(item)
+            load = self._load_album(item, *target) if target is not None else None
+        else:
+            target = playlist_target(item)
+            load = self._load_playlist(item, target) if target is not None else None
+        if load is None:
             return
-        if self._album_task is not None and not self._album_task.done():
-            self._album_task.cancel()
-        self._album_task = app().spawn(self._load_album(item, *target))
+        if self._catalog_task is not None and not self._catalog_task.done():
+            self._catalog_task.cancel()
+        self._catalog_task = app().spawn(load)
 
     async def _load_album(self, item, album_id, song_id):
         """Engine.album_page()'s answer, after the tracks' first paint. An album it cannot
@@ -996,38 +1041,69 @@ class DetailPage(Adw.NavigationPage):
         except EngineError as error:
             log.info('the rest of album %s: %s', item.id, error)
             return
-        if self.item is item and self._album_asked_for is item:
+        if self.item is item and self._catalog_asked_for is item:
             self._take_album(item, answer)
 
     def _take_album(self, item, answer):
         """Show Engine.album_page()'s answer: the footer's release lines, the shelves after
         it (appended, the tracks' rows left as they are), and their thumbnails."""
-        self._album_answer = answer
-        self._album_shelves = album_shelves(answer, album_artist(item))
-        for shelf in self._album_shelves:
+        self._catalog_answer = answer
+        self._catalog_shelves = album_shelves(answer, album_artist(item))
+        for shelf in self._catalog_shelves:
             shelf.complete = album_completer(answer, shelf)
         groups = [group for group in item.groups if group.entries.get_n_items()]
         if not groups:
             return
         self._update_footer(item, groups)
-        if self._shelf_column is None and self._album_shelves:
+        self._show_catalog_shelves()
+
+    async def _load_playlist(self, item, playlist_id):
+        """Engine.playlist_page()'s answer, after the tracks' first paint. A playlist it
+        cannot answer for (offline, the engine down, one the catalog lacks) keeps its plain
+        curator and no shelves: the failure is only logged."""
+        await next_frame(self.list_view)
+        try:
+            answer = await app().engine.playlist_page(playlist_id)
+        except EngineError as error:
+            log.info('the rest of playlist %s: %s', item.id, error)
+            return
+        if self.item is item and self._catalog_asked_for is item:
+            self._take_playlist(item, answer)
+
+    def _take_playlist(self, item, answer):
+        """Show Engine.playlist_page()'s answer: the curator's name a link to their page,
+        the shelves after the tracks (appended, the tracks' rows left as they are), and
+        their thumbnails."""
+        self._catalog_answer = answer
+        self._curator = curator_item(answer)
+        self._catalog_shelves = playlist_shelves(answer, curator(item))
+        for shelf in self._catalog_shelves:
+            shelf.complete = playlist_completer(answer, shelf)
+        self._show_curator(item)
+        if any(group.entries.get_n_items() for group in item.groups):
+            self._show_catalog_shelves()
+
+    def _show_catalog_shelves(self):
+        """The catalog's shelves (_catalog_shelves) in the last section, appended or taken
+        away as there are some or none, and their thumbnails fetched."""
+        if self._shelf_column is None and self._catalog_shelves:
             from ..widgets.shelf import ShelfColumn
 
             self._shelf_column = ShelfColumn(self.shelves_box)
         if self._shelf_column is not None:
-            self._shelf_column.show(self._album_shelves)
+            self._shelf_column.show(self._catalog_shelves)
         count = self._sections.get_n_items()
         present = count > 0 and self._sections.get_item(count - 1) is self._shelves_section
-        if self._album_shelves and not present:
+        if self._catalog_shelves and not present:
             self._shelves_start = self._rows.get_n_items()
             self._sections.append(self._shelves_section)
-        elif present and not self._album_shelves:
+        elif present and not self._catalog_shelves:
             self._shelves_start = None
             self._sections.remove(count - 1)
-        if self._album_shelves:
-            if self._album_art_task is not None and not self._album_art_task.done():
-                self._album_art_task.cancel()
-            self._album_art_task = app().spawn(fetch_shelf_art(list(self._album_shelves)))
+        if self._catalog_shelves:
+            if self._catalog_art_task is not None and not self._catalog_art_task.done():
+                self._catalog_art_task.cancel()
+            self._catalog_art_task = app().spawn(fetch_shelf_art(list(self._catalog_shelves)))
 
     # The songs Apple suggests adding to a playlist.
 
@@ -1265,12 +1341,7 @@ class DetailPage(Adw.NavigationPage):
             app().spawn(self._fetch_cover(item))
         self.title_label.set_label(item.title)
         self._artist = resolve_artist(self._library, item)
-        linked = self._artist is not None or links_catalog_artist(item)
-        subtitle = curator(item, self._account_name())
-        self.subtitle_label.set_label(subtitle)
-        self.subtitle_label.set_visible(bool(subtitle) and not linked)
-        self.artist_label.set_label(album_artist(item))
-        self.artist_button.set_visible(linked)
+        self._show_curator(item)
         caption = hero_caption(item)
         self.caption_label.set_label(caption)
         self.caption_label.set_visible(bool(caption))
@@ -1278,6 +1349,25 @@ class DetailPage(Adw.NavigationPage):
         self.summary_box.set_visible(bool(item.summary))
         self._update_buttons()
         self._update_library_state()
+
+    def _show_curator(self, item):
+        """The line under the title: an album's artist or a playlist's curator, a link to
+        their page when there is one to open (the library's artist, the catalog's, a catalog
+        playlist's curator once Engine.playlist_page has named them), else plain text."""
+        subtitle = curator(item, self._account_name())
+        if item.kind == 'album':
+            linked = self._artist is not None or links_catalog_artist(item)
+            link_text = album_artist(item)
+        else:
+            curator_link = self._curator if self._catalog_asked_for is item else None
+            link_text = subtitle or (curator_link.title if curator_link is not None else '')
+            linked = curator_link is not None and bool(link_text)
+        if not linked and self.artist_button.is_focus():
+            self.play_button.grab_focus()
+        self.subtitle_label.set_label(subtitle)
+        self.subtitle_label.set_visible(bool(subtitle) and not linked)
+        self.artist_label.set_label(link_text)
+        self.artist_button.set_visible(linked)
 
     def _account_name(self):
         """The account's name, which a playlist of the user's shows as its curator ('' when
@@ -1554,9 +1644,11 @@ class DetailPage(Adw.NavigationPage):
                 return True
             if backward and (focus is self.shelves_box or focus.is_ancestor(self.shelves_box)):
                 # Back through the shelves, then from the first of them to the last track
-                # (the footer between them takes no focus).
+                # (an album's footer between them takes no focus).
                 if not self.shelves_box.child_focus(Gtk.DirectionType.TAB_BACKWARD):
-                    self.list_view.scroll_to(shelves - 2, Gtk.ListScrollFlags.FOCUS, None)
+                    footer = self.item is not None and self.item.kind == 'album'
+                    self.list_view.scroll_to(shelves - (2 if footer else 1),
+                                             Gtk.ListScrollFlags.FOCUS, None)
                 return True
         start = self._suggestions_start
         if start is not None:
@@ -1948,9 +2040,14 @@ class DetailPage(Adw.NavigationPage):
     # The hero's links and menus.
 
     def _on_artist_clicked(self, _button):
-        # What the library holds of the artist when it has them (window.open_item); else as
-        # Go to Artist does, Apple Music's artist page.
-        if self._artist is not None:
+        # A playlist's curator: their page (window.open_item: an Apple curator's category
+        # page, a third party's page in the browser). An album's artist: what the library
+        # holds of them when it has them (window.open_item); else as Go to Artist does,
+        # Apple Music's artist page.
+        if self.item is not None and self.item.kind == 'playlist':
+            if self._curator is not None:
+                self.get_root().open_item(self._curator)
+        elif self._artist is not None:
             self.get_root().open_item(self._artist)
         elif self.item is not None:
             self.get_root().item_actions.go_to(self.item, 'artist')
