@@ -147,6 +147,17 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Favourite Songs and Apple's playlists in your library cannot be renamed or deleted;
   Apple's playlists can be removed from your library instead (below). A change takes a few
   seconds to reach the library's listing, as Apple lists it.
+- A playlist of your own can be put in a new order on its page: drag a song up or down the
+  list (a line shows where it will go, and the list scrolls when you drag near its top or
+  bottom), or use **Move Up** and **Move Down** in the song's menu, or
+  <kbd>Alt</kbd>+<kbd>↑</kbd> and <kbd>Alt</kbd>+<kbd>↓</kbd> on the focused song. The song
+  moves at once and the new order goes to Apple: a drop at once, the keys a moment after the
+  last press, so a run of them is one change. The toast that follows has **Undo**. If Apple
+  refuses, or the playlist changed on another device in the meantime, the song goes back to
+  where Apple has it and the app says why: try again on the order shown. A click on a song
+  still plays it; only a drag moves it. Favourite Songs and Apple's playlists keep their
+  order. Up Next does not change when you reorder the playlist that is playing: the next time
+  you play it, it plays in the new order. In the demo library a move shows but is not kept.
 - Playlist folders: **New Folder…** is in the main menu, in a folder's menu (a folder inside
   it) and in All Playlists' menu, and is the folder button beside the **+** of All Playlists
   and of a folder's page. A playlist's menu (in the sidebar, on its tile, or **More Options**
@@ -204,7 +215,6 @@ Other limits:
   links at the end of its radio page (More to Explore, the genres) are not shown. A live
   station plays with a song's times and slider, which mean nothing for it, and Pause does
   not stop it yet.
-- Reordering a playlist's songs happens in Apple's own apps.
 - A playlist moves into a folder, but not yet out of every folder to the top level, and a
   folder does not move into another folder: Apple's service has not been seen to take those
   moves from the app yet, so it does not offer them. Apple's own apps can.

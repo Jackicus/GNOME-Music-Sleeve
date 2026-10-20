@@ -217,6 +217,38 @@ class PlaylistsPassTest(SyncTestCase):
         self.assertEqual(after['sections']['playlists'][0]['title'], 'Renamed')
         self.assertEqual(self.library.by_id('playlist', 'p.pl123').title, 'Renamed')
 
+    async def test_with_tracks_it_reads_those_playlists_tracks_unstamped(self):
+        # After a playlist's songs were added to, taken from or reordered: its tracks read
+        # again, without the listing's date, so the next full pass reads them once more.
+        engine = FakeEngine(answers())
+        playlists = engine.answers[app_sync.PLAYLISTS_ENDPOINT]['data']
+        for listed in playlists:
+            listed['attributes']['lastModifiedDate'] = '2026-10-01T09:00:00Z'
+        await app_sync.sync_library(engine, self.library)
+        with open(self.library_json, encoding='utf-8') as file:
+            before = {entry['id']: entry for entry in json.load(file)['sections']['playlists']}
+        self.assertEqual(before['p.pl123']['modified'], '2026-10-01T09:00:00Z')
+        path = f'{app_sync.PLAYLISTS_ENDPOINT}/p.pl123/tracks'
+        tracks = json.loads(json.dumps(engine.answers[path]))
+        tracks['data'].reverse()
+        engine.answers[path] = tracks
+        playlists[0]['attributes']['lastModifiedDate'] = '2026-10-20T09:00:00Z'
+        engine.calls.clear()
+        await app_sync.sync_library(engine, self.library, playlists=True,
+                                    tracks_of=('p.pl123',))
+        self.assertEqual([path for path, _ in engine.calls if path.endswith('/tracks')], [path])
+        with open(self.library_json, encoding='utf-8') as file:
+            after = {entry['id']: entry for entry in json.load(file)['sections']['playlists']}
+        ids = [entry['id'] for entry in after['p.pl123']['groups'][0]['entries']]
+        self.assertEqual(ids, [entry['id'] for entry in reversed(
+            before['p.pl123']['groups'][0]['entries'])])
+        self.assertNotIn('modified', after['p.pl123'])
+        for playlist_id, entry in after.items():
+            if playlist_id != 'p.pl123':
+                self.assertEqual(entry.get('groups'), before[playlist_id].get('groups'))
+                self.assertEqual(entry.get('modified'), before[playlist_id].get('modified'))
+        self.assertEqual(self.library.by_id('playlist', 'p.pl123').track_ids(), ids)
+
     async def test_what_the_account_deleted_is_left_out(self):
         # Apple goes on listing a deleted playlist or folder for a while, nameless.
         wired = answers()
@@ -269,6 +301,22 @@ class LibrarySyncTest(SyncTestCase):
         self.assertEqual([toast for toast in self.app.toasts
                           if toast[0].startswith('Library synced')], [])
         self.assertTrue(os.path.exists(self.library_json))  # it still wrote the library
+
+    async def test_a_tracks_pass_is_a_playlists_pass_with_those_tracks(self):
+        passes = []
+
+        async def recorded(engine, library, progress=None, quick=False, playlists=False,
+                           videos=False, tracks_of=()):
+            passes.append((playlists, tuple(tracks_of)))
+            self.assertIs(self.sync.task, task)  # the sync running, while it runs
+            return {}
+
+        with mock.patch.object(app_sync, 'sync_library', recorded):
+            task = self.sync.start(playlists=True, tracks_of=['p.pl123'])
+            await task
+        self.assertEqual(passes, [(True, ('p.pl123',))])
+        self.assertIsNone(self.sync.task)
+        self.assertEqual(self.app.settings.get_string('last-sync'), '')
 
     async def test_cancel_returns_after_the_thread_and_no_report_follows(self):
         self.slow = True

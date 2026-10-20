@@ -14,6 +14,7 @@ actions, the menus that offer them, and what a track dragged onto a sidebar play
     actions.drop(playlist, refs)           # a library.ItemRefs dropped on a sidebar playlist
     actions.move_to_folder(obj, folder_id) # a playlist (or folder) into a folder, at once
     actions.new_folder(parent_id)          # a folder named in a dialog ('root': top level)
+    actions.move_in_playlist(playlist, 3, 1)   # its 4th song 2nd (playlist_order.py)
 
 The actions, each on the window (win.*) with a GLib.Variant target "(ss)", the (kind, id) of
 what it acts on (an Item's kind and id, or 'song' and a Track's id):
@@ -50,7 +51,10 @@ folder) moved into the folder ('root': the top level), shown at once (Library.ho
 back if Apple refuses, with Undo on its toast; with an empty folder id, into a new folder
 named in a dialog and made beside it (Move to Folder's New Folder…); item-remove-from-queue,
 "(is)" (the queue index, the entry's id): an Up Next entry after the one playing taken out
-of the queue (Player.remove_from_queue).
+of the queue (Player.remove_from_queue); item-move-in-playlist, "(ssii)" (playlist id, track
+id, the track's index, -1 or 1): Move Up or Move Down, one place in a playlist of the user's
+(playlist_order.PlaylistOrder: shown at once, written after a pause, so a burst is one
+write); item-undo-reorder, "s" (playlist id), the toast's Undo of a new order.
 
 A target names an object the menu was built for (remembered, the last REMEMBERED of them)
 or one the library has; failing both, the target's kind and id are used as they are. Each
@@ -71,8 +75,8 @@ Apple's players, a favourite offers no Suggest Less), Add to Library (not what t
 already), Add to Playlist (the library's playlists that take songs, each folder a submenu,
 then New Playlist…), Move to Folder (a playlist's or folder's: Top Level, the folders it can
 go into, a folder holding others a submenu headed by itself, then New Folder…:
-move_targets()), Remove from Playlist (a track shown in a playlist of the user's:
-`container`); Open in Browser, Copy Link
+move_targets()), Remove from Playlist and, where it can go, Move Up and Move Down (a track
+shown in a playlist of the user's: `container`); Open in Browser, Copy Link
 (only an address anyone can open: not the web player's library routes; a library artist's is
 the catalog artist's page, which the engine finds through their songs); Rename… and Delete
 Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs),
@@ -89,8 +93,10 @@ sync that follows starts once Apple's read of the item answers 404 (wait_removed
 After a playlist or folder was made, renamed or deleted, the window leaves the pages of what
 is gone (Window.leave), the sidebar shows a new name at once, and the library follows Apple's
 listing once it shows the change (wait_listed: a new playlist takes seconds to be listed),
-through the playlists pass of a sync (sync.py). A track removed has its playlist fetched again,
-as an add does.
+through the playlists pass of a sync (sync.py). A track added or removed has its playlist
+fetched again, then read into library.json by a playlists pass that reads its tracks
+(playlist_order.sync_tracks()); before either, and before a playlist is deleted, its order
+still to be written is (PlaylistOrder.flush()).
 The menus of the player's queue (the item playing's in the Now Playing sheet and the player
 bar, Up Next's) have no Play, which would replace the queue: activating the row plays it.
 An item's rating (loved, Suggest Less or neither): a menu shows what the engine said last
@@ -117,6 +123,7 @@ from .backend.errors import EngineError
 from .backend.api import is_library_id
 from .library import (REMOVABLE, ROOT_FOLDER, TRACK_KINDS, Item, ItemRefs, Track,
                       TreeChange, track_ref)
+from .playlist_order import PlaylistOrder, refresh_playlist, sync_tracks
 
 log = logging.getLogger(__name__)
 
@@ -124,6 +131,7 @@ TARGET = GLib.VariantType.new('(ss)')
 PLAYLIST_TARGET = GLib.VariantType.new('(sss)')
 ENTRY_TARGET = GLib.VariantType.new('(ssi)')
 QUEUE_ENTRY_TARGET = GLib.VariantType.new('(is)')
+MOVE_TARGET = GLib.VariantType.new('(ssii)')
 
 # After a playlist write, how long to wait before each look at Apple's listing, in seconds,
 # until it shows the change: a new playlist was listed 4 to 6.5 s after it was made, a
@@ -190,6 +198,8 @@ def action_labels():
         'item-new-folder': _('New _Folder…'),
         'item-remove-from-library': _('Remove from Li_brary…'),
         'item-create-station': _('Create Stat_ion'),
+        'item-move-up': _('_Move Up'),
+        'item-move-down': _('Move _Down'),
     }
 
 
@@ -411,6 +421,28 @@ def entry_target(container, obj):
     if container.kind != 'playlist':
         return None
     return GLib.Variant('(ssi)', (container.id, obj.id, obj.index))
+
+
+def move_items(container, obj):
+    """Move Up and Move Down for the Track obj shown in the playlist Item `container`, where
+    its songs can be reordered (PlaylistOrder.can_reorder()): each only where the track can
+    go, not up from the first or down from the last. Their targets are
+    item-move-in-playlist's (playlist id, track id, its index, -1 or 1)."""
+    if not isinstance(obj, Track) or not obj.id or not PlaylistOrder.can_reorder(container):
+        return []
+    ids = container.track_ids()
+    index = obj.index
+    if not 0 <= index < len(ids) or ids[index] != obj.id:
+        return []
+    items = []
+    for step, action in ((-1, 'item-move-up'), (1, 'item-move-down')):
+        if 0 <= index + step < len(ids):
+            item = Gio.MenuItem.new(action_labels()[action], None)
+            item.set_action_and_target_value(
+                'win.item-move-in-playlist',
+                GLib.Variant('(ssii)', (container.id, obj.id, index, step)))
+            items.append(item)
+    return items
 
 
 def manage_items(obj):
@@ -690,6 +722,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         keep.append_submenu(action_labels()['item-add-to-playlist'], submenu)
     if moves is not None:
         keep.append_submenu(action_labels()['item-move-to-folder'], move_submenu(moves, named))
+    for item in move_items(container, obj):
+        keep.append_item(item)
     removed = entry_target(container, obj)
     if removed is not None:
         keep.append_item(menu_item('item-remove-from-playlist', removed))
@@ -821,6 +855,9 @@ class ItemActions:
         self._add('item-remove-from-playlist', ENTRY_TARGET, self._on_remove_from_playlist)
         self._add('item-move-to-folder', PLAYLIST_TARGET, self._on_move_to_folder)
         self._add('item-remove-from-queue', QUEUE_ENTRY_TARGET, self._on_remove_from_queue)
+        self._add('item-move-in-playlist', MOVE_TARGET, self._on_move_in_playlist)
+        self._add('item-undo-reorder', GLib.VariantType.new('s'), self._on_undo_reorder)
+        self.playlist_order = PlaylistOrder(app, refresh=self._refresh_playlist)
 
     def _add(self, name, parameter_type, handler):
         action = Gio.SimpleAction.new(name, parameter_type)
@@ -952,12 +989,14 @@ class ItemActions:
 
     # -- running -----------------------------------------------------------------------------
 
-    def _run(self, method, args, message=None, ensure=True, after=None):
+    def _run(self, method, args, message=None, ensure=True, after=None, playlist=None):
         """await method(*args), with the engine up first when `ensure` (started when it is
         down and the account signed in; the Player's own commands do that themselves), then
         toast message and await after(); an EngineError is reported instead (app.report).
-        The task, whose result says whether the method succeeded (False once reported), or
-        None with the demo library (which says so)."""
+        `playlist`: the id of the playlist the write changes, whose order still to be
+        written goes first (PlaylistOrder.flush()). The task, whose result says whether the
+        method succeeded (False once reported), or None with the demo library (which says
+        so)."""
         if self.app.refuse_in_demo():
             return None
 
@@ -965,6 +1004,8 @@ class ItemActions:
             try:
                 if ensure:
                     await self.app.player.ensure_engine()
+                if playlist:
+                    await self.playlist_order.flush(playlist)
                 await method(*args)
             except EngineError as error:
                 self.app.report(error)
@@ -1200,23 +1241,47 @@ class ItemActions:
         else:
             message = _('Added to the playlist')
         return self._run(self.engine.add_to_playlist, (playlist_id, song_id, kind), message,
-                         after=lambda: self._refresh_playlist(playlist_id))
+                         after=lambda: self._follow_tracks(playlist_id), playlist=playlist_id)
 
     async def _refresh_playlist(self, playlist_id):
-        """Bring a library playlist up to date after it changed on Apple's side (a song
-        added, Favourite Songs loved into): the engine's full Item merged into the
-        library's, whose groups-changed re-shows an open page. A failure is only logged:
-        the next sync brings the change anyway."""
+        """Bring a library playlist up to date after it changed on Apple's side
+        (playlist_order.refresh_playlist())."""
+        await refresh_playlist(self.app, playlist_id)
+
+    async def _follow_tracks(self, playlist_id):
+        """After a playlist's tracks changed (a song added or removed): the playlist read
+        again at once, then into library.json by a playlists pass reading its tracks, so the
+        change is there at the next launch."""
+        await self._refresh_playlist(playlist_id)
+        await sync_tracks(self.app, playlist_id)
+
+    def move_in_playlist(self, playlist, from_index, to_index, at_once=False):
+        """Move the playlist's song at from_index to to_index (PlaylistOrder.move(): shown
+        at once, written after a pause or, `at_once`, now), the move announced to assistive
+        technology. False when it cannot be moved there."""
+        ids = playlist.track_ids() if isinstance(playlist, Item) else None
+        if not self.playlist_order.move(playlist, from_index, to_index, at_once):
+            return False
+        track = playlist.groups[0].entries.get_item(to_index)
+        announce = getattr(self.window, 'announce', None)
+        if announce is not None:
+            # Translators: said to screen reader users as a song is moved in a playlist:
+            # “Harbour Lights” moved to position 4 of 12.
+            announce(_('“{title}” moved to position {position} of {count}').format(
+                title=track.title, position=to_index + 1, count=len(ids)),
+                Gtk.AccessibleAnnouncementPriority.MEDIUM)
+        return True
+
+    def _on_move_in_playlist(self, _action, parameter):
+        playlist_id, track_id, index, step = parameter.unpack()
         playlist = self.library.by_id('playlist', playlist_id)
-        if playlist is None:
-            return
-        try:
-            answer = await self.engine.item('playlist', playlist_id)
-        except EngineError as error:
-            log.debug('playlist %s not refreshed: %s', playlist_id, error)
-            return
-        if isinstance(answer, dict):
-            playlist.merge(answer)
+        ids = playlist.track_ids() if playlist is not None else None
+        if not ids or not 0 <= index < len(ids) or ids[index] != track_id:
+            return False  # the list changed since the menu was made
+        return self.move_in_playlist(playlist, index, index + step)
+
+    def _on_undo_reorder(self, _action, parameter):
+        return self.playlist_order.undo(parameter.get_string())
 
     async def _refresh_favourites(self):
         favourites = self.library.favourite_songs()
@@ -1397,7 +1462,7 @@ class ItemActions:
             await self._follow_listing(parent, obj.id, None)
 
         return self._run(method, (obj.id,), _('Deleted “{name}”').format(name=obj.title),
-                         after=after)
+                         after=after, playlist=obj.id if obj.kind == 'playlist' else None)
 
     def _on_move_to_folder(self, _action, parameter):
         folder_id, kind, item_id = parameter.unpack()
@@ -1507,7 +1572,8 @@ class ItemActions:
         else:
             message = _('Removed from the playlist')
         return self._run(self.engine.remove_from_playlist, (playlist_id, track_id, index),
-                         message, after=lambda: self._refresh_playlist(playlist_id))
+                         message, after=lambda: self._follow_tracks(playlist_id),
+                         playlist=playlist_id)
 
     def _on_remove_from_queue(self, _action, parameter):
         """An Up Next entry taken out of the queue (no toast: the row goes, and assistive

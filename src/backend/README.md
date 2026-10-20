@@ -36,6 +36,7 @@ app reaches Chrome only through the Engine; other modules may import the pure pa
 | `usage` | a bad argument (`scripts/am.py`) |
 | `queue-locked` | MusicKit allows no edits of the queue now (`capabilities.canEditPlaybackQueue` false: a station's) |
 | `queue-changed` | the queue's entry an edit named (its index and id) is not there any more: the queue changed meanwhile |
+| `conflict` | a write made against a list Apple no longer has: a playlist's new order whose tracks changed elsewhere since the app read them. Nothing was written |
 
 ## The bridge
 
@@ -90,7 +91,7 @@ Found in music.apple.com's own code (its `requestCreateNewPlaylist`,
 | `POST /v1/me/library/playlists` `{attributes: {name, description?}, relationships: {tracks: {data: [{id, type}]}, parent: {data: [{id, type: 'library-playlist-folders'}]}}}` | 201 with the new playlist; both relationships may be left out (an empty playlist at the top level). Listed by the listings 4 to 6.5 s later |
 | `PATCH /v1/me/library/playlists/<id>` `{attributes: {name?, description?}}` | 204; either attribute alone; listed within a second |
 | `DELETE /v1/me/library/playlists/<id>/tracks?ids[library-songs]=<id>&mode=all` | 204: every entry of that song goes. The tracks of a library playlist are `library-songs` (or `library-music-videos`) by the song's own `i.` id, and carry no id of the entry |
-| `PUT /v1/me/library/playlists/<id>/tracks` `{data: [{id, type}]}` | 204: the list replaced whole, in that order (the web player's reorder); one entry of a song held twice is removed so |
+| `PUT /v1/me/library/playlists/<id>/tracks` `{data: [{id, type}]}` | 204: the list replaced whole, in that order (the web player's reorder: `Engine.reorder_playlist()`); one entry of a song held twice is removed so. Checked on a playlist of three songs; one of about 500, how soon the tracks read shows the new order, and whether an entry Apple cannot play survives it are not checked yet |
 | `DELETE /v1/me/library/playlists/<id>` | 204. A playlist is still listed for minutes after, nameless (`api.is_deleted`), and a second DELETE is a 500 |
 | `PUT /v1/me/library/playlists/<id>/parent` `{data: [{id: <folder>, type: 'library-playlist-folders'}]}` | 204: moved into the folder (Move to Folder, a drop on a sidebar folder) |
 | `PUT /v1/me/library/playlists/<id>/parent` with Apple's root folder, `p.playlistsroot` | Not checked yet: the app does not offer it (`api.MOVE_TO_TOP_LEVEL` off) |
@@ -102,6 +103,18 @@ Found in music.apple.com's own code (its `requestCreateNewPlaylist`,
 A playlist the user may change lists `canEdit` and `canDelete` true; Favourite Songs both
 false; one of Apple's added to the library `canEdit` false, `canDelete` true. The listing
 carries a playlist's `description` when it has one.
+
+A library playlist's attributes, as the listing has them (2026-10-20, counts only): `artwork`,
+`canDelete`, `canEdit`, `dateAdded`, `description`, `hasCatalog`, `hasCollaboration`,
+`isPublic`, `lastModifiedDate`, `name`, `playParams`; no `trackCount`. Its tracks read (`GET
+…/tracks`, every page) does return the entries Apple cannot play, without `playParams` (four
+across 33 playlists, all `library-songs`; the largest playlist held 478 songs). A PUT of the
+tracks replaces the whole list, so a new order (`Engine.reorder_playlist()`) and the removal
+of one entry of a song held twice read the list first and send back every entry read, by its
+own `id` and `type` as Apple gave them (`api.playlist_entries()`): an entry without either is
+refused (`api`) and nothing is written; a list that is not the one the app showed is
+refused as `conflict` (`api.reordered_entries()`). The ids alone say whether it changed: a
+rename moves `lastModifiedDate` too, and no count is listed.
 
 ### Removing from the library
 

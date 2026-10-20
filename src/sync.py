@@ -10,6 +10,7 @@
     app.library_sync.start(quick=True)       # the short pass after a library write
     app.library_sync.start(quick=True, videos=True, tracks_of=ids)   # after a removal
     app.library_sync.start(playlists=True)   # the shorter one after a playlist write
+    app.library_sync.start(playlists=True, tracks_of=(id,))   # and those playlists' tracks
 
 fetches, in this order, the library's songs (with their albums, which is what the Albums and
 Artists sections are built from), the playlists and each one's tracks, the playlist folders,
@@ -38,7 +39,12 @@ it is no substitute for the full one the clock waits for. After a removal from t
 and the tracks of the playlists that held what went (`tracks_of`). A `playlists` pass
 (sync_library(playlists=True), LibrarySync.start(playlists=True)) is the one after a playlist
 or a folder was made, renamed or deleted: it reads the playlist listing and the folders alone,
-and keeps everything else of last time's file, the playlists' tracks included.
+and keeps everything else of last time's file, the playlists' tracks included, but for those
+of the playlists it is given (`tracks_of`: after their songs were added to, taken from or
+reordered), which it reads. Either pass leaves out the `modified` of the playlists whose
+tracks `tracks_of` had read, so the next full pass reads them again: Apple's listing may give
+the date of the change before its tracks read shows the change, and a stamp with tracks
+older than it would keep them for good.
 
 A playlist or folder the account deleted is still listed by Apple for a while (minutes, seen
 on 2026-10-03), nameless (api.is_deleted): the listings leave it out.
@@ -277,7 +283,10 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
 
     `playlists`: the pass after a playlist or a folder was made, renamed or deleted. It reads
     the playlist listing and the folders, nothing else: the songs, albums, artists, shelves,
-    videos, stations and the playlists' tracks are last time's. Not a sync either."""
+    videos, stations and the playlists' tracks are last time's, but for the tracks of the
+    playlists `tracks_of` names (after their songs were added to, taken from or reordered).
+    Not a sync either. Tracks read for `tracks_of` are kept without a stamp (see the
+    module)."""
     report = progress or (lambda section, done, total: None)
     generation = store.cache_generation()  # a wipe from here on leaves this sync's files out
     status = await engine.status()
@@ -295,7 +304,8 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     if playlists:
         report('playlists', 0, None)
         raw['playlists'] = await _fetch_playlists(engine)
-        raw['tracks'] = {}
+        raw['tracks'] = await _fetch_tracks_of(engine, raw['playlists'], tracks_of, report)
+        raw['unstamped'] = set(tracks_of)
         try:
             raw['folders'] = await _fetch_folders(engine, report)
         except EngineError as error:
@@ -317,10 +327,8 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     report('playlists', 0, None)
     raw['playlists'] = await _fetch_playlists(engine)
     if quick:
-        wanted = set(tracks_of)
-        raw['tracks'] = await _fetch_playlist_tracks(
-            engine, [raw for raw in raw['playlists'] if raw.get('id') in wanted],
-            report) if wanted else {}
+        raw['tracks'] = await _fetch_tracks_of(engine, raw['playlists'], tracks_of, report)
+        raw['unstamped'] = set(tracks_of)
     else:
         stamps = await asyncio.to_thread(previous.playlist_stamps)
         raw['tracks'] = await _fetch_playlist_tracks(engine, raw['playlists'], report, stamps)
@@ -429,6 +437,16 @@ async def _fetch_playlists(engine):
     lists (api.is_deleted)."""
     listing = await _listing(engine, PLAYLISTS_ENDPOINT, PLAYLIST_PARAMS, PLAYLIST_PLAIN)
     return [raw for raw in listing if not api.is_deleted(raw)]
+
+
+async def _fetch_tracks_of(engine, raw_playlists, tracks_of, report):
+    """_fetch_playlist_tracks() of the listed playlists whose ids are in `tracks_of` (none
+    without)."""
+    wanted = {str(playlist_id) for playlist_id in tracks_of}
+    if not wanted:
+        return {}
+    return await _fetch_playlist_tracks(
+        engine, [listed for listed in raw_playlists if str(listed.get('id')) in wanted], report)
 
 
 async def _fetch_playlist_tracks(engine, raw_playlists, report, stamps=None):
@@ -578,7 +596,7 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
         sections = {'albums': albums, 'artists': artists}
         counts['loose'] = loose_count(raw['songs'])
     sections['playlists'] = _playlists(raw['playlists'], raw['tracks'], cache_dir, art_urls,
-                                       previous)
+                                       previous, raw.get('unstamped', ()))
     if raw['videos'] is None:
         sections['videos'] = previous.section('videos')
     else:
@@ -641,7 +659,7 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
     return counts
 
 
-def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous):
+def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous, unstamped=()):
     """The playlist Items, each from the listing just fetched (its title, artwork, tags). One
     whose tracks were not fetched (unchanged, a quick pass, a failed read) keeps last time's
     tracks and counts, or, new since, has no groups yet, which its page fetches when it is
@@ -649,7 +667,8 @@ def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous):
 
     `modified` is the listing's `lastModifiedDate` when the tracks were read now, and stays
     last time's when they were kept: it says which listing the tracks in hand belong to, so
-    a later pass compares the right dates (playlist_unchanged)."""
+    a later pass compares the right dates (playlist_unchanged); a playlist in `unstamped`
+    (a short pass's `tracks_of`) has none, and so is read again by the next full pass."""
     playlists = []
     for raw in raw_playlists:
         playlist_id = str(raw.get('id') or '')
@@ -674,7 +693,8 @@ def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous):
                     item[key] = counted[key]
                 else:
                     item.pop(key, None)
-        elif isinstance(attributes.get('lastModifiedDate'), str):
+        elif (isinstance(attributes.get('lastModifiedDate'), str)
+              and playlist_id not in unstamped):
             item['modified'] = attributes['lastModifiedDate']
         playlists.append(item)
     return playlists
@@ -985,6 +1005,12 @@ class LibrarySync(GObject.Object):
                         app.settings.get_int('sync-interval'), library_ok=library_ok(app.library))
 
     # -- running one -----------------------------------------------------------------------
+
+    @property
+    def task(self):
+        """The task of the sync running, or None."""
+        task = self._task
+        return task if task is not None and not task.done() else None
 
     def start(self, retry=False, quick=False, playlists=False, videos=False, tracks_of=()):
         """Sync the library through the engine, starting it if it is down, unless a sync is

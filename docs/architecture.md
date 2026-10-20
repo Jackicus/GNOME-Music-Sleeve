@@ -52,8 +52,14 @@ touches widgets.
   folders, are item actions too, with their dialogs in `dialogs/playlist.py`: the engine
   writes, the window leaves the pages of what was deleted, and the library follows once Apple
   lists the change, through the sync's short playlists pass; a move or a new folder shows at
-  once, held in the library's tree (`Library.hold()`) until Apple lists it. Drags carry
-  `library.ItemRefs` and every source and drop target goes through `widgets/dnd.py`.
+  once, held in the library's tree (`Library.hold()`) until Apple lists it. A playlist's songs
+  put in a new order (a drag on its page, Move Up and Move Down, Alt+Up and Alt+Down) go
+  through `playlist_order.py`'s `PlaylistOrder` (the item actions' `playlist_order`): shown at
+  once and held through syncs (`Library.reorder()`), one write at a time, a burst of keys one
+  write, put back if Apple refuses; once Apple shows it, a playlists pass reads that
+  playlist's tracks into library.json (`sync_tracks()`, which Add and Remove from Playlist use
+  too). Drags carry `library.ItemRefs` and every source and drop target goes through
+  `widgets/dnd.py`.
 - **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
   library pages bind the library's stores (Artists is a list beside the library's page of
   the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow); New,
@@ -166,7 +172,8 @@ touches widgets.
 - **Demo mode.** `--demo` reads an invented library from build/demo (a release build lists no
   `--demo` and needs `APPLE_MUSIC_CACHE` for it), and its engine is inert (starting it does
   nothing, every command answers `engine-down`), so every page and screenshot works without
-  Chrome or an account. Its settings are its own (settings.ini beside
+  Chrome or an account. A playlist's songs still move there (`PlaylistOrder`), shown and
+  never written. Its settings are its own (settings.ini beside
   the library), it takes no MPRIS name and exports no search provider, so it runs beside
   the real app.
 

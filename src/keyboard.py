@@ -16,6 +16,10 @@ field) are the window's own for the same reason, and tab_action() decides them a
 
     name = playback_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
     name = tab_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
+    step = move_step(keyval, mods, type(focus), dialog_open, in_popover)   # -1, 1 or None
+
+move_step() is a playlist page's (pages/detail.py): Alt+Up or Alt+Down (shortcuts.MOVE_UP,
+MOVE_DOWN) moves the focused song one place, on the same terms.
 """
 
 from gi.repository import Gdk, Gtk
@@ -39,6 +43,11 @@ PLAYBACK_KEYS = parse_keys(shortcuts.PLAYBACK)
 
 # The keys that open Now Playing on a tab, by (keyval, modifiers) -> window action.
 TAB_KEYS = parse_keys(shortcuts.NOW_PLAYING_TABS)
+
+# The keys that move a playlist's focused song, by (keyval, modifiers) -> the step (the
+# keypad's arrows too).
+MOVE_KEYS = parse_keys({-1: (shortcuts.MOVE_UP, '<alt>KP_Up'),
+                        1: (shortcuts.MOVE_DOWN, '<alt>KP_Down')})
 
 # The primary menu's key (F10), which the window handles itself when the button is hidden.
 MAIN_MENU_KEY = Gtk.accelerator_parse(shortcuts.MAIN_MENU)[1:]
@@ -86,6 +95,16 @@ def _key_action(keys, keyval, mods, focus_type, dialog_open, in_popover, enabled
     if not enabled(name):
         return None
     return name
+
+
+def move_step(keyval, mods, focus_type, dialog_open, in_popover):
+    """How far a key press moves a playlist's focused song: -1 (Alt+Up), 1 (Alt+Down), or
+    None for any other key, and while it is typed into, a dialog is open or the focus is in
+    a popover, as for the playback keys."""
+    step = MOVE_KEYS.get((keyval, int(mods)))
+    if step is None or dialog_open or in_popover or issubclass(focus_type, TYPING):
+        return None
+    return step
 
 
 def is_main_menu(keyval, mods):

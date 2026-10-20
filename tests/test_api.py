@@ -11,7 +11,8 @@ from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 from applemusic.backend.api import (LIBRARY_ROUTES, api_error, http_status, is_deleted,
                                     is_final, is_library_id, item_endpoint, library_twin,
                                     library_twin_params, lyrics_languages, page_data,
-                                    resource_type, track_type)
+                                    playlist_entries, reordered_entries, resource_type,
+                                    track_type)
 from applemusic.backend.errors import EngineError
 
 
@@ -88,6 +89,40 @@ class PlaylistTest(unittest.TestCase):
             self.assertFalse(is_deleted({'id': 'p.3', 'attributes': attributes}), attributes)
         self.assertFalse(is_deleted({'id': 'p.4'}))
         self.assertFalse(is_deleted(None))
+
+
+    def test_every_entry_goes_back_as_apple_gave_it(self):
+        # One Apple cannot play (no playParams) and a catalog song among them; anything else
+        # an entry carries stays behind.
+        listed = [{'id': 'i.a', 'type': 'library-songs', 'attributes': {'playParams': {}}},
+                  {'id': 'i.b', 'type': 'library-songs', 'attributes': {}},
+                  {'id': '1000000001', 'type': 'songs'}]
+        self.assertEqual(playlist_entries(listed), [
+            {'id': 'i.a', 'type': 'library-songs'}, {'id': 'i.b', 'type': 'library-songs'},
+            {'id': '1000000001', 'type': 'songs'}])
+        for broken in ({'id': 'i.a'}, {'type': 'library-songs'}, {'id': '', 'type': 'x'},
+                       {'id': 5, 'type': 'library-songs'}, 'i.a'):
+            with self.assertRaises(EngineError) as raised:
+                playlist_entries([listed[0], broken])
+            self.assertEqual(raised.exception.code, 'api')
+
+    def test_a_new_order_over_the_list_shown(self):
+        listed = [{'id': track_id, 'type': 'library-songs'} for track_id in ('i.a', 'i.b',
+                                                                             'i.a')]
+        # The entries by position: of the song held twice, the one moved.
+        self.assertEqual([entry['id'] for entry in reordered_entries(
+            listed, ['i.a', 'i.b', 'i.a'], [2, 0, 1])], ['i.a', 'i.a', 'i.b'])
+        with self.assertRaises(EngineError) as raised:
+            reordered_entries(listed, ['i.a', 'i.a', 'i.b'], [0, 1, 2])
+        self.assertEqual(raised.exception.code, 'conflict')
+        with self.assertRaises(EngineError) as raised:
+            reordered_entries(listed[:2], ['i.a', 'i.b', 'i.a'], [0, 1, 2])
+        self.assertEqual(raised.exception.code, 'conflict')
+        for order in ([0, 1], [0, 0, 1], [0, 1, 3], [0, 1, True], [0, 1, 2.0]):
+            with self.assertRaises(EngineError) as raised:
+                reordered_entries(listed, ['i.a', 'i.b', 'i.a'], order)
+            self.assertEqual(raised.exception.code, 'usage', order)
+        self.assertEqual(reordered_entries([], [], []), [])
 
 
 class LibraryTwinTest(unittest.TestCase):

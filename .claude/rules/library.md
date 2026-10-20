@@ -85,6 +85,14 @@ them before changing either. What matters most:
   until the file shows it (`change_settled()`) or `PENDING_HOLD` passes; a load forgets them
   all. `PlaylistTree.can_move()` refuses a folder into itself or inside itself, a move to
   where it is, the top level and Favourite Songs.
+- A playlist's songs in a new order: `Item.reorder(order)` (positions in the list shown)
+  changes the one group in place, the same Group and Tracks, each moved Track given a new
+  entry with its new `index` (the queue index a row plays from), by one splice of the stretch
+  that moved, with no `groups-changed`; `Library.reorder()` also holds the order (track ids)
+  through reloads, as `hold()` holds a folder change: a reload or an `item()` answer
+  (`with_held_order()`) listing the same tracks in another order is arranged in it, until the
+  file shows it, lists other tracks, or `PENDING_HOLD` passes; a load forgets it. The pure
+  parts: `moved()`, `drop_index()`, `order_for()`, `reorder_entries()`.
 - Garbage collection (`paused_gc`): the collector is paused from the call of `load()` or
   `reload()` (so the parse in the library's thread runs without it) to the load's end, and
   during a Songs build. `load()` and `build_songs()` then freeze the heap (`gc.freeze()`), so

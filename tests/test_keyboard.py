@@ -114,6 +114,27 @@ class TabRoutingTest(unittest.TestCase):
                          'show-queue')
 
 
+class MoveStepTest(unittest.TestCase):
+    """Alt+Up and Alt+Down on a playlist's focused song (shortcuts.MOVE_UP, MOVE_DOWN)."""
+
+    def step(self, accel, focus_type=ListItemWidget, dialog_open=False, in_popover=False):
+        _ok, keyval, mods = Gtk.accelerator_parse(accel)
+        return keyboard.move_step(keyval, mods, focus_type, dialog_open, in_popover)
+
+    def test_the_keys(self):
+        self.assertEqual(self.step(shortcuts.MOVE_UP), -1)
+        self.assertEqual(self.step(shortcuts.MOVE_DOWN), 1)
+        self.assertEqual(self.step('<alt>KP_Up'), -1)
+        self.assertEqual(self.step('<alt>KP_Down'), 1)
+        for other in ('Up', 'Down', '<primary>Up', '<alt><shift>Up', '<alt>Left'):
+            self.assertIsNone(self.step(other), other)
+
+    def test_typing_a_dialog_or_a_menu_keeps_them(self):
+        self.assertIsNone(self.step(shortcuts.MOVE_UP, Gtk.Text))
+        self.assertIsNone(self.step(shortcuts.MOVE_UP, dialog_open=True))
+        self.assertIsNone(self.step(shortcuts.MOVE_DOWN, in_popover=True))
+
+
 class KeysTest(unittest.TestCase):
     def test_the_playback_keys_are_the_shortcuts_tables(self):
         names = set(keyboard.PLAYBACK_KEYS.values())

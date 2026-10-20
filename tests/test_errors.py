@@ -32,6 +32,8 @@ class ErrorMessageTest(unittest.TestCase):
         self.assertEqual(error_message('api'), ('Apple Music could not do that', None, None))
         self.assertEqual(error_message('queue-locked'), (
             'Up Next cannot be changed while a station plays', None, None))
+        self.assertEqual(error_message('conflict'),
+                         ('The playlist changed elsewhere: try again', None, None))
         unexpected = ('The playback engine did not answer as expected', None, None)
         self.assertEqual(error_message('usage'), unexpected)
         self.assertEqual(error_message('anything else'), unexpected)

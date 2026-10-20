@@ -89,7 +89,8 @@ def app_keys():
                          + list(shortcuts.NOW_PLAYING_TABS.values())):
         found.update(accelerator_names(accelerator) for accelerator in accelerators)
     for accelerator in (shortcuts.MAIN_MENU, *shortcuts.CONTEXT_MENU.split(), shortcuts.CLOSE,
-                        shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE):
+                        shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.MOVE_UP,
+                        shortcuts.MOVE_DOWN):
         found.add(accelerator_names(accelerator))
     return found
 

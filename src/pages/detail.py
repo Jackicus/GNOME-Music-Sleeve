@@ -36,6 +36,16 @@ Versions, Music Videos, More By, Featured On, You Might Also Like) in a ShelfCol
 artist page's are. An album the catalog cannot answer for shows the footer's counts alone:
 the failure is only logged.
 
+On a playlist of the user's (PlaylistOrder.can_reorder(): not Favourite Songs, nor one of
+Apple's) a song moves within the list: dragged (the row's own drag, widgets/dnd.py, dropped
+here as a MOVE: an insertion line where it would go, the list scrolling near its edges, a
+drop written at once) or with Alt+Up and Alt+Down on the focused song (keyboard.move_step(),
+the focus following it), as the row's menu's Move Up and Move Down do; all through
+ItemActions.move_in_playlist(), which announces where it went. The page lists the playlist in
+its own order only, so every order shown is one that can be changed. A click without a drag
+still plays the song: the drag starts only past GTK's drag threshold, and then cancels the
+row's click.
+
 A suggested song clicked plays in full, as a track row's song does, or, with the
 `preview-suggestions` setting, Apple's 30-second preview of it (Player.start_preview(): the
 queue pauses for it), clicked again to stop; a song without a preview plays in full. The
@@ -49,11 +59,14 @@ import bisect
 import logging
 from gettext import gettext as _
 
-from gi.repository import Adw, Gdk, Gio, GObject, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GObject, Graphene, Gtk, Pango
 
 from ..backend.api import is_library_id
+from .. import keyboard
 from ..backend.errors import EngineError
-from ..library import HELD_KINDS, Item, ShelfModel, Track
+from ..library import (HELD_KINDS, TRACK_REF_KINDS, Item, ItemRefs, ShelfModel, Track,
+                       drop_index)
+from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
 from ..release import (album_artist, album_shelves, album_target, curator, footer_lines,
                        hero_caption)
@@ -61,7 +74,7 @@ from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
 from ..remote import fetch_cover, fetch_shelf_art, remote_item
-from ..widgets import context_menu, track_links
+from ..widgets import context_menu, dnd, track_links
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
 from ..widgets.labels import track_label
@@ -250,6 +263,15 @@ class _Row(Gtk.Box):
             child = following
 
 
+def _row_of(widget):
+    """The _Row a widget is in (picked or focused in the list: the list item's own widget
+    holds its row), or None."""
+    row = widget if isinstance(widget, _Row) else widget.get_ancestor(_Row)
+    if row is None and isinstance(widget.get_first_child(), _Row):
+        row = widget.get_first_child()
+    return row
+
+
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/detail.ui')
 class DetailPage(Adw.NavigationPage):
     """An album's or a playlist's page.
@@ -393,6 +415,15 @@ class DetailPage(Adw.NavigationPage):
         self.list_view.set_factory(factory)
         connect_weak(self.list_view, 'activate', self._on_activate)
         context_menu.attach(self.list_view, drag=True)  # the tracks' menus, dragged to playlists
+        # A playlist's own song dropped back on it moves there (can_reorder()).
+        self._drop_feedback = dnd.DropFeedback(self.scrolled_window)
+        drop = Gtk.DropTarget.new(ItemRefs.__gtype__, Gdk.DragAction.MOVE)
+        connect_weak(drop, 'accept', self._on_drop_accept)
+        connect_weak(drop, 'enter', self._on_drop_motion)
+        connect_weak(drop, 'motion', self._on_drop_motion)
+        connect_weak(drop, 'leave', self._on_drop_leave)
+        connect_weak(drop, 'drop', self._on_drop)
+        self.list_view.add_controller(drop)
         track_links.attach(self.list_view)  # a table's artist and album links
         self._header_factory = Gtk.SignalListItemFactory()
         connect_weak(self._header_factory, 'setup', self._on_setup_header)
@@ -1128,6 +1159,15 @@ class DetailPage(Adw.NavigationPage):
         the hero's buttons backwards only with Up, and the suggestions only with Down from
         the last track."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
+        root = self.get_root()
+        focused = root.get_focus() if root is not None else None
+        get_dialog = getattr(root, 'get_visible_dialog', None)
+        step = keyboard.move_step(keyval, mods, type(focused),
+                                  get_dialog is not None and get_dialog() is not None,
+                                  focused is not None
+                                  and focused.get_ancestor(Gtk.Popover) is not None)
+        if step is not None:
+            return self._move_focused(focused, step)
         forward = keyval in (Gdk.KEY_Tab, Gdk.KEY_KP_Tab) and not mods
         backward = (keyval == Gdk.KEY_ISO_Left_Tab
                     or (keyval in (Gdk.KEY_Tab, Gdk.KEY_KP_Tab)
@@ -1141,9 +1181,7 @@ class DetailPage(Adw.NavigationPage):
         if forward and (focus is last or focus.is_ancestor(last)):
             self.list_view.scroll_to(1, Gtk.ListScrollFlags.FOCUS, None)
             return True
-        row = focus if isinstance(focus, _Row) else focus.get_ancestor(_Row)
-        if row is None and focus.get_first_child() is not None:
-            row = focus.get_first_child()  # the list item's own widget: its row inside
+        row = _row_of(focus)
         on_track = isinstance(row, _Row) and row.track_row.context_item is not None
         shelves = self._shelves_start
         if shelves is not None:
@@ -1174,6 +1212,119 @@ class DetailPage(Adw.NavigationPage):
             last.grab_focus()
             return True
         return False
+
+    # Moving a playlist's songs.
+
+    def can_reorder(self):
+        """Whether the songs shown can be moved: a playlist of the user's with its one list
+        (PlaylistOrder.can_reorder()), shown in its own order (the page has no other)."""
+        return self._groups == 1 and PlaylistOrder.can_reorder(self.item)
+
+    def _move(self, from_index, to_index, at_once=False):
+        """Move the song at from_index to to_index (ItemActions.move_in_playlist()): False
+        when it did not move."""
+        actions = getattr(self.get_root(), 'item_actions', None)
+        move = getattr(actions, 'move_in_playlist', None)
+        return move is not None and move(self.item, from_index, to_index, at_once)
+
+    def _move_focused(self, focus, step):
+        """Alt+Up or Alt+Down: the focused song one place up (-1) or down (1), the focus
+        going with it. False (the key not taken) when the focus is on no song or the songs
+        cannot be moved; True otherwise, at either end too, where nothing moves."""
+        row = _row_of(focus) if focus is not None else None
+        track = row.track_row.context_item if row is not None else None
+        if not isinstance(track, Track) or not self.can_reorder():
+            return False
+        index, count = track.index, len(self.item.track_ids())
+        if 0 <= index + step < count and self._move(index, index + step):
+            self.list_view.scroll_to(self._starts[0] + index + step, Gtk.ListScrollFlags.FOCUS,
+                                     None)
+        return True
+
+    def dragged_index(self):
+        """The index of the song the in-app drag in progress carries (dnd.current()) when it
+        is one of this playlist's own, to move within it; else None."""
+        refs = dnd.current()
+        if refs is None or len(refs) != 1 or not self.can_reorder():
+            return None
+        ref = refs.refs[0]
+        if refs.origin != ('playlist', self.item.id) or ref.kind not in TRACK_REF_KINDS:
+            return None
+        ids = self.item.track_ids()
+        return ref.index if 0 <= ref.index < len(ids) and ids[ref.index] == ref.id else None
+
+    def drop_place(self, x, y):
+        """Where a song dropped at (x, y) in the list goes: (gap, row, after), `gap` 0
+        before the first song to n after the last of n, `row` the row the insertion line is
+        drawn on (None when it is not made) and `after` whether on its bottom edge. Over a
+        song, the gap above it or below it, by the half; over the hero, before the first;
+        anywhere else (the suggestions, the footer, below the list), after the last."""
+        count = len(self.item.track_ids() or ())
+        picked = self.list_view.pick(x, y, Gtk.PickFlags.DEFAULT)
+        row = _row_of(picked) if picked is not None else None
+        track = row.track_row.context_item if row is not None else None
+        if isinstance(track, Track) and 0 <= track.index < count:
+            point = Graphene.Point()
+            point.x, point.y = x, y
+            ok, local = self.list_view.compute_point(row, point)
+            after = ok and local.y >= row.get_height() / 2
+            return track.index + (1 if after else 0), row, after
+        if row is not None and self.hero.get_parent() is row:
+            return 0, self._row_at(0), False
+        return count, self._row_at(count - 1), True
+
+    def show_insertion(self, index, after=False):
+        """Draw the insertion line on the top (or, `after`, the bottom) edge of the row of
+        the song at index, as a drag over it does (scripts/screenshot.py's --drop-line: no
+        headless script can drag). False when the songs cannot be moved or the row is not
+        made."""
+        row = self._row_at(index) if self.can_reorder() else None
+        if row is None:
+            return False
+        self._drop_feedback.insert(row, after)
+        return True
+
+    def _row_at(self, index):
+        """The row showing the song at index, or None when the list has not made it."""
+        position = self._starts[0] + index if self._starts else -1
+        for list_item in self._bound:
+            if list_item.get_position() == position:
+                return list_item.get_child()
+        return None
+
+    def _on_drop_accept(self, _target, _drop):
+        return self.dragged_index() is not None
+
+    def _on_drop_motion(self, _target, x, y):
+        """A drag over the list: the insertion line where the song would go (none in the
+        gaps beside it, where it is), the list scrolled near its edges; the action."""
+        from_index = self.dragged_index()
+        if from_index is None:
+            self._drop_feedback.clear()
+            return 0
+        point = Graphene.Point()
+        point.x, point.y = x, y
+        ok, scrolled = self.list_view.compute_point(self.scrolled_window, point)
+        if ok:
+            self._drop_feedback.motion(scrolled.y)
+        gap, row, after = self.drop_place(x, y)
+        if drop_index(from_index, gap) is None or row is None:
+            self._drop_feedback.highlight(None)
+            return 0
+        self._drop_feedback.insert(row, after)
+        return Gdk.DragAction.MOVE
+
+    def _on_drop_leave(self, _target):
+        self._drop_feedback.clear()
+
+    def _on_drop(self, _target, _value, x, y):
+        """A song of this playlist dropped on it: moved there, written at once."""
+        self._drop_feedback.clear()
+        from_index = self.dragged_index()
+        if from_index is None:
+            return False
+        to_index = drop_index(from_index, self.drop_place(x, y)[0])
+        return to_index is not None and self._move(from_index, to_index, at_once=True)
 
     async def _focus_shelves(self):
         """The first shelf's first focusable widget, once the list has laid out the row

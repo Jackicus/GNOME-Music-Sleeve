@@ -59,6 +59,9 @@ UI awaits.
     await engine.edit_playlist(playlist_id, name=None, description=None)
     await engine.delete_playlist(playlist_id)
     await engine.remove_from_playlist(playlist_id, track_id, index)   # that one entry
+    await engine.reorder_playlist(playlist_id, shown, order)   # its tracks in a new order:
+                                 # `order` positions in `shown`, the ids as the app had them
+    await engine.playlist_track_ids(playlist_id)   # its tracks' ids as Apple lists them now
     await engine.rename_folder(folder_id, name); await engine.delete_folder(folder_id)
     await engine.create_folder(name, folder_id)   # the new folder's id ('root': the top level)
     await engine.move_to_folder(kind, id, folder_id)   # a playlist (or folder) into a folder
@@ -1737,11 +1740,44 @@ class Engine(GObject.Object):
             return True
         wanted = index if isinstance(index, int) and not isinstance(index, bool) else 0
         position = min(positions, key=lambda found: (abs(found - wanted), found))
-        if any(not entry['id'] or not entry['type'] for entry in listed):
-            raise EngineError('api', 'a playlist entry came without its id or type')
-        del listed[position]
-        await client.bridge('replacePlaylistTracks', playlist_id, listed)
+        kept = api.playlist_entries(entries)
+        del kept[position]
+        await client.bridge('replacePlaylistTracks', playlist_id, kept)
         return True
+
+    async def playlist_track_ids(self, playlist_id):
+        """The ids of a library playlist's tracks as Apple lists them now, in order (none
+        for Apple's 404, its answer for a playlist without tracks): whether a write shows."""
+        playlist_id = _library_playlist(playlist_id)
+        await self._require_signed_in('read playlists')
+        try:
+            entries = await self.api_pages(f'/v1/me/library/playlists/{playlist_id}/tracks')
+        except EngineError as e:
+            if e.status != 404:
+                raise
+            return []
+        return [str(entry.get('id') or '') for entry in entries]
+
+    async def reorder_playlist(self, playlist_id, shown, order):
+        """A library playlist's tracks in a new order: `order` is a permutation of positions
+        in `shown`, the ids of its tracks as the app showed them when the order was chosen.
+
+        The tracks are read first, as Apple has them now, and put back whole in the new
+        order (PUT …/tracks, the web player's reorder): every entry read, those Apple cannot
+        play among them, by its own id and type. Nothing is written when Apple's list is not
+        `shown` any more (EngineError('conflict'): changed on another device, or since the
+        app read it) or an entry came without its id or type ('api'). Positions, not ids,
+        say what moved, so of a song held twice the entry moved is the one that moves."""
+        playlist_id = _library_playlist(playlist_id)
+        client = await self._require_signed_in('edit playlists')
+        try:
+            entries = await self.api_pages(f'/v1/me/library/playlists/{playlist_id}/tracks')
+        except EngineError as e:
+            if e.status != 404:  # Apple's answer for a playlist without tracks
+                raise
+            entries = []
+        await client.bridge('replacePlaylistTracks', playlist_id,
+                            api.reordered_entries(entries, shown, order))
 
     async def rename_folder(self, folder_id, name):
         """A playlist folder's name (PATCH /v1/me/library/playlist-folders/<id>)."""

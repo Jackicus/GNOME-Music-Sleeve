@@ -36,7 +36,7 @@ SAMPLE_TARGETS = [
 class EngineErrorTest(unittest.TestCase):
     def test_codes(self):
         for code in ('engine-down', 'no-browser', 'no-widevine', 'no-keyring', 'not-signed-in',
-                     'api', 'timeout', 'usage'):
+                     'api', 'timeout', 'usage', 'conflict'):
             error = EngineError(code, 'why')
             self.assertEqual((error.code, error.message, str(error)), (code, 'why', f'{code}: why'))
         self.assertEqual(str(EngineError('timeout')), 'timeout')
