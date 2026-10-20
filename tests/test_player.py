@@ -1609,6 +1609,176 @@ class RestoreTest(unittest.TestCase):
             self.assertFalse(player.restored)  # MusicKit's item shows: it is what plays
         asyncio.run(go())
 
+    @staticmethod
+    def slow_start(engine, fail=None):
+        """engine.start() held, the engine 'starting', until the returned event is set; then
+        up, or down and raising `fail`."""
+        started = asyncio.Event()
+
+        async def start(visible=None):
+            engine.calls.append(('start', visible))
+            engine.state = 'starting'
+            await started.wait()
+            engine.state = 'down' if fail else 'up'
+            if fail:
+                raise fail
+        engine.start = start
+        return started
+
+    @staticmethod
+    async def turns(count=5):
+        for _ in range(count):
+            await asyncio.sleep(0)
+
+    @staticmethod
+    def sent(engine, *names):
+        names = names or ('play',)
+        return [call for call in engine.calls if call[0] in names]
+
+    def test_a_second_play_during_the_engines_start_sends_one_play(self):
+        async def go():
+            player, engine, app = self.restored()
+            started = self.slow_start(engine)
+            first = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            self.assertTrue(player.pending)
+            self.assertTrue(player.restored)  # shown as it is until the play goes out
+            second = asyncio.ensure_future(player.toggle())  # Space again, MPRIS PlayPause
+            third = asyncio.ensure_future(player.resume())
+            await self.turns()
+            self.assertEqual(self.sent(engine, 'play', 'control'), [])
+            started.set()
+            await asyncio.gather(first, second, third)
+            await app.settle()
+            self.assertEqual(self.sent(engine, 'play', 'control', 'start'),
+                             [('start', None), ('play', 'album', 'l.alb1', 2, False)])
+            self.assertEqual(engine.play_options,
+                             [{'start_id': 'i.demo0001', 'start_time': 83.0}])
+            self.assertFalse(player.pending)
+        asyncio.run(go())
+
+    def test_steps_during_the_engines_start_play_the_entry_shown(self):
+        async def go():
+            player, engine, app = self.restored()
+            started = self.slow_start(engine)
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            await player.seek(0)
+            await player.previous()
+            await player.seek(30)
+            self.assertEqual((player.track.title, player.queue_index, player.position),
+                             ('Pilot Light', 1, 30.0))
+            started.set()
+            await task
+            await app.settle()
+            self.assertEqual(self.sent(engine), [('play', 'album', 'l.alb1', 1, False)])
+            self.assertEqual(engine.play_options,
+                             [{'start_id': 'i.demo0002', 'start_time': 30.0}])
+        asyncio.run(go())
+
+    def test_an_up_next_row_during_the_engines_start_is_the_one_that_plays(self):
+        async def go():
+            player, engine, app = self.restored()
+            started = self.slow_start(engine)
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            row = asyncio.ensure_future(player.queue_jump(0))
+            await self.turns()
+            self.assertEqual((player.track.title, player.position), ('Shoreline', 0.0))
+            started.set()
+            await asyncio.gather(task, row)
+            self.assertEqual(self.sent(engine), [('play', 'album', 'l.alb1', 0, False)])
+            self.assertEqual(engine.play_options, [{'start_id': 'i.demo0003'}])
+        asyncio.run(go())
+
+    def test_play_next_during_the_engines_start_goes_after_the_play(self):
+        async def go():
+            player, engine, app = self.restored()
+            started = self.slow_start(engine)
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            queued = asyncio.ensure_future(player.play_next('song', '1000000005'))
+            await self.turns()
+            started.set()
+            await asyncio.gather(task, queued)
+            self.assertEqual(self.sent(engine, 'play', 'play_next'),
+                             [('play', 'album', 'l.alb1', 2, False),
+                              ('play_next', 'song', '1000000005')])
+            self.assertEqual(engine.play_options,  # the Play's, not paused
+                             [{'start_id': 'i.demo0001', 'start_time': 83.0}])
+        asyncio.run(go())
+
+    def test_a_play_during_a_paused_restore_plays_it(self):
+        async def go():
+            player, engine, app = self.restored()
+            started = self.slow_start(engine)
+            queued = asyncio.ensure_future(player.play_next('song', '1000000005'))
+            await self.turns()
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            started.set()
+            await asyncio.gather(task, queued)
+            self.assertEqual(self.sent(engine, 'play', 'play_next'),
+                             [('play', 'album', 'l.alb1', 2, False),
+                              ('play_next', 'song', '1000000005')])
+            self.assertEqual(engine.play_options,
+                             [{'start_id': 'i.demo0001', 'start_time': 83.0}])
+        asyncio.run(go())
+
+    def test_another_play_during_the_engines_start_replaces_the_session(self):
+        async def go():
+            player, engine, app = self.restored()
+            started = self.slow_start(engine)
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            other = asyncio.ensure_future(player.play({'kind': 'playlist', 'id': 'p.pl1'},
+                                                      shuffle=False))
+            await self.turns()
+            started.set()
+            await asyncio.gather(task, other)
+            self.assertEqual(self.sent(engine), [('play', 'playlist', 'p.pl1', None, False)])
+            self.assertFalse(player.restored)
+            self.assertFalse(player.pending)
+        asyncio.run(go())
+
+    def test_a_failed_start_keeps_the_session_and_takes_a_play_again(self):
+        async def go():
+            player, engine, app = self.restored()
+            started = self.slow_start(engine, EngineError('engine-down', 'no Chrome'))
+            task = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            second = asyncio.ensure_future(player.toggle())
+            await self.turns()
+            started.set()
+            with self.assertRaises(EngineError):
+                await task
+            await second  # the start's failure is the first press's to report
+            self.assertTrue(player.restored)
+            self.assertEqual((player.track.id, player.position), ('i.demo0001', 83.0))
+            self.assertFalse(player.pending)
+            self.assertEqual(self.sent(engine), [])
+            del engine.start  # the FakeEngine's own: up at once
+            await player.toggle()
+            self.assertEqual(self.sent(engine), [('play', 'album', 'l.alb1', 2, False)])
+        asyncio.run(go())
+
+    def test_a_reloaded_page_gets_the_autoplay_setting_while_restored(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            await app.settle()
+            app.settings.autoplay = False
+            engine.calls.clear()
+            engine.event('bridgeReset', {})  # the page set its own as it loaded
+            await app.settle()
+            self.assertIn(('set_autoplay', False), engine.calls)
+            self.assertNotIn(('now_playing',), engine.calls)
+            self.assertTrue(player.restored)
+            self.assertEqual(player.track.id, 'i.demo0001')
+            engine.event('autoplayEnabledDidChange', {'autoplay': True})
+            self.assertTrue(player.autoplay)
+            self.assertTrue(player.restored)
+        asyncio.run(go())
+
     def test_forget_session(self):
         player, engine, app = self.restored()
         player.forget_session()

@@ -98,9 +98,11 @@ Seek, next, previous, stop, shuffle, repeat (and the volume, with the engine dow
 it locally, paused; Play (toggle, resume) and an Up Next row (queue_jump) hand it to MusicKit
 through a play request (restore_session: the album or playlist it came from when the queue is
 still that, else its songs' ids; shuffle off, the repeat mode, the position as start_time),
-and play_next/play_later queue it paused first. A request that fails gives the session back,
-unless MusicKit refused the queue (EngineError('api') with its code): then it is dropped,
-`session-dropped` is emitted (the file goes) and `error` says why. MusicKit playing anything
+and play_next/play_later queue it paused first. The request plays what the session shows as
+it goes out, after the engine's start: a step taken meanwhile is what plays, and a second
+Play sends nothing. A request that fails gives the session back, unless MusicKit refused the
+queue (EngineError('api') with its code): then it is dropped, `session-dropped` is emitted
+(the file goes) and `error` says why. MusicKit playing anything
 of its own ends it too. `source` is what a queue came from ({kind, id}: an album, a playlist,
 a station) while the queue is still that, in order; None otherwise.
 A live radio station (the Track's `isLive`: MusicKit plays it as one item, and the duration
@@ -348,6 +350,7 @@ class Player(GObject.Object):
         self._source = None  # what the queue came from ({kind, id}), while it is still that
         self._source_ids = None  # the ids of the source's queue as MusicKit first gave them
         self._volume_wanted = None  # a volume set while restored with the engine down
+        self._restoring = None  # the session's play request until answered: {paused, done}
         self._cleared = None  # what the last Clear took, for its Undo ({id, entries, local})
         self._capabilities = {}  # what MusicKit last said it allows (CAPABILITIES), if anything
         self._engine.connect('event', self._on_event)
@@ -574,8 +577,14 @@ class Player(GObject.Object):
         if self.restored:
             if _holds_item(name, data):
                 self._end_restored()  # MusicKit plays something of its own: that shows now
+            elif name == 'bridgeReset':
+                # A new page, holding nothing: the session stays, but the page set its own
+                # autoplay as it loaded, and a preview went with the old one.
+                self._set_preview('')
+                self._app.spawn(self.apply_autoplay())
+                return
             elif name not in ('playbackVolumeDidChange', 'mediaPlaybackError',
-                              'previewDidChange'):
+                              'previewDidChange', 'autoplayEnabledDidChange'):
                 return  # MusicKit holds nothing of the session restored: it stays as it is
         if name == 'playbackStateDidChange':
             self._events += 1
@@ -1011,19 +1020,48 @@ class Player(GObject.Object):
 
     async def restore_session(self, index=None, paused=False):
         """Hand the session restored to MusicKit and play it: the item shown at its
-        position, or the queue's entry at `index` from the top (an Up Next row); `paused`
-        only queues it (play_next, play_later), the position kept for the first Play. The
-        source when the queue is still that (a station plays live), else the queue's songs
-        by id (a music video in it is left out, or plays alone when it is the item); shuffle
-        off, the repeat mode shown, a volume set meanwhile. Nothing when not restored."""
+        position, or the queue's entry at `index` from the top (an Up Next row: shown at
+        once); `paused` only queues it (play_next, play_later), the position kept for the
+        first Play. Nothing when not restored. The request plays what the session shows as
+        it goes out (_restore_request), so a step taken while it waits for its turn or for
+        the engine's start (Next, Previous, a seek, a row) is what plays; a second call
+        meanwhile sends nothing of its own (a Play makes a paused one play) and returns once
+        the request is answered, so play_next's item goes after it."""
         if not self.restored:
             return
-        entries = list(self.queue)
-        at = self.queue_index if index is None else index
-        if not 0 <= at < len(entries):
+        if index is not None:
+            if not 0 <= index < self.queue.get_n_items():
+                return
+            self._show_restored(index)
+        wish = self._restoring
+        if wish is not None:
+            wish['paused'] = wish['paused'] and paused
+            await wish['done'].wait()
             return
+        if self._restore_request(paused) is None:
+            return
+        wish = self._restoring = {'paused': paused, 'done': asyncio.Event()}
+        try:
+            await self._request(None, restoring=wish)
+        finally:
+            if self._restoring is wish:
+                self._restoring = None
+            wish['done'].set()
+
+    def _restore_request(self, paused):
+        """The play request for the session as it shows: (target, start_with, shuffle,
+        start_id, restoring), or None (not restored, or its item cannot be). The source when
+        the queue is still that (a station plays live), else the queue's songs by id (a music
+        video in it is left out, or plays alone when it is the item); shuffle off, the repeat
+        mode shown (restoring: {start_time, paused, shuffle, repeat})."""
+        if not self.restored:
+            return None
+        entries = list(self.queue)
+        at = self.queue_index
+        if not 0 <= at < len(entries):
+            return None
         entry = entries[at]
-        position = self.position if index is None else 0.0
+        position = self.position
         if self.duration and position >= self.duration - END_SLACK:
             position = 0.0
         source = self._source
@@ -1039,12 +1077,12 @@ class Player(GObject.Object):
             places = [place for place, _item in songs]
             if at not in places:
                 log.warning('the item of the last session cannot be restored')
-                return
+                return None
             target = {'kind': 'songs', 'id': ','.join(item.id for _place, item in songs)}
             start_with, start_id = places.index(at), entry.id
-        await self._request(target, start_with=start_with, shuffle=False, start_id=start_id,
-                            restoring={'start_time': position, 'paused': paused,
-                                       'shuffle': self.shuffle, 'repeat': self.repeat})
+        return target, start_with, False, start_id, {
+            'start_time': position, 'paused': paused,
+            'shuffle': self.shuffle, 'repeat': self.repeat}
 
     def _seek_restored(self, seconds):
         seconds = max(0.0, _number(seconds))
@@ -1060,6 +1098,10 @@ class Player(GObject.Object):
             if step < 0:
                 self._seek_restored(0)
             return
+        self._show_restored(at)
+
+    def _show_restored(self, at):
+        """The session's entry at `at` shown, paused, from the top."""
         self._set_track(dict(self.queue.get_item(at).raw))
         self._set_position(0.0)
 
@@ -1083,29 +1125,42 @@ class Player(GObject.Object):
         entry at queue position `start_with`, the track `start_id` (a track row's: the item
         that must play, wherever MusicKit queues it); `shuffle` True shuffled (a Shuffle
         button), False in order (a Play button), None as the mode is (a track row). Requests
-        go to the engine one at a time, in order, and one superseded while it waits is dropped
-        (the newest wins: a second album clicked while the first's queue loads). `pending`
-        is True from a request until the engine has answered it, or it failed. A session
-        restored is replaced (given back when the request fails)."""
+        go to the engine one at a time, in order, and one superseded while it waits (for its
+        turn or the engine's start) is dropped (the newest wins: a second album clicked while
+        the first's queue loads). `pending` is True from a request until the engine has
+        answered it, or it failed. A session restored is replaced (given back when the
+        request fails)."""
         await self._request(play, start_with, shuffle, start_id)
 
     async def _request(self, play, start_with=None, shuffle=None, start_id=None,
                        restoring=None):
-        """play()'s request; `restoring` ({start_time, paused, shuffle, repeat}) when it
-        hands the session restored to MusicKit (restore_session)."""
-        kind = play.get('kind') if isinstance(play, dict) else None
-        item_id = play.get('id') if isinstance(play, dict) else None
-        if not kind or item_id in (None, ''):
-            raise EngineError('usage', 'nothing to play')
+        """play()'s request; with `restoring` (restore_session's {paused, done}) in place of
+        a target, the session restored handed to MusicKit as it shows when the request goes
+        out (_restore_request). Superseded while it waits for its turn or for the engine's
+        start, it is dropped."""
+        if restoring is None:
+            kind = play.get('kind') if isinstance(play, dict) else None
+            item_id = play.get('id') if isinstance(play, dict) else None
+            if not kind or item_id in (None, ''):
+                raise EngineError('usage', 'nothing to play')
         self._play_serial += 1
         serial = self._play_serial
         self._set_pending(True)
         try:
             async with self._play_lock:
                 if serial != self._play_serial:
-                    log.debug('play %s %s superseded', kind, item_id)
+                    log.debug('a play request superseded')
                     return
                 await self.ensure_engine()
+                if serial != self._play_serial:
+                    log.debug("a play request superseded during the engine's start")
+                    return
+                if restoring is not None:
+                    request = self._restore_request(restoring['paused'])
+                    if request is None:
+                        return  # MusicKit played something of its own meanwhile, or sign-out
+                    play, start_with, shuffle, start_id, restoring = request
+                    kind, item_id = play['kind'], play['id']
                 log.info('play %s %s%s%s%s', kind, item_id if kind != 'songs' else '…',
                          f' from {start_with}' if start_with is not None else '',
                          {True: ' shuffled', False: ' in order'}.get(shuffle, ''),
