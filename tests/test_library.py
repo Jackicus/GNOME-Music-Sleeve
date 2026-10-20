@@ -1688,5 +1688,183 @@ class TestSongOrder(unittest.TestCase):
         self.assertEqual(SongOrder([]).tracks('title'), [])
 
 
+def held_library():
+    """An invented library.json's data: two albums (the second of one song), a playlist
+    holding a song of each (the first by its catalog id alone, as a playlist's own entry),
+    their artist, a music video, a playlist of Apple's and a shelf of the second album."""
+    first = album('l.a1', 'Low Tide', ['i.1', 'i.2'])
+    for position, entry in enumerate(first['groups'][0]['entries']):
+        entry['catalogId'] = f'100000000{position + 1}'
+    first['trackCount'], first['durationMs'] = 2, 360000
+    second = album('l.a2', 'Single File', ['i.3'])
+    held = {'id': 'p.pl1', 'kind': 'playlist', 'title': 'Undertows', 'trackCount': 2,
+            'durationMs': 360000, 'play': {'kind': 'playlist', 'id': 'p.pl1'},
+            'groups': [{'name': 'Tracks', 'play': {'kind': 'playlist', 'id': 'p.pl1'},
+                        'entries': [dict(track('i.p1', 'Song i.1', 0), catalogId='1000000001'),
+                                    track('i.3', 'Song i.3', 1)]}]}
+    apples = {'id': 'p.pl2', 'kind': 'playlist', 'title': 'Apple Picks',
+              'attributes': {'canEdit': False}, 'play': {'kind': 'playlist', 'id': 'p.pl2'},
+              'groups': []}
+    artist = {'id': 'l.art1', 'kind': 'artist', 'title': 'Test Artist', 'albumCount': 2,
+              'play': {}, 'groups': [{'name': 'Low Tide', 'play': first['play'], 'entries': []},
+                                     {'name': 'Single File', 'play': second['play'],
+                                      'entries': []}]}
+    video = {'id': 'i.v1', 'kind': 'video', 'title': 'Undertow (Video)',
+             'catalogId': '1000000009', 'play': {'kind': 'musicVideo', 'id': '1000000009'}}
+    return {'version': 2, 'generated': '2026-01-01T00:00:00Z', 'storefront': 'gb',
+            'sections': {'albums': [first, second], 'playlists': [held, apples],
+                         'artists': [artist], 'videos': [video]},
+            'shelves': [{'key': 'recently-added', 'title': '',
+                         'items': [dict(second, groups=[]), dict(video)]}],
+            'folders': [{'id': 'root', 'title': '', 'parent': None,
+                         'children': [{'kind': 'playlist', 'id': 'p.pl2'},
+                                      {'kind': 'playlist', 'id': 'p.pl1'}]}]}
+
+
+def entry_ids(item):
+    return [entry['id'] for group in item['groups'] for entry in group['entries']]
+
+
+class TestLeaveOut(unittest.TestCase):
+    """leave_out(): what a removal takes out of a parsed library.json with it."""
+
+    def test_a_song_goes_from_its_album_its_playlists_and_their_counts(self):
+        data = held_library()
+        found, removed = library_module.leave_out(data, {('song', 'i.1')})
+        sections = data['sections']
+        first = sections['albums'][0]
+        self.assertEqual(entry_ids(first), ['i.2'])
+        self.assertEqual((first['trackCount'], first['durationMs']), (1, 180000))
+        self.assertIn(('song', 'i.1'), found)
+        self.assertEqual(removed, {'i.1'})
+        # The playlist names it by its catalog id alone: that ref takes its entry.
+        self.assertEqual(entry_ids(sections['playlists'][0]), ['i.p1', 'i.3'])
+        data = held_library()
+        found, removed = library_module.leave_out(data, {('song', 'i.1'),
+                                                         ('song', '1000000001')})
+        playlist = data['sections']['playlists'][0]
+        self.assertEqual(entry_ids(playlist), ['i.3'])
+        self.assertEqual((playlist['trackCount'], playlist['durationMs']), (1, 180000))
+        self.assertIn(('song', '1000000001'), found)
+        self.assertEqual(removed, {'i.1'})
+
+    def test_an_albums_only_song_takes_the_album_and_its_artist_group(self):
+        data = held_library()
+        _found, removed = library_module.leave_out(data, {('song', 'i.3')})
+        sections = data['sections']
+        self.assertEqual([item['id'] for item in sections['albums']], ['l.a1'])
+        self.assertEqual(entry_ids(sections['playlists'][0]), ['i.p1'])
+        self.assertEqual(sections['playlists'][0]['trackCount'], 1)
+        artist = sections['artists'][0]
+        self.assertEqual([group['play']['id'] for group in artist['groups']], ['l.a1'])
+        self.assertEqual(artist['albumCount'], 1)
+        self.assertEqual([item['id'] for item in data['shelves'][0]['items']], ['i.v1'])
+        self.assertEqual(removed, {'i.3'})
+
+    def test_an_album_goes_with_its_songs(self):
+        data = held_library()
+        found, removed = library_module.leave_out(data, {('album', 'l.a1')})
+        sections = data['sections']
+        self.assertEqual([item['id'] for item in sections['albums']], ['l.a2'])
+        self.assertEqual(entry_ids(sections['playlists'][0]), ['i.3'])  # by catalog id
+        self.assertEqual(found & {('album', 'l.a1')}, {('album', 'l.a1')})
+        self.assertEqual(removed, {'i.1', 'i.2'})
+        # Both albums gone: so is the artist made of them.
+        data = held_library()
+        library_module.leave_out(data, {('album', 'l.a1'), ('album', 'l.a2')})
+        self.assertEqual(data['sections']['artists'], [])
+
+    def test_a_video_and_a_playlist(self):
+        data = held_library()
+        found, removed = library_module.leave_out(data, {('video', 'i.v1'),
+                                                         ('playlist', 'p.pl2')})
+        sections = data['sections']
+        self.assertEqual(sections['videos'], [])
+        self.assertEqual([item['id'] for item in sections['playlists']], ['p.pl1'])
+        self.assertEqual([item['id'] for item in data['shelves'][0]['items']], ['l.a2'])
+        self.assertEqual(found, {('video', 'i.v1'), ('playlist', 'p.pl2')})
+        self.assertEqual(removed, set())
+
+    def test_what_is_not_there_is_not_found(self):
+        data = held_library()
+        found, removed = library_module.leave_out(data, {('song', 'i.9'), ('album', 'l.a9')})
+        self.assertEqual((found, removed), (set(), set()))
+        self.assertEqual(plain(data), plain(held_library()))
+
+
+class TestHide(unittest.TestCase):
+    """Library.hide() and unhide(): the models leave out what was removed, at once and at
+    every load while the file holds it, and let it go once a load no longer meets it."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.cache = self.temp_dir.name
+        self.write(held_library())
+        self.library = load(self.cache)
+        build_songs(self.library)
+
+    def write(self, data):
+        Path(self.cache, 'library.json').write_text(json.dumps(data), encoding='utf-8')
+
+    def run_in_cache(self, start):
+        """Run the coroutine start() makes with the cache pointed at the test's: a reload
+        starts reading the moment it is called."""
+        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': str(self.cache)}):
+            asyncio.run(start())
+
+    def ids(self, store):
+        return [item.id for item in store]
+
+    def test_a_hidden_album_leaves_every_store_and_comes_back(self):
+        library = self.library
+        playlist = library.by_id('playlist', 'p.pl1')
+        self.assertEqual(library.song_count(), 3)
+        self.run_in_cache(lambda: library.hide({('album', 'l.a1')}))
+        self.assertEqual(self.ids(library.albums), ['l.a2'])
+        self.assertIsNone(library.by_id('album', 'l.a1'))
+        self.assertEqual([track.id for track in library.songs], ['i.3'])
+        self.assertEqual(library.song_count(), 1)
+        self.assertIs(library.by_id('playlist', 'p.pl1'), playlist)  # kept, its entry gone
+        self.assertEqual([track.id for group in playlist.groups for track in group.entries],
+                         ['i.3'])
+        # A sync's reload of a file that still holds it (Apple's listing lags) leaves it out.
+        self.run_in_cache(library.reload)
+        self.assertEqual(self.ids(library.albums), ['l.a2'])
+        self.assertEqual(library.hidden, {('album', 'l.a1')})
+        # A failed removal brings it back.
+        self.run_in_cache(lambda: library.unhide({('album', 'l.a1')}))
+        self.assertEqual(self.ids(library.albums), ['l.a1', 'l.a2'])
+        self.assertEqual(library.song_count(), 3)
+        self.assertEqual(library.hidden, frozenset())
+
+    def test_a_load_that_no_longer_meets_it_lets_it_go(self):
+        library = self.library
+        self.run_in_cache(lambda: library.hide({('playlist', 'p.pl2')}))
+        self.assertEqual(self.ids(library.playlists), ['p.pl1'])
+        self.assertEqual([node.id for node in library.playlist_tree().flat], ['p.pl1'])
+        data = held_library()
+        data['sections']['playlists'].pop()
+        self.write(data)  # the sync after Apple dropped it
+        self.run_in_cache(library.reload)
+        self.assertEqual(library.hidden, frozenset())
+        self.assertEqual(self.ids(library.playlists), ['p.pl1'])
+
+    def test_library_ids_by_id_and_catalog_id(self):
+        library = self.library
+        self.assertEqual(library.library_id('song', 'i.2'), 'i.2')
+        self.assertEqual(library.library_id('song', '1000000002'), 'i.2')
+        self.assertEqual(library.library_id('song', 'i.p1', '1000000001'), 'i.1')
+        self.assertIsNone(library.library_id('song', 'i.9', '1000000099'))
+        self.assertEqual(library.library_id('video', '1000000009', '1000000009'), 'i.v1')
+        self.assertEqual(library.library_id('album', 'l.a2'), 'l.a2')
+        self.assertIsNone(library.library_id('album', 'l.a9'))
+        self.assertEqual(library.playlists_holding({'1000000001'}), ['p.pl1'])
+        self.assertEqual(library.playlists_holding({'i.2'}), [])
+        # The index follows the loads.
+        self.run_in_cache(lambda: library.hide({('album', 'l.a1')}))
+        self.assertIsNone(library.library_id('song', 'i.2'))
+
+
 if __name__ == '__main__':
     unittest.main()

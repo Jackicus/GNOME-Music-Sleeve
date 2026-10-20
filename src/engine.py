@@ -43,6 +43,9 @@ UI awaits.
     await engine.love('song', id); await engine.unlove('album', id)   # the rating, set or gone
     await engine.rating('song', id)        # 1 loved, -1 disliked, 0 neither
     await engine.add_to_library('album', catalog_id)
+    await engine.remove_from_library('song', library_id)   # the library id removed (a catalog
+                                                           # id is read for its twin first)
+    await engine.in_library('album', library_id)   # False once Apple's library read is a 404
     await engine.catalog_url('album', library_id)   # its music.apple.com page, or None
     await engine.add_to_playlist(playlist_id, song_id)   # kind='video' for a music video
     await engine.create_playlist(name, description, [(kind, id)…], folder_id)   # its id
@@ -1450,8 +1453,9 @@ class Engine(GObject.Object):
         return answer
 
     # -- ratings and the library ---------------------------------------------------------
-    # The heart and the item actions' writes, through the bridge's rating(), addToLibrary()
-    # and addToPlaylist() (MusicKit's request builder, judged by the HTTP status: a refusal
+    # The heart and the item actions' writes, through the bridge's rating(), addToLibrary(),
+    # removeFromLibrary() and addToPlaylist() (MusicKit's request builder, judged by the
+    # HTTP status: a refusal
     # is EngineError('api') with Apple's "HTTP 403 Forbidden: …"), and the reads beside them
     # (rating, catalog_url), each needing a signed-in engine.
 
@@ -1498,6 +1502,46 @@ class Engine(GObject.Object):
             raise EngineError('usage', f'{item_id} is in the library already')
         client = await self._require_signed_in('add to your library')
         await client.bridge('addToLibrary', api.RESOURCE_TYPES[kind], str(item_id))
+
+    async def remove_from_library(self, kind, item_id):
+        """Take a song, album, music video or playlist out of the library, on every device
+        (DELETE /v1/me/library/<type>/<library id>, the web player's
+        requestDeleteFromLibrary; `type` the catalog type, api.LIBRARY_ROUTES). A catalog id
+        is first read for its library twin (relate=library: Apple answers a DELETE by
+        catalog id with a 500), and is EngineError('api', status 404) when the library has
+        none. A song goes from every playlist that held it too, an album with its tracks;
+        the library listings drop it some seconds later (in_library()). Answers the library
+        id removed."""
+        route = api.LIBRARY_ROUTES.get(kind)
+        item_id = str(item_id or '')
+        if route is None or not item_id:
+            raise EngineError('usage', f'cannot remove {kind or "nothing"} from the library')
+        client = await self._require_signed_in('remove from your library')
+        if not is_library_id(item_id):
+            storefront = await self._current_storefront()
+            answer = await self._api(
+                client, api.LIBRARY_TWIN_ENDPOINT.format(storefront=storefront),
+                api.library_twin_params(kind, item_id), timeout=READ_TIMEOUT)
+            library_id = api.library_twin(answer)
+            if library_id is None:
+                raise EngineError('api', f'{kind} {item_id} is not in the library', status=404)
+            item_id = library_id
+        await client.bridge('removeFromLibrary', route, item_id)
+        return item_id
+
+    async def in_library(self, kind, library_id):
+        """Whether the library still holds the song, album, music video or playlist
+        `library_id`: its read under /v1/me/library through the bridge's libraryHas (the
+        request builder: what music() answers may be cached from before a removal), False
+        once Apple answers 404. A song was 404 within 2 s of its removal, an album within 7
+        (src/backend/README.md)."""
+        route = api.LIBRARY_ROUTES.get(kind)
+        library_id = str(library_id or '')
+        if route is None or not is_library_id(library_id):
+            raise EngineError('usage', f'{library_id or "nothing"} is not a library item')
+        client = await self._require_signed_in('read your library')
+        answer = await client.bridge('libraryHas', route, library_id, timeout=READ_TIMEOUT)
+        return not (isinstance(answer, dict) and answer.get('has') is False)
 
     async def catalog_url(self, kind, item_id):
         """The music.apple.com page of a library item's catalog equivalent (its

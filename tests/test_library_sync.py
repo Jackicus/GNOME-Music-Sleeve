@@ -333,7 +333,8 @@ class LibrarySyncTest(SyncTestCase):
         self.assertFalse(self.library.props.syncing)
 
     async def test_an_unexpected_failure_is_toasted_with_retry(self):
-        async def broken(engine, library, progress=None, quick=False, playlists=False):
+        async def broken(engine, library, progress=None, quick=False, playlists=False,
+                         videos=False, tracks_of=()):
             raise OSError(28, 'No space left on device')
 
         with mock.patch.object(app_sync, 'sync_library', broken), \
@@ -469,7 +470,8 @@ class SchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.runs = []
         self.quick_runs = []
 
-        async def fake_sync(engine, library, progress=None, quick=False, playlists=False):
+        async def fake_sync(engine, library, progress=None, quick=False, playlists=False,
+                            videos=False, tracks_of=()):
             self.runs.append(engine)
             self.quick_runs.append(quick)
             return self.counts
@@ -575,7 +577,8 @@ class SchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.reported, [])  # nothing offered the sign-in either
 
     async def test_a_failed_sync_waits_before_the_next(self):
-        async def failing(engine, library, progress=None, quick=False, playlists=False):
+        async def failing(engine, library, progress=None, quick=False, playlists=False,
+                          videos=False, tracks_of=()):
             self.runs.append(engine)
             raise EngineError('api', 'invented failure')
 

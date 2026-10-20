@@ -38,7 +38,8 @@ What to shoot: $ARGUMENTS
      (`--setting more-suggestions=true` shows twelve suggestions);
    - the playlists' menus and dialogs: `--more-options` (the page's More Options menu),
      `--sidebar-menu playlist:first|folder:first|all-playlists`, and
-     `--dialog new-playlist|rename|delete` for the playlist or folder the page shows.
+     `--dialog new-playlist|rename|delete` for the playlist or folder the page shows;
+     `--dialog remove-from-library` for the item the page shows (else the first album).
    Dark is the default; add `--light`, and `--rtl` for a right-to-left layout (a mirrored
    window, its strings still English). Sizes: the default (1100x760), `--size 400x700`, and
    `--size 360x640`, the narrowest supported. The script waits for the artwork to decode

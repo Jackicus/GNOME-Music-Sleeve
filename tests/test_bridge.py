@@ -900,6 +900,38 @@ class BridgeTest(unittest.TestCase):
         self.assertIn('HTTP 403', value['refused'])
 
     @scenario("""
+        mk.writeStatus = 204;
+        mk.writeBody = '';
+        const removed = await bridge.removeFromLibrary('songs', 'i.song1');
+        mk.writeStatus = 200;
+        mk.writeBody = JSON.stringify({data: [{id: 'l.alb1', type: 'library-albums'}]});
+        const there = await bridge.libraryHas('albums', 'l.alb1');
+        mk.writeStatus = 404;
+        mk.writeBody = '';
+        const gone = await bridge.libraryHas('albums', 'l.alb1');
+        let refused = null;
+        try { await bridge.removeFromLibrary('songs', 'i.song1'); } catch (error) {
+            refused = String(error);
+        }
+        mk.writeStatus = 500;
+        let failed = null;
+        try { await bridge.libraryHas('songs', 'i.song1'); } catch (error) {
+            failed = String(error);
+        }
+        return {removed, there, gone, refused, failed, calls: mk.calls};
+    """)
+    def test_removing_from_the_library(self, value):
+        self.assertEqual(value['removed'], {'ok': True})
+        self.assertEqual((value['there'], value['gone']), ({'has': True}, {'has': False}))
+        self.assertIn('HTTP 404', value['refused'])
+        self.assertIn('HTTP 500', value['failed'])
+        self.assertEqual(value['calls'][:3], [
+            ['request', '/v1/me/library/songs/i.song1', {'params': {}, 'method': 'DELETE'}],
+            ['request', '/v1/me/library/albums/l.alb1', {'params': {}, 'method': 'GET'}],
+            ['request', '/v1/me/library/albums/l.alb1', {'params': {}, 'method': 'GET'}],
+        ])
+
+    @scenario("""
         mk.writeStatus = 201;
         mk.writeBody = JSON.stringify({data: [{id: 'p.new1', type: 'library-playlists'}]});
         const created = await bridge.createPlaylist(

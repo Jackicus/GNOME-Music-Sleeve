@@ -116,7 +116,12 @@ them before changing either. What matters most:
 - After a library write (Add to Library) the app runs a **quick pass**,
   `app.start_sync(quick=True)`: the songs, the playlist listing and the shelves, keeping last
   time's playlist tracks, folders, videos and stations. It is what makes an added song appear
-  in Songs and Recently Added without a full pass (#192); it stamps no last-sync.
+  in Songs and Recently Added without a full pass (#192); it stamps no last-sync. After a
+  removal (Remove from Library) the quick pass also reads the videos and the tracks of the
+  playlists that held what went (`videos`, `tracks_of`), once Apple's read of the item is a
+  404; until a load no longer meets it, `Library.hide()` has every load leave it out
+  (`leave_out()`, on the parsed file in a thread), so a sync in between cannot bring it
+  back, and `unhide()` brings it back after a refusal.
 - A full pass reads a playlist's tracks again only when its listing's `lastModifiedDate` or
   `trackCount` differs from what the Item recorded when they were last read (`modified`, and
   its `trackCount`: `playlist_unchanged()`); kept tracks keep their stamp, so a pass that

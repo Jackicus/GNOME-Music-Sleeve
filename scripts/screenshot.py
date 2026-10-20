@@ -13,7 +13,8 @@
                           [--search TERM]
                           [--context-menu [--submenu NAME]]
                           [--preferences [general|engine]]
-                          [--dialog about|shortcuts|new-playlist|new-folder|rename|delete]
+                          [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
+                                    remove-from-library]
                           [--more-options] [--sidebar-menu KEY [--submenu NAME]]
                           [--drop-target KEY] [--scroll PX]
 
@@ -83,8 +84,9 @@ own window (a fixed-size window that is neither maximized nor tiled gets one), a
 shoots it as --preferences does; new-playlist, new-folder, rename and delete open the
 playlists' dialogs (win.item-new-playlist, win.item-new-folder, win.item-rename,
 win.item-delete) for the playlist or folder the page shows, else the library's first playlist
-of the user's (a new playlist or folder: in the folder shown, else at the top level). The
-demo writes nothing: the dialogs only show.
+of the user's (a new playlist or folder: in the folder shown, else at the top level);
+remove-from-library the confirmation of win.item-remove-from-library for the item the page
+shows, else the library's first album. The demo writes nothing: the dialogs only show.
 --more-options pops up the More Options menu of the page shown (an album's, a playlist's, a
 folder's) as a click on it would.
 --sidebar-menu KEY pops up the sidebar's context menu for KEY (playlist:ID, folder:ID,
@@ -154,8 +156,9 @@ parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
                     choices=['general', 'engine'],
                     help='open Preferences on PAGE and shoot the dialog')
 parser.add_argument('--dialog', choices=['about', 'shortcuts', 'new-playlist', 'new-folder',
-                                         'rename', 'delete'],
-                    help='open the About, Keyboard Shortcuts or a playlist dialog; shoot it')
+                                         'rename', 'delete', 'remove-from-library'],
+                    help='open the About, Keyboard Shortcuts, a playlist or the Remove from '
+                         'Library dialog; shoot it')
 parser.add_argument('--more-options', action='store_true',
                     help='pop up the More Options menu of the page shown')
 parser.add_argument('--sidebar-menu', metavar='KEY',
@@ -379,6 +382,17 @@ def open_playlist_dialog(window):
     window.activate_action(f'win.item-{args.dialog}', GLib.Variant('(ss)', target))
 
 
+def open_removal_dialog(window):
+    """--dialog remove-from-library: the confirmation, as the menu item asks it, for the
+    item the page shows, else the library's first album."""
+    item = window.shown_item() or (app.library.albums.get_item(0)
+                                   if app.library.albums.get_n_items() else None)
+    if item is None:
+        sys.exit('screenshot: nothing in the library to show the dialog for')
+    window.activate_action('win.item-remove-from-library',
+                           GLib.Variant('(ss)', (item.kind, item.id)))
+
+
 def open_more_options(window):
     """--more-options: the page's More Options menu, popped up."""
     page = window.navigation_view.get_visible_page()
@@ -450,6 +464,9 @@ def open_dialog(window):
     none is shown."""
     if args.dialog in ('new-playlist', 'new-folder', 'rename', 'delete'):
         open_playlist_dialog(window)
+        kind = Adw.AlertDialog
+    elif args.dialog == 'remove-from-library':
+        open_removal_dialog(window)
         kind = Adw.AlertDialog
     else:
         kind = {'about': Adw.AboutDialog, 'shortcuts': Adw.ShortcutsDialog}[args.dialog]

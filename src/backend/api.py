@@ -10,6 +10,8 @@ The standard library only; engine.py and actions.py use it.
     item_endpoint('album', id, 'gb')    # '/v1/catalog/gb/albums/<id>?include=tracks,artists'
     resource_type('song', 'i.1')        # 'library-song' (the singular: callers add the "s")
     track_type('song', 'i.1')           # 'library-songs': what a playlist takes it as
+    LIBRARY_ROUTES['video']             # 'music-videos': DELETE /v1/me/library/<that>/<id>
+    library_twin(answer)                # the library id a relate=library read answers
     is_deleted(resource)                # a deleted playlist or folder Apple still lists
     first_related_id(answer, 'artists') # an answer's first resource's first artist's id
     page_data(answer)                   # the page's resources: its `data` list's dicts
@@ -39,6 +41,20 @@ RESOURCE_TYPES = {
     'musicVideo': 'music-video',
     'music-video': 'music-video',
 }
+
+# What can be removed from the library, and the type each kind goes under in the web player's
+# requestDeleteFromLibrary, DELETE /v1/me/library/<type>/<library id>: the catalog type, not
+# the library-… one. The same types name a catalog read of the item's library twin
+# (library_twin_params).
+LIBRARY_ROUTES = {
+    'song': 'songs',
+    'album': 'albums',
+    'video': 'music-videos',
+    'musicVideo': 'music-videos',
+    'music-video': 'music-videos',
+    'playlist': 'playlists',
+}
+LIBRARY_TWIN_ENDPOINT = '/v1/catalog/{storefront}'
 
 # The New page: the editorial groupings behind music.apple.com's own (the request it makes,
 # less its field selections and `format[resources]=map`, which flattens the answer).
@@ -251,6 +267,29 @@ def track_type(kind, item_id):
     if base not in ('song', 'music-video') or item_id in (None, ''):
         return None
     return f'{"library-" if is_library_id(item_id) else ""}{base}s'
+
+
+def library_twin_params(kind, catalog_id):
+    """The query of LIBRARY_TWIN_ENDPOINT that answers a catalog item with its library twin
+    (relate=library), as the web player reads it before a removal: Apple answers a DELETE
+    by catalog id with a 500, so the library id is found first."""
+    route = LIBRARY_ROUTES[kind]
+    return {f'ids[{route}]': str(catalog_id), 'relate': 'library',
+            f'fields[{route}]': 'inLibrary', 'omit[resource]': 'autos'}
+
+
+def library_twin(answer):
+    """The library id in a library_twin_params() answer (its resource's
+    `relationships.library.data[0].id`), or None when the library holds no twin."""
+    for entry in page_data(answer):
+        relationships = entry.get('relationships')
+        library = relationships.get('library') if isinstance(relationships, dict) else None
+        data = library.get('data') if isinstance(library, dict) else None
+        for twin in data if isinstance(data, list) else []:
+            twin_id = twin.get('id') if isinstance(twin, dict) else None
+            if isinstance(twin_id, str) and is_library_id(twin_id):
+                return twin_id
+    return None
 
 
 def page_data(answer):
