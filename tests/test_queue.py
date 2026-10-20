@@ -3,11 +3,16 @@
 
 """widgets/queue.py: Up Next, the Player's queue from the entry playing on, follows the queue
 while it is open, whichever entry plays: entries added at the queue's end and a new queue
-reach the list; the entries autoplay added are a section of their own under its header; a
-row is the queue's entry at its place; Remove from Up Next (the menu, Delete) and Clear,
-and the Autoplay toggle. (The slice's start is tested in test_transport.py's
+reach the list; the entry playing, Playing Next and the entries autoplay added are sections
+of their own, the last two under their headers; a row is the queue's entry at its place,
+with its cover; Remove from Up Next (the menu, Delete) and Clear, and the Autoplay toggle;
+History, the entries before the one playing, most recent first; EntryArt, which finds each
+entry's cover once, for the rows bound. (The slice's start is tested in test_transport.py's
 QueueSliceTest.)"""
 
+import asyncio
+import os
+import tempfile
 import types
 import unittest
 
@@ -30,7 +35,7 @@ def entries(count, autoplay=()):
 
 
 class SectionBoundsTest(unittest.TestCase):
-    """section_bounds(): where Up Next's two parts begin."""
+    """section_bounds(): where Up Next's parts begin; section_at(): the part a row is in."""
 
     def test_bounds(self):
         from applemusic.widgets.queue import section_bounds
@@ -38,19 +43,36 @@ class SectionBoundsTest(unittest.TestCase):
         def queue(*flags):
             return [types.SimpleNamespace(autoplay=flag) for flag in flags]
 
-        self.assertEqual(section_bounds(queue(False, False, False), 1), (1, 3))
-        self.assertEqual(section_bounds(queue(False, False, True, True), 0), (0, 2))
-        # The entry playing autoplay's own: its part still starts with it.
-        self.assertEqual(section_bounds(queue(False, True, True), 1), (1, 2))
+        self.assertEqual(section_bounds(queue(False, False, False), 1), (1, 2, 3))
+        self.assertEqual(section_bounds(queue(False, False, True, True), 0), (0, 1, 2))
+        # The entry playing autoplay's own: Playing Next is empty, Autoplay follows it.
+        self.assertEqual(section_bounds(queue(False, True, True), 1), (1, 2, 2))
         # Autoplay's entries before the one playing are history, not Up Next.
-        self.assertEqual(section_bounds(queue(True, False, False), 1), (1, 3))
-        self.assertEqual(section_bounds(queue(True, False), -1), (0, 0))
-        self.assertEqual(section_bounds(queue(), -1), (0, 0))
+        self.assertEqual(section_bounds(queue(True, False, False), 1), (1, 2, 3))
+        # The last entry playing: nothing after it.
+        self.assertEqual(section_bounds(queue(False, False), 1), (1, 2, 2))
+        # Nothing playing: no part of its own for it.
+        self.assertEqual(section_bounds(queue(False, True), -1), (0, 0, 1))
+        self.assertEqual(section_bounds(queue(True, False), -1), (0, 0, 0))
+        self.assertEqual(section_bounds(queue(), -1), (0, 0, 0))
+
+    def test_section_at(self):
+        from applemusic.widgets.queue import section_at
+
+        # The entry playing, Playing Next, Autoplay.
+        self.assertEqual([section_at(p, 6, (1, 4)) for p in range(6)],
+                         [(0, 1), (1, 4), (1, 4), (1, 4), (4, 6), (4, 6)])
+        # An empty Playing Next: two parts.
+        self.assertEqual([section_at(p, 3, (1, 1)) for p in range(3)],
+                         [(0, 1), (1, 3), (1, 3)])
+        # Bounds at the start or past the end divide nothing.
+        self.assertEqual([section_at(p, 3, (0, 3)) for p in range(3)], [(0, 3)] * 3)
+        self.assertEqual(section_at(1, 3, ()), (0, 3))
 
 
 @requires_gtk
 class QueueSectionsTest(unittest.TestCase):
-    """QueueSections: a model's items in two sections, its changes passed through."""
+    """QueueSections: a model's items in sections, its changes passed through."""
 
     def test_sections(self):
         from gi.repository import Gio, Gtk
@@ -62,18 +84,173 @@ class QueueSectionsTest(unittest.TestCase):
         changed = []
         sections.connect('items-changed', lambda _m, *args: changed.append(args))
         sections.connect('sections-changed', lambda _m, *args: changed.append(('s', *args)))
-        sections.set_split(2)  # nothing to tell an empty list
+        sections.set_bounds(1, 3)  # nothing to tell an empty list
         for text in 'abcde':
             store.append(Gtk.StringObject.new(text))
         self.assertEqual(sections.get_n_items(), 5)
         self.assertEqual(sections.get_item(3).get_string(), 'd')
         self.assertEqual(changed, [(index, 0, 1) for index in range(5)])
-        self.assertEqual([sections.get_section(p) for p in (0, 1, 2, 4)],
-                         [(0, 2), (0, 2), (2, 5), (2, 5)])
-        sections.set_split(5)  # no autoplay entries: one section
+        self.assertEqual([sections.get_section(p) for p in (0, 1, 2, 3, 4)],
+                         [(0, 1), (1, 3), (1, 3), (3, 5), (3, 5)])
+        sections.set_bounds(1, 5)  # no autoplay entries: the entry playing, then the rest
         self.assertEqual(changed[-1], ('s', 0, 5))
-        self.assertEqual(sections.get_section(4), (0, 5))
+        self.assertEqual(sections.get_section(4), (1, 5))
         self.assertEqual(sections.get_section(7)[0], 5)  # past the end
+        changed.clear()
+        sections.set_bounds(1, 5)  # the same: nothing to tell
+        self.assertEqual(changed, [])
+
+
+class HistoryTest(unittest.TestCase):
+    """history_entries() and HistoryModel: what played before, most recent first, changed
+    by one splice of what differs."""
+
+    def test_entries_most_recent_first(self):
+        from gi.repository import Gio
+
+        from applemusic.player import NowPlaying
+        from applemusic.widgets.queue import history_entries
+
+        store = Gio.ListStore(item_type=NowPlaying)
+        for entry in entries(4):
+            store.append(NowPlaying(entry))
+        self.assertEqual([entry.title for entry in history_entries(store, 3)],
+                         ['Entry 2', 'Entry 1', 'Entry 0'])
+        self.assertEqual(history_entries(store, 0), [])
+        self.assertEqual(history_entries(store, -1), [])
+        self.assertEqual(len(history_entries(store, 9)), 4)  # past the end: all of it
+
+    def test_the_model_splices_only_what_differs(self):
+        from applemusic.player import NowPlaying
+        from applemusic.widgets.queue import HistoryModel
+
+        made = [NowPlaying(entry) for entry in entries(6)]
+        model = HistoryModel()
+        changed = []
+        model.connect('items-changed', lambda _m, *args: changed.append(args))
+        model.update(made[2::-1])            # Entry 3 plays: 2, 1, 0
+        self.assertEqual(changed, [(0, 0, 3)])
+        self.assertIs(model.get_item(0), made[2])
+        self.assertIsNone(model.get_item(3))
+        model.update(made[3::-1])            # the next entry plays: one row on top
+        self.assertEqual(changed[-1], (0, 0, 1))
+        model.update(made[3::-1])            # nothing new
+        self.assertEqual(len(changed), 2)
+        model.update(made[1::-1])            # back two: two rows off the top
+        self.assertEqual(changed[-1], (0, 2, 0))
+        other = [NowPlaying(entry) for entry in entries(2)]
+        model.update(other)                  # another queue: all of it
+        self.assertEqual(changed[-1], (0, 2, 2))
+        model.update(())
+        self.assertEqual(changed[-1], (0, 2, 0))
+        self.assertEqual(model.get_n_items(), 0)
+
+
+class EntryArtTest(unittest.TestCase):
+    """EntryArt: each URL's file found once, on disk or fetched, only for the rows bound."""
+
+    def setUp(self):
+        self.spawned = []
+        self.bound = set()
+        self.found = []
+        self.fetched = []
+        self.on_disk = {}
+
+    def make(self, fetch=True):
+        from applemusic.widgets.queue import EntryArt
+
+        async def fetch_one(url):
+            self.fetched.append(url)
+            return f'/fetched/{url}' if 'broken' not in url else None
+
+        def find(urls):
+            return {url: self.on_disk[url] for url in urls if url in self.on_disk}
+
+        art = EntryArt(self.spawned.append, lambda: self.bound,
+                       lambda url, path: self.found.append((url, path)),
+                       fetch=fetch_one if fetch else None, find=find)
+        self.addCleanup(self.remove_source, art)
+        return art
+
+    @staticmethod
+    def remove_source(art):
+        from gi.repository import GLib
+
+        if art._source:
+            GLib.source_remove(art._source)
+            art._source = 0
+
+    def look(self, art):
+        """The look EntryArt's timeout would make, and the coroutines it spawned run."""
+        self.remove_source(art)
+        art._look()
+        while self.spawned:
+            asyncio.run(self.spawned.pop(0))
+
+    def test_found_on_disk_or_fetched_once_for_the_rows_bound(self):
+        art = self.make()
+        self.on_disk['a'] = '/disk/a'
+        for url in ('a', 'b', 'gone', 'a', None, ''):
+            art.want(url)
+        self.assertEqual(art.paths('a'), ())
+        self.bound.update({'a', 'b'})  # 'gone' was scrolled past before the look
+        self.look(art)
+        self.assertEqual(sorted(self.found), [('a', '/disk/a'), ('b', '/fetched/b')])
+        self.assertEqual(self.fetched, ['b'])   # what is on disk is never fetched
+        self.assertEqual(art.paths('a'), ('/disk/a',))
+        self.assertEqual(art.paths('b'), ('/fetched/b',))
+        self.assertEqual(art.paths(None), ())
+        # Known now: never asked about again.
+        art.want('a')
+        art.want('b')
+        self.assertEqual(art.pending(), 0)
+        self.assertFalse(art._source)
+        # 'gone' is asked about again when a row bound wants it.
+        self.bound.add('gone')
+        art.want('gone')
+        self.look(art)
+        self.assertEqual(self.fetched, ['b', 'gone'])
+
+    def test_a_failed_fetch_is_not_tried_again(self):
+        art = self.make()
+        self.bound.add('broken')
+        art.want('broken')
+        self.look(art)
+        self.assertEqual(self.found, [])
+        self.assertEqual(art.paths('broken'), ())
+        art.want('broken')
+        self.assertEqual(art.pending(), 0)
+        self.assertEqual(self.fetched, ['broken'])
+
+    def test_without_fetching_only_what_is_on_disk(self):
+        art = self.make(fetch=False)   # the demo
+        self.on_disk['a'] = '/disk/a'
+        self.bound.update({'a', 'b'})
+        art.want('a')
+        art.want('b')
+        self.look(art)
+        self.assertEqual(self.found, [('a', '/disk/a')])
+        self.assertEqual(self.fetched, [])
+        art.want('b')
+        self.assertEqual(art.pending(), 0)
+
+    def test_the_candidates_and_the_first_on_disk(self):
+        from applemusic.backend import config
+        from applemusic.remote import remote_art_path
+        from applemusic.widgets.queue import art_candidates, find_art
+
+        url = 'https://example.invalid/art/{w}x{h}bb.jpg'
+        with tempfile.TemporaryDirectory() as cache:
+            candidates = art_candidates(url, cache)
+            self.assertEqual(len(candidates), 3)
+            self.assertEqual(candidates[0], remote_art_path(url, config.THUMB_SIZE))
+            self.assertEqual(candidates[2], remote_art_path(url, config.COVER_SIZE))
+            self.assertTrue(candidates[1].startswith(os.path.join(cache, 'thumb')))
+            self.assertEqual(art_candidates(None, cache), [])
+            on_disk = {candidates[1], candidates[2]}
+            self.assertEqual(find_art([url, 'https://example.invalid/none.jpg'],
+                                      lambda each: art_candidates(each, cache),
+                                      on_disk.__contains__), {url: candidates[1]})
 
 
 @requires_gtk
@@ -88,6 +265,11 @@ class QueueViewTest(unittest.TestCase):
         self.player.apply_queue({'index': 2, 'items': entries(5)})  # Entry 2 plays
         self.view = QueueView()
         self.view.set_player(self.player, self.app)
+        # The covers: never fetched here, and looked for at once (no asyncio loop runs).
+        self.view.art._fetch = None
+        self.view.art._find = lambda urls: {}
+        self.view.art._spawn = asyncio.run
+        self.addCleanup(EntryArtTest.remove_source, self.view.art)  # no look after the test
         self.window = Gtk.Window(default_width=400, default_height=600, child=self.view)
         self.window.present()
         self.addCleanup(self.window.destroy)
@@ -109,16 +291,18 @@ class QueueViewTest(unittest.TestCase):
 
     def bound(self):
         """{list position: QueueRow} of the rows bound."""
-        return {row.list_item.get_position(): row for row in self.view._rows}
+        return {row.list_item.get_position(): row for row in self.view._rows
+                if not row.history}
 
     def rows(self):
         """The titles of the rows the list view has bound, in order."""
         rows = self.bound()
         return [rows[position].title_label.get_label() for position in sorted(rows)]
 
-    def numbers(self):
+    def marked(self):
+        """Which bound rows show the play symbol over their cover, in order."""
         rows = self.bound()
-        return [rows[position].number_label.get_text() for position in sorted(rows)]
+        return [rows[position].playing_scrim.get_opacity() == 1 for position in sorted(rows)]
 
     def test_an_entry_added_at_the_end_reaches_the_list(self):
         from applemusic.player import NowPlaying
@@ -142,8 +326,8 @@ class QueueViewTest(unittest.TestCase):
         self.assertEqual(self.told, 4)
         self.assertTrue(wait_for(
             lambda: self.rows() == ['Entry 3', 'Entry 4', 'Entry 5', 'Entry 6']), self.rows())
-        self.assertTrue(wait_for(lambda: self.numbers() == ['1', '2', '3', '4']),
-                        self.numbers())
+        self.assertTrue(wait_for(lambda: self.marked() == [True, False, False, False]),
+                        self.marked())
 
     def test_a_shorter_queue_from_the_top(self):
         self.player.apply_queue({'index': 0, 'items': entries(2)})
@@ -190,8 +374,9 @@ class QueueViewTest(unittest.TestCase):
     def test_autoplay_entries_are_a_section_under_its_header(self):
         self.player.apply_queue({'index': 2, 'items': entries(7, autoplay=(5, 6))})
         self.assertEqual(self.model.get_n_items(), 5)
-        # The parts: the entry playing and what follows it, then autoplay's.
-        self.assertEqual(self.view.model.get_section(0), (0, 3))
+        # The parts: the entry playing, what follows it (Playing Next), then autoplay's.
+        self.assertEqual(self.view.model.get_section(0), (0, 1))
+        self.assertEqual(self.view.model.get_section(1), (1, 3))
         self.assertEqual(self.view.model.get_section(3), (3, 5))
         self.assertTrue(wait_for(lambda: len(self.rows()) == 5), self.rows())
         rows = self.bound()
@@ -202,18 +387,107 @@ class QueueViewTest(unittest.TestCase):
         self.assertEqual(rows[4].context_queue_entry, (6, 'i.queue0006'))
         self.view.list_view.emit('activate', 4)
         self.assertEqual(self.engine.calls[-1], ('queue_jump', 6))
-        # Play Later puts its entry before autoplay's: it joins the first part.
+        # The headers: none over the entry playing, then Playing Next's and Autoplay's.
+        # (Once the list has laid the headers out where their sections begin.)
+        self.assertTrue(wait_for(lambda: self.headers() == ['', 'Playing Next', 'Autoplay']),
+                        self.headers())
+        # Play Later puts its entry before autoplay's: it joins Playing Next.
         later = dict(TRACK, id='i.later', catalogId='2000000099', title='Later')
         items = entries(5) + [later] + entries(7, autoplay=(5, 6))[5:]
         self.player.apply_queue({'index': 2, 'items': items})
-        self.assertEqual(self.view.model.get_section(0), (0, 4))
+        self.assertEqual(self.view.model.get_section(1), (1, 4))
         self.assertEqual(self.view.model.get_section(4), (4, 6))
         # Autoplay turned off: its entries go, one event each, and its part with them.
         for count in (7, 6):
             self.player.apply_queue({'index': 2, 'items': items[:count]})
         self.assertEqual(self.model.get_n_items(), 4)
-        self.assertEqual(self.view.model.get_section(0), (0, 4))
+        self.assertEqual(self.view.model.get_section(1), (1, 4))
         self.assertTrue(wait_for(lambda: self.rows()[-1:] == ['Later']), self.rows())
+
+    def headers(self):
+        """The texts of the section headers shown, top to bottom ('' for a hidden one)."""
+        from gi.repository import Gtk
+
+        found = []
+
+        def walk(widget):
+            if (isinstance(widget, Gtk.Label) and widget.has_css_class('queue-section')
+                    and widget.get_parent().get_mapped()):
+                _ok, bounds = widget.compute_bounds(self.view.list_view)
+                found.append((bounds.get_y(), widget.get_label() if widget.get_visible()
+                              else ''))
+            child = widget.get_first_child()
+            while child is not None:
+                walk(child)
+                child = child.get_next_sibling()
+
+        found.clear()
+        walk(self.view.list_view)
+        return [text for _y, text in sorted(found)]
+
+    def test_rows_show_their_covers(self):
+        """Each row's cover from EntryArt: found once for the rows bound, then shown."""
+        url = 'https://example.invalid/{w}x{h}bb.jpg'
+        asked = []
+
+        def find(urls):
+            asked.extend(urls)
+            return {each: '/disk/cover.jpg' for each in urls if each == url}
+        self.view.art._find = find
+        self.player.apply_queue({'index': 0, 'items': [dict(entry, artUrl=url)
+                                                       for entry in entries(3)]})
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 3))
+        self.assertTrue(wait_for(lambda: self.view.art.paths(url) == ('/disk/cover.jpg',)))
+        self.assertTrue(wait_for(lambda: all(
+            row.cover.paths == ('/disk/cover.jpg',) for row in self.bound().values())))
+        self.assertEqual(asked.count(url), 1)   # one look for the URL, however many rows
+
+    def test_history_shows_what_played_before_most_recent_first(self):
+        view = self.view
+        self.assertFalse(view.history_shown)
+        self.assertEqual(view.history_model.get_n_items(), 0)   # nothing while hidden
+        view.history_button.set_active(True)
+        self.assertEqual(view.lists.get_visible_child_name(), 'history')
+        self.assertFalse(view.clear_button.get_visible())
+        self.assertFalse(view.autoplay_button.get_visible())
+        self.assertTrue(wait_for(lambda: self.history_rows() == ['Entry 1', 'Entry 0']),
+                        self.history_rows())
+        rows = self.bound_history()
+        self.assertIsNone(rows[0].context_queue_entry)   # no Remove in History
+        self.assertEqual(rows[0].context_item.id, 'i.queue0001')
+        view.history_view.emit('activate', 1)
+        self.assertEqual(self.engine.calls[-1], ('queue_jump', 0))
+        # The next entry plays: it joins History at the top, the rows there kept.
+        changed = []
+        view.history_model.connect('items-changed', lambda _m, *args: changed.append(args))
+        self.player.apply_queue({'index': 3, 'items': entries(5)})
+        self.assertEqual(changed, [(0, 0, 1)])
+        self.assertTrue(wait_for(
+            lambda: self.history_rows() == ['Entry 2', 'Entry 1', 'Entry 0']),
+            self.history_rows())
+        # A new queue from its top: nothing played yet.
+        self.player.apply_queue({'index': 0, 'items': entries(2)})
+        self.assertEqual(view.lists.get_visible_child_name(), 'no-history')
+        # Back to Up Next, and History follows nothing meanwhile.
+        view.history_button.set_active(False)
+        self.assertEqual(view.lists.get_visible_child_name(), 'up-next')
+        self.assertTrue(view.clear_button.get_visible())
+        self.player.apply_queue({'index': 1, 'items': entries(2)})
+        self.assertEqual(view.history_model.get_n_items(), 0)
+
+    def test_leaving_the_tab_leaves_history(self):
+        self.view.history_button.set_active(True)
+        self.view.set_active(True)
+        self.view.set_active(False)
+        self.assertFalse(self.view.history_shown)
+        self.assertEqual(self.view.lists.get_visible_child_name(), 'up-next')
+
+    def bound_history(self):
+        return {row.list_item.get_position(): row for row in self.view._rows if row.history}
+
+    def history_rows(self):
+        rows = self.bound_history()
+        return [rows[position].title_label.get_label() for position in sorted(rows)]
 
     def test_delete_removes_the_focused_row_and_the_focus_moves_on(self):
         from gi.repository import Gdk, Gio, GLib, Gtk

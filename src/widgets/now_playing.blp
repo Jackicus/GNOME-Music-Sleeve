@@ -11,7 +11,8 @@ using Adw 1;
 // seek) and the Lyrics / Up Next tabs (an inline view switcher over a view stack whose pages
 // now_playing.py builds). `wide` (the window's 900sp breakpoint) puts the two side by side;
 // `compact` (600sp) shrinks the artwork; `short` (the window's height breakpoints) puts a
-// small cover beside the titles so the tabs keep their room.
+// small cover beside the titles so the tabs keep their room. Under it all, the artwork's
+// tint (an AppleMusicArtworkBackdrop: now_playing.py shows the item's).
 template $AppleMusicNowPlayingSheet: Adw.Bin {
   accessible-role: group;
 
@@ -23,315 +24,323 @@ template $AppleMusicNowPlayingSheet: Adw.Bin {
     "now-playing",
   ]
 
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      show-title: false;
-      show-start-title-buttons: false;
-      show-end-title-buttons: false;
+  // Under everything, the item's artwork as a faint tint (widgets/backdrop.py).
+  child: Overlay overlay {
+    child: $AppleMusicArtworkBackdrop backdrop {
+      tint: true;
+    };
 
-      [start]
-      Button close_button {
-        icon-name: "go-down-symbolic";
-        tooltip-text: _("Close");
-        clicked => $on_close_clicked();
-      }
+    [overlay]
+    Adw.ToolbarView toolbar {
+      [top]
+      Adw.HeaderBar {
+        show-title: false;
+        show-start-title-buttons: false;
+        show-end-title-buttons: false;
 
-      // The item playing's menu (Go to Album, Go to Artist, Add to Playlist…), made as it
-      // opens (now_playing.py).
-      [end]
-      MenuButton more_button {
-        icon-name: "view-more-symbolic";
-        tooltip-text: _("More Options");
-        sensitive: false;
-        valign: center;
-
-        accessibility {
-          label: _("More Options");
+        [start]
+        Button close_button {
+          icon-name: "go-down-symbolic";
+          tooltip-text: _("Close");
+          clicked => $on_close_clicked();
         }
 
-        styles [
-          "flat",
-        ]
-      }
+        // The item playing's menu (Go to Album, Go to Artist, Add to Playlist…), made as it
+        // opens (now_playing.py).
+        [end]
+        MenuButton more_button {
+          icon-name: "view-more-symbolic";
+          tooltip-text: _("More Options");
+          sensitive: false;
+          valign: center;
 
-      // Whether the item playing is loved: a click loves or unloves it (widgets/transport.py).
-      [end]
-      ToggleButton heart_button {
-        icon-name: "heart-outline-symbolic";
-        tooltip-text: _("Favourite");
-        sensitive: false;
-        valign: center;
+          accessibility {
+            label: _("More Options");
+          }
 
-        accessibility {
-          label: _("Favourite");
+          styles [
+            "flat",
+          ]
         }
 
-        styles [
-          "flat",
-          "heart-button",
-        ]
-      }
+        // Whether the item playing is loved: a click loves or unloves it (widgets/transport.py).
+        [end]
+        ToggleButton heart_button {
+          icon-name: "heart-outline-symbolic";
+          tooltip-text: _("Favourite");
+          sensitive: false;
+          valign: center;
 
-      [end]
-      ScaleButton volume_button {
-        icons: [
-          "audio-volume-muted-symbolic",
-          "audio-volume-high-symbolic",
-          "audio-volume-low-symbolic",
-          "audio-volume-medium-symbolic",
-        ];
-        adjustment: Adjustment volume_adjustment {
-          lower: 0;
-          upper: 1;
-          step-increment: 0.05;
-          page-increment: 0.1;
-          value: 1;
-        };
-        tooltip-text: _("Volume");
-        sensitive: false;
-        valign: center;
+          accessibility {
+            label: _("Favourite");
+          }
 
-        styles [
-          "flat",
-        ]
-      }
-
-      // Show Translations and Show Pronunciations, shown while the lyrics have either: its
-      // menu holds those they have (now_playing.py).
-      // The full-screen player (window.py's win.fullscreen-player, F11).
-      [end]
-      Button fullscreen_button {
-        icon-name: "view-fullscreen-symbolic";
-        tooltip-text: _("Fullscreen");
-        action-name: "win.fullscreen-player";
-        valign: center;
-
-        styles [
-          "flat",
-        ]
-      }
-
-      [end]
-      MenuButton lyrics_button {
-        icon-name: "translate-symbolic";
-        tooltip-text: _("Translation and Pronunciation");
-        visible: false;
-        valign: center;
-
-        accessibility {
-          label: _("Translation and Pronunciation");
+          styles [
+            "flat",
+            "heart-button",
+          ]
         }
 
-        styles [
-          "flat",
-        ]
+        [end]
+        ScaleButton volume_button {
+          icons: [
+            "audio-volume-muted-symbolic",
+            "audio-volume-high-symbolic",
+            "audio-volume-low-symbolic",
+            "audio-volume-medium-symbolic",
+          ];
+          adjustment: Adjustment volume_adjustment {
+            lower: 0;
+            upper: 1;
+            step-increment: 0.05;
+            page-increment: 0.1;
+            value: 1;
+          };
+          tooltip-text: _("Volume");
+          sensitive: false;
+          valign: center;
+
+          styles [
+            "flat",
+          ]
+        }
+
+        // Show Translations and Show Pronunciations, shown while the lyrics have either: its
+        // menu holds those they have (now_playing.py).
+        // The full-screen player (window.py's win.fullscreen-player, F11).
+        [end]
+        Button fullscreen_button {
+          icon-name: "view-fullscreen-symbolic";
+          tooltip-text: _("Fullscreen");
+          action-name: "win.fullscreen-player";
+          valign: center;
+
+          styles [
+            "flat",
+          ]
+        }
+
+        [end]
+        MenuButton lyrics_button {
+          icon-name: "translate-symbolic";
+          tooltip-text: _("Translation and Pronunciation");
+          visible: false;
+          valign: center;
+
+          accessibility {
+            label: _("Translation and Pronunciation");
+          }
+
+          styles [
+            "flat",
+          ]
+        }
       }
-    }
 
-    // Toasts while the sheet is open (it is modal: the window's overlay is under it).
-    content: Adw.ToastOverlay toast_overlay {
-      child: Adw.Clamp {
-        maximum-size: 900;
-        tightening-threshold: 900;
+      // Toasts while the sheet is open (it is modal: the window's overlay is under it).
+      content: Adw.ToastOverlay toast_overlay {
+        child: Adw.Clamp {
+          maximum-size: 900;
+          tightening-threshold: 900;
 
-        child: Box layout {
-          orientation: vertical;
-          spacing: 18;
-          margin-start: 24;
-          margin-end: 24;
-          margin-bottom: 18;
-
-          Box player_column {
+          child: Box layout {
             orientation: vertical;
             spacing: 18;
-            halign: center;
-            valign: center;
+            margin-start: 24;
+            margin-end: 24;
+            margin-bottom: 18;
 
-            // The artwork over the titles, or beside them when the window is short.
-            Box item_box {
+            Box player_column {
               orientation: vertical;
               spacing: 18;
               halign: center;
+              valign: center;
 
-              $AppleMusicCover cover {
-                size: 320;
+              // The artwork over the titles, or beside them when the window is short.
+              Box item_box {
+                orientation: vertical;
+                spacing: 18;
                 halign: center;
 
-                styles [
-                  "large",
-                ]
-              }
-
-              Box titles_box {
-                orientation: vertical;
-                spacing: 4;
-                valign: center;
-
-                Label title_label {
-                  label: _("Not Playing");
-                  justify: center;
-                  wrap: true;
-                  wrap-mode: word_char;
-                  lines: 2;
-                  ellipsize: end;
-                  max-width-chars: 32;
+                $AppleMusicCover cover {
+                  size: 320;
+                  halign: center;
 
                   styles [
-                    "title-2",
+                    "large",
                   ]
                 }
 
-                Label subtitle_label {
-                  justify: center;
-                  wrap: true;
-                  wrap-mode: word_char;
-                  lines: 2;
-                  ellipsize: end;
-                  max-width-chars: 40;
-                  visible: false;
+                Box titles_box {
+                  orientation: vertical;
+                  spacing: 4;
+                  valign: center;
+
+                  Label title_label {
+                    label: _("Not Playing");
+                    justify: center;
+                    wrap: true;
+                    wrap-mode: word_char;
+                    lines: 2;
+                    ellipsize: end;
+                    max-width-chars: 32;
+
+                    styles [
+                      "title-2",
+                    ]
+                  }
+
+                  Label subtitle_label {
+                    justify: center;
+                    wrap: true;
+                    wrap-mode: word_char;
+                    lines: 2;
+                    ellipsize: end;
+                    max-width-chars: 40;
+                    visible: false;
+
+                    styles [
+                      "dimmed",
+                    ]
+                  }
+                }
+              }
+
+              Box seek_box {
+                spacing: 6;
+                sensitive: false;
+
+                Label elapsed_label {
+                  label: "0:00";
+                  xalign: 1;
+                  width-chars: 5;
+                  valign: center;
 
                   styles [
+                    "numeric",
+                    "caption",
+                    "dimmed",
+                  ]
+                }
+
+                Scale seek_scale {
+                  hexpand: true;
+                  valign: center;
+                  draw-value: false;
+                  adjustment: Adjustment seek_adjustment {
+                    lower: 0;
+                    upper: 1;
+                    step-increment: 5;
+                    page-increment: 30;
+                  };
+
+                  accessibility {
+                    label: _("Position");
+                  }
+                }
+
+                Label remaining_label {
+                  label: "-0:00";
+                  xalign: 0;
+                  width-chars: 6;
+                  valign: center;
+
+                  styles [
+                    "numeric",
+                    "caption",
                     "dimmed",
                   ]
                 }
               }
-            }
 
-            Box seek_box {
-              spacing: 6;
-              sensitive: false;
+              Box transport_box {
+                spacing: 12;
+                halign: center;
 
-              Label elapsed_label {
-                label: "0:00";
-                xalign: 1;
-                width-chars: 5;
-                valign: center;
+                ToggleButton shuffle_button {
+                  icon-name: "media-playlist-shuffle-symbolic";
+                  tooltip-text: _("Shuffle");
+                  sensitive: false;
+                  valign: center;
 
-                styles [
-                  "numeric",
-                  "caption",
-                  "dimmed",
-                ]
-              }
+                  styles [
+                    "flat",
+                    "circular",
+                  ]
+                }
 
-              Scale seek_scale {
-                hexpand: true;
-                valign: center;
-                draw-value: false;
-                adjustment: Adjustment seek_adjustment {
-                  lower: 0;
-                  upper: 1;
-                  step-increment: 5;
-                  page-increment: 30;
-                };
+                Button {
+                  icon-name: "media-skip-backward-symbolic";
+                  tooltip-text: _("Previous");
+                  action-name: "app.previous";
+                  valign: center;
 
-                accessibility {
-                  label: _("Position");
+                  styles [
+                    "flat",
+                    "circular",
+                    "skip-button",
+                  ]
+                }
+
+                Button play_button {
+                  icon-name: "transport-play-symbolic";
+                  tooltip-text: _("Play");
+                  action-name: "app.play-pause";
+                  valign: center;
+
+                  styles [
+                    "circular",
+                    "suggested-action",
+                    "play-button",
+                  ]
+                }
+
+                Button {
+                  icon-name: "media-skip-forward-symbolic";
+                  tooltip-text: _("Next");
+                  action-name: "app.next";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "circular",
+                    "skip-button",
+                  ]
+                }
+
+                ToggleButton repeat_button {
+                  icon-name: "media-playlist-repeat-symbolic";
+                  tooltip-text: _("Repeat");
+                  sensitive: false;
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "circular",
+                  ]
                 }
               }
-
-              Label remaining_label {
-                label: "-0:00";
-                xalign: 0;
-                width-chars: 6;
-                valign: center;
-
-                styles [
-                  "numeric",
-                  "caption",
-                  "dimmed",
-                ]
-              }
             }
 
-            Box transport_box {
+            Box tabs_column {
+              orientation: vertical;
               spacing: 12;
-              halign: center;
-
-              ToggleButton shuffle_button {
-                icon-name: "media-playlist-shuffle-symbolic";
-                tooltip-text: _("Shuffle");
-                sensitive: false;
-                valign: center;
-
-                styles [
-                  "flat",
-                  "circular",
-                ]
-              }
-
-              Button {
-                icon-name: "media-skip-backward-symbolic";
-                tooltip-text: _("Previous");
-                action-name: "app.previous";
-                valign: center;
-
-                styles [
-                  "flat",
-                  "circular",
-                  "skip-button",
-                ]
-              }
-
-              Button play_button {
-                icon-name: "transport-play-symbolic";
-                tooltip-text: _("Play");
-                action-name: "app.play-pause";
-                valign: center;
-
-                styles [
-                  "circular",
-                  "suggested-action",
-                  "play-button",
-                ]
-              }
-
-              Button {
-                icon-name: "media-skip-forward-symbolic";
-                tooltip-text: _("Next");
-                action-name: "app.next";
-                valign: center;
-
-                styles [
-                  "flat",
-                  "circular",
-                  "skip-button",
-                ]
-              }
-
-              ToggleButton repeat_button {
-                icon-name: "media-playlist-repeat-symbolic";
-                tooltip-text: _("Repeat");
-                sensitive: false;
-                valign: center;
-
-                styles [
-                  "flat",
-                  "circular",
-                ]
-              }
-            }
-          }
-
-          Box tabs_column {
-            orientation: vertical;
-            spacing: 12;
-            hexpand: true;
-            vexpand: true;
-
-            Adw.InlineViewSwitcher {
-              stack: tab_stack;
-              halign: center;
-              homogeneous: true;
-            }
-
-            Adw.ViewStack tab_stack {
+              hexpand: true;
               vexpand: true;
+
+              Adw.InlineViewSwitcher {
+                stack: tab_stack;
+                halign: center;
+                homogeneous: true;
+              }
+
+              Adw.ViewStack tab_stack {
+                vexpand: true;
+              }
             }
-          }
+          };
         };
       };
-    };
+    }
   };
 }

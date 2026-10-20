@@ -39,7 +39,11 @@ paths:
   [lyrics|localized|syllable|queue]` opens the sheet on an invented item (the lyrics of
   `harness.LYRICS_FIXTURES`); `--playing` puts the item on the Player with the sheet closed
   (the bar's playing state), `--restored` as the last session restored at launch (paused,
-  `harness.invented_session()`); all need `--demo`, and take `--position SECONDS`. `--signed-in [NAME]`,
+  `harness.invented_session()`); all need `--demo`, and take `--position SECONDS`. Each
+  album's entries carry an artwork URL of their own (`harness.demo_art_url()`, its files
+  copied where `remote.fetch_remote` keeps them: nothing is fetched); `--album N` plays
+  another album, `--history` puts entries played already before the item (Up Next's
+  History). `--signed-in [NAME]`,
   `--banner sign-in|expired` and `--sidebar` (the narrow layout's sidebar) show those states;
   `--fullscreen-player [lyrics|localized|syllable|none]` enters the full-screen player on
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;

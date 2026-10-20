@@ -22,10 +22,12 @@ as the view is allocated: it measures and allocates its child itself, so its Adw
 manager is dropped): the artwork beside the lyrics, or in one column (narrow, or portrait) a
 small cover beside the titles over the lyrics, the controls at the bottom.
 
-The background is a FullscreenBackdrop: the artwork shrunk, blurred and stretched over the
-view (artwork.load_field(), in a thread) under a black scrim deep enough for the text over it
-to read at WCAG AA (artwork.scrim_alpha()), drawn by a widget of its own so that the lyrics'
-redraws never draw it again; a new item's field crossfades in (at once with animations off).
+The background is an ArtworkBackdrop (widgets/backdrop.py, shared with the Now Playing
+sheet's tint): the artwork shrunk, blurred and stretched over the view (artwork.field_for(),
+in a thread, kept for the last few covers) under a black scrim deep enough for the text over
+it to read at WCAG AA (artwork.scrim_alpha()), drawn by a widget of its own so that the
+lyrics' redraws never draw it again; a new item's field crossfades in (at once with
+animations off).
 The view carries libadwaita's `osd` class: white text and controls styled for an on-screen
 display, as GNOME Videos' are, dark whatever the colour scheme.
 
@@ -39,87 +41,28 @@ shown and playing. Escape leaves (win.fullscreen-player), after the focus widget
 popover have had it.
 """
 
-import asyncio
 import logging
 import time
 
-from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 from .. import fullscreen
 from ..actions import now_playing_track
 from ..backend import config
 from ..remote import fetch_remote
 from . import artwork
+from .backdrop import ArtworkBackdrop  # noqa: F401  registers it for the template
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .now_playing import lyrics_menu
 from .transport import (HeartControl, ModeControl, PlayButton, SeekControl, TrackTitles,
                         VolumeControl)
-from .util import weak_method
 
 log = logging.getLogger(__name__)
 
-FADE_MS = 400               # a new item's field crossfading in
 # The artwork fetched larger than the cover file (COVER_SIZE) when it is drawn larger than
 # that in device pixels (a HiDPI screen).
 LARGE_ART_SIZE = 1200
-# Under the field (and alone, without artwork): libadwaita's dark window colour, so the white
-# text reads with no artwork.
-BASE = Gdk.RGBA()
-BASE.parse('#222226')
 LAYOUT_TITLE = {False: 'title-1', True: 'title-3'}   # one column with lyrics: beside the cover
-
-
-class FullscreenBackdrop(Gtk.Widget):
-    """The full-screen player's background: an artwork.Field (the artwork blurred) stretched
-    over the widget under its scrim, on BASE; show_field() crossfades to another."""
-
-    __gtype_name__ = 'AppleMusicFullscreenBackdrop'
-
-    def __init__(self, **kwargs):
-        super().__init__(can_target=False, accessible_role=Gtk.AccessibleRole.PRESENTATION,
-                         **kwargs)
-        self.field = None
-        self._previous = None
-        self._mix = 1.0
-        self._animation = Adw.TimedAnimation(
-            widget=self, value_from=0.0, value_to=1.0, duration=FADE_MS,
-            easing=Adw.Easing.EASE_OUT_CUBIC,
-            target=Adw.CallbackAnimationTarget.new(weak_method(self._on_fade)))
-
-    def show_field(self, field):
-        """Show `field` (an artwork.Field, or None for none), crossfading from the one
-        shown."""
-        if field is self.field:
-            return
-        self._previous, self.field = self.field, field
-        self._animation.reset()
-        self._animation.play()
-
-    def _on_fade(self, value):
-        self._mix = value
-        if value >= 1.0:
-            self._previous = None
-        self.queue_draw()
-
-    def do_snapshot(self, snapshot):
-        width, height = self.get_width(), self.get_height()
-        bounds = Graphene.Rect().init(0, 0, width, height)
-        snapshot.append_color(BASE, bounds)
-        side = max(width, height)
-        square = Graphene.Rect().init((width - side) / 2, (height - side) / 2, side, side)
-        layers = ((self._previous, 1.0 - self._mix), (self.field, self._mix))
-        scrim = sum(field.scrim * weight for field, weight in layers if field is not None)
-        for field, opacity in ((self._previous, 1.0), (self.field, self._mix)):
-            if field is None or opacity <= 0:
-                continue
-            snapshot.push_opacity(opacity)
-            snapshot.append_scaled_texture(field.texture, Gsk.ScalingFilter.LINEAR, square)
-            snapshot.pop()
-        if scrim > 0:
-            colour = Gdk.RGBA()
-            colour.red = colour.green = colour.blue = 0.0
-            colour.alpha = scrim
-            snapshot.append_color(colour, bounds)
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/fullscreen_player.ui')
@@ -293,7 +236,7 @@ class FullscreenPlayer(Adw.Bin):
             self.backdrop.show_field(None)
             return
         self.cover.set_paths(path)
-        field = await asyncio.to_thread(artwork.load_field, path)
+        field = await artwork.field_for(path)
         if url != self._item_url:
             return
         self.backdrop.show_field(field)

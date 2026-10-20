@@ -51,7 +51,7 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   `do_map`/`do_unmap`, `follow_scale(self)`; `attach()` only for a widget class that is not
   ours: signal handlers cost 0.6 KB a widget), which asks in an idle after the frame, lets go on
   unmap, falls through its paths, shows another size of one meanwhile, and always hands the
-  widget a texture or `empty()`. Tile, Cover (and so SongTitle, TrackRow, HeroTile),
+  widget a texture or `empty()`. Tile, Cover (and so SongTitle, TrackRow, HeroTile, QueueRow),
   CategoryTile, the artist portrait and the artist banner use one; a new artwork widget
   does too.
 - A model change that removes the items a `Gtk.ListView` or `ColumnView` shows destroys those

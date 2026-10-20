@@ -210,7 +210,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   that no assistive technology has asked about yet.
 - Grids and lists have `tab-behavior: item`. Dialog buttons have mnemonics (`_Label`,
   `use-underline: true`).
-- Text on an item's colour reaches WCAG AA (`artwork.band_colour()`); dim text in markup follows
+- Text on an item's colour reaches WCAG AA (`artwork.band_colour()`), and so does the Now
+  Playing sheet's text over its artwork tint (`artwork.tint_alpha()`); dim text in markup follows
   the high-contrast setting; style.css may use `@media (prefers-contrast: more)`.
 
 ## Actions and shortcuts

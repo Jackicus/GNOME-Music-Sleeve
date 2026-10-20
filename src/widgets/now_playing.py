@@ -19,6 +19,12 @@ full-screen player, fullscreen.py), which borrows the LyricsView out of the Lyri
 button sets the bottom sheet's `open` false; Escape and a swipe down are the bottom sheet's
 own; Go to Album and Go to Artist close the sheet too (window.open_item).
 
+Its background is the item's artwork, blurred, as a faint tint (an ArtworkBackdrop:
+widgets/backdrop.py, the full-screen player's backdrop drawn faintly), as deep as its text
+keeps reading at WCAG AA in the colour scheme shown (artwork.tint_alpha(); none in high
+contrast), crossfading from one song's to the next. Like the full-screen player it does
+nothing for the tint while out of sight: the item's field is made as the sheet shows it.
+
 The tabs from outside: `shown-tab` is the tab in sight ('lyrics' or 'queue': the sheet open
 and not covered, '' otherwise) and show_tab() switches to one. TabActions, the window's
 win.show-lyrics and win.show-queue (the player bar's Lyrics and Up Next toggle buttons,
@@ -41,6 +47,9 @@ from gettext import gettext as _
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from ..actions import now_playing_track
+from ..backend import config
+from ..remote import fetch_remote
+from .backdrop import ArtworkBackdrop  # noqa: F401  registers it for the template
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .lyrics import LyricsView
 from .queue import QueueView
@@ -62,6 +71,9 @@ class NowPlayingSheet(Adw.Bin):
 
     __gtype_name__ = 'AppleMusicNowPlayingSheet'
 
+    overlay = Gtk.Template.Child()
+    backdrop = Gtk.Template.Child()
+    toolbar = Gtk.Template.Child()
     toast_overlay = Gtk.Template.Child()
     close_button = Gtk.Template.Child()
     more_button = Gtk.Template.Child()
@@ -90,7 +102,11 @@ class NowPlayingSheet(Adw.Bin):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.set_layout_manager(None)  # do_measure and do_size_allocate below
+        self.overlay.set_measure_overlay(self.toolbar, True)
         self._player = None
+        self._app = None
+        self._backdrop_url = None   # the artwork URL whose tint is shown or being made
+        self._backdrop_task = None
         self._bottom_sheet = None
         self._open = False
         self._wide = False
@@ -214,6 +230,7 @@ class NowPlayingSheet(Adw.Bin):
         """Follow `player`; `app` spawns the commands and reports their failures;
         `bottom_sheet` is the Adw.BottomSheet this is the sheet of."""
         self._player = player
+        self._app = app
         self._bottom_sheet = bottom_sheet
         self._play.attach(player)
         self._titles.attach(player)
@@ -225,11 +242,40 @@ class NowPlayingSheet(Adw.Bin):
         self.lyrics_view.set_player(player, app)
         self.queue_view.set_player(player, app)
         bottom_sheet.connect('notify::open', lambda *_: self._on_open_changed())
-        player.connect('notify::track', lambda *_: self._update_more())
+        player.connect('notify::track', lambda *_: self._on_track())
         player.connect('notify::lyrics', lambda *_: self._update_lyrics_button())
         self._on_open_changed()
         self._update_more()
         self._update_lyrics_button()
+
+    def _on_track(self):
+        self._update_more()
+        if self._shown_tab:
+            self._update_backdrop()
+
+    def _update_backdrop(self):
+        """The tint of the item playing's artwork, made only while the sheet is in sight
+        (caught up with as it opens), and only when the artwork differs from the one
+        shown."""
+        track = self._player.track if self._player is not None else None
+        url = track.artwork_url if track is not None else None
+        if url == self._backdrop_url:
+            return
+        self._backdrop_url = url
+        if self._backdrop_task is not None:
+            self._backdrop_task.cancel()
+            self._backdrop_task = None
+        if not url or self._app is None:
+            self.backdrop.show_field(None)
+            return
+        self._backdrop_task = self._app.spawn(self._fetch_backdrop(url))
+
+    async def _fetch_backdrop(self, url):
+        """The cover file (the one the sheet's cover shows: one download for both), then its
+        field."""
+        path = await fetch_remote(url, config.COVER_SIZE)
+        if url == self._backdrop_url:
+            await self.backdrop.show_artwork(path)
 
     def _playing_track(self):
         """The item playing as the Track its menu is for, or None (actions)."""
@@ -281,6 +327,8 @@ class NowPlayingSheet(Adw.Bin):
         if shown_tab != self._shown_tab:
             self._shown_tab = shown_tab
             self.notify('shown-tab')
+        if seen:
+            self._update_backdrop()
         if is_open and not self._open:
             # The bottom sheet puts the focus on the sheet's first focusable widget (the seek
             # slider); the play button is where the keyboard wants to start. After the

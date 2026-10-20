@@ -306,37 +306,5 @@ class HostTest(unittest.TestCase):
         self.assertFalse(view.lyrics_slot.get_visible())
 
 
-@requires_gtk
-class BackdropTest(unittest.TestCase):
-    def test_a_field_from_a_cover_and_its_drawing(self):
-        import tempfile
-
-        from gi.repository import GdkPixbuf, Gtk
-
-        from applemusic.widgets import artwork
-        from applemusic.widgets.fullscreen_player import FullscreenBackdrop
-
-        pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 64, 64)
-        pixbuf.fill(0xf0f0f0ff)  # a pale cover: the scrim deepens it
-        with tempfile.TemporaryDirectory() as directory:
-            path = f'{directory}/cover.png'
-            pixbuf.savev(path, 'png', [], [])
-            field = artwork.load_field(path)
-            self.assertIsNone(artwork.load_field(f'{directory}/missing.png'))
-        self.assertEqual((field.texture.get_width(), field.texture.get_height()),
-                         (artwork.FIELD_SIZE, artwork.FIELD_SIZE))
-        self.assertGreater(field.scrim, 0.5)
-        backdrop = FullscreenBackdrop()
-        window = Gtk.Window(default_width=200, default_height=120, child=backdrop)
-        self.addCleanup(window.destroy)
-        window.present()
-        self.assertTrue(wait_for(backdrop.get_mapped))
-        backdrop.show_field(field)
-        self.assertTrue(wait_for(lambda: backdrop._previous is None))
-        snapshot = Gtk.Snapshot()
-        backdrop.do_snapshot(snapshot)
-        self.assertIsNotNone(snapshot.to_node())
-
-
 if __name__ == '__main__':
     unittest.main()

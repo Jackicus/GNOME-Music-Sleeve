@@ -10,7 +10,7 @@
                           [--now-playing [lyrics|localized|syllable|queue]]
                           [--fullscreen-player [lyrics|localized|syllable|none]]
                           [--idle] [--position SECONDS] [--playing] [--restored]
-                          [--autoplay]
+                          [--autoplay] [--history] [--album N]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
                            [--see-all KEY]]
                           [--context-menu [KIND] [--submenu NAME]]
@@ -65,7 +65,11 @@ lyrics-translations=true show them), and "syllable" with lyrics_syllable.json's,
 invented word-timed duet (syllables, background vocals, two singers and a group, a long
 intro and a long break between verses) with pronunciations and translations too.
 --autoplay makes the queue the album's first four tracks and five of the next album's
-as entries autoplay added, which Up Next shows under its Autoplay header.
+as entries autoplay added, which Up Next shows under its Autoplay header. --history
+puts two tracks of each of three other albums before the item in the queue, played
+already, and with --now-playing queue shows them: Up Next's History. --album N plays
+the demo's Nth album (0, the first, by default): another cover, the sheet's tint
+another colour. Each album's entries have their own artwork.
 With --demo only.
 --position SECONDS puts the invented item that many seconds in (65 by default: a
 line of each lyrics fixture is current), say mid-word, or inside a break.
@@ -168,6 +172,12 @@ parser.add_argument('--restored', action='store_true',
                     help='the invented item as the last session restored at launch, paused')
 parser.add_argument('--autoplay', action='store_true',
                     help='with --now-playing: entries autoplay added at the end of the queue')
+parser.add_argument('--history', action='store_true',
+                    help='with --now-playing or --fullscreen-player: entries played before '
+                         'the item in the queue (with --now-playing queue: History shown)')
+parser.add_argument('--album', metavar='N', type=int, default=0,
+                    help='with --now-playing, --playing or --fullscreen-player: the demo '
+                         "library's Nth album playing (0: the first)")
 parser.add_argument('--search', metavar='TERM',
                     help='the Search page in Your Library mode with TERM typed')
 parser.add_argument('--search-in', choices=['music', 'library'], default='library',
@@ -216,6 +226,10 @@ if args.drop_target == 'player-bar' and not args.playing:
     parser.error('--drop-target player-bar needs --playing')
 if args.autoplay and not args.now_playing:
     parser.error('--autoplay needs --now-playing')
+if args.history and not (args.now_playing or args.fullscreen_player):
+    parser.error('--history needs --now-playing or --fullscreen-player')
+if args.album and not (args.now_playing or args.playing or args.fullscreen_player):
+    parser.error('--album needs --now-playing, --playing or --fullscreen-player')
 if args.position is not None and not (args.now_playing or args.playing or args.restored
                                       or args.fullscreen_player):
     parser.error('--position needs --now-playing, --playing, --restored or '
@@ -297,7 +311,8 @@ def open_now_playing(window):
     fixture = chosen if chosen in harness.LYRICS_FIXTURES else 'lyrics'
     app.player.apply(harness.invented_playing_state(app, lyrics=chosen != 'none',
                                                     fixture=fixture, position=args.position,
-                                                    autoplay=args.autoplay))
+                                                    autoplay=args.autoplay, album=args.album,
+                                                    history=args.history))
     if args.fullscreen_player:
         window.activate_action('win.fullscreen-player', None)
         if args.idle:
@@ -306,6 +321,8 @@ def open_now_playing(window):
         window.now_playing.tab_stack.set_visible_child_name(
             'queue' if args.now_playing == 'queue' else 'lyrics')
         window.bottom_sheet.set_open(True)
+        if args.history and args.now_playing == 'queue':
+            window.now_playing.queue_view.history_button.set_active(True)
 
 
 def search_library(window):

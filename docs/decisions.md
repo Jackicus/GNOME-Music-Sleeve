@@ -390,6 +390,30 @@ changes, change it here, with the date. The plan they came from is in
   on MusicKit at every engine start and after the page reloads; the entries it adds are
   listed under an Autoplay heading. While a session is restored (#342), the edits change it
   alone, and it is queued as its songs from then on.
+- **Up Next with covers and History; Now Playing tinted by the artwork** (2026-10-20,
+  #353). As Apple's queues do, each Up Next row shows its entry's cover in place of a
+  number (the entry playing has the track rows' play symbol over its cover), under a
+  Playing Next heading for what follows the entry playing. A row's cover comes from one
+  lookup per artwork URL (`queue.EntryArt`): the file on disk (the thumbnail it fetched
+  before, the library's own thumbnail of that artwork, the cover the bar fetched), else the
+  thumbnail fetched, a few at a time, only for the rows still bound a moment after they
+  were (a fast scroll through a long queue asks for nothing it passed), and never in the
+  demo; bind only reads what is known. History is a toggle above the list that shows, in
+  place of Up Next, the queue's entries before the one playing (MusicKit's queue keeps
+  them), the most recent first, which play again on Enter or a double click, as Apple's
+  History button does on macOS; not a section above Up Next, which would put the past
+  between the tab and what plays next, scroll the entry playing away from the top, and make
+  the Up Next list's sections (#332) move with every song. Remove from History is not
+  offered: MusicKit's played entries are not the account's history. The toggle goes off
+  when the tab is left, so Up Next is what the tab opens on. Now Playing's background is
+  the full-screen player's backdrop drawn faintly (one widget, `widgets/backdrop.py`, and
+  one field per cover, made in a thread and shared), as Apple's apps colour their player
+  from the artwork: the field over the sheet's own colour at the most opacity, up to 50%,
+  at which the sheet's text still reads at WCAG AA on every part of it in the colour scheme
+  shown (`artwork.tint_alpha()`; its dimmed labels at 70%, as the full-screen player's, so
+  that a light scheme leaves room for any tint at all), the plain background when none
+  will do and in high contrast; a new song's tint crossfades in, at once with animations
+  off. The sheet makes it only while it is in sight.
 - **The last session, shown paused, handed over at Play** (2026-10-20, #342). As Apple's own
   apps do, the app opens with the last item in the bar, paused where it stopped, and its
   queue. It is kept in the cache (`session.json`: library ids and titles, so not the

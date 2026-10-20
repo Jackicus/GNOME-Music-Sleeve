@@ -119,7 +119,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> do the same, from anywhere but a text
   field). Lyrics is greyed out for a song Apple Music has no lyrics for. In a narrow window
   the bar leaves them out to keep the song's title readable: click the bar and pick the tab.
-- Now Playing's **Up Next** lists the song playing and what follows it. Right-click a song
+- Now Playing takes on the colours of the song's artwork, faintly, and changes with each
+  song. It stays light enough (or dark enough) for its text to read: with a cover that would
+  not allow that, or with high contrast on, it keeps its plain background.
+- Now Playing's **Up Next** lists the song playing, then what you queued (**Playing Next**),
+  each with its cover. The **History** button (the clock at the top left of the list) shows
+  the songs played before it in this queue instead, the most recent first: double-click one
+  (or press <kbd>Enter</kbd>) to play it again. Leaving the tab goes back to Up Next.
+  Right-click a song
   there (or press and hold it, or press <kbd>Menu</kbd>) and choose **Remove from Up Next**,
   or select it and press <kbd>Delete</kbd>. **Clear**, above the list, takes out everything
   after the song playing; **Undo** on the message that follows puts it back. **Autoplay**
