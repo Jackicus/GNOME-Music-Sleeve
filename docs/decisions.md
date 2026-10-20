@@ -226,6 +226,17 @@ changes, change it here, with the date. The plan they came from is in
   with no web API: Apple Music Sing, lyrics share cards, social profiles and friends,
   collaborative playlists, making smart playlists and a playlist's artwork upload. The user
   guide's Known limitations says so in a user's words.
+- **What MusicKit's queue and live radio allow** (2026-10-20, #332, #343, checked live;
+  `src/backend/README.md` has the calls). MusicKit says what it allows now in
+  `mk.capabilities`, and the app follows it rather than work around it. A station's queue
+  cannot be edited (`canEditPlaybackQueue` false, seen on a song-seeded station; follow the
+  capability for the other kinds): no Remove, Clear or reorder in Up Next while one plays. A live station cannot be
+  paused, sought or skipped: MusicKit ignores the seek and the pause and only `stop()` ends
+  it, so its controls are Stop and LIVE, not Pause and a slider; its reported duration is
+  the stream's window, not a length to show. Autoplay is the page's own switch, not the
+  account's: the web player keeps it in its page's local storage for the account's token, so
+  an Autoplay toggle in the app is the app's setting and does not follow the account to
+  Apple's other players.
 
 ## Engine
 
