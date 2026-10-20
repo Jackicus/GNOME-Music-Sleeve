@@ -18,7 +18,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 from ..library import Item
 from ..widgets import context_menu
 from ..widgets.labels import bind_label, unbind_label
-from ..widgets.tile import ARTIST, COVER, VIDEO, Tile
+from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
 from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak
 from . import SignInOffer, app, mark_bound
 
@@ -44,9 +44,9 @@ def _chain(*sorters):
 # view's child (3 px a side). Gtk.GridView divides its width by it, and a tile sits at the
 # start of its column, so the first column's cover is on the grid's margin (grid.blp: 21 px,
 # the page's 24 less the child's padding) whatever the width. A grid of music videos has
-# columns of their 16:9 tiles (tile.VIDEO_WIDTH, 284 px) instead.
+# columns of its 16:9 tiles (tile.GRID_VIDEO_SIZE, 240 px wide) instead.
 COLUMN_WIDTH = 166
-VIDEO_COLUMN_WIDTH = 290
+VIDEO_COLUMN_WIDTH = 246
 
 
 def columns_for(width, column_width=COLUMN_WIDTH):
@@ -340,7 +340,7 @@ class GridPage(Adw.NavigationPage):
     # The tiles.
 
     def _on_setup(self, _factory, list_item):
-        list_item.set_child(Tile(shape=self._shape))
+        list_item.set_child(Tile(shape=self._shape, video_size=GRID_VIDEO_SIZE))
 
     def _on_bind(self, _factory, list_item):
         item = list_item.get_item()

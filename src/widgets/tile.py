@@ -14,10 +14,15 @@ PLACEHOLDER = ('music-note-symbolic', 48)
 FOLDER = ('folder-symbolic', 72)
 
 # The cover's edge in logical pixels (tile.blp): the texture asked for is this times the
-# scale factor. A music video's frame is as tall and 16:9 wide, so a shelf that mixes videos
-# with albums keeps one height (and its artwork, decoded by its shorter edge, the same size).
+# scale factor. A music video's frame in a shelf is as tall and 16:9 wide, so a shelf that
+# mixes videos with albums keeps one height (and its artwork, decoded by its shorter edge,
+# the same size). A grid of videos (pages/grid.py) has smaller frames, GRID_VIDEO_SIZE, so
+# three columns fit beside the sidebar at the default window width, two at middle widths and
+# one in a 360 px window, each cell left with little room after its tile.
 ART_SIZE = 160
 VIDEO_WIDTH = 284
+VIDEO_SIZE = (VIDEO_WIDTH, ART_SIZE)
+GRID_VIDEO_SIZE = (240, 135)
 
 # The tile's shapes: a square cover, an artist's round portrait, a music video's 16:9 frame.
 COVER = 'cover'
@@ -45,7 +50,8 @@ def cut_short(inscription):
 class Tile(Gtk.Box):
     """A 160 px square cover over a title and a dim subtitle, one line each; in the ARTIST
     shape, a round portrait over a centred name; in the VIDEO shape, a 284×160 frame, a play
-    symbol over it under the pointer or the keyboard focus. With year=True the line under the
+    symbol over it under the pointer or the keyboard focus (`video_size`, (width, height):
+    VIDEO_SIZE, or a video grid's GRID_VIDEO_SIZE). With year=True the line under the
     title is the year (an artist's own albums, where the artist goes without saying). A line
     too long for the tile ends in an ellipsis, and the tooltip shows the whole of both; the
     list item's accessible label has them too (labels.bind_label()).
@@ -72,16 +78,19 @@ class Tile(Gtk.Box):
     title_label = Gtk.Template.Child()
     subtitle_label = Gtk.Template.Child()
 
-    def __init__(self, shape=COVER, year=False, **kwargs):
+    def __init__(self, shape=COVER, year=False, video_size=VIDEO_SIZE, **kwargs):
         super().__init__(**kwargs)
         self._year = year
+        self._video_size = video_size
         self._shape = COVER
         self._folder = False
         self._item = None
         self._handler = None  # the bound Item's notify handler
         self.avatar = None  # the artist shape's portrait, made when first wanted
         self.play_symbol = None  # the video shape's play symbol, made when first wanted
-        self._slot = artwork.ArtworkSlot(self._set_art, ART_SIZE)
+        # Decoded by the shorter edge, so at the frame's height for a video (no taller than
+        # a cover: a grid's tile is only ever a video, a shelf's as tall as a cover).
+        self._slot = artwork.ArtworkSlot(self._set_art, min(ART_SIZE, video_size[1]))
         self._slot.follow_scale(self)
         # A handler on the tile itself, which holds no reference back through C.
         self.connect('query-tooltip', self._on_query_tooltip)
@@ -126,7 +135,7 @@ class Tile(Gtk.Box):
             self.avatar.set_visible(artist)
         if self.play_symbol is not None:
             self.play_symbol.set_visible(video)
-        self.art_box.set_size_request(VIDEO_WIDTH if video else ART_SIZE, ART_SIZE)
+        self.art_box.set_size_request(*(self._video_size if video else (ART_SIZE, ART_SIZE)))
         # An artist's name, centred under the portrait, has no line under it.
         self.title_label.set_xalign(0.5 if artist else 0)
         self.subtitle_label.set_visible(not artist)

@@ -59,8 +59,8 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   splices), so the list keeps its scroll position.
 - A `Gtk.GridView` keeps about 30 rows of `max-columns` tiles alive however few it shows: set
   `max-columns` to what fits (`grid.columns_for()`; `COLUMN_WIDTH` and `VIDEO_COLUMN_WIDTH`
-  are a tile, `tile.ART_SIZE` or `tile.VIDEO_WIDTH`, plus Adwaita's padding, so change them
-  together).
+  are a tile, `tile.ART_SIZE` or a video grid's `tile.GRID_VIDEO_SIZE`, plus Adwaita's
+  padding, so change them together).
 
 ## Sorting and filtering
 

@@ -651,6 +651,19 @@ class TileShapeTest(WidgetTestCase):
         self.assertEqual(self.loader.requests[-1],
                          ('/cache/thumb/mv1.jpg', ART_SIZE * self.scale(video)))
 
+    def test_a_video_grid_tile_is_smaller(self):
+        from applemusic.widgets.tile import GRID_VIDEO_SIZE, Tile
+
+        tile = self.show(Tile(shape='video', video_size=GRID_VIDEO_SIZE))
+        tile.bind(Item({'id': 'i.mv1', 'kind': 'video', 'title': 'Invented Video',
+                        'thumb': '/cache/thumb/mv1.jpg'}))
+        self.assertTrue(wait_for(lambda: tile.cover.get_width() > 0))
+        self.assertEqual((tile.cover.get_width(), tile.cover.get_height()), GRID_VIDEO_SIZE)
+        pump()
+        # Decoded at the frame's height, its shorter edge.
+        self.assertEqual(self.loader.requests[-1],
+                         ('/cache/thumb/mv1.jpg', GRID_VIDEO_SIZE[1] * self.scale(tile)))
+
     def test_a_shelf_tile_switches_shape(self):
         from applemusic.widgets.tile import ART_SIZE, Tile
 

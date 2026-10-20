@@ -121,8 +121,10 @@ changes, change it here, with the date. The plan they came from is in
   rests, so binding a tile costs nothing for it) and in the tile's accessible name. Two
   lines of title, as before, showed more of a long one, but a row's subtitles then sat at
   two heights. A music video's tile is a 284×160 frame, as tall as a cover, so a shelf that
-  mixes videos with albums keeps one height and its titles one line; a grid of them (Music
-  Videos, a videos shelf's See All) has columns of that width, one in a 360 px window. Its
+  mixes videos with albums keeps one height and its titles one line. A grid of them (Music
+  Videos, a videos shelf's See All) has smaller 240×135 frames, so three columns fit beside
+  the sidebar at the default window width (two of 284 left about 100 px empty after each),
+  two at middle widths and one in a 360 px window. Its
   play symbol shows under the pointer and with the keyboard focus, not always, as on Apple
   Music's tiles (#354).
 - **Show Translations and Show Pronunciations stay independent** (2026-10-19), as Apple's
