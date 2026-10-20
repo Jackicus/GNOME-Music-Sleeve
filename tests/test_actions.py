@@ -13,8 +13,8 @@ from gi.repository import Gio, GLib, GObject
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.actions import (ItemActions, build_menu, fill_sidebar_menu, is_apple_music_url,
-                                is_shareable, library_target, mnemonic_escaped,
+from applemusic.actions import (ItemActions, build_menu, can_play, fill_sidebar_menu,
+                                is_apple_music_url, is_shareable, library_target, mnemonic_escaped,
                                 now_playing_track, playlist_song, playlist_track, queue_target,
                                 rating_target, share_url, web_url)
 from applemusic import actions as actions_module
@@ -366,6 +366,23 @@ class MenuTest(unittest.TestCase):
         self.assertEqual(rating_target(CATALOG_VIDEO), ('video', '1000000012'))
         self.assertEqual(web_url(VIDEO_TRACK, 'gb'),
                          'https://music.apple.com/gb/music-video/1000000011')
+
+    def test_a_music_video_is_played_and_queued_as_one(self):
+        # Its menu offers Play, Play Next and Play Later as a song's does, queued as
+        # MusicKit's musicVideo (by the catalog id when it has one), never as a song.
+        library_video = Item({'id': 'i.mv0001', 'kind': 'video', 'title': 'Lantern (Video)',
+                              'catalogId': '1000000014',
+                              'play': {'kind': 'musicVideo', 'id': 'i.mv0001'}})
+        for obj in (CATALOG_VIDEO, library_video, VIDEO_TRACK):
+            with self.subTest(title=obj.title):
+                self.assertTrue(can_play(obj))
+                self.assertEqual(names(build_menu(obj))[:3], [
+                    'win.item-play', 'win.item-play-next', 'win.item-play-later'])
+        self.assertEqual(queue_target(CATALOG_VIDEO), ('musicVideo', '1000000012'))
+        self.assertEqual(queue_target(library_video), ('musicVideo', '1000000014'))
+        self.assertEqual(queue_target(VIDEO_TRACK), ('musicVideo', '1000000011'))
+        self.assertEqual(queue_target(LIBRARY_TRACK), ('song', '1000000001'))
+        self.assertFalse(can_play(Item({'id': '1000000015', 'kind': 'video', 'play': {}})))
 
     def test_web_urls(self):
         self.assertEqual(web_url(CATALOG_ALBUM), CATALOG_ALBUM.url)
@@ -813,6 +830,24 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.toasts, ['“Harbour Lights” will play next',
                                            '“Tidewater” will play later'])
         self.assertEqual(self.app.player.ensured, 0)  # the Player's commands do that
+
+    async def test_a_music_video_plays_and_queues_as_one(self):
+        self.actions.menu_for(CATALOG_VIDEO)
+        self.actions.menu_for(VIDEO_TRACK)
+        await self.run_action('item-play', 'video', '1000000012')
+        await self.run_action('item-play-next', 'video', '1000000012')
+        await self.run_action('item-play-later', 'song', 'i.vid1')
+        self.assertEqual(self.window.played,
+                         [({'kind': 'musicVideo', 'id': '1000000012'}, None)])
+        queued = [call for call in self.app.engine.calls if call[0] != 'rating']
+        self.assertEqual(queued, [('play_next', 'musicVideo', '1000000012'),
+                                  ('play_later', 'musicVideo', '1000000011')])
+        # A video track with no group to play from plays alone, as a video.
+        alone = Track({'id': '1000000016', 'title': 'Lantern (Live)', 'type': 'music-videos'})
+        self.actions.menu_for(alone)
+        await self.run_action('item-play', 'song', '1000000016')
+        self.assertEqual(self.window.played[-1],
+                         ({'kind': 'musicVideo', 'id': '1000000016'}, None))
 
     async def test_play(self):
         self.actions.menu_for(LIBRARY_TRACK)
