@@ -1158,6 +1158,7 @@ async def walkthrough(window):
           not any(each.get_visible() for each in popover) and window.bottom_sheet.get_open()
           and inside(window.get_focus(), sheet.queue_view.list_view),
           describe(window.get_focus()))
+    await up_next_move(window, queue_view)
     await up_next_remove(window, queue_view)
     jumps = []
     undo = watch('queue_jump', jumps)
@@ -1788,6 +1789,55 @@ async def up_next_remove(window, queue_view):
     await key(window, 'Delete', 0.4)
     check('Delete on the entry playing removes nothing', len(removed) == 1, removed)
     del player.remove_from_queue
+
+
+async def up_next_move(window, queue_view):
+    """Up Next's moves: the next entry's menu offers Move Down (not Move Up: it is the first
+    after the one playing), Alt+Down moves it one place with the focus on it and says where
+    it went, Alt+Up moves it back, Alt+Up again moves nothing, nor does Alt+Down on the entry
+    playing (the Player's own move_in_queue(), MusicKit's answer stood in for: the demo has
+    no engine). Starts and leaves the focus on the first row."""
+    player, engine = app.player, app.engine
+    await key(window, 'Down')
+    await key(window, 'Menu', 0.6)
+    shown = harness.popovers(queue_view)
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check("the next entry's menu offers Move Down, not Move Up",
+          'Move _Down' in labels and '_Move Up' not in labels, labels)
+    await key(window, 'Escape', 0.4)
+    await until(lambda: focused_entry(queue_view) is not None)
+    moves = []
+
+    async def queue_move(index, to_index, entry_id, edit=None):
+        moves.append((index, to_index))
+    engine.queue_move = queue_move
+    said = []
+    window.announce = lambda text, _priority: said.append(text)
+    entry = focused_entry(queue_view)
+    count = player.queue.get_n_items() - player.queue_index - 1
+    await key(window, '<alt>Down', 0.3)
+    await until(lambda: entry is not None and entry.index == player.queue_index + 2
+                and focused_entry(queue_view) is entry and bool(said))
+    check('Alt+Down moves the focused entry one place down, the focus with it',
+          entry is not None and entry.index == player.queue_index + 2
+          and focused_entry(queue_view) is entry,
+          (moves, describe(window.get_focus())))
+    title = entry.title if entry is not None else ''
+    check('and says where it went',
+          said[-1:] == [f'“{title}” moved to position 2 of {count} in Up Next'], said)
+    await key(window, '<alt>Up', 0.3)
+    await until(lambda: entry is not None and entry.index == player.queue_index + 1
+                and focused_entry(queue_view) is entry)
+    check('Alt+Up moves it back up', entry is not None and entry.index == player.queue_index + 1
+          and focused_entry(queue_view) is entry, (moves, describe(window.get_focus())))
+    await key(window, '<alt>Up', 0.4)
+    check('Alt+Up on the first entry after the one playing moves nothing', len(moves) == 2,
+          moves)
+    await key(window, 'Up')
+    await key(window, '<alt>Down', 0.4)
+    check('Alt+Down on the entry playing moves nothing', len(moves) == 2, moves)
+    del window.announce
+    del engine.queue_move
 
 
 async def up_next_clear(window, queue_view):

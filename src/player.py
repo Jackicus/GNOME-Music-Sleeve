@@ -27,6 +27,8 @@ the playback commands as thin coroutines over the engine.
                                                # is in it (-1: nowhere, or nothing playing)
     player.queue_editable                      # MusicKit allows edits of the queue (not a
                                                # station's)
+    player.moving                              # the entry a move takes out and puts back,
+                                               # while it does
     player.autoplay, player.can_autoplay       # MusicKit's autoplay on, and allowed now
     player.lyrics, player.lyrics_loading       # a lyrics.Lyrics for the track (None: none, or
                                                # not there yet), and whether one is being read
@@ -38,6 +40,8 @@ the playback commands as thin coroutines over the engine.
     await player.queue_jump(3)  # play the queue's entry at index 3
     await player.remove_from_queue(4, 'i.abc')   # an entry after the one playing, by index
                                                  # and id (Up Next's Remove)
+    await player.move_in_queue(4, 2, 'i.abc')    # that entry to index 2, within its section
+                                                 # (Move Up, Move Down, a drop: move_range())
     await player.clear_up_next()   # everything after the entry playing; undo_clear() puts
     await player.undo_clear()      # it back while that entry still plays
     await player.apply_autoplay()  # the `autoplay` setting to MusicKit (at every engine start)
@@ -82,12 +86,17 @@ again stops it), and when the engine goes down or the page is reloaded.
 A queue snapshot (queueItemsDidChange, queue()) is applied as the fewest changes to the store
 that make it the snapshot (apply_queue: the entries before and after the change kept as they
 are, renumbered), so a list over it keeps its rows. Up Next's edits (remove_from_queue,
-clear_up_next, undo_clear) change the store at once and then ask the engine; the
-queueItemsDidChange that follows is then the store as it is, and changes nothing. One that
+move_in_queue, clear_up_next, undo_clear) change the store at once and then ask the engine;
+the queueItemsDidChange that follows is then the store as it is, and changes nothing. One that
 fails reads the queue again (a queue changed meanwhile, 'queue-changed', only that). Each
 names its entry by index and id, after the entry playing, and only while MusicKit allows edits
-(queue_editable, from the snapshot's `editable`: not on a station). While a session is
-restored they change it locally (it is then its songs' queue, no longer its source's).
+(queue_editable, from the snapshot's `editable`: not on a station); a move stays within its
+section of Up Next (what the user queued, or what autoplay added: move_range()). Removes and
+moves are numbered, and a snapshot names the last edit it holds (`edit`): while some are out
+(the store ahead of MusicKit, as in a burst of Alt+Down or Delete), a snapshot has the edits
+it does not hold yet replayed onto it before it is compared with the store (_rebased), so it
+finds the store as it is rather than taking it back a step. While a session is restored they
+change it locally (it is then its songs' queue, no longer its source's).
 Autoplay is the app's `autoplay` setting, set on MusicKit (apply_autoplay) as the engine comes
 up, after a bridgeReset (the page set its own as it loaded) and when the setting changes;
 `autoplay` is what MusicKit has, from the snapshots and autoplayEnabledDidChange, and an entry
@@ -341,6 +350,9 @@ class Player(GObject.Object):
     can_go_previous = GObject.Property(type=bool, default=True)
     can_shuffle = GObject.Property(type=bool, default=True)
     can_repeat = GObject.Property(type=bool, default=True)
+    # The entry a move is taking out and putting back, while it does (notified as it starts
+    # and ends): a view of the queue keeps its place, and its focus on that entry.
+    moving = GObject.Property(type=NowPlaying, default=None)
 
     def __init__(self, app):
         """`app` gives the engine (`app.engine`), the settings (`signed-in`), `toast()`,
@@ -368,6 +380,8 @@ class Player(GObject.Object):
         self._volume_wanted = None  # a volume set while restored with the engine down
         self._restoring = None  # the session's play request until answered: {paused, done}
         self._cleared = None  # what the last Clear took, for its Undo ({id, entries, local})
+        self._edit_count = 0  # the number of the last remove or move sent to the engine
+        self._edits_out = []  # [(number, replay)] of those the engine has not answered yet
         self._capabilities = {}  # what MusicKit last said it allows (CAPABILITIES), if anything
         self._engine.connect('event', self._on_event)
         self._engine.connect('notify::state', self._on_engine_state)
@@ -489,8 +503,12 @@ class Player(GObject.Object):
         snapshot's, or the track's place when it says -1."""
         items = snapshot.get('items') if isinstance(snapshot, dict) else None
         items = items if isinstance(items, list) else []
-        wanted = [dict(item, index=position) for position, item in enumerate(items)
-                  if isinstance(item, dict)]
+        wanted = [item for item in items if isinstance(item, dict)]
+        if isinstance(snapshot, dict):
+            wanted = self._rebased(wanted, snapshot.get('edit'))
+        else:
+            self._edits_out.clear()
+        wanted = [dict(item, index=position) for position, item in enumerate(wanted)]
         self._splice_queue(wanted)
         self._take_capabilities(snapshot if isinstance(snapshot, dict) else {})
         self._follow_source(wanted)
@@ -499,6 +517,25 @@ class Player(GObject.Object):
         if index < 0 and self.track is not None:
             index = self._index_of(self.track)
         self._set_queue_index(index)
+
+    def _rebased(self, items, edit):
+        """A snapshot's items (Track dicts) with the edits out that it does not hold yet
+        (those numbered after its `edit`, every one when it names none) replayed onto them,
+        in order; an edit that no longer applies (its entry is not where it named it) is
+        forgotten. The edits it holds are forgotten too: their answers are only late."""
+        if isinstance(edit, int) and not isinstance(edit, bool):
+            self._edits_out = [(number, replay) for number, replay in self._edits_out
+                               if number > edit]
+        kept = []
+        for number, replay in self._edits_out:
+            replayed = replay(items)
+            if replayed is None:
+                log.debug("Up Next: edit %d no longer applies to MusicKit's queue", number)
+                continue
+            items = replayed
+            kept.append((number, replay))
+        self._edits_out = kept
+        return items
 
     def _splice_queue(self, wanted):
         """Make the store hold `wanted` (entries' data, each with its index) with one
@@ -524,9 +561,11 @@ class Player(GObject.Object):
         if removed != len(added):
             self._renumber(start + len(added))
 
-    def _renumber(self, start):
-        """The entries from `start` on get the index of their place (after a splice)."""
-        for position in range(start, self.queue.get_n_items()):
+    def _renumber(self, start, end=None):
+        """The entries from `start` on (up to `end`, exclusive) get the index of their place
+        (after a splice)."""
+        count = self.queue.get_n_items()
+        for position in range(start, count if end is None else min(end, count)):
             entry = self.queue.get_item(position)
             if entry.index != position:
                 entry.raw['index'] = position
@@ -1427,6 +1466,21 @@ class Player(GObject.Object):
             return False
         return entry_id is None or self.queue.get_item(index).id == entry_id
 
+    def move_range(self, index):
+        """(first, last): the queue indices the entry at `index` may be moved to, its section
+        of Up Next (move_range()), or None when it cannot move (can_edit())."""
+        if not self.can_edit(index):
+            return None
+        return move_range(self.queue, self.queue_index, index)
+
+    def can_move(self, index, to_index, entry_id=None):
+        """Whether the queue's entry at `index` (the entry `entry_id`, when given) may be
+        moved to `to_index`, another place in its section."""
+        if not self.can_edit(index, entry_id):
+            return False
+        bounds = self.move_range(index)
+        return bounds is not None and to_index != index and bounds[0] <= to_index <= bounds[1]
+
     def can_clear(self):
         """Whether anything follows the entry playing that Clear could take out."""
         return (self.queue_editable and self.queue_index >= 0
@@ -1438,19 +1492,39 @@ class Player(GObject.Object):
             self._source = None
             self._source_ids = None
 
-    async def _send_edit(self, command):
+    def _edit_out(self, replay):
+        """An edit about to be sent: its number, kept with `replay` (a function of a
+        snapshot's items answering them edited, or None when it does not apply) until the
+        engine answers (_rebased)."""
+        self._edit_count += 1
+        self._edits_out.append((self._edit_count, replay))
+        return self._edit_count
+
+    async def _send_edit(self, command, number=None):
         """An edit made in the store, sent to the engine: on a failure the queue is read
         again (MusicKit's is what shows); 'queue-changed' (the entry named is not there now)
-        only that, else the error is raised. Whether the engine took it."""
+        only that, else the error is raised. Whether the engine took it. Its answer (or
+        failure) ends edit `number`'s replays: MusicKit's queue holds it from then on, or
+        never will."""
         try:
             await command
         except EngineError as error:
+            self._edit_answered(number)
             self._app.spawn(self.refresh_queue())
             if error.code == 'queue-changed':
                 log.info('Up Next: %s', error)
                 return False
             raise
+        except BaseException:
+            self._edit_answered(number)
+            raise
+        self._edit_answered(number)
         return True
+
+    def _edit_answered(self, number):
+        if number is not None:
+            self._edits_out = [(out, replay) for out, replay in self._edits_out
+                               if out != number]
 
     async def remove_from_queue(self, index, entry_id):
         """Take the queue's entry at `index` out, when it is the entry `entry_id` and comes
@@ -1466,7 +1540,38 @@ class Player(GObject.Object):
         if self.restored:
             self._queue_edited()
             return True
-        return await self._send_edit(self._engine.queue_remove(index, entry_id))
+        number = self._edit_out(lambda items: removed_entry(items, index, entry_id))
+        return await self._send_edit(self._engine.queue_remove(index, entry_id, edit=number),
+                                     number)
+
+    async def move_in_queue(self, index, to_index, entry_id):
+        """Move the queue's entry at `index`, when it is the entry `entry_id` and comes
+        after the entry playing, to `to_index` (its index once moved), within its section of
+        Up Next (can_move(): what the user queued among those, autoplay's among autoplay's):
+        in the store at once, the entry taken out and the same object put back at its new
+        place (`moving` names it meanwhile; one splice of the whole span between the two
+        places made a list over it take 131 ms to move an entry 500 places, the pair 25 ms:
+        docs/notes.md), then in MusicKit's queue (engine.queue_move), whose
+        queueItemsDidChange then finds the store as it is.
+        While a session is restored, in it alone. Whether it moved."""
+        index, to_index = int(index), int(to_index)
+        if not self.can_move(index, to_index, entry_id):
+            log.debug('Up Next: entry %d (%s) cannot move to %d', index, entry_id, to_index)
+            return False
+        entry = self.queue.get_item(index)
+        self.moving = entry
+        try:
+            self.queue.remove(index)
+            self.queue.insert(to_index, entry)
+        finally:
+            self.moving = None
+        self._renumber(min(index, to_index), max(index, to_index) + 1)
+        if self.restored:
+            self._queue_edited()
+            return True
+        number = self._edit_out(lambda items: moved_entry(items, index, to_index, entry_id))
+        return await self._send_edit(
+            self._engine.queue_move(index, to_index, entry_id, edit=number), number)
 
     async def clear_up_next(self):
         """Take everything after the entry playing out (Up Next's Clear): out of the store at
@@ -1602,6 +1707,44 @@ class Player(GObject.Object):
         """The repeat mode after this one in the cycle none → one → all → none."""
         position = REPEAT_MODES.index(self.repeat) if self.repeat in REPEAT_MODES else 0
         return REPEAT_MODES[(position + 1) % len(REPEAT_MODES)]
+
+
+def move_range(entries, queue_index, index):
+    """(first, last): the indices in `entries` (a sequence of anything with an `autoplay`
+    attribute: NowPlaying, or a Gio.ListStore of them) the entry at `index` may be moved to,
+    its section of Up Next: what the user queued (from the entry after the one at
+    `queue_index` to the last before the first entry autoplay added) or what autoplay added
+    (from that entry to the end), as queue.section_bounds() divides them and the bridge's
+    queueMove allows. None when the entry is not after the one playing."""
+    count = len(entries)
+    if queue_index < 0 or not queue_index < index < count:
+        return None
+    split = count
+    for position in range(queue_index + 1, count):
+        if entries[position].autoplay:
+            split = position
+            break
+    return (queue_index + 1, split - 1) if index < split else (split, count - 1)
+
+
+def removed_entry(items, index, entry_id):
+    """`items` (Track dicts) without the entry at `index`, when it is `entry_id`; None when
+    it is not (a remove replayed onto a snapshot: Player._rebased)."""
+    if not 0 <= index < len(items) or items[index].get('id') != entry_id:
+        return None
+    return items[:index] + items[index + 1:]
+
+
+def moved_entry(items, index, to_index, entry_id):
+    """`items` (Track dicts) with the entry at `index`, when it is `entry_id`, moved to
+    `to_index`; None when it is not there, or there is no such place (a move replayed onto
+    a snapshot: Player._rebased)."""
+    if (not 0 <= index < len(items) or not 0 <= to_index < len(items)
+            or items[index].get('id') != entry_id):
+        return None
+    moved = list(items)
+    moved.insert(to_index, moved.pop(index))
+    return moved
 
 
 def undone_tail(cleared, now):

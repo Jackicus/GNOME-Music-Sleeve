@@ -176,6 +176,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   **Autoplay** (and which you can remove like any other). It is this app's setting: Apple's
   other players keep their own. While a station plays, its queue is Apple's and cannot be
   changed, and Autoplay does not start while Repeat is on.
+- To change the order of Up Next, drag a song to its new place (a line shows where it will
+  go), or choose **Move Up** or **Move Down** in its menu, or press
+  <kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Alt</kbd>+<kbd>↓</kbd> on the selected song. A song
+  moves within its own list: what you queued stays under **Playing Next**, and Autoplay's
+  songs stay under **Autoplay**, so a song of Autoplay's cannot be moved up among yours.
+  On a touchscreen, dragging scrolls the list: press and hold a song and use **Move Up** or
+  **Move Down**. The song playing and the History do not move, and nor does a station's
+  queue.
 - Now Playing's **Lyrics** follow the song when Apple Music has them timed: click a line to
   go to it. When Apple Music times them word by word, each word of the line being sung
   fills in as it is sung (with animation effects turned off in Settings, each word lights

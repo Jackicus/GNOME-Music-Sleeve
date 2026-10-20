@@ -772,7 +772,7 @@ class MenuActions:
         self.asked = []
         self.menus = []
 
-    def menu_for(self, obj, queued=False, queue_entry=None):
+    def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
         from applemusic.actions import build_menu
 
         self.asked.append(obj)

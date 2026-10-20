@@ -129,7 +129,9 @@ sidebar's drop-enter calls): the drop highlight, which no headless script can dr
 --playing.
 --drop-line N draws the insertion line a drag of one of its songs shows on a playlist's page
 (--open playlist:ID, one of the user's), above its song at index N (0: the first; -1: below
-the last), as DetailPage.show_insertion() draws it.
+the last), as DetailPage.show_insertion() draws it; with --now-playing queue, Up Next's,
+above the entry N after the one playing (1: the next; -1: below the last), as
+QueueView.show_insertion() draws it.
 --select N puts the track list of the page shown (Songs, an album's or a playlist's) in its
 selection mode with its first N songs selected (0: the mode, none selected), as the header
 bar's Select and clicks on them would: the check boxes, the count and the action bar.
@@ -227,7 +229,8 @@ parser.add_argument('--sidebar-menu', metavar='KEY',
 parser.add_argument('--drop-target', metavar='KEY',
                     help="mark KEY's sidebar row as a drop's target (player-bar: the bar)")
 parser.add_argument('--drop-line', metavar='N', type=int,
-                    help="the insertion line above the playlist's song N (-1: below the last)")
+                    help="the insertion line above the playlist's song N, or with "
+                         "--now-playing queue Up Next's entry N (-1: below the last)")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
 parser.add_argument('--select', metavar='N', type=int,
@@ -653,9 +656,23 @@ def drop_line_place(page):
     return (count - 1, True) if args.drop_line < 0 else (args.drop_line, False)
 
 
+def queue_drop_line_place():
+    """--drop-line's queue index in Up Next, and whether the line is below it."""
+    player = app.player
+    if args.drop_line < 0:
+        return player.queue.get_n_items() - 1, True
+    return player.queue_index + args.drop_line, False
+
+
 def scroll_to_drop_line(window):
     """--drop-line, first: the song's row scrolled into view (in a narrow window the hero
     takes the first screen), so the list has made it."""
+    if args.now_playing == 'queue':
+        queue_view = window.now_playing.queue_view
+        index, _after = queue_drop_line_place()
+        queue_view.list_view.scroll_to(index - app.player.queue_index,
+                                       Gtk.ListScrollFlags.NONE, None)
+        return
     page = window.navigation_view.get_visible_page()
     if getattr(page, 'show_insertion', None) is None:
         sys.exit('screenshot: --drop-line needs a playlist page (--open playlist:ID)')
@@ -664,7 +681,11 @@ def scroll_to_drop_line(window):
 
 
 def mark_drop_line(window):
-    """--drop-line, then: the insertion line on the playlist page shown."""
+    """--drop-line, then: the insertion line on the playlist page shown, or in Up Next."""
+    if args.now_playing == 'queue':
+        if not window.now_playing.queue_view.show_insertion(*queue_drop_line_place()):
+            sys.exit(f'screenshot: no insertion line for Up Next entry {args.drop_line}')
+        return
     page = window.navigation_view.get_visible_page()
     if not page.show_insertion(*drop_line_place(page)):
         sys.exit(f'screenshot: no insertion line for song {args.drop_line} on this page')

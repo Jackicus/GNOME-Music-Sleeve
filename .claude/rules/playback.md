@@ -59,13 +59,20 @@ paths:
   what differs (`_splice_queue`: the entries alike at the start and the end, compared by
   `NowPlaying.key`, kept as the same objects and renumbered), so a list over it keeps its
   rows; never replace the store whole (docs/notes.md has the cost). Up Next's edits
-  (`remove_from_queue(index, id)`, `clear_up_next()`, `undo_clear()`) change the store at
-  once, then the engine; MusicKit's event that follows then changes nothing, and a failure
+  (`remove_from_queue(index, id)`, `move_in_queue(index, to_index, id)`, `clear_up_next()`,
+  `undo_clear()`) change the store at once, then the engine; MusicKit's event that follows
+  then changes nothing, and a failure
   reads the queue again (`queue-changed`: only that, but an Undo that cannot be done says so
   in a toast; anything else is raised too). Events are
   applied as they come, never delayed to coalesce them. Edits name an entry after the one
   playing by index and id, only while `queue_editable` (the snapshot's `editable`: not a
-  station's queue); while restored they change the session alone and drop its `source`.
+  station's queue); while restored they change the session alone and drop its `source`. A
+  move stays within its section (`move_range()`: Playing Next, or Autoplay) and takes the
+  entry out and puts the same object back (`moving`, notified, names it meanwhile, so Up Next
+  keeps its place and moves its focus with it; a splice of the whole span between the places
+  is several times slower on a long queue: docs/notes.md). Removes and moves are numbered (`_edit_out`), the bridge's snapshots name
+  the last applied (`edit`), and `apply_queue()` replays the edits out that a snapshot does
+  not hold onto it first (`_rebased`): a burst never takes the store back a step.
   `apply_autoplay()` sets the `autoplay` setting on MusicKit as the engine comes up, after a
   `bridgeReset`, and when the setting changes (main.py); `autoplay` and `can_autoplay` are
   MusicKit's, and `NowPlaying.autoplay` marks an entry autoplay added. The streaming quality
@@ -165,7 +172,12 @@ paths:
   fetched, never in the demo), only for the rows bound and at most every `ART_DELAY_MS`,
   and again once the cache's generation moves (Clear Cache, sign-out): bind is a
   dictionary lookup. Remove from Up Next is in an entry's menu
-  (`context_queue_entry`) and on Delete (the focus then on the row in its place); History
+  (`context_queue_entry`) and on Delete (the focus then on the row in its place); Move Up
+  and Move Down too (`context_queue_moves`), on Alt+Up and Alt+Down (`keyboard.move_step()`,
+  the list's capture-phase key controller; the focus goes with the entry) and by a drag
+  within the entry's section (`dnd.attach_source()` on the list, MOVE only, a
+  `DropFeedback` insertion line kept inside the section: `drop_gap()`, `line_place()`), all
+  through `win.item-move-in-queue`, which announces the new place; History
   (a toggle above the list, off when the tab is left) shows the entries before the one
   playing, most recent first, in a second list over a `queue.HistoryModel` brought up to
   date (one splice) only while it shows; Autoplay and Clear (an Undo toast,

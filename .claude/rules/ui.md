@@ -280,9 +280,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `NOW_PLAYING_TABS` (keys the window's capture-phase key controller handles: the playback
   actions, and Ctrl+Shift+L and Ctrl+Shift+U, Now Playing on a tab), `MAIN_MENU`,
   `CONTEXT_MENU`, the sidebar's `FOLDER_OPEN` and `FOLDER_CLOSE` (sidebar_view.py binds
-  them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it), a playlist page's `MOVE_UP`
-  and `MOVE_DOWN` (Alt+Up, Alt+Down on the focused song: `keyboard.move_step()`, asked by the
-  page's own key controller), the window's `VOLUME_UP` and `VOLUME_DOWN` (Ctrl+Up, Ctrl+Down:
+  them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it), a playlist page's and Up
+  Next's `MOVE_UP` and `MOVE_DOWN` (Alt+Up, Alt+Down on the focused song or entry:
+  `keyboard.move_step()`, asked by the page's or the list's own key controller), the window's `VOLUME_UP` and `VOLUME_DOWN` (Ctrl+Up, Ctrl+Down:
   `keyboard.volume_step()`, the bar's volume button stepped and announced) and `sections()`
   (the Keyboard Shortcuts dialog), and a track list's selection keys (`SELECT_TOGGLE`,
   `SELECT_RANGE`, `SELECT_ALL`, `SELECT_NONE`, `LEAVE_SELECTION`: `keyboard.selection_key()`,

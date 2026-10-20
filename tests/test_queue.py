@@ -394,7 +394,7 @@ class QueueViewTest(unittest.TestCase):
         asked = []
 
         class Actions:
-            def menu_for(self, obj, queued=False, queue_entry=None):
+            def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
                 asked.append((obj.id, queued, queue_entry))
                 menu = Gio.Menu()
                 menu.append('Invented', 'win.invented')
@@ -628,6 +628,142 @@ class QueueViewTest(unittest.TestCase):
                     pump()
                     return
         self.fail(f'no shortcut for {name}')
+
+    def use_moves(self):
+        """win.item-move-in-queue as the window's runs it: the Player's move, at once."""
+        from gi.repository import Gio, GLib
+
+        moved = []
+
+        def move(_action, parameter):
+            index, to_index, entry_id = parameter.unpack()
+            moved.append((index, to_index, entry_id))
+            asyncio.run(self.player.move_in_queue(index, to_index, entry_id))
+        group = Gio.SimpleActionGroup()
+        action = Gio.SimpleAction.new('item-move-in-queue', GLib.VariantType('(iis)'))
+        action.connect('activate', move)
+        group.add_action(action)
+        self.window.insert_action_group('win', group)
+        return moved
+
+    def alt(self, keyval):
+        """Alt and `keyval` pressed on the focused row: whether the list took it."""
+        from gi.repository import Gdk, Gtk
+
+        for controller in list(self.view.list_view.observe_controllers()):
+            if isinstance(controller, Gtk.EventControllerKey):
+                taken = controller.emit('key-pressed', keyval, 0, Gdk.ModifierType.ALT_MASK)
+                pump()
+                return taken
+        self.fail('no key controller on the list')
+
+    def focus_row(self, position):
+        from gi.repository import Gtk
+
+        self.view.list_view.grab_focus()
+        self.view.list_view.scroll_to(position, Gtk.ListScrollFlags.FOCUS, None)
+        title = f'Entry {self.view.queue_index_at(position)}'
+        self.assertTrue(wait_for(lambda: self.focused_title() == title), self.focused_title())
+
+    def test_alt_up_and_down_move_the_focused_entry_within_its_section(self):
+        from gi.repository import Gdk
+
+        self.player.apply_queue({'index': 2, 'items': entries(8, autoplay=(6, 7))})
+        moved = self.use_moves()
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 6))
+        self.focus_row(1)  # Entry 3, the first of Playing Next
+        widget = self.bound()[1]
+        self.assertEqual(widget.context_queue_moves, (1,))
+        self.assertTrue(self.alt(Gdk.KEY_Down))
+        self.assertEqual(moved, [(3, 4, 'i.queue0003')])
+        self.assertEqual(self.rows(), ['Entry 2', 'Entry 4', 'Entry 3', 'Entry 5', 'Entry 6',
+                                       'Entry 7'])
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 3'), self.focused_title())
+        self.assertEqual(self.told, self.model.get_n_items())
+        self.assertTrue(self.alt(Gdk.KEY_Down))
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 3'))
+        # At the end of Playing Next: taken, nothing moves (Autoplay is another section).
+        self.assertEqual(self.bound()[3].context_queue_moves, (-1,))
+        self.assertTrue(self.alt(Gdk.KEY_Down))
+        self.assertEqual(len(moved), 2)
+        self.assertTrue(self.alt(Gdk.KEY_KP_Up))
+        self.assertEqual(moved[-1], (5, 4, 'i.queue0003'))
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 3'))
+        # Within Autoplay.
+        self.focus_row(5)
+        self.assertTrue(self.alt(Gdk.KEY_Up))
+        self.assertEqual(moved[-1], (7, 6, 'i.queue0007'))
+        self.assertEqual([entry.autoplay for entry in self.player.queue], [False] * 6 + [True] * 2)
+        # The entry playing does not move: the key is not taken.
+        self.focus_row(0)
+        self.assertEqual(self.bound()[0].context_queue_moves, ())
+        self.assertFalse(self.alt(Gdk.KEY_Down))
+        self.assertEqual(len(moved), 4)
+
+    def test_a_move_keeps_the_list_where_it_is(self):
+        scrolled = []
+        self.view._scroll_to_current = lambda: scrolled.append(True)
+        self.view.set_active(True)
+        scrolled.clear()
+        self.use_moves()
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 3))
+        self.view.move(3, 4, 'i.queue0003')
+        pump()
+        self.assertEqual(self.rows(), ['Entry 2', 'Entry 4', 'Entry 3'])
+        self.assertEqual(scrolled, [])
+        self.player.apply_queue({'index': 2, 'items': entries(6)})  # a change of MusicKit's
+        self.assertEqual(scrolled, [True])
+
+    def row_point(self, position, fraction):
+        """(x, y) in the list at `fraction` of the height of the row at list `position`, once
+        the list has laid it out."""
+        self.assertTrue(wait_for(lambda: self.bound()[position].get_height() > 0))
+        ok, rect = self.bound()[position].compute_bounds(self.view.list_view)
+        self.assertTrue(ok)
+        return rect.get_x() + 10, rect.get_y() + rect.get_height() * fraction
+
+    def test_a_drop_goes_within_the_entrys_section(self):
+        from applemusic.widgets import dnd
+
+        self.player.apply_queue({'index': 2, 'items': entries(8, autoplay=(6, 7))})
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 6))
+        # The entry playing is not dragged; one after it is, from the queue.
+        self.assertIsNone(self.view._drag_source(*self.row_point(0, 0.5)))
+        refs, icon = self.view._drag_source(*self.row_point(1, 0.5))
+        self.assertIs(icon, self.bound()[1])
+        self.assertEqual(refs.origin, ('queue', 'i.queue0003'))
+        self.assertIsNone(self.view.dragged_index())  # no drag yet
+        dnd._set_current(refs)
+        self.addCleanup(dnd._set_current, None)
+        self.assertEqual(self.view.dragged_index(), 3)
+        bound = self.bound()
+        # Over Entry 5's lower half: after it, the last of Playing Next.
+        self.assertEqual(self.view.drop_place(3, *self.row_point(3, 0.75)),
+                         (5, bound[3], True))
+        # Over an autoplay entry: kept to the end of Playing Next.
+        self.assertEqual(self.view.drop_place(3, *self.row_point(5, 0.25)),
+                         (5, bound[3], True))
+        # Over the entry playing, or beside itself: nowhere to go.
+        self.assertIsNone(self.view.drop_place(3, *self.row_point(0, 0.75))[0])
+        self.assertIsNone(self.view.drop_place(3, *self.row_point(1, 0.25))[0])
+        # Entry 5 over the entry playing: first of Playing Next, its line on Entry 3's top.
+        self.assertEqual(self.view.drop_place(5, *self.row_point(0, 0.75)),
+                         (3, bound[1], False))
+        # An autoplay entry stays among autoplay's.
+        self.assertEqual(self.view.drop_place(7, *self.row_point(1, 0.5)),
+                         (6, bound[4], False))
+        self.assertTrue(self.view.show_insertion(5, after=True))
+        self.assertEqual(self.view.drop_feedback.marked(), (bound[3].get_parent(), dnd.AFTER))
+        self.view.drop_feedback.clear()
+        # The entry dragged begins to play: it is no longer the drag's to move.
+        self.player.apply_queue({'index': 3, 'items': entries(8, autoplay=(6, 7))})
+        self.assertIsNone(self.view.dragged_index())
+
+    def test_a_stations_queue_has_no_moves(self):
+        self.player.apply_queue({'index': 2, 'items': entries(5), 'editable': False})
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 3))
+        self.assertEqual(self.bound()[1].context_queue_moves, ())
+        self.assertIsNone(self.view._drag_source(*self.row_point(1, 0.5)))
 
     def test_clear_and_its_undo_toast(self):
         self.assertTrue(self.view.clear_button.get_sensitive())

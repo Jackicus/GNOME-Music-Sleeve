@@ -59,8 +59,9 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `volume(level)` | `{volume}`: MusicKit's level after the set (0 to 1; the page keeps it) |
 | `shuffle(on\|off\|toggle)`, `repeat(none\|one\|all\|cycle)` | `{shuffle, repeat}` |
 | `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume, capabilities}`; `state` is MusicKit's `PlaybackStates` name; `capabilities` is `{canSeek, canPause, canSkipToNextItem, canSkipToPreviousItem, canSetShuffleMode, canSetRepeatMode}`, `mk.capabilities`' (each true when MusicKit has none, or not that one; all false on a live station: below) |
-| `queue()` | `{index, items: [Track], editable, canAutoplay, autoplay}`: `editable` and `canAutoplay` are `mk.capabilities`' `canEditPlaybackQueue` and `canAutoplay` (true when MusicKit has none), `autoplay` is `mk.autoplayEnabled`; a Track autoplay added carries `autoplay: true` (its queue item's `isAutoplay`) |
-| `queueRemove(index, id)` | `{ok: true}` once the queue's entry at `index`, when it is still `id` and not the item playing, is out of the queue (`queue.spliceQueueItems(index, 1)`, else the deprecated `queue.remove(index)`), or `{error, code}`: `NOT_EDITABLE` (a station's queue), `CURRENT`, `STALE` (another entry is there now) |
+| `queue()` | `{index, items: [Track], editable, canAutoplay, autoplay, edit}`: `editable` and `canAutoplay` are `mk.capabilities`' `canEditPlaybackQueue` and `canAutoplay` (true when MusicKit has none), `autoplay` is `mk.autoplayEnabled`; a Track autoplay added carries `autoplay: true` (its queue item's `isAutoplay`); `edit` is the number of the last of the app's removes and moves the bridge has applied (0 since the page loaded: "Moving queue entries") |
+| `queueRemove(index, id, edit)` | `{ok: true}` once the queue's entry at `index`, when it is still `id` and not the item playing, is out of the queue (`queue.spliceQueueItems(index, 1)`, else the deprecated `queue.remove(index)`), the snapshots after it naming `edit` (the Player's number for it, or null); or `{error, code}`: `NOT_EDITABLE` (a station's queue), `CURRENT`, `STALE` (another entry is there now) |
+| `queueMove(from, to, id, edit)` | `{ok: true}` once the queue's entry at `from`, when it is still `id` and after the item playing, is at `to` (its index once moved), within its section of Up Next (before or from the first entry autoplay added after the item): `spliceQueueItems(from, 1)`, then `spliceQueueItems(to, 0, taken)`, the queue item given back as it came (so it keeps its `isAutoplay`), only the second's `queueItemsDidChange` posted, naming `edit`. When MusicKit does not put it at `to` (it throws, or its filter drops the item) it goes back to `from` if it can, the queue as it is is posted and the answer is `STALE`. Or `{error, code}`: `NOT_EDITABLE` (a station's queue, or no `spliceQueueItems`), `CURRENT`, `STALE` (another entry is there, an entry played, or no such place), `SECTION` (`to` in the other section) |
 | `queueClear()` | `{ok: true, cleared}`: everything after the item playing out of the queue (`queue.clearAfterCurrent()`), its queue items kept for `queueUndoClear()`; or `{error, code: 'NOT_EDITABLE'}` |
 | `queueUndoClear()` | `{ok: true, restored}`: the queue items the last `queueClear()` took, spliced back after the item playing while it is the same item (`queue.spliceQueueItems(position + 1, count, items)` over what follows it, the items as one array, autoplay's refill dropped when Clear took autoplay entries: "Autoplay across queues"), once, kept until the splice is done; `restored` is how many of Clear's MusicKit put in; or `{error, code}` (`STALE`: nothing kept, or another item plays) |
 | `autoplay(on)` | `{autoplay, canAutoplay}` after `mk.autoplayEnabled = on` (null: only read) |
@@ -166,7 +167,7 @@ the MediaItems, `queue.position` the current index (-1 for none), and
 `queue.unplayedAutoplayItems` filter them (MediaItems, not queue items). Checked live on
 2026-10-20 on a throwaway album queue while it played (#332): none of the calls below
 changed the playback state, the item or the time (no gap), and each splice posts one
-`queueItemsDidChange`. The bridge's `queueRemove`, `queueClear`, `queueUndoClear` and
+`queueItemsDidChange`. The bridge's `queueRemove`, `queueMove`, `queueClear`, `queueUndoClear` and
 `autoplay` use them.
 
 | Call | What it does |
@@ -490,7 +491,18 @@ A move is two `queue.spliceQueueItems` calls on the queue items (the queue secti
 `spliceQueueItems(from, 1)`, then `spliceQueueItems(to, 0, taken)`, and so two
 `queueItemsDidChange`; the next item played follows the new order. The web player has no
 reorder of its own. Whether an entry moved into or out of autoplay's keeps its `isAutoplay`
-was not tried. `queue.removeQueueItems(predicate)` removes every queue item
+was not tried. The bridge's `queueMove` (#361) is these two splices: the first's event is
+not posted (a flag set around it), so the app sees the queue moved and never one an entry
+short, whether MusicKit posts during the call or after it (the snapshot is read as the
+queue is then). It keeps a move within its section (what the user queued, or what autoplay
+added), so an autoplay entry is never moved among the user's. Removes and moves carry the
+Player's number for them (`edit`), and every queue snapshot names the last applied: while
+the Player has edits out (a burst of Alt+Down or Delete), a snapshot tells it which it
+holds, and it replays the others onto it before comparing it with its queue
+(`Player._rebased`). Not checked live yet: moving the next entry (`position + 1`) further
+down and letting the item end on its own (does MusicKit play the new next item, or one it
+had loaded ahead?); a move with Shuffle on, then Shuffle off (is the move kept?); whether
+MusicKit posts `queueItemsDidChange` during `spliceQueueItems` or after it. `queue.removeQueueItems(predicate)` removes every queue item
 `predicate(queueItem, index)` accepts, from the end, one event each; `mk.clearQueue()` (the
 web player's Clear) empties the whole queue (`position` -1, `length` 0) while the current
 item plays on, so it is not Up Next's Clear.
@@ -532,7 +544,7 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 | `capabilitiesChanged` | `{capabilities}`, as `nowPlaying()` gives them: what MusicKit allows changed |
 | `playbackTimeDidChange` | `{position, duration}` in seconds, about four times a second while playing |
 | `playbackDurationDidChange` | `{duration}` |
-| `queueItemsDidChange` | `{index, items: [Track], editable, canAutoplay, autoplay}`, as `queue()` answers (index -1 before playback starts) |
+| `queueItemsDidChange` | `{index, items: [Track], editable, canAutoplay, autoplay, edit}`, as `queue()` answers (index -1 before playback starts); not posted for the queue between a move's two splices |
 | `queuePositionDidChange` | `{index, oldIndex}` |
 | `shuffleModeDidChange`, `repeatModeDidChange` | `{shuffle: "on"\|"off"}`, `{repeat: "none"\|"one"\|"all"}` |
 | `playbackVolumeDidChange` | `{volume}` |

@@ -93,8 +93,8 @@ changes, change it here, with the date. The plan they came from is in
   (Play Next), each by the target its menu's Play Later queues (`actions.queue_targets()`: a
   song by its catalog id, an album or a playlist by its play target); a drag holding anything that cannot be queued
   (a folder) is refused whole, not queued in part. The bar is the one place: the Now Playing
-  sheet covers the window while open, so no drag source is in sight of its Up Next tab, and
-  the bar shows only while something plays. Songs, music videos and albums (their songs)
+  sheet covers the window while open, so no drag source is in sight of its Up Next tab (its
+  own rows' drags are moves within it, #361), and the bar shows only while something plays. Songs, music videos and albums (their songs)
   dropped on All Playlists make a new playlist of them, through New Playlist's dialog with the first one's title
   filled in (a name made up without asking would need a rename), and its page is shown once
   Apple lists it; playlists dropped there still move to the top level (switched off, above).
@@ -518,6 +518,27 @@ changes, change it here, with the date. The plan they came from is in
   own (the user's songs and their autoplay come back as one batch), and stay after the
   user's songs when it took none (they are then the queue's autoplay); songs queued
   between Clear and Undo go before autoplay's, where Play Later puts them.
+- **Up Next's order: moves within a section, edits numbered and replayed** (2026-10-20,
+  #361). An entry after the one playing moves by a drag (the whole row, as a playlist's
+  songs move: no drag handle, which would be one more widget per row to bind; a mouse's
+  drag, since a touchscreen's scrolls), Move Up and Move Down in its menu, and Alt+Up and
+  Alt+Down, as a playlist's songs do (#333). It moves within its own section only: what the
+  user queued among Playing Next, autoplay's among Autoplay. MusicKit's splice gives the
+  queue item back with its `isAutoplay`, so an autoplay entry moved into Playing Next would
+  still be autoplay's and start the Autoplay heading there, and a song of the user's dropped
+  among autoplay's would be taken for autoplay's; making one the other is not known to stick
+  (not checked live). The bridge moves it with two `spliceQueueItems`, as checked live,
+  and posts only the queue moved, never the one an entry short between them; the Player
+  takes the entry out and puts the same object back (a splice of the whole span between the
+  places made a 500-place move take 131 ms to the next frame against 25 ms: docs/notes.md),
+  and the focus goes with the entry.
+  Removes and moves are numbered, and every queue snapshot names the last it holds: a
+  burst (Alt+Down held, Delete pressed quickly) leaves the Player's queue ahead of
+  MusicKit's, and an event for the first edit would otherwise take the list back a step,
+  with new rows and the focus lost. The Player replays the edits not yet held onto each
+  snapshot before comparing it, so events are still applied as they come, never delayed;
+  Clear and its Undo are not replayed (nothing is moved while a Clear is out). No toast for
+  a move (the row moves); a screen reader is told where it went.
 - **Up Next with covers and History; Now Playing tinted by the artwork** (2026-10-20,
   #353). As Apple's queues do, each Up Next row shows its entry's cover in place of a
   number (the entry playing has the track rows' play symbol over its cover), under a

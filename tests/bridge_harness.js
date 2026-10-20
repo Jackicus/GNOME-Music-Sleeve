@@ -34,9 +34,11 @@ function bothWays(names) {
 // the MediaItems, `position`, and the edits, each recorded on the instance's `calls` and
 // posting one queueItemsDidChange: spliceQueueItems, the deprecated remove (which throws for
 // the current index), clearAfterCurrent. `new FakeQueue(mk, items, position, autoplay)`:
-// `autoplay` the indices of the entries autoplay added. Each edit takes its arguments as
-// MusicKit's does (src/backend/README.md, "The queue"), so a call MusicKit would refuse
-// fails here too.
+// `autoplay` the indices of the entries autoplay added. `deferEvents` true posts a splice's
+// event on a later turn of the job queue instead of during the call (whether MusicKit posts
+// it during spliceQueueItems or after is not known: both are tested). Each edit takes its
+// arguments as MusicKit's does (src/backend/README.md, "The queue"), so a call MusicKit
+// would refuse fails here too.
 class FakeQueue {
     constructor(instance, items, position, autoplay) {
         this.instance = instance;
@@ -44,6 +46,14 @@ class FakeQueue {
             item, isAutoplay: (autoplay || []).includes(index),
         }));
         this.position = position;
+        this.deferEvents = false;
+    }
+
+    _changed() {
+        if (this.deferEvents)
+            Promise.resolve().then(() => this.instance.fire('queueItemsDidChange', {}));
+        else
+            this.instance.fire('queueItemsDidChange', {});
     }
 
     get items() {
@@ -94,7 +104,7 @@ class FakeQueue {
         const added = items.filter(entry => Boolean(entry?.item));
         this.instance.calls.push(['queue.spliceQueueItems', start, deleteCount, added.length]);
         const taken = this._queueItems.splice(start, deleteCount, ...added);
-        this.instance.fire('queueItemsDidChange', {});
+        this._changed();
         return taken;
     }
 

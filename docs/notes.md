@@ -186,6 +186,15 @@ its "Performance pass" section.
   spliced only where it differs (#332) those are 10 ms and one row, 98 ms and ten rows, 19
   ms and two rows, 5 ms and none. A whole new queue is the same either way (183 ms, 205
   rows), as is the next entry playing (4 to 7 ms, one row).
+- Up Next's moves (#361), on a 500-entry invented queue with covers, 420x800, the headless
+  display, the move made locally (the Player's store and Up Next's handlers), medians of
+  nine, a frame alone 16 ms: the entry taken out and the same object put back (two
+  splices of one), 2 <-> 3 in view 9 ms for the splices and handlers and 43 ms to the next
+  frame (one row made and bound: the moved one), 1 <-> 499 10 and 25 ms, 200 <-> 201 out
+  of view 8 and 18 ms. One splice of the whole span between the two places with the same
+  objects in their new order (at most one row made and bound too) cost 26 and 42 ms, 91 and
+  131 ms, 22 and 31 ms: the far moves several times slower, so the Player removes and
+  inserts.
 - Up Next with covers and History (#353), on the same 500-entry invented queue (each album's
   entries their own artwork, on disk: the demo fetches nothing), 420x760, the headless
   display, before (origin/main) and after run in turns, medians of five each: a whole new

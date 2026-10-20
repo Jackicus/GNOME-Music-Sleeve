@@ -22,7 +22,16 @@ a bold title. Activating a row (a double click, or Enter) plays that entry
 (widgets/context_menu.py: the entry's, without Play, with Remove from Up Next on an entry after
 the one playing while the queue may be edited: its context_queue_entry); Delete
 (shortcuts.QUEUE_REMOVE) on a focused row does the same, and the focus then goes to the row
-that took its place (or the one before, at the end). Above the list, History (a toggle) at
+that took its place (or the one before, at the end). An entry after the one playing moves
+within its section (Playing Next, or Autoplay: Player.move_range()): Move Up and Move Down in
+its menu (its context_queue_moves), Alt+Up and Alt+Down on its row (keyboard.move_step(), as
+on a playlist's page; the focus goes with it), or dragged (dnd.attach_source(), MOVE only, a
+mouse's drag: a touchscreen's scrolls) and dropped in its section, where an insertion line
+shows the place (dnd.DropFeedback, the list scrolling near its edges; drop_place()). Each goes
+through win.item-move-in-queue, which announces where it went; the list keeps its scroll (Up
+Next does not go back to the entry playing as it does for other changes) and, when the focus
+was on the entry, moves it with the entry (Player.moving names it as the move starts).
+Above the list, History (a toggle) at
 the start, and at the end Autoplay (a toggle of the `autoplay` setting; insensitive while
 MusicKit allows none, or repeat is on, when it would not start) and Clear (everything after
 the entry playing, with an Undo toast: app.undo-clear-up-next; the focus on it goes to the
@@ -51,16 +60,17 @@ import asyncio
 from gettext import gettext as _
 from gettext import pgettext as C_
 
-from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango
 
-from .. import shortcuts
+from .. import keyboard, shortcuts
 from ..actions import now_playing_track
 from ..backend import config, normalize, store
+from ..library import ItemRefs, drop_index
 from ..player import NowPlaying, format_time
 from ..remote import fetch_remote, on_disk, remote_art_path, sized_url
-from . import context_menu
+from . import context_menu, dnd
 from .labels import track_label
-from .util import weak_method
+from .util import focus_position, weak_method
 
 # The keys that remove the focused row's entry: the shortcut's, and the keypad's.
 REMOVE_KEYS = f'{shortcuts.QUEUE_REMOVE}|KP_Delete'
@@ -113,6 +123,23 @@ def section_at(position, count, bounds):
             return start, bound
         start = max(start, bound)
     return start, count
+
+
+def drop_gap(gap, bounds):
+    """The gap a drop at `gap` (a queue index: before the entry there) goes to for an entry
+    whose section spans the queue indices `bounds` (first, last: Player.move_range()): the
+    nearest of the section's own gaps, from before its first entry to after its last."""
+    first, last = bounds
+    return min(max(gap, first), last + 1)
+
+
+def line_place(gap, bounds):
+    """Where the insertion line for a drop in `gap` (drop_gap()'s) is drawn, inside the
+    section spanning `bounds`: (queue index, after), on the top edge of the entry at `gap`,
+    or on the bottom edge of the section's last one for the gap after it (never on the entry
+    playing above the section, or on the next section's first entry under its header)."""
+    _first, last = bounds
+    return (gap, False) if gap <= last else (last, True)
 
 
 def history_entries(queue, queue_index):
@@ -430,6 +457,14 @@ class QueueRow(Gtk.Box):
             return None
         return self.view.removable(self.list_item.get_position(), self._entry)
 
+    @property
+    def context_queue_moves(self):
+        """The steps (-1: Move Up, 1: Move Down) the entry bound can take in its section of
+        Up Next; () when it cannot move (History, the entry playing, a station's queue)."""
+        if self._entry is None or self.list_item is None or self.history:
+            return ()
+        return self.view.moves(self.list_item.get_position(), self._entry)
+
     def bind(self, entry, current, paths):
         """Show `entry`, its cover from `paths` (EntryArt.paths())."""
         self._entry = entry
@@ -475,6 +510,9 @@ class QueueView(Gtk.Stack):
         self.history_model = HistoryModel()
         self.art = None  # EntryArt, once there is an app
         self._refocus = None  # the list position to focus once a removal is in
+        self._follow = None  # the entry a move took from the focused row, to focus again
+        self._drag = None  # (the ItemRefs, the NowPlaying) of the drag started from a row
+        self.drop_feedback = None  # the insertion line and auto-scroll of a drag over Up Next
         # Looked up once: rows are bound often.
         self._playing = _('Playing')
         self._autoplay_title = _('Autoplay')
@@ -535,9 +573,23 @@ class QueueView(Gtk.Stack):
         keys.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string(REMOVE_KEYS),
                                            Gtk.CallbackAction.new(self._on_remove_key)))
         self.list_view.add_controller(keys)
+        move_keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        move_keys.connect('key-pressed', self._on_key_pressed)
+        self.list_view.add_controller(move_keys)
         self.scrolled = Gtk.ScrolledWindow(child=self.list_view,
                                            hscrollbar_policy=Gtk.PolicyType.NEVER,
                                            vexpand=True)
+        # An entry dragged within its section: the row's own drag (a mouse's), dropped on
+        # the list, which shows where it goes.
+        dnd.attach_source(self.list_view, weak_method(self._drag_source), Gdk.DragAction.MOVE)
+        self.drop_feedback = dnd.DropFeedback(self.scrolled)
+        drop = Gtk.DropTarget.new(ItemRefs.__gtype__, Gdk.DragAction.MOVE)
+        drop.connect('accept', lambda _target, _drop: self.dragged_index() is not None)
+        drop.connect('enter', self._on_drop_motion)
+        drop.connect('motion', self._on_drop_motion)
+        drop.connect('leave', lambda _target: self.drop_feedback.clear())
+        drop.connect('drop', self._on_drop)
+        self.list_view.add_controller(drop)
 
         history_factory = Gtk.SignalListItemFactory()
         history_factory.connect('setup', self._on_history_setup)
@@ -583,6 +635,7 @@ class QueueView(Gtk.Stack):
         self.list_view.set_model(Gtk.NoSelection(model=self.model))
         queue.connect('items-changed', lambda *_: self._on_items_changed())
         player.connect('notify::queue-index', lambda *_: self._on_index())
+        player.connect('notify::moving', lambda *_: self._on_moving())
         for name in ('queue-editable', 'can-autoplay', 'repeat'):
             player.connect('notify::' + name, lambda *_: self._update_tools())
         app.settings.bind('autoplay', self.autoplay_button, 'active',
@@ -621,6 +674,15 @@ class QueueView(Gtk.Stack):
         if not self._player.can_edit(index, entry.id):
             return None
         return index, entry.id
+
+    def moves(self, position, entry):
+        """The steps (-1, 1) `entry`, the row at list `position`, can take within its
+        section (Player.can_move), in that order."""
+        if self._player is None:
+            return ()
+        index = self.queue_index_at(position)
+        return tuple(step for step in (-1, 1)
+                     if self._player.can_move(index, index + step, entry.id))
 
     def _update_bounds(self):
         """The slice from the entry playing on, and where its sections begin."""
@@ -667,13 +729,14 @@ class QueueView(Gtk.Stack):
     def _on_items_changed(self):
         """The queue changed: the slice and its sections, the page, the tools, History, and
         the entry playing on top (a new queue with the same index number fires no index
-        notify)."""
+        notify), but for a move of Up Next's (Player.moving): the list stays where it is."""
+        moving = self._player.moving
         self._update_bounds()
         self._update_page()
         self._update_tools()
         self._refresh_rows()
         self._update_history()
-        if self._active and self._refocus is None:
+        if self._active and self._refocus is None and moving is None:
             self._scroll_to_current()
 
     def _on_index(self):
@@ -818,6 +881,175 @@ class QueueView(Gtk.Stack):
 
     # -- the edits ---------------------------------------------------------------------------
 
+    def _focused_row(self):
+        """The Up Next row with the focus, or None."""
+        root = self.list_view.get_root()
+        focus = root.get_focus() if root is not None else None
+        found = context_menu.find(self.list_view, focus) if focus is not None else None
+        return found[0] if found is not None and isinstance(found[0], QueueRow) else None
+
+    def _focused_entry(self):
+        row = self._focused_row()
+        return row.entry if row is not None else None
+
+    def _on_key_pressed(self, _controller, keyval, _keycode, state):
+        """Alt+Up or Alt+Down on a row: its entry one place up or down in its section, the
+        focus going with it. Not taken on an entry that cannot move (the entry playing, a
+        station's queue); taken at either end of its section, where nothing moves."""
+        mods = state & Gtk.accelerator_get_default_mod_mask()
+        root = self.list_view.get_root()
+        focus = root.get_focus() if root is not None else None
+        get_dialog = getattr(root, 'get_visible_dialog', None)
+        step = keyboard.move_step(keyval, mods, type(focus),
+                                  get_dialog is not None and get_dialog() is not None,
+                                  focus is not None and focus.get_ancestor(Gtk.Popover) is not None)
+        row = self._focused_row() if step is not None else None
+        if row is None or row.entry is None or row.history:
+            return False
+        index = self.queue_index_at(row.list_item.get_position())
+        if self._player.move_range(index) is None:
+            return False
+        if self._player.can_move(index, index + step, row.entry.id):
+            self.move(index, index + step, row.entry.id)
+        return True
+
+    def move(self, index, to_index, entry_id):
+        """The queue's entry at `index` (the entry `entry_id`) to `to_index`, through
+        win.item-move-in-queue (the Player, the announcement)."""
+        self.list_view.activate_action('win.item-move-in-queue',
+                                       GLib.Variant('(iis)', (index, to_index, entry_id)))
+
+    def _on_moving(self):
+        """A move starts (Player.moving), before its entry is taken out: when the focus is
+        on its row, it goes with the entry to its new place once the move is in."""
+        moving = self._player.moving
+        if moving is not None and self._focused_entry() is moving:
+            self._follow = moving
+            GLib.idle_add(self._focus_moved)
+
+    def _focus_moved(self):
+        """After a move: the focus on the entry moved, at its new place (taken back into
+        the list: the row it was on went as the entry was taken out)."""
+        entry, self._follow = self._follow, None
+        player = self._player
+        if entry is None or player is None or not 0 <= entry.index < player.queue.get_n_items():
+            return GLib.SOURCE_REMOVE
+        if player.queue.get_item(entry.index) is entry:
+            position = entry.index - self._slice.get_offset()
+            if 0 <= position < self.model.get_n_items():
+                focus_position(self.list_view, position)
+        return GLib.SOURCE_REMOVE
+
+    # -- a drag within Up Next ----------------------------------------------------------------
+
+    def _drag_source(self, x, y):
+        """dnd.attach_source()'s find: the row under (x, y) when its entry can move (its
+        drag carries the entry as a Track, from the queue), and the row as the icon."""
+        self._drag = None
+        picked = self.list_view.pick(x, y, Gtk.PickFlags.DEFAULT)
+        found = context_menu.find(self.list_view, picked) if picked is not None else None
+        row = found[0] if found is not None else None
+        if not isinstance(row, QueueRow) or row.entry is None or row.history:
+            return None
+        index = self.queue_index_at(row.list_item.get_position())
+        if self._player is None or self._player.move_range(index) is None:
+            return None
+        track = row.context_item
+        refs = ItemRefs.for_objects([track], origin=('queue', row.entry.id)) if track else None
+        if refs is None:
+            return None
+        self._drag = (refs, row.entry)
+        return refs, row
+
+    def dragged_index(self):
+        """The queue index of the entry the drag in progress carries, when it started on a
+        row of Up Next and the entry can still move (it may have begun to play meanwhile);
+        else None."""
+        refs = dnd.current()
+        if refs is None or self._drag is None or refs is not self._drag[0]:
+            return None
+        entry = self._drag[1]
+        queue = self._player.queue
+        index = entry.index
+        if not 0 <= index < queue.get_n_items() or queue.get_item(index) is not entry:
+            return None
+        return index if self._player.move_range(index) is not None else None
+
+    def _bound_rows(self):
+        """Up Next's rows bound, in list order: (list position, row)."""
+        rows = [(row.list_item.get_position(), row) for row in self._rows
+                if not row.history and row.list_item is not None and row.entry is not None]
+        return sorted(rows, key=lambda pair: pair[0])
+
+    def _row_at(self, index):
+        """The row bound for the queue's entry at `index`, or None."""
+        position = index - self._slice.get_offset()
+        return next((row for at, row in self._bound_rows() if at == position), None)
+
+    def drop_place(self, from_index, x, y):
+        """Where the entry at `from_index` dropped at (x, y) in the list goes: (to_index,
+        row, after), its index once moved (None: where it is, nothing moves) and the row the
+        insertion line is drawn on, at its bottom (`after`) or top edge; None when no row
+        is bound. The gap under the pointer (between the rows bound, by their halves) is
+        kept to the entry's section (drop_gap(), line_place())."""
+        bounds = self._player.move_range(from_index)
+        rows = self._bound_rows()
+        if bounds is None or not rows:
+            return None
+        tops, heights = [], []
+        for _position, row in rows:
+            ok, rect = row.compute_bounds(self.list_view)
+            tops.append(rect.get_y() if ok else 0)
+            heights.append(rect.get_height() if ok else 0)
+        at, after = dnd.insertion_point(tops, heights, y)
+        gap = drop_gap(self.queue_index_at(rows[at][0]) + (1 if after else 0), bounds)
+        index, below = line_place(gap, bounds)
+        return drop_index(from_index, gap), self._row_at(index), below
+
+    def show_insertion(self, index, after=False):
+        """Draw the insertion line on the top (or, `after`, the bottom) edge of the row of
+        the queue's entry at `index`, as a drag over it does (scripts/screenshot.py's
+        --drop-line: no headless script can drag). False when the row is not bound."""
+        row = self._row_at(index)
+        if row is None:
+            return False
+        self._mark(row, after)
+        return True
+
+    def _mark(self, row, after):
+        """The insertion line on the list's row of `row` (its Gtk.ListItem's widget, padded
+        round the QueueRow, so the line spans the row and no cover covers it)."""
+        self.drop_feedback.insert(row.get_parent() or row, after)
+
+    def _on_drop_motion(self, _target, x, y):
+        """A drag over Up Next: the insertion line where the entry would go in its section
+        (none beside it, where it is), the list scrolled near its edges; the action."""
+        from_index = self.dragged_index()
+        if from_index is None:
+            self.drop_feedback.clear()
+            return 0
+        point = Graphene.Point()
+        point.x, point.y = x, y
+        ok, scrolled = self.list_view.compute_point(self.scrolled, point)
+        if ok:
+            self.drop_feedback.motion(scrolled.y)
+        place = self.drop_place(from_index, x, y)
+        if place is None or place[0] is None or place[1] is None:
+            self.drop_feedback.highlight(None)
+            return 0
+        self._mark(place[1], place[2])
+        return Gdk.DragAction.MOVE
+
+    def _on_drop(self, _target, _value, x, y):
+        """An entry of Up Next dropped on it: moved there."""
+        self.drop_feedback.clear()
+        from_index = self.dragged_index()
+        place = self.drop_place(from_index, x, y) if from_index is not None else None
+        if place is None or place[0] is None:
+            return False
+        self.move(from_index, place[0], self._drag[1].id)
+        return True
+
     def _on_remove_key(self, _view, _arguments):
         """Delete on a focused row: its Remove from Up Next, when it has one."""
         root = self.list_view.get_root()
@@ -838,6 +1070,8 @@ class QueueView(Gtk.Stack):
         """A row taken out while it had the focus (Delete, or its menu's Remove): the focus
         goes to the row that took its place, or the one before at the end, once the list
         has caught up."""
+        if self._player is not None and self._player.moving is not None:
+            return  # a move's: the focus goes with the entry (_on_moving)
         if removed > added and (self._refocus is not None or self._lost_focus()):
             self._refocus = position if self._refocus is None else self._refocus
             GLib.idle_add(self._focus_again)

@@ -289,7 +289,7 @@ def _classes():
             task.set_result(True)
             return task
 
-        def menu_for(self, obj, queued=False, queue_entry=None):
+        def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
             from applemusic.actions import build_menu
 
             return build_menu(obj, queued=queued, queue_entry=queue_entry)
