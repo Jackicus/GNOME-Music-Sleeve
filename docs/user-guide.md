@@ -72,6 +72,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   favourites, open it on music.apple.com, and, for a song, **Go to Album** and **Go to
   Artist**. The song playing has the same menu: right-click the player bar, or use **More
   Options** in Now Playing; Up Next's songs have theirs too.
+- **Create Station** in the menu of a song or an artist (on an artist's page, in **More
+  Options**) plays a station of music like it at once, in place of what was playing. A song
+  of yours that Apple Music does not have (an upload) has none, and neither has an artist
+  of your library that the app has not matched to Apple Music. As on Apple's own players,
+  a station's Up Next is the station's and cannot be changed.
 - The **Lyrics** and **Up Next** buttons at the right of the player bar open Now Playing on
   that tab, and close it again when it shows that tab (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>
   and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> do the same, from anywhere but a text

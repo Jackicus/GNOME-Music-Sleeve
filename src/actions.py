@@ -25,6 +25,7 @@ what it acts on (an Item's kind and id, or 'song' and a Track's id):
     item-add-to-library  a catalog item added to the library
     item-remove-from-library   a song, album, music video or playlist of Apple's taken out
                          of the library, once a dialog confirms
+    item-create-station  the station Apple seeds from a song or an artist, played at once
     item-go-to-album     the page of the album a song is on (related.py finds it)
     item-go-to-artist    the page of the artist a song, video or album is by
     item-open-in-browser its music.apple.com page, in the default browser (Gtk.UriLauncher)
@@ -54,7 +55,8 @@ play request does) and confirms with a toast, or reports the EngineError
 song loved or unloved, the playlist (Favourite Songs) is fetched again and merged into the
 library's Item, so an open page shows the change at once.
 
-The menus are built in code, per kind (build_menu): Play, Play Next, Play Later; Go to Album,
+The menus are built in code, per kind (build_menu): Play, Play Next, Play Later, Create
+Station (a song's or an artist's whose catalog id is known: station_target); Go to Album,
 Go to Artist (not where the page shown is that album or artist already); Favourite and
 Remove from Favourites (both, of which the menu shows the one whose action is enabled: the
 actions' state says whether the item is loved), Add to Library (not what the library holds
@@ -173,6 +175,7 @@ def action_labels():
         'item-move-to-folder': _('Mov_e to Folder'),
         'item-new-folder': _('New _Folder…'),
         'item-remove-from-library': _('Remove from Li_brary…'),
+        'item-create-station': _('Create _Station'),
     }
 
 
@@ -231,6 +234,35 @@ def queue_target(obj):
         kind, item_id = obj.play.get('kind'), obj.play.get('id')
         return (kind, item_id) if kind and item_id else None
     return None
+
+
+def station_target(obj):
+    """The id of the station Create Station plays for obj, or None: 'ra.' and the catalog id
+    of a song (a Track or a song Item; a library song by the catalog id it carries) or of an
+    artist (a catalog artist's own id, or the catalog id a library artist carries:
+    related.artist_catalog_id). Apple seeds a station from either by that id (its station
+    relationship, kind songSeeded or artistSeeded: src/backend/README.md). A music video, a
+    song without a catalog id (an upload) and an artist the library made up have none."""
+    if isinstance(obj, Track) or (isinstance(obj, Item) and obj.kind == 'song'):
+        if obj.kind == 'video':
+            return None
+        catalog_id = obj.catalog_id or (obj.id if obj.id and not is_library_id(obj.id)
+                                        else None)
+    elif isinstance(obj, Item) and obj.kind == 'artist':
+        catalog_id = related.artist_catalog_id(obj)
+    else:
+        return None
+    if not catalog_id or is_library_id(catalog_id):
+        return None
+    return f'ra.{catalog_id}'
+
+
+def station_items(obj):
+    """Create Station for obj, when Apple can seed a station from it (station_target)."""
+    named = describe(obj)
+    if named is None or station_target(obj) is None:
+        return []
+    return [menu_item('item-create-station', GLib.Variant('(ss)', named))]
 
 
 def rating_target(obj):
@@ -598,6 +630,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if queue_target(obj) is not None:
         play.append_item(menu_item('item-play-next', target))
         play.append_item(menu_item('item-play-later', target))
+    for item in station_items(obj):
+        play.append_item(item)
     if related.has_album(obj) and not related.shows(here, obj, 'album'):
         go.append_item(menu_item('item-go-to-album', target))
     if related.has_artist(obj) and not related.shows(here, obj, 'artist'):
@@ -735,6 +769,7 @@ class ItemActions:
             'item-delete': self._on_delete,
             'item-new-folder': self._on_new_folder,
             'item-remove-from-library': self._on_remove_from_library,
+            'item-create-station': self._on_create_station,
         }
         self.actions = {}
         for name, handler in handlers.items():
@@ -903,6 +938,23 @@ class ItemActions:
             self.window.play_request(obj.play)
         else:
             self.window.play_request({'kind': kind, 'id': item_id})
+
+    def _on_create_station(self, _action, parameter):
+        """Play the station Apple seeds from the song or artist the target names, at once,
+        as Apple's players do: a play request of {kind: 'station', id: 'ra.<catalog id>'}
+        (station_target; a catalog id the target itself carries when the object is not
+        known), which the Player takes as a station."""
+        obj, kind, item_id = self._unpack(parameter)
+        if obj is not None:
+            station = station_target(obj)
+        elif kind in ('song', 'artist') and item_id and not is_library_id(item_id):
+            station = f'ra.{item_id}'
+        else:
+            station = None
+        if station is None:
+            self.app.toast(_('No station can be made from this'))
+            return
+        self.window.play_request({'kind': 'station', 'id': station})
 
     def _queue(self, parameter, later):
         obj, kind, item_id = self._unpack(parameter)
