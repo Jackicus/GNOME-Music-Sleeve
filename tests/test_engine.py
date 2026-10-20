@@ -1850,16 +1850,34 @@ class AlbumPageTest(EngineFixture):
         answer = await self.engine.album_page('1724049100')
         self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
         self.assertEqual(self.page.api_params[0]['views'].split(','),
-                         ['other-versions', 'related-videos', 'appears-on', 'related-albums'])
+                         ['other-versions', 'related-videos', 'appears-on', 'you-might-also-like'])
         self.assertEqual(self.page.api_params[0]['include'], 'artists')
         self.assertEqual(self.page.api_params[1], {'limit': 30})
         self.assertEqual(answer['release']['copyright'], '℗ 2026 Invented Records Ltd')
         self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['other-versions', 'more-by-artist', 'appears-on', 'related-albums'])
+                         ['other-versions', 'more-by-artist', 'appears-on', 'you-might-also-like'])
         self.assertIn('cached', answer)
         self.assertTrue((self.cache / 'albums' / '1724049100.json').is_file())
         await self.engine.stop()
         again = await self.engine.album_page('1724049100')  # from the file, the engine down
+        self.assertEqual(again['shelves'], answer['shelves'])
+        self.assertEqual(len(self.page.api_calls), 2)
+
+    async def test_an_answer_kept_with_other_views_is_asked_again(self):
+        # An older app asked for `related-albums`, which Apple has no view of: what it kept
+        # lacks You Might Also Like, so it is not fresh, however young.
+        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
+        path.parent.mkdir(parents=True)
+        old = {'id': '1724049100', 'artistId': '', 'artistName': '', 'release': {},
+               'shelves': [], 'cached': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        path.write_text(json.dumps(old), encoding='utf-8')
+        await self.up()
+        self.answer()
+        answer = await self.engine.album_page('1724049100')
+        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
+        self.assertIn('you-might-also-like', [shelf['key'] for shelf in answer['shelves']])
+        self.assertEqual(answer['basis'], ','.join(api.ALBUM_VIEWS))
+        again = await self.engine.album_page('1724049100')  # kept with these views: fresh
         self.assertEqual(again['shelves'], answer['shelves'])
         self.assertEqual(len(self.page.api_calls), 2)
 
@@ -1914,12 +1932,13 @@ class AlbumPageTest(EngineFixture):
 
     async def test_a_view_is_read_whole(self):
         await self.up()
-        path = f'{self.ALBUM}/view/related-albums'
+        path = f'{self.ALBUM}/view/you-might-also-like'
         self.answer()
-        album = self.page.api_answers[self.ALBUM]['data'][0]['views']['related-albums']['data'][0]
+        views = self.page.api_answers[self.ALBUM]['data'][0]['views']
+        album = views['you-might-also-like']['data'][0]
         self.page.api_answers[path] = {'data': [album], 'next': f'{path}?offset=1'}
         self.page.api_answers[f'{path}?offset=1'] = {'data': [dict(album, id='1724049301')]}
-        items = await self.engine.album_view('1724049100', 'related-albums')
+        items = await self.engine.album_view('1724049100', 'you-might-also-like')
         self.assertEqual(self.page.api_calls, [path, f'{path}?offset=1'])
         self.assertEqual(self.page.api_params[0], {'limit': 100})
         self.assertEqual([(item['id'], item['subtitle']) for item in items],

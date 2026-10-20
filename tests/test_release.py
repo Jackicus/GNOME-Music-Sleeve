@@ -172,7 +172,7 @@ class ShelvesTest(unittest.TestCase):
                     {'key': 'more-by-artist', 'title': '', 'more': True,
                      'items': [entry(10), entry(11)]},
                     {'key': 'appears-on', 'title': 'Featured On', 'more': False, 'items': []},
-                    {'key': 'related-albums', 'title': 'You Might Also Like', 'more': False,
+                    {'key': 'you-might-also-like', 'title': 'You Might Also Like', 'more': False,
                      'items': [{'id': '', 'kind': 'album'}, entry(30)]},
                 ]}
 
@@ -182,7 +182,7 @@ class ShelvesTest(unittest.TestCase):
             ('other-versions', 'Other Versions', False),
             ('related-videos', 'Music Videos', False),  # Apple gave no title
             ('more-by-artist', 'More By Invented Artist', True),
-            ('related-albums', 'You Might Also Like', False)])
+            ('you-might-also-like', 'You Might Also Like', False)])
         self.assertEqual([item.id for item in shelves[3].items], ['1724049130'])
 
     def test_more_by_names_the_answers_artist_without_one(self):

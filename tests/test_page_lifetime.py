@@ -561,10 +561,10 @@ class PageLifetimeTest(WidgetTestCase):
         self.app.engine.album_answer = {
             'id': '1724049100', 'artistId': '42', 'artistName': 'Invented Artist',
             'release': {'releaseDate': '2026-03-14', 'copyright': '℗ 2026 Invented'},
-            'shelves': [{'key': key, 'title': '', 'more': key == 'related-albums',
+            'shelves': [{'key': key, 'title': '', 'more': key == 'you-might-also-like',
                          'items': [entry(number) for number in range(1, 5)]}
                         for key in ('other-versions', 'more-by-artist', 'appears-on',
-                                    'related-albums')]}
+                                    'you-might-also-like')]}
         self.addCleanup(setattr, self.app.engine, 'album_answer', None)
         item = Item(dict(_album(1, tracks=3), catalogId='1724049100'))
         refs = await self.pushed_and_popped(DetailPage(self.library, item), Shelf, Tile)

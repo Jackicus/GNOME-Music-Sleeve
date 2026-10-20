@@ -175,7 +175,7 @@ class DetailPageTest(PageTestCase):
                      'items': [entry(10), entry(11)]},
                     {'key': 'appears-on', 'title': 'Featured On', 'more': False,
                      'items': [dict(entry(70), kind='playlist', id='pl.70')]},
-                    {'key': 'related-albums', 'title': 'You Might Also Like', 'more': True,
+                    {'key': 'you-might-also-like', 'title': 'You Might Also Like', 'more': True,
                      'items': [entry(30)]}]}
 
     async def test_an_album_ends_with_its_footer_and_the_catalogs_shelves(self):

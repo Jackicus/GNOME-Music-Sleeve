@@ -55,8 +55,8 @@
                               "playParams": {"id": "1724049150", "kind": "album"}}}
             ]
           },
-          "related-albums": {
-            "href": "/v1/catalog/gb/albums/1724049100/view/related-albums",
+          "you-might-also-like": {
+            "href": "/v1/catalog/gb/albums/1724049100/view/you-might-also-like",
             "attributes": {"title": "You Might Also Like"},
             "data": [
               {"id": "1724049300", "type": "albums",
@@ -66,7 +66,7 @@
                                           "width": 3000, "height": 3000},
                               "playParams": {"id": "1724049300", "kind": "album"}}}
             ],
-            "next": "/v1/catalog/gb/albums/1724049100/view/related-albums?offset=10"
+            "next": "/v1/catalog/gb/albums/1724049100/view/you-might-also-like?offset=10"
           },
           "related-videos": {
             "href": "/v1/catalog/gb/albums/1724049100/view/related-videos",

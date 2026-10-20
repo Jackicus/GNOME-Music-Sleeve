@@ -2251,8 +2251,9 @@ class Engine(GObject.Object):
         page of its first artist's albums (api.MORE_BY_VIEW; More By is left out when that
         read fails). A library album (an `l.` id) is its catalog album, found through
         `song_id`, one of its songs' catalog ids: one read more, the first time. From
-        <cache>/albums/<id>.json for a day, else fetched and kept. An album the catalog
-        lacks is Apple's 404 (EngineError.status)."""
+        <cache>/albums/<id>.json for a day, else fetched and kept, with the views it asked
+        for as its `basis`: one kept with other views (an older app's) is asked again. An
+        album the catalog lacks is Apple's 404 (EngineError.status)."""
         album_id = str(album_id or '')
         song_id = str(song_id or '')
         if not album_id or (api.is_library_id(album_id) and not song_id):
@@ -2288,7 +2289,7 @@ class Engine(GObject.Object):
             return {'album': album, 'moreBy': more_by}
         return await self._kept_answer(
             normalize.album_cache_path(str(self.cache_dir), album_id), refresh, fetch,
-            normalize.album_page)
+            normalize.album_page, basis=api.ALBUM_PARAMS['views'])
 
     async def album_view(self, album_id, view):
         """One of a catalog album's views (api.ALBUM_VIEWS) whole, for its See All: its

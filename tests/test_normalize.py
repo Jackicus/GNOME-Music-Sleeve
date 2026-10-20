@@ -1337,7 +1337,7 @@ class TestAlbumPage(unittest.TestCase):
                          [('other-versions', 'Other Versions', False),
                           ('more-by-artist', '', True),
                           ('appears-on', 'Featured On', False),
-                          ('related-albums', 'You Might Also Like', True)])
+                          ('you-might-also-like', 'You Might Also Like', True)])
 
     def test_each_card_says_what_apple_shows_under_it(self):
         other = self.shelf('other-versions')['items'][0]
@@ -1353,7 +1353,7 @@ class TestAlbumPage(unittest.TestCase):
         playlists = self.shelf('appears-on')['items']
         self.assertEqual([(playlist['kind'], playlist['subtitle']) for playlist in playlists],
                          [('playlist', 'Apple Music Indie')])
-        alike = self.shelf('related-albums')['items'][0]
+        alike = self.shelf('you-might-also-like')['items'][0]
         self.assertEqual((alike['subtitle'], alike['artistName']), ('Mara Lind', 'Mara Lind'))
 
     def test_without_more_by(self):

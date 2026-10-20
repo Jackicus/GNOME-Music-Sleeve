@@ -2713,7 +2713,7 @@ def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums,
                  and other['subtitle'] != album['subtitle']]
         alike += rnd.sample([other for other in albums if other not in alike
                              and other['subtitle'] != album['subtitle']], 8 - min(8, len(alike)))
-        shelf('related-albums', 'You Might Also Like', [
+        shelf('you-might-also-like', 'You Might Also Like', [
             brief(other, artistName=other['subtitle']) for other in alike[:8]])
 
         label = DEMO_LABELS[artist_index % len(DEMO_LABELS)]

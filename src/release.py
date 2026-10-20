@@ -235,7 +235,7 @@ def shelf_title(key, title, artist_name):
         # Translators: the shelf of the playlists an album's songs are on.
         'appears-on': _('Featured On'),
         # Translators: the shelf of albums like the one shown.
-        'related-albums': _('You Might Also Like'),
+        'you-might-also-like': _('You Might Also Like'),
     }.get(key, '')
 
 

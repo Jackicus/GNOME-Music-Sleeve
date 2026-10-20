@@ -138,9 +138,10 @@ ARTIST_VIEW_LIMIT = 100
 # first page of resources and a `next` link where there are more), in the page's order but
 # for More By, which is no view of the album's but its first artist's albums (MORE_BY_VIEW,
 # a page of MORE_BY_LIMIT of them). related-videos is "Music Videos", appears-on the
-# playlists the album is on ("Featured On"), related-albums "You Might Also Like".
+# playlists the album is on ("Featured On"), you-might-also-like "You Might Also Like"
+# (Apple has no `related-albums` view: never answered, and its /view/ read a 400).
 ALBUM_ENDPOINT = '/v1/catalog/{storefront}/albums/{id}'
-ALBUM_VIEWS = ('other-versions', 'related-videos', 'appears-on', 'related-albums')
+ALBUM_VIEWS = ('other-versions', 'related-videos', 'appears-on', 'you-might-also-like')
 ALBUM_PARAMS = {'views': ','.join(ALBUM_VIEWS), 'include': 'artists'}
 # One of an album's views whole (See All), a page of it at a time.
 ALBUM_VIEW_ENDPOINT = '/v1/catalog/{storefront}/albums/{id}/view/{view}'
