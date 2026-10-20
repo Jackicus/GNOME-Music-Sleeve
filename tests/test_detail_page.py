@@ -102,7 +102,8 @@ class DetailPageTest(PageTestCase):
         page = await self.push(self.page(album(1, tracks=0)))
         self.assertTrue(page.play_button.get_sensitive())  # the engine plays it by its id
         await self.settle()
-        self.assertTrue(await self.until(lambda: self.rows(page) == 5))  # the hero and four
+        # The hero, four tracks and the footer.
+        self.assertTrue(await self.until(lambda: self.rows(page) == 6))
         self.assertFalse(page.status_box.get_visible())
         self.assertTrue(page.play_button.get_sensitive())
 
@@ -115,8 +116,95 @@ class DetailPageTest(PageTestCase):
         page.status_button.emit('clicked')
         await self.settle()
         self.assertEqual(self.app.engine.calls, ['item', 'item'])
-        self.assertTrue(await self.until(lambda: self.rows(page) == 3))
+        # The hero, two tracks and the footer.
+        self.assertTrue(await self.until(lambda: self.rows(page) == 4))
         self.assertEqual(self.app.reported, [])  # shown on the page, not toasted too
+
+    def album_answer(self):
+        """An invented Engine.album_page answer: the release, and four shelves."""
+        def entry(number):
+            return {'id': str(1724049100 + number), 'kind': 'album', 'title': f'Other {number}',
+                    'subtitle': '2026', 'art': None, 'thumb': None, 'groups': [],
+                    'play': {'kind': 'album', 'id': str(1724049100 + number)}}
+        return {'id': '1724049100', 'artistId': '42', 'artistName': 'Invented Artist',
+                'release': {'releaseDate': '2026-03-14', 'copyright': '℗ 2026 Invented Records',
+                            'recordLabel': 'Invented Records'},
+                'shelves': [
+                    {'key': 'other-versions', 'title': 'Other Versions', 'more': False,
+                     'items': [entry(50)]},
+                    {'key': 'more-by-artist', 'title': '', 'more': False,
+                     'items': [entry(10), entry(11)]},
+                    {'key': 'appears-on', 'title': 'Featured On', 'more': False,
+                     'items': [dict(entry(70), kind='playlist', id='pl.70')]},
+                    {'key': 'related-albums', 'title': 'You Might Also Like', 'more': True,
+                     'items': [entry(30)]}]}
+
+    async def test_an_album_ends_with_its_footer_and_the_catalogs_shelves(self):
+        asked = []
+        self.app.engine.answers['album_page'] = lambda *args: (asked.append(args),
+                                                               self.album_answer())[1]
+        page = await self.push(self.page(dict(album(1, tracks=3), catalogId='1724049100')))
+        # The tracks and the footer at once, the shelves once the catalog answers.
+        self.assertTrue(await self.until(lambda: self.rows(page) == 6))
+        self.assertEqual(asked, [('1724049100', None)])
+        self.assertEqual(page.footer_label.get_label().split('\n'),
+                         ['14 March 2026', '3 songs, 9 minutes', '℗ 2026 Invented Records'])
+        self.assertTrue(await self.until(lambda: page._shelf_column is not None
+                                         and len(page._shelf_column.widgets) == 4))
+        self.assertEqual([widget.title_label.get_label()
+                          for widget in page._shelf_column.widgets],
+                         ['Other Versions', 'More By Invented Artist', 'Featured On',
+                          'You Might Also Like'])
+        # See All fetches the rest of a shelf Apple has more of, the album left out.
+        more = page._shelf_column.shelves[3]
+        self.assertIsNone(page._shelf_column.shelves[0].complete)
+        self.app.engine.answers['album_view'] = [
+            {'id': '1724049130', 'kind': 'album', 'title': 'Other 30', 'groups': []},
+            {'id': '1724049100', 'kind': 'album', 'title': 'This One', 'groups': []},
+            {'id': '1724049131', 'kind': 'album', 'title': 'Other 31', 'groups': []}]
+        await more.complete()
+        self.assertEqual([item.id for item in more.items], ['1724049130', '1724049131'])
+        self.assertFalse(more.more)
+        # Asked once: the page shown again keeps its answer.
+        self.window.navigation_view.push(self.page(album(2)))
+        await self.settle()
+        self.window.navigation_view.pop()
+        await self.settle()
+        self.assertEqual(len(asked), 1)
+
+    async def test_a_library_album_is_asked_for_through_its_songs(self):
+        asked = []
+        self.app.engine.answers['album_page'] = lambda *args: (asked.append(args),
+                                                               self.album_answer())[1]
+        data = album(1, tracks=2)
+        data['groups'][0]['entries'][1]['catalogId'] = '1724049201'
+        page = await self.push(self.page(data))
+        self.assertTrue(await self.until(lambda: self.rows(page) == 5))
+        self.assertEqual(asked, [('l.album001', '1724049201')])
+
+    async def test_an_album_without_an_answer_shows_what_it_has(self):
+        # The engine down (or offline, or an album the catalog lacks): the tracks and the
+        # footer's counts, no shelves, and nothing toasted.
+        for answer in (EngineError('engine-down'), EngineError('api', 'gone', status=404)):
+            with self.subTest(answer=answer.code):
+                self.app.engine.answers['album_page'] = answer
+                page = await self.push(self.page(dict(album(1, tracks=3),
+                                                      catalogId='1724049100')))
+                self.assertTrue(await self.until(
+                    lambda: 'album_page' in self.app.engine.calls))
+                await self.settle()
+                self.assertEqual(self.rows(page), 5)  # the hero, three tracks, the footer
+                self.assertEqual(page.footer_label.get_label(), '3 songs, 9 minutes')
+                self.assertIsNone(page._shelf_column)  # none made
+                self.assertEqual((self.app.reported, self.app.toasts), ([], []))
+                self.window.navigation_view.pop()
+                await self.settle()
+
+    async def test_a_playlist_has_no_footer(self):
+        page = await self.push(self.page(album(1, tracks=3, kind='playlist')))
+        await self.settle()
+        self.assertEqual(self.rows(page), 4)
+        self.assertNotIn('album_page', self.app.engine.calls)
 
     async def test_popping_the_page_cancels_its_fetch(self):
         waiting = asyncio.get_running_loop().create_future()

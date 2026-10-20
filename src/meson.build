@@ -117,6 +117,7 @@ install_data(
   'player_bar.py',
   'recent_searches.py',
   'related.py',
+  'release.py',
   'remote.py',
   'search_provider.py',
   'sections.py',

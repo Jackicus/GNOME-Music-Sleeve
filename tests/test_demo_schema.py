@@ -261,6 +261,36 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertNotIn(item['id'], held)
                     self.assertEqual(item['play'], {'kind': 'song', 'id': item['id']})
 
+    def test_album_pages(self):
+        # Each album has what the catalog would show under its tracks, as the engine keeps
+        # it (normalize.album_page's keys), every shelf in Apple's order, More By untitled.
+        real = normalize.album_page({}, None)
+        for album in self.data['sections']['albums']:
+            with self.subTest(id=album['id']):
+                path = os.path.join(self.out_dir, 'albums', f"{album['catalogId']}.json")
+                with open(path, encoding='utf-8') as f:
+                    answer = json.load(f)
+                self.assertIs(answer['demo'], True)
+                self.assertEqual(set(answer) - {'demo', 'cached'}, set(real))
+                self.assertEqual(answer['id'], album['catalogId'])
+                self.assertEqual(set(answer['release']),
+                                 {'releaseDate', 'copyright', 'recordLabel'})
+                self.assertTrue(answer['release']['releaseDate'].startswith(str(album['year'])))
+                keys = [shelf['key'] for shelf in answer['shelves']]
+                self.assertEqual(keys, [key for key in normalize.ALBUM_SHELVES if key in keys])
+                self.assertIn('other-versions', keys)
+                self.assertIn('related-albums', keys)
+                for shelf in answer['shelves']:
+                    self.assertEqual(shelf['title'] == '', shelf['key'] == 'more-by-artist')
+                    self.assertTrue(shelf['items'])
+                    self.assertNotIn(album['id'], [item['id'] for item in shelf['items']])
+        # The first album, which the screenshots open, has every shelf.
+        first = self.data['sections']['albums'][0]
+        with open(os.path.join(self.out_dir, 'albums', f"{first['catalogId']}.json"),
+                  encoding='utf-8') as f:
+            self.assertEqual([shelf['key'] for shelf in json.load(f)['shelves']],
+                             list(normalize.ALBUM_SHELVES))
+
     def test_one_favourites_playlist(self):
         # The flag the app looks for (applemusic.library.FAVOURITES) is on one playlist only, and
         # no other item carries attributes.

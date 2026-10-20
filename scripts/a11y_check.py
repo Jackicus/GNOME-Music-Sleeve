@@ -484,6 +484,23 @@ async def walkthrough(window):
     window.play_request = play_request
     second = detail.item.groups[0].entries.get_item(1)
     check('Down, Enter plays the second track', requests == [(1, second.id)], requests)
+    # The footer and the catalog's shelves after the tracks (the demo's invented answer).
+    await until(lambda: detail._shelves_start is not None)
+    check("the catalog's shelves follow the tracks", detail._shelves_start is not None)
+    if detail._shelves_start is not None:
+        last = detail._shelves_start - 2  # the footer between them takes no focus
+        detail.list_view.scroll_to(last, Gtk.ListScrollFlags.FOCUS, None)
+        await asyncio.sleep(0.3)
+        await key(window, 'Tab', 0.3)
+        check('Tab from the last track: the first shelf',
+              inside(window.get_focus(), detail.shelves_box), describe(window.get_focus()))
+        await key(window, '<shift>ISO_Left_Tab', 0.3)
+        focus = window.get_focus()
+        check('Shift+Tab: back to the last track', inside(focus, detail.list_view)
+              and not inside(focus, detail.shelves_box)
+              and focus.__gtype__.name == 'GtkListItemWidget'
+              and focus.get_first_child().track_row.context_item
+              is detail._rows.get_item(last), describe(focus))
     print('-- artist')
     window.open_artist_page(app.library.artists.get_item(0))  # Go to Artist's page
     await asyncio.sleep(1.5)  # its page answered from the demo's invented one

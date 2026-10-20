@@ -11,6 +11,7 @@ The standard library only; engine.py and actions.py use it.
     resource_type('song', 'i.1')        # 'library-song' (the singular: callers add the "s")
     track_type('song', 'i.1')           # 'library-songs': what a playlist takes it as
     is_deleted(resource)                # a deleted playlist or folder Apple still lists
+    first_related_id(answer, 'artists') # an answer's first resource's first artist's id
     page_data(answer)                   # the page's resources: its `data` list's dicts
     api_error(answer, 'search')         # EngineError('api', 'search: 404 Not Found: …',
                                         # status=404) for Apple's {errors: [...]}, else None
@@ -67,6 +68,22 @@ ARTIST_PARAMS = {
 # One of an artist's views whole (See All), a page of it at a time.
 ARTIST_VIEW_ENDPOINT = '/v1/catalog/{storefront}/artists/{id}/view/{view}'
 ARTIST_VIEW_LIMIT = 100
+# An album's page under its tracks, as music.apple.com's asks for it: the album with its
+# artists and the views its page shows below the list (each with Apple's own title, its
+# first page of resources and a `next` link where there are more), in the page's order but
+# for More By, which is no view of the album's but its first artist's albums (MORE_BY_VIEW,
+# a page of MORE_BY_LIMIT of them). related-videos is "Music Videos", appears-on the
+# playlists the album is on ("Featured On"), related-albums "You Might Also Like".
+ALBUM_ENDPOINT = '/v1/catalog/{storefront}/albums/{id}'
+ALBUM_VIEWS = ('other-versions', 'related-videos', 'appears-on', 'related-albums')
+ALBUM_PARAMS = {'views': ','.join(ALBUM_VIEWS), 'include': 'artists'}
+# One of an album's views whole (See All), a page of it at a time.
+ALBUM_VIEW_ENDPOINT = '/v1/catalog/{storefront}/albums/{id}/view/{view}'
+MORE_BY_VIEW = 'full-albums'
+MORE_BY_LIMIT = 30
+# A catalog song with its albums: the catalog album a library album is, found through one of
+# its songs (a library album carries no catalog id of its own).
+SONG_ALBUMS_PARAMS = {'include': 'albums'}
 # A catalog song with its artists: how a library artist, which the library makes up from its
 # songs' names, finds the catalog artist it stands for.
 SONG_ARTISTS_ENDPOINT = '/v1/catalog/{storefront}/songs/{id}'
@@ -170,6 +187,17 @@ def album_endpoint(album_id, storefront):
     library = str(album_id).startswith(('l.', 'p.'))
     return (f'/v1/me/library/albums/{album_id}?include=tracks' if library
             else f'/v1/catalog/{storefront}/albums/{album_id}?include=tracks')
+
+
+def first_related_id(answer, name):
+    """The id of the first resource of the relationship `name` (an album's `artists`, a
+    song's `albums`) of an answer's first resource, or None."""
+    data = page_data(answer)
+    relationships = data[0].get('relationships') if data else None
+    relationship = relationships.get(name) if isinstance(relationships, dict) else None
+    related = page_data(relationship)
+    found = related[0].get('id') if related else None
+    return str(found) if found not in (None, '') else None
 
 
 def resource_type(kind, item_id):

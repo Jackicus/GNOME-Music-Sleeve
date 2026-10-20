@@ -276,6 +276,14 @@ gridview.song-shelf > child {
   font-weight: normal;
 }
 
+/* The shelves under an album's tracks (pages/detail.blp): out of the track list's row inset
+   (its 12px margin and 12px padding each side), so their titles and tiles sit on the page's
+   24px margin as an artist page's do. */
+.album-shelves {
+  margin-left: -24px;
+  margin-right: -24px;
+}
+
 /* An artist's latest release (pages/artist.blp): the cover and its caption as one button,
    flush with the page's margin. */
 button.release-card {

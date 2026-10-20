@@ -1674,6 +1674,128 @@ class ArtistTest(EngineFixture):
             self.assertEqual(raised.exception.code, 'engine-down')
 
 
+class AlbumPageTest(EngineFixture):
+    """album_page and album_view: the reads they make (the album with its views, then its
+    artist's albums; a library album's catalog album through one of its songs), the day-long
+    cache, what a failure leaves out, and the demo's own answers."""
+
+    ALBUM = '/v1/catalog/us/albums/1724049100'
+    MORE_BY = '/v1/catalog/us/artists/1724049001/view/full-albums'
+
+    async def up(self, authorized=True):
+        self.page.authorized = authorized
+        await self.engine.start()
+
+    def answer(self, more_by=True):
+        with open(FIXTURES / 'catalog_album_page.json', encoding='utf-8') as file:
+            raw = json.load(file)
+        self.page.api_answers[self.ALBUM] = raw['album']
+        if more_by:
+            self.page.api_answers[self.MORE_BY] = raw['moreBy']
+
+    async def test_two_reads_kept_for_a_day(self):
+        await self.up()
+        self.answer()
+        answer = await self.engine.album_page('1724049100')
+        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
+        self.assertEqual(self.page.api_params[0]['views'].split(','),
+                         ['other-versions', 'related-videos', 'appears-on', 'related-albums'])
+        self.assertEqual(self.page.api_params[0]['include'], 'artists')
+        self.assertEqual(self.page.api_params[1], {'limit': 30})
+        self.assertEqual(answer['release']['copyright'], '℗ 2026 Invented Records Ltd')
+        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
+                         ['other-versions', 'more-by-artist', 'appears-on', 'related-albums'])
+        self.assertIn('cached', answer)
+        self.assertTrue((self.cache / 'albums' / '1724049100.json').is_file())
+        await self.engine.stop()
+        again = await self.engine.album_page('1724049100')  # from the file, the engine down
+        self.assertEqual(again['shelves'], answer['shelves'])
+        self.assertEqual(len(self.page.api_calls), 2)
+
+    async def test_a_library_album_is_found_through_a_song(self):
+        await self.up()
+        self.answer()
+        song = '/v1/catalog/us/songs/1724049201'
+        self.page.api_answers[song] = {'data': [{'id': '1724049201', 'type': 'songs',
+                                                 'relationships': {'albums': {'data': [
+                                                     {'id': '1724049100', 'type': 'albums'}]}}}]}
+        answer = await self.engine.album_page('l.aW52ZW50ZWQ', song_id='1724049201')
+        self.assertEqual(self.page.api_calls, [song, self.ALBUM, self.MORE_BY])
+        self.assertEqual(self.page.api_params[0], {'include': 'albums'})
+        self.assertEqual(answer['id'], '1724049100')
+        # Kept under the library album's id, which is what the page asks by.
+        self.assertTrue((self.cache / 'albums' / 'l.aW52ZW50ZWQ.json').is_file())
+
+    async def test_a_song_on_no_catalog_album_is_a_404(self):
+        await self.up()
+        self.page.api_answers['/v1/catalog/us/songs/1724049201'] = {'data': [{'id': 's'}]}
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.album_page('l.aW52ZW50ZWQ', song_id='1724049201')
+        self.assertEqual((raised.exception.code, raised.exception.status), ('api', 404))
+        self.assertFalse((self.cache / 'albums').exists())
+
+    async def test_more_by_left_out_when_its_read_fails(self):
+        await self.up()
+        self.answer(more_by=False)  # the artist's view answers 404
+        answer = await self.engine.album_page('1724049100')
+        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
+        self.assertNotIn('more-by-artist', [shelf['key'] for shelf in answer['shelves']])
+
+    async def test_an_album_the_catalog_lacks(self):
+        await self.up()
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.album_page('1724049199')
+        self.assertEqual(raised.exception.status, 404)
+        self.assertEqual(self.page.api_calls, ['/v1/catalog/us/albums/1724049199'])
+
+    async def test_what_it_refuses(self):
+        await self.up()
+        for album_id, song_id in (('', None), ('l.aW52ZW50ZWQ', None), (None, '1')):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.album_page(album_id, song_id=song_id)
+            self.assertEqual(raised.exception.code, 'usage')
+        for album_id, view in (('1724049100', 'full-albums'), ('l.aW52ZW50ZWQ', 'appears-on'),
+                               ('', 'appears-on')):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.album_view(album_id, view)
+            self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.api_calls, [])
+
+    async def test_a_view_is_read_whole(self):
+        await self.up()
+        path = f'{self.ALBUM}/view/related-albums'
+        self.answer()
+        album = self.page.api_answers[self.ALBUM]['data'][0]['views']['related-albums']['data'][0]
+        self.page.api_answers[path] = {'data': [album], 'next': f'{path}?offset=1'}
+        self.page.api_answers[f'{path}?offset=1'] = {'data': [dict(album, id='1724049301')]}
+        items = await self.engine.album_view('1724049100', 'related-albums')
+        self.assertEqual(self.page.api_calls, [path, f'{path}?offset=1'])
+        self.assertEqual(self.page.api_params[0], {'limit': 100})
+        self.assertEqual([(item['id'], item['subtitle']) for item in items],
+                         [('1724049300', 'Mara Lind'), ('1724049301', 'Mara Lind')])
+
+    async def test_signed_out(self):
+        await self.up(authorized=False)
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.album_page('1724049100')
+        self.assertEqual(raised.exception.code, 'not-signed-in')
+
+    async def test_the_demo_answers_from_its_own_cache(self):
+        demo = engine_module.Engine(demo=True)
+        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'id': '1724049100', 'shelves': [], 'release': {},
+                                    'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
+                        encoding='utf-8')
+        answer = await demo.album_page('1724049100')
+        self.assertEqual(answer['id'], '1724049100')
+        self.assertNotIn('stale', answer)
+        for coro in (demo.album_page('1724049110'), demo.album_view('1724049100', 'appears-on')):
+            with self.assertRaises(EngineError) as raised:
+                await coro
+            self.assertEqual(raised.exception.code, 'engine-down')
+
+
 class SuggestionsTest(EngineFixture):
     """playlist_suggestions: the bridge's one read, the shaping and the day-long cache."""
 

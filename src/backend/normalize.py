@@ -1845,6 +1845,113 @@ def artist_cache_path(cache_dir, artist_id):
 
 
 # ---------------------------------------------------------------------------
+# An album's page under its tracks
+# ---------------------------------------------------------------------------
+
+# The shelves under an album's tracks, in the order music.apple.com shows them: its views
+# (api.ALBUM_VIEWS), titled as Apple titles them, and More By, its first artist's albums,
+# which the app titles ("More By <artist>").
+ALBUM_SHELVES = ('other-versions', 'related-videos', 'more-by-artist', 'appears-on',
+                 'related-albums')
+MORE_BY = 'more-by-artist'
+RELEASE_DATE = re.compile(r'\d{4}(-\d{2}-\d{2})?')
+
+
+def album_page(raw, cache_dir):
+    """The rest of an album's page, under its tracks (Engine.album_page()'s answer, from
+    {album: api.ALBUM_ENDPOINT's answer, moreBy: a page of its first artist's albums,
+    api.MORE_BY_VIEW, or None}), as {id, artistId, artistName, release, shelves}:
+
+    - `id`: the catalog album's id; `artistId`, `artistName`: its first artist's, or ''.
+    - `release`: what the footer under the tracks says (album_release()): `releaseDate`,
+      `copyright` and `recordLabel`, each only where Apple has it.
+    - `shelves`: [{key, title, items, more}] in ALBUM_SHELVES's order, titled as Apple titles
+      the views (More By has no title: the app names it), `more` True when Apple has more than
+      it sent. More By leaves the album itself out; a shelf with nothing the app can show is
+      left out.
+
+    Items are shaped as a search's are (album_view_items, and artist_view_items for More
+    By)."""
+    raw = raw if isinstance(raw, dict) else {}
+    album = raw.get('album')
+    data = album.get('data') if isinstance(album, dict) else None
+    resource = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else {}
+    attrs = resource.get('attributes') if isinstance(resource.get('attributes'), dict) else {}
+    album_id = str(resource.get('id') or '')
+    relationships = resource.get('relationships')
+    artists = relationships.get('artists') if isinstance(relationships, dict) else None
+    artist_data = artists.get('data') if isinstance(artists, dict) else None
+    first_artist = (artist_data[0] if isinstance(artist_data, list) and artist_data
+                    and isinstance(artist_data[0], dict) else {})
+    artist_name = attrs.get('artistName') if isinstance(attrs.get('artistName'), str) else ''
+
+    views = resource.get('views') if isinstance(resource.get('views'), dict) else {}
+    found = {}
+    for name, view in views.items():
+        if name in ALBUM_SHELVES and isinstance(view, dict):
+            title = (view.get('attributes') or {}).get('title')
+            found[name] = {'key': name, 'title': title if isinstance(title, str) else '',
+                           'items': album_view_items(name, view.get('data'), cache_dir),
+                           'more': bool(view.get('next'))}
+    more_by = raw.get('moreBy')
+    if isinstance(more_by, dict):
+        items = [item for item in artist_view_items('full-albums', more_by.get('data'),
+                                                    cache_dir)
+                 if album_id not in (item['id'], item.get('catalogId'))]
+        found[MORE_BY] = {'key': MORE_BY, 'title': '', 'items': items,
+                          'more': bool(more_by.get('next'))}
+    return {
+        'id': album_id,
+        'artistId': str(first_artist.get('id') or ''),
+        'artistName': artist_name.strip(),
+        'release': album_release(attrs),
+        'shelves': [found[name] for name in ALBUM_SHELVES
+                    if name in found and found[name]['items']],
+    }
+
+
+def album_release(attrs):
+    """What an album's footer says, from its catalog attributes: `releaseDate` (Apple's
+    'YYYY-MM-DD', or a year alone), `copyright` (the line with its ℗ or ©) and
+    `recordLabel`, each only where Apple has it as text, its runs of white space one space."""
+    release = {}
+    attrs = attrs if isinstance(attrs, dict) else {}
+    date = attrs.get('releaseDate')
+    if isinstance(date, str) and RELEASE_DATE.fullmatch(date.strip()):
+        release['releaseDate'] = date.strip()
+    for key in ('copyright', 'recordLabel'):
+        value = attrs.get(key)
+        if isinstance(value, str) and value.strip():
+            release[key] = ' '.join(value.split())
+    return release
+
+
+def album_view_items(view, resources, cache_dir):
+    """The Items of one of an album's views (api.ALBUM_VIEWS) as a search's are, without
+    groups: another version of the album subtitled with its year (it is the same artist's),
+    anything else as a search has it (an album or a video with its artist, a playlist with
+    its curator). What the app cannot show is left out."""
+    items = []
+    for resource in resources if isinstance(resources, list) else []:
+        item = _shelf_item(resource, cache_dir, curators=False)
+        if item is None:
+            continue
+        attrs = resource.get('attributes') or {}
+        if attrs.get('artistName') and item['kind'] in ('album', 'video', 'song'):
+            item['artistName'] = attrs['artistName']  # its subtitle may be a year: Go to Artist
+        if view == 'other-versions' and item['kind'] == 'album':
+            item['subtitle'] = str(item['year']) if item.get('year') else ''
+        items.append(item)
+    return items
+
+
+def album_cache_path(cache_dir, album_id):
+    """Where an album's page (album_page) is kept for a day, under the id it was asked by: a
+    library album's own, or a catalog one."""
+    return os.path.join(cache_dir, 'albums', f'{_safe_id(album_id)}.json')
+
+
+# ---------------------------------------------------------------------------
 # The other caches: artwork the pages fetch on their own, and answers kept
 # ---------------------------------------------------------------------------
 
@@ -1894,10 +2001,10 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
     """Trim the caches nothing else trims (in a thread, at startup and after a sync):
     remote-art/ to `remote_bytes` (prune_remote_art), lyrics/ to the
     `lyrics_keep` played last (by mtime: a cache hit touches the file), the kept answers
-    (categories/, artists/, suggestions/, landing, New, Made for You) stamped longer than
-    `answer_age` ago (by mtime, when they were written), an items/ folder older versions
-    kept, and the temporary files of writes a crash cut short (store.is_stale_temp) in the
-    cache and its folders. Returns {what: how many went}. art/ and thumb/ are the
+    (categories/, artists/, albums/, suggestions/, landing, New, Made for You) stamped
+    longer than `answer_age` ago (by mtime, when they were written), an items/ folder older
+    versions kept, and the temporary files of writes a crash cut short (store.is_stale_temp)
+    in the cache and its folders. Returns {what: how many went}. art/ and thumb/ are the
     library's: prune_art keeps them."""
     now = time.time() if now is None else now
     gone = {'remote-art': prune_remote_art(cache_dir, remote_bytes), 'lyrics': 0,
@@ -1915,7 +2022,7 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
 
     for folder in (cache_dir, *(os.path.join(cache_dir, name) for name in
                                 ('art', 'thumb', 'remote-art', 'lyrics', 'categories',
-                                 'artists', 'suggestions'))):
+                                 'artists', 'albums', 'suggestions'))):
         for entry in files(folder):
             if store.is_stale_temp(entry.path, now) and _remove(entry.path):
                 gone['temps'] += 1
@@ -1927,7 +2034,7 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
         if _remove(entry.path):
             gone['lyrics'] += 1
 
-    answers = [entry for folder in ('categories', 'artists', 'suggestions')
+    answers = [entry for folder in ('categories', 'artists', 'albums', 'suggestions')
                for entry in files(os.path.join(cache_dir, folder))
                if not store.is_temp(entry.name)]
     answers += [entry for entry in files(cache_dir) if entry.name in KEPT_ANSWERS]

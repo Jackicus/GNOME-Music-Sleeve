@@ -128,6 +128,12 @@ def classes():
         async def artist_view(self, artist_id, view):
             return await self._answer('artist_view', artist_id, view)
 
+        async def album_page(self, album_id, song_id=None, refresh=False):
+            return await self._answer('album_page', album_id, song_id)
+
+        async def album_view(self, album_id, view):
+            return await self._answer('album_view', album_id, view)
+
         async def catalog_artist(self, name, song_ids):
             return await self._answer('catalog_artist', name, song_ids)
 

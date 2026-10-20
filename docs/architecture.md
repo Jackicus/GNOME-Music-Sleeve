@@ -60,7 +60,9 @@ touches widgets.
   (`recent_searches.py`, a file in the cache, as music.apple.com keeps its own in the browser). A playlist of the user's ends with the songs Apple
   suggests adding to it (`widgets/suggested_songs.py`, what is shown and asked for next in
   `suggestions.py`), kept for a day while the playlist holds the same songs; a song plays in
-  full or as Apple's preview, which the bridge plays outside MusicKit's queue.
+  full or as Apple's preview, which the bridge plays outside MusicKit's queue. An album ends
+  with its release footer and the catalog's shelves of it (`release.py`, `Engine.album_page`,
+  kept for a day), asked once its tracks have painted.
 - **Library** (`library.py`): the model. GObjects in `Gio.ListStore`s, filled from the cache's
   library.json. It has no GTK, so it is tested without a display. A reload after a sync keeps
   every object still in the library and says what changed through property notifications and

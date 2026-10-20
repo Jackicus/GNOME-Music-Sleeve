@@ -324,3 +324,31 @@ Box hero {
     }
   }
 }
+
+// After an album's last disc: its release date in full, its songs and their time, and its
+// copyright line (release.footer_lines), as Apple Music's clients end an album.
+Label footer_label {
+  xalign: 0;
+  wrap: true;
+  wrap-mode: word_char;
+  margin-top: 6;
+  margin-bottom: 6;
+
+  styles [
+    "caption",
+    "dimmed",
+  ]
+}
+
+// Under the footer: the catalog's shelves of the album (detail.py's ShelfColumn: Other
+// Versions, Music Videos, More By, Featured On, You Might Also Like), out to the page's edges
+// as an artist page's are (style.css undoes the rows' inset).
+Box shelves_box {
+  orientation: vertical;
+  spacing: 24;
+  margin-top: 18;
+
+  styles [
+    "album-shelves",
+  ]
+}

@@ -137,6 +137,7 @@ def _classes():
             super().__init__()
             self.calls = []
             self.artist_answer = None  # what artist_page() answers: engine-down while None
+            self.album_answer = None  # what album_page() answers, the same way
             self.suggestions = None  # what playlist_suggestions() answers, the same way
 
         async def start(self, visible=None):
@@ -159,6 +160,12 @@ def _classes():
             if self.artist_answer is None:
                 raise EngineError('engine-down')
             return self.artist_answer
+
+        async def album_page(self, album_id, song_id=None, refresh=False):
+            self.calls.append('album_page')
+            if self.album_answer is None:
+                raise EngineError('engine-down')
+            return self.album_answer
 
         async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
                                        selected=(), more=False, basis=None):
@@ -484,6 +491,30 @@ class PageLifetimeTest(WidgetTestCase):
 
         refs = await self.pushed_and_popped(
             DetailPage(self.library, Item(_album(1, tracks=12))), TrackRow)
+        await self.assert_freed(*refs)
+
+    async def test_album_page_with_the_catalogs_shelves(self):
+        # The footer and the shelves under an album's tracks, bound a frame apart.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.widgets.shelf import Shelf
+        from applemusic.widgets.tile import Tile
+
+        def entry(number):
+            return {'id': str(1724049100 + number), 'kind': 'album', 'title': f'Other {number}',
+                    'subtitle': '2026', 'art': None, 'thumb': None, 'groups': [],
+                    'play': {'kind': 'album', 'id': str(1724049100 + number)}}
+
+        self.app.engine.album_answer = {
+            'id': '1724049100', 'artistId': '42', 'artistName': 'Invented Artist',
+            'release': {'releaseDate': '2026-03-14', 'copyright': '℗ 2026 Invented'},
+            'shelves': [{'key': key, 'title': '', 'more': key == 'related-albums',
+                         'items': [entry(number) for number in range(1, 5)]}
+                        for key in ('other-versions', 'more-by-artist', 'appears-on',
+                                    'related-albums')]}
+        self.addCleanup(setattr, self.app.engine, 'album_answer', None)
+        item = Item(dict(_album(1, tracks=3), catalogId='1724049100'))
+        refs = await self.pushed_and_popped(DetailPage(self.library, item), Shelf, Tile)
         await self.assert_freed(*refs)
 
     async def test_playlist_table_page(self):

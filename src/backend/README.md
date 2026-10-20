@@ -330,6 +330,18 @@ order, titled as Apple titles it, `more` when `Engine.artist_view()` has more of
 video about the artist (an interview, a film) is a `link` Item: its `url` is its page,
 its subtitle its length, and it has nothing to play.
 
+What an album's page shows under its tracks (`Engine.album_page()`, `normalize.album_page()`)
+is `{id, artistId, artistName, release: {releaseDate?, copyright?, recordLabel?},
+shelves: [{key, title, items, more}]}`: `id` the catalog album's, `release` what its footer
+says (`normalize.album_release()`: each key only where Apple has it), and the shelves in
+music.apple.com's order: `other-versions`, `related-videos`, `more-by-artist`, `appears-on`
+and `related-albums`, all but More By the album's own views (`api.ALBUM_VIEWS`, one read
+with the album), titled as Apple titles them; `more-by-artist` is a page of its first
+artist's `full-albums` view, less the album, untitled (the app names it "More By …"); `more`
+when `Engine.album_view()` (or `artist_view()` for More By) has more. A library album is
+asked by its own id and one of its songs' catalog ids, through which the engine finds its
+catalog album (`api.SONG_ALBUMS_PARAMS`); the answer is kept under the id it was asked by.
+
 A playlist's suggested songs (`Engine.playlist_suggestions()`,
 `normalize.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are
 (with their `album`), in Apple's order, each once. Apple may suggest a song the playlist
@@ -358,7 +370,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `artists/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`); an older one only when Apple cannot be asked (`stale: True`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 `normalize.prune_caches()` runs after the library's first load and after every sync; it also
 removes what older versions kept (`items/`) and temporary files over an hour old.
