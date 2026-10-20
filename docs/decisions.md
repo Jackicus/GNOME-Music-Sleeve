@@ -876,6 +876,17 @@ changes, change it here, with the date. The plan they came from is in
   music.apple.com's. The demo answers a search from an invented catalog
   (`demo-search.json`), so the filter and See All show in its screenshots.
 
+- **View Credits is a dialog of boxed lists, and its names lead nowhere** (2026-10-20, #364).
+  A song's credits are a short read-only list beside what is playing, not a place to
+  browse, so they open in an `AdwDialog` (a bottom sheet in a narrow window) over the page,
+  not a pushed page that would take the user from where they were: one boxed list per kind
+  of credit, as Apple orders and titles them, each person's roles under their name, as the
+  HIG lays out a list of properties. A credited person is not linked to an artist page:
+  Apple's credit has an id of its own, not an artist's catalog id, and finding the artist
+  would take a search a name could answer wrongly. Only a song with a catalog id offers
+  View Credits (an upload has no credits at Apple). The answer is kept for a day, as the
+  other catalog answers are, and the demo answers from invented credits.
+
 ## Open
 
 - Nothing. The questions that were open here are settled above; what is left is in

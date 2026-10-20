@@ -138,6 +138,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Options** in Now Playing; Up Next's songs have theirs too. A radio show or a category
   (Search's, New's) has only **Open in Browser** and **Copy Link**: it is a page to open,
   with nothing of its own to play or favourite.
+- **View Credits** in a song's menu (a row's, the player bar's, Now Playing's **More
+  Options**) shows who performed, wrote and produced it, as Apple Music lists them: a list
+  for each, each person with their roles. Apple Music has no credits for a song of yours it
+  does not have (an upload), so that has none; a song it has nothing for says so. The
+  credits are kept for a day, so a song's open again without the engine; signed out or
+  with the engine stopped, the dialog says what to do.
 - **Create Station** in the menu of a song or an artist (on an artist's page, in **More
   Options**) plays a station of music like it at once, in place of what was playing. A song
   of yours that Apple Music does not have (an upload) has none, and neither has an artist

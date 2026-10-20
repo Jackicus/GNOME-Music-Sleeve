@@ -446,6 +446,21 @@ Previous, Shuffle and Repeat off (whatever the capabilities say: a mode set on a
 would only change what plays after it), and publishes no length or position on MPRIS
 (src/player.py's `live`).
 
+### A song's credits (#364)
+
+View Credits reads `GET /v1/catalog/<sf>/songs/<id>/credits` (`api.SONG_CREDITS_ENDPOINT`,
+through the bridge's `api()`; `include=credits` on the song answers the same, and the web
+player asks `include=albums,artists,credits,lyrics,music-videos`), about 250 to 300 ms
+(checked live on 2026-10-20): `data` is the song's `role-categories`, each `{attributes:
+{kind, title}, relationships: {'credit-artists': {data}}}`, `kind` `performer`,
+`composer-and-lyrics` or `production-and-engineering` (all three on the six songs tried),
+`title` Apple's heading for it in the account's language; a `credit-artists` entry is
+`{id, type, attributes: {name, roleNames: [..], artwork?}}`, its id (`<n>-ami:identity:<hex>`)
+not an artist's catalog id, so a credit links to no artist page. `Engine.credits()` keeps
+`normalize.song_credits()`'s `{categories: [{kind, title, people: [{name, roles}]}]}` in
+`credits/<id>.json` for a day; Apple's 404 is no categories. A library song is asked by its
+catalog id, and one without (an upload) has no View Credits.
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -465,15 +480,6 @@ was not tried. `queue.removeQueueItems(predicate)` removes every queue item
 `predicate(queueItem, index)` accepts, from the end, one event each; `mk.clearQueue()` (the
 web player's Clear) empties the whole queue (`position` -1, `length` 0) while the current
 item plays on, so it is not Up Next's Clear.
-
-### Credits (#364)
-
-`GET /v1/catalog/<sf>/songs/<id>/credits` (or `include=credits` on the song; the web player
-asks `include=albums,artists,credits,lyrics,music-videos`), about 250 to 300 ms: `role-categories`, each `{attributes: {kind, title},
-relationships: {'credit-artists': {data}}}`, `kind` `performer`, `composer-and-lyrics` or
-`production-and-engineering`, `title` Apple's heading for it; a `credit-artists` entry is
-`{id, type, attributes: {name, roleNames: [..], artwork?}}`, its id not an artist's catalog
-id. A library song needs its catalog id.
 
 ### The editorial pages' links and rooms (#370)
 
@@ -665,7 +671,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `suggestions/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `made-for-you.json`, `radio.json`, `charts.json`, `recent-played.json`, `artists/`, `albums/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; Radio's only until its `expires`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 | `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
 | `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |

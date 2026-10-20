@@ -1382,6 +1382,51 @@ class TestAlbumPage(unittest.TestCase):
         self.assertEqual(normalize.album_cache_path('/c', 'l.ab/c'), '/c/albums/l.ab_c.json')
 
 
+class TestSongCredits(unittest.TestCase):
+    """song_credits: a song's credits answer (invented) as View Credits shows it."""
+
+    def read(self):
+        with open(os.path.join(os.path.dirname(__file__), 'fixtures', 'song_credits.json'),
+                  encoding='utf-8') as file:
+            return json.load(file)
+
+    def test_the_categories_in_apples_order(self):
+        answer = normalize.song_credits(self.read(), None)
+        self.assertEqual([(category['kind'], category['title'])
+                          for category in answer['categories']],
+                         [('performer', 'Performers'),
+                          ('composer-and-lyrics', 'Composition & Lyrics'),
+                          ('production-and-engineering', '')])
+        self.assertEqual(answer['categories'][0]['people'], [
+            {'name': 'The Invented Band', 'roles': ['Performer']},
+            {'name': 'Ada Brightwater', 'roles': ['Vocals', 'Guitar']},
+            {'name': 'Bram Holloway', 'roles': []}])
+        # Someone without a name and the same person twice are left out; a category with
+        # nobody (an empty one, one without its relationship) is too.
+        self.assertEqual(answer['categories'][2]['people'],
+                         [{'name': 'Cleo Ashdown', 'roles': ['Producer']}])
+        # No ids: a credit's is not an artist's catalog id.
+        self.assertNotIn('id', json.dumps(answer))
+
+    def test_the_song_read_with_its_credits(self):
+        # include=credits on the song: the same categories, under its relationships.
+        categories = self.read()['data']
+        song = {'data': [{'id': '1724049201', 'type': 'songs',
+                          'relationships': {'credits': {'data': categories}}}]}
+        self.assertEqual(normalize.song_credits(song, None),
+                         normalize.song_credits(self.read(), None))
+
+    def test_none(self):
+        for raw in (None, {}, {'data': []}, {'data': [{'type': 'songs'}]}, {'data': 'x'}):
+            self.assertEqual(normalize.song_credits(raw, None), {'categories': []}, raw)
+
+    def test_kept_by_its_id(self):
+        self.assertEqual(normalize.credits_cache_path('/c', '1724049201'),
+                         os.path.join('/c', 'credits', '1724049201.json'))
+        self.assertEqual(normalize.credits_cache_path('/c', '../x'),
+                         os.path.join('/c', 'credits', '.._x.json'))
+
+
 class TestPruneCaches(unittest.TestCase):
     """prune_caches over an invented cache."""
 
@@ -1412,6 +1457,9 @@ class TestPruneCaches(unittest.TestCase):
         self.put('artists/1724049001.json', age=keep + 60)
         self.put('artists/1724049002.json', age=60)
         self.put('albums/1724049100.json', age=keep + 60)
+        self.put('credits/1724049201.json', age=keep + 60)
+        self.put('credits/1724049202.json', age=60)
+        self.put('credits/.c.tmp', age=2 * 3600)
         self.put('landing.json', age=keep + 60)
         self.put('radio.json', age=2 * day)
         self.put('browse.json', age=60)
@@ -1426,16 +1474,17 @@ class TestPruneCaches(unittest.TestCase):
         self.put('art/a.jpg', age=10 * day)
         gone = normalize.prune_caches(self.tmp_dir, now=self.now, remote_bytes=250,
                                       lyrics_keep=2)
-        self.assertEqual(gone, {'remote-art': 1, 'lyrics': 3, 'answers': 4, 'items': 2,
-                                'temps': 2})
+        self.assertEqual(gone, {'remote-art': 1, 'lyrics': 3, 'answers': 5, 'items': 2,
+                                'temps': 3})
         self.assertEqual(self.names('lyrics'), ['0.json', '1.json'])
         self.assertEqual(self.names('categories'), ['fresh.json', 'yesterday.json'])
         self.assertEqual(self.names('artists'), ['1724049002.json'])
         self.assertEqual(self.names('remote-art'), ['0.jpg', '1.jpg'])
         self.assertEqual(self.names('albums'), [])
+        self.assertEqual(self.names('credits'), ['1724049202.json'])
         self.assertEqual(self.names(), ['.z.tmp', 'albums', 'art', 'artists', 'browse.json',
-                                        'categories', 'library.json', 'lyrics', 'radio.json',
-                                        'remote-art'])
+                                        'categories', 'credits', 'library.json', 'lyrics',
+                                        'radio.json', 'remote-art'])
         # Again: nothing more to do.
         self.assertFalse(any(normalize.prune_caches(self.tmp_dir, now=self.now,
                                                     remote_bytes=250, lyrics_keep=2).values()))

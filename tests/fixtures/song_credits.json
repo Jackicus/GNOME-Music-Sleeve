@@ -1,0 +1,63 @@
+{
+  "data": [
+    {
+      "id": "1724049201-performer",
+      "type": "role-categories",
+      "attributes": {"kind": "performer", "title": "Performers"},
+      "relationships": {
+        "credit-artists": {
+          "data": [
+            {"id": "1-ami:identity:0000000000000000000000000000000a", "type": "credit-artists",
+             "attributes": {"name": "The Invented Band", "roleNames": ["Performer"]}},
+            {"id": "2-ami:identity:0000000000000000000000000000000b", "type": "credit-artists",
+             "attributes": {"name": "  Ada   Brightwater ", "roleNames": ["Vocals", " Guitar", ""],
+                            "artwork": {"url": "https://example.invalid/{w}x{h}bb.jpg"}}},
+            {"id": "3-ami:identity:0000000000000000000000000000000c", "type": "credit-artists",
+             "attributes": {"name": "Bram Holloway"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "1724049201-composer-and-lyrics",
+      "type": "role-categories",
+      "attributes": {"kind": "composer-and-lyrics", "title": "Composition & Lyrics"},
+      "relationships": {
+        "credit-artists": {
+          "data": [
+            {"id": "4-ami:identity:0000000000000000000000000000000d", "type": "credit-artists",
+             "attributes": {"name": "Ada Brightwater", "roleNames": ["Composer", "Lyricist"]}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "1724049201-production-and-engineering",
+      "type": "role-categories",
+      "attributes": {"kind": "production-and-engineering"},
+      "relationships": {
+        "credit-artists": {
+          "data": [
+            {"id": "5-ami:identity:0000000000000000000000000000000e", "type": "credit-artists",
+             "attributes": {"name": "Cleo Ashdown", "roleNames": ["Producer"]}},
+            {"id": "6-ami:identity:0000000000000000000000000000000f", "type": "credit-artists",
+             "attributes": {"name": "Cleo Ashdown", "roleNames": ["Producer"]}},
+            {"id": "7-ami:identity:00000000000000000000000000000010", "type": "credit-artists",
+             "attributes": {"name": "", "roleNames": ["Mixing Engineer"]}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "1724049201-empty",
+      "type": "role-categories",
+      "attributes": {"kind": "performer", "title": "Nobody"},
+      "relationships": {"credit-artists": {"data": []}}
+    },
+    {
+      "id": "1724049201-unlinked",
+      "type": "role-categories",
+      "attributes": {"kind": "performer", "title": "Unlinked"}
+    }
+  ]
+}

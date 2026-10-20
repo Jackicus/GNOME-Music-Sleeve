@@ -147,6 +147,7 @@ def _classes():
             self.suggestions = None  # what playlist_suggestions() answers, the same way
             self.radio_answer = None  # what radio() answers, the same way
             self.charts_answer = None  # what charts() answers, the same way
+            self.credits_answer = None  # what credits() answers, the same way
 
         async def start(self, visible=None):
             self.calls.append('start')
@@ -193,6 +194,12 @@ def _classes():
             if self.charts_answer is None:
                 raise EngineError('engine-down')
             return self.charts_answer
+
+        async def credits(self, song_id, refresh=False):
+            self.calls.append('credits')
+            if self.credits_answer is None:
+                raise EngineError('engine-down')
+            return self.credits_answer
 
     class LibrarySync(GObject.Object):
         """The app's sync as the dialogs see it: never running."""
@@ -1195,6 +1202,29 @@ class DialogLifetimeTest(WidgetTestCase):
         await self.assert_freed(ref)
         self.assertEqual(self.app.engine.calls, ['restart', 'stop'])
 
+    async def test_credits_dialog(self):
+        from gi.repository import Adw
+
+        from applemusic.dialogs.credits import CreditsDialog
+
+        # Shown with its boxed lists, then closed; and closed while it waits for the engine.
+        self.app.engine.credits_answer = {'categories': [
+            {'kind': 'performer', 'title': 'Performers',
+             'people': [{'name': 'Invented Person', 'roles': ['Vocals']}]}]}
+
+        async def shown_and_closed():
+            dialog = CreditsDialog(self.app, '1000000001', 'Invented Song')
+            dialog.present(self.window)
+            self.assertTrue(await self.until(lambda: _find(dialog, Adw.ActionRow) is not None))
+            refs = [dialog.weak_ref(), _find(dialog, Adw.ActionRow).weak_ref()]
+            dialog.force_close()
+            return refs
+
+        await self.assert_freed(*await shown_and_closed())
+        self.app.engine.credits_answer = None
+        ref = await self.presented_and_closed(CreditsDialog(self.app, '1000000001'))
+        await self.assert_freed(ref)
+
     async def test_name_dialog(self):
         from applemusic.dialogs.playlist import NameDialog
 
@@ -1533,6 +1563,16 @@ class HandlerTest(WidgetTestCase):
                     await self.settle()
             finally:
                 await self.asyncTearDown()  # the dialogs closed with the cache still patched
+
+    async def test_credits_dialog_status_button(self):
+        from applemusic.dialogs.credits import CreditsDialog
+
+        # Signed out (the stand-in's settings): Sign In…, which asks the app to sign in.
+        dialog = await self.presented(CreditsDialog(self.app, '1000000001'))
+        self.assertTrue(await self.until(lambda: dialog.status_button.get_visible()))
+        dialog.status_button.emit('clicked')
+        self.assertEqual(self.app.actions, ['sign-in'])
+        dialog.force_close()
 
     async def test_sign_in_cancel(self):
         from applemusic.dialogs.signin import SignInDialog

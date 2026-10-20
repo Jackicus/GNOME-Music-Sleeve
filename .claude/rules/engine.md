@@ -124,7 +124,7 @@ paths:
   stale one is the offline answer, crash leftovers), once the library has loaded at
   startup and at the end of every sync. The day-long answers (the landing, a category, New,
   Made for You, Radio, Charts, Home's Recently Played, an artist's page, an album's page, a
-  playlist's suggested songs) all go through
+  playlist's suggested songs, a song's credits) all go through
   `Engine._kept_answer()`: the file while it is under a day old, else Apple, else (the engine
   down or signed out, Apple failing, but not on a refresh) the older file marked
   `stale: True` (`cache.read_kept(allow_stale=True)`); every answer carries its `cached`

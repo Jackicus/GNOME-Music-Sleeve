@@ -179,6 +179,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   which style.css takes out of the rows' inset. No answer (offline, the engine down, a 404)
   leaves them out, only logged. Tab from a track enters the shelves, Shift+Tab from the first
   goes back to the last track (`_on_list_key_pressed`, as for a playlist's suggestions).
+- A song's View Credits (`actions.credits_target()`: a song with a catalog id) is
+  `dialogs/credits.py`'s `CreditsDialog` over `Engine.credits`: an `Adw.PreferencesPage` of
+  a group per kind of credit (Apple's title, else `credits.heading()`; a group's title is
+  markup, so escaped), an `Adw.ActionRow` per person (`use-markup` off), the spinner, No
+  Credits, and `EngineStatus`'s states with its button.
 - The window's keyed actions (`win.back`, `win.search`, `win.refresh`, `win.focus-*`,
   `win.fullscreen-player`, `win.new-playlist`, `win.go-to-current-song`, and
   `win.show-lyrics` and `win.show-queue` through `TabActions.set_free()`) are disabled while a dialog is open over the window

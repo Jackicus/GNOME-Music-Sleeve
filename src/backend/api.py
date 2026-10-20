@@ -154,6 +154,9 @@ SONG_ALBUMS_PARAMS = {'include': 'albums'}
 # songs' names, finds the catalog artist it stands for.
 SONG_ARTISTS_ENDPOINT = '/v1/catalog/{storefront}/songs/{id}'
 SONG_ARTISTS_PARAMS = {'include': 'artists'}
+# A catalog song's credits (View Credits, Engine.credits): its `role-categories` (performers,
+# composition and lyrics, production and engineering), each with its `credit-artists`.
+SONG_CREDITS_ENDPOINT = '/v1/catalog/{storefront}/songs/{id}/credits'
 # A catalog song or music video with its album and artists, or an album with its artists, by
 # kind: where Go to Album and Go to Artist go when the library cannot say (Engine.related).
 RELATED_ENDPOINTS = {
