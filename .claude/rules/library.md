@@ -34,7 +34,7 @@ them before changing either. What matters most:
   changed, returns their names, and emits `groups-changed` last when the groups changed (the
   next `groups` access makes new Groups and Tracks). Stores change through `apply_diff()`, the
   fewest splices. A kept Item is spliced over itself only when one of `SORT_KEYS` (title,
-  subtitle, year) changed, so that sort and filter models place it again.
+  subtitle, year, added) changed, so that sort and filter models place it again.
 - GTK 4.22 does not rebind a row when a store splices an item over itself, so bound rows keep
   showing old values. A widget or page showing an Item follows that Item's `notify::*` signals
   and `groups-changed`, not the store's `items-changed`.

@@ -32,9 +32,12 @@ list and the script together.
    (Back, a filter's button, Sort By) and from the sidebar too. Arrows
    move between tiles and rows, Tab leaves a grid, shelf or list after one item, Enter opens a
    tile or plays a row, Menu or Shift+F10 opens the focused item's context menu and Escape
-   closes it.
+   closes it. On Albums, Return on Sort and Filter opens it, Down reaches Favourites Only,
+   and Return shows the favourite albums alone.
 3. On an album or playlist: Play, Tab to Shuffle and to More Options (the item's menu), Tab to
    the first track (Shift+Tab goes back to More Options), Down, and Enter plays from that
+   track. On an album, Tab from the last track goes past the footer into Apple Music's
+   shelves of it (Other Versions, More By…), and Shift+Tab from there goes back to the last
    track. One of Apple Music's the library lacks has Add between Shuffle and More Options;
    once added, the focus goes to More Options and "In Library" is read as text. Alt+Left
    (or Escape inside the page) goes back. On an artist: Play, the star (Space stars the
@@ -78,8 +81,12 @@ list and the script together.
    Playing on Up Next. In an entry, the keys are the entry's (Ctrl+Shift+U is GTK's Unicode
    entry).
 6. Ctrl+F shows Search with the cursor in the entry, over any page opened from its results;
-   Ctrl+Up there leaves the volume alone; Tab reaches the Apple Music / Your Library toggle;
-   Escape in the entry clears it. On Albums, Artists, Songs, Music Videos and a playlist
+   Ctrl+Up there leaves the volume alone. Tab from the entry reaches Apple Music's filter
+   (All Results): Space, Down and Enter choose one kind, whose list shows, and the focus
+   stays on the filter. Tab again, Right and Space choose Your Library. Escape in the entry
+   clears it. Enter in the entry shows the results as shelves; Space on Songs' See All opens
+   the kind's page with the focus in its list, End there loads the next page down to the
+   end, and Escape goes back to the results. On Albums, Artists, Songs, Music Videos and a playlist
    (Favourite Songs too), Ctrl+F shows the page's own filter bar instead, with the cursor in
    its entry; typing on the page (in the list, or on the header bar's buttons) shows it too,
    with what was typed; the new count is read out once the typing pauses ("2 of 40
@@ -98,8 +105,9 @@ list and the script together.
 9. A playlist's Rename… (and New Playlist…, Ctrl+N) opens its dialog with the cursor in the
    name;
    Tab reaches the description and the buttons, Enter renames (or creates), and Escape
-   closes it with nothing changed. Delete Playlist… and Remove from Library… ask first, with
-   Cancel the default (Escape closes the question, nothing removed).
+   closes it with nothing changed. Remove from Library… asks first, with Cancel the default
+   and Remove destructive (Escape closes the question, nothing removed); Delete Playlist…
+   asks the same way, which the script does not walk.
 10. F11 with nothing playing does nothing. With an item playing it shows the full-screen
     player with the focus on its play button (a screen reader hears the "Fullscreen Player"
     group, then the button); Tab goes through its controls and into the lyrics and never out
@@ -131,6 +139,12 @@ list and the script together.
     the page shown when it has a Refresh (Home, New, Made for You, Radio, Charts, a category),
     the focus staying where it was; the header bar's Refresh is named, and Space on it
     refreshes too, the focus staying on it.
+15. Radio shows the live stations as large cards, then Recently Played: Ctrl+2 puts the
+    focus in the live stations, Tab (past the shelf's arrows and See All) reaches the first,
+    and Right, Enter plays the second. Charts (New's or Search's Top Charts tile) shows Top
+    Songs as a numbered grid of songs, then numbered tiles: Ctrl+2 and Tab reach the first
+    song, Enter plays the chart from it, and Escape goes back. The script walks this before
+    step 14.
 
 ## The tools
 

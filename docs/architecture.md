@@ -46,7 +46,8 @@ touches widgets.
   artist through `open_artist_page()`), and every "play this" goes through its
   `play_request()`. The sidebar itself (its items following the library, the selection, the
   folders, the drops) is `sidebar_view.py`'s controller, with its decisions as `sidebar.py`'s
-  functions; which playback action a key runs is `keyboard.py`'s decision. The item actions
+  functions; which action a window key runs (playback, the Now Playing tabs, the volume, a
+  playlist's moves, Ctrl+F's filter or Search) is `keyboard.py`'s decision. The item actions
   and context menus are `actions.py` and `widgets/context_menu.py`; where their Go to Album
   and Go to Artist lead is `related.py`'s: an album the library's, else the catalog's, which
   the engine looks up; an artist Apple Music's while the engine is up, the library's
@@ -64,22 +65,38 @@ touches widgets.
   `widgets/dnd.py`: the sidebar's rows, a playlist's own list, the grids' and shelves'
   tiles, and the player bar, which queues what is dropped on it
   (`item_actions.queue_drop()`); a sidebar playlist adds the songs of what is dropped on it
-  (`item_actions.drop()`: an album's or a playlist's through `tracks_of()`).
+  (`item_actions.drop()`: an album's or a playlist's through `tracks_of()`), and All
+  Playlists makes a new playlist of the songs, music videos and albums dropped on it
+  (`item_actions.drop_new_playlist()`, through New Playlist's dialog).
 - **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
   library pages bind the library's stores (Artists is a list beside the library's page of
-  the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow); New,
-  Made for You, Radio, Search and the Charts page (pushed from New's More to Explore and
-  Search's categories) ask the engine (all but Search's results keep its answers in the
-  cache for a day; a search's kind, filtered or a shelf's See All, is a list that pages on
-  as it is scrolled: `search_pager.py`, `widgets/search_list.py`, `pages/search_all.py`);
-  what is opened from Search is its Recently Searched
-  (`recent_searches.py`, a file in the cache, as music.apple.com keeps its own in the browser). A playlist of the user's ends with the songs Apple
+  the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow).
+  Albums, Artists, Music Videos, Songs and a playlist's songs filter as the user types
+  through one `widgets/filter_bar.py` (`FilterBar`, a search bar under the header bar, over
+  `ShownModel`, the list's own model, which shows a filter's change without rebuilding the
+  rows). Home shows the library's shelves and Recently Played (`Engine.recently_played()`,
+  through `home.py`'s pure parts: the kept answer at once, Apple's again once it is a minute
+  old, `Throttle`; one shelf brought up to date in place, `RecentlyPlayed`, placed after the
+  first shelf by `arrange()`; an update that would move the page or take the focus kept
+  for the next visit, `hold_back()`). New, Made for You, Radio, Search and the Charts page
+  (pushed from New's More to Explore and Search's categories) ask the engine (all but
+  Search's results keep its answers in the cache for a day; a search's kind, filtered or a
+  shelf's See All, is a list that pages on as it is scrolled: `search_pager.py`,
+  `widgets/search_list.py`, `pages/search_all.py`), and what is opened from Search is its
+  Recently Searched (`recent_searches.py`, a file in the cache, as music.apple.com keeps its
+  own in the browser). Radio arranges Apple's shelves with
+  `radio.py`'s pure functions: the library's stations as Recently Played after Apple's live
+  stations, each live one subtitled with the programme on air as the page is shown. The
+  artist page draws Apple's wide banner behind its header when the artist has one
+  (`widgets/banner.py`, `ArtistBanner`), else the round portrait. A playlist of the user's
+  ends with the songs Apple
   suggests adding to it (`widgets/suggested_songs.py`, what is shown and asked for next in
   `suggestions.py`), kept for a day while the playlist holds the same songs; a song plays in
   full or as Apple's preview, which the bridge plays outside MusicKit's queue. An album ends
   with its release footer and the catalog's shelves of it (`release.py`, `Engine.album_page`,
-  kept for a day), asked once its tracks have painted. An album's or playlist's header
-  says its curator and when it was updated (`release.py`), and a catalog one's offers Add,
+  kept for a day), asked once its tracks have painted. An album's header names
+  its artist, a playlist's its curator and when it was updated (`release.py`), and a
+  catalog one's offers Add,
   or In Library once the library holds it (`Library.holds()`, from what is loaded).
 - **Library** (`library.py`): the model. GObjects in `Gio.ListStore`s, filled from the cache's
   library.json. It has no GTK, so it is tested without a display. A reload after a sync keeps
@@ -191,7 +208,7 @@ touches widgets.
 
 | What | Where |
 |---|---|
-| library.json, artwork, lyrics, the engine's kept answers | `$XDG_CACHE_HOME/apple-music/` (`apple-music-devel/` for the development build) |
+| library.json, artwork, lyrics, the engine's kept answers, Recently Searched (`recent-searches.json`), the last session (`session.json`) | `$XDG_CACHE_HOME/apple-music/` (`apple-music-devel/` for the development build) |
 | Chrome's profile, which holds the sign-in | `$XDG_DATA_HOME/apple-music/chrome/` (`chrome-devel/` for the development build) |
 | Settings | GSettings, `io.github.jackicus.MusicSleeve` |
 

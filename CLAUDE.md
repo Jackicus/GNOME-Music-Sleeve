@@ -71,7 +71,7 @@ src/*.py                        services and logic (engine, player, mpris, searc
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
-src/dialogs/                    sign-in, preferences, keyboard shortcuts, about
+src/dialogs/                    sign-in, preferences, keyboard shortcuts, about, the playlist dialogs
 src/backend/                    Chrome, the CDP client, bridge.js, API normalising: stdlib and
                                 asyncio only, never gi (tests/test_backend.py checks)
 src/style.css, src/icons/       the only stylesheet; bundled symbolic icons

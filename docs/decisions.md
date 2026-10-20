@@ -46,8 +46,8 @@ changes, change it here, with the date. The plan they came from is in
   whole name, and screen readers hear each row's level.
 - **Folders made and playlists moved, at once** (2026-10-20). New Folder… (the main menu, a
   folder's and All Playlists' menus, a folder button beside each **+**) and Move to Folder (a
-  playlist's menus, as Add to Playlist nests the folders, ending in New Folder…, a folder
-  holding it) are the keyboard's and the narrow layout's way; dragging a playlist's sidebar
+  playlist's menus: the folders it can go into in one list, a nested one named after both,
+  as "No folder is a submenu" below has it, ending in New Folder…, a folder holding it) are the keyboard's and the narrow layout's way; dragging a playlist's sidebar
   row or tile onto a sidebar folder is the pointer's. A move is shown before Apple answers:
   `Library.hold()` remakes the tree from library.json's folders plus the changes held, so the
   sidebar splices only what moved, keeps its open folders and selection, and gives the moved
@@ -88,14 +88,14 @@ changes, change it here, with the date. The plan they came from is in
   Playlist do the same, so all three survive a restart. Up Next is not touched, as in Apple's
   apps. In the demo a move shows and nothing is written.
 - **Drops that queue and make playlists** (2026-10-20). As on Apple's Mac app, songs, music
-  videos and playlists dropped on the player bar join Up Next: at its end (Play Later, which
-  is what the Mac app's drop does), or after the item playing with Shift held (Play Next),
-  each by the target its menu's Play Later queues (`actions.queue_targets()`: a song by its
-  catalog id, a playlist by its play target); a drag holding anything that cannot be queued
+  videos, albums and playlists dropped on the player bar join Up Next: at its end (Play
+  Later, which is what the Mac app's drop does), or after the item playing with Shift held
+  (Play Next), each by the target its menu's Play Later queues (`actions.queue_targets()`: a
+  song by its catalog id, an album or a playlist by its play target); a drag holding anything that cannot be queued
   (a folder) is refused whole, not queued in part. The bar is the one place: the Now Playing
   sheet covers the window while open, so no drag source is in sight of its Up Next tab, and
-  the bar shows only while something plays. Songs and music videos dropped on All Playlists
-  make a new playlist of them, through New Playlist's dialog with the first one's title
+  the bar shows only while something plays. Songs, music videos and albums (their songs)
+  dropped on All Playlists make a new playlist of them, through New Playlist's dialog with the first one's title
   filled in (a name made up without asking would need a rename), and its page is shown once
   Apple lists it; playlists dropped there still move to the top level (switched off, above).
   A drag carries its objects as well as their Refs (`ItemRefs.objects`), since a Ref names a
@@ -591,7 +591,7 @@ changes, change it here, with the date. The plan they came from is in
   cookies, the Apple Music sign-in among them, for good. So the engine refuses to start Chrome
   on a profile whose `Local State` records the keyring's key when no `org.freedesktop.secrets`
   answers, or comes up when asked, on the bus Chrome will use (`no-keyring`, a toast with
-  Retry), and `scripts/headless.sh` hands Chrome the desktop's session bus
+  Start), and `scripts/headless.sh` hands Chrome the desktop's session bus
   (`APPLE_MUSIC_HOST_SESSION_BUS`) while the app stays on its private one. A refused start is
   a toast and a retry; a lost sign-in is a trip to Apple's sign-in page and a full sync. A
   profile that never reached the keyring starts as before, since there is nothing to lose.
@@ -649,7 +649,8 @@ changes, change it here, with the date. The plan they came from is in
 - **Demo mode** (2026-09-27). `--demo` runs the app on a generated, invented library, so UI
   work, tests and screenshots never need Chrome or a real account. Its writes are refused
   with a toast, but for a playlist's new order, which shows (and is not kept), so the
-  keyboard walkthrough and the screenshots can move songs.
+  keyboard walkthrough and the screenshots can move songs, and an artist's favourite, which
+  the session remembers, so the artist page's star works.
 - **Tests** (2026-09-28). Stdlib `unittest`, nothing to install. Logic lives in classes and
   functions without widgets, tested with stand-ins. Widget tests are allowed through
   `tests/gtk.py`, skipped without a display; CI runs them under Xvfb. The rest of the UI is
