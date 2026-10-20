@@ -13,7 +13,10 @@ too) each have one, and behave alike:
 - closed by Escape in the entry, by Escape on the page while it shows (`capture`'s key
   controller: a pushed page's Escape would otherwise go back), or by the button: closing
   clears the entry and so the filter, and the focus goes back to the page's list
-  (set_focus_return(), from an idle, once the list shows again);
+  (set_focus_return(), from an idle, once the list shows again): to the row or tile of the
+  item the focus was on as the bar opened (or as Escape closed it, from the list), scrolled
+  into view (widgets.util.focus_position()), else to the first, else (no list shown) to
+  the button;
 - typing refilters after the entry's own short delay (search-delay, 150 ms: a fast typist's
   keys refilter once), and a cleared entry at once.
 
@@ -31,7 +34,7 @@ paused (announce()).
     toolbar_view.add_top_bar(bar)           # under the header bar
     header_bar.pack_end(bar.button)
     connect_weak(bar, 'changed', self._on_filter_changed)   # bar.search
-    bar.set_focus_return(self._focus_list)
+    bar.set_focus_return(self._focus_list)  # _focus_list(obj): True when it took it
     bar.set_available(True, self)           # the button shown; typing on the page starts it
 """
 
@@ -40,6 +43,7 @@ import contextlib
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 
 from ..library import fold
+from . import context_menu
 from .util import connect_weak, weak_method
 
 
@@ -154,10 +158,18 @@ class FilterBar(Gtk.SearchBar):
         super().__init__()
         self.search = ''
         self._focus_return = None
+        # The Item or Track whose row or tile had the focus as the bar opened (the focus
+        # followed while the bar is closed), where Escape puts it back.
+        self._focused = None
+        self._returning = False  # from Escape until the focus is back
+        self._root = None  # while mapped: the window, and its focus handler
+        self._root_handler = None
         self._escape = None  # the Escape controller on the page whose keys start the filter
         self.entry = Gtk.SearchEntry(placeholder_text=label, hexpand=True)
         self.entry.update_property([Gtk.AccessibleProperty.LABEL], [label])
         self.set_child(Adw.Clamp(maximum_size=400, child=self.entry))
+        # Before the bar's own handler, which closes it (and so moves the focus).
+        connect_weak(self.entry, 'stop-search', self._on_stop_search)
         # The entry is the bar's own: Escape in it closes the bar, which clears it.
         self.connect_entry(self.entry)
         self.button = Gtk.ToggleButton(icon_name='edit-find-symbolic', tooltip_text=label,
@@ -168,7 +180,6 @@ class FilterBar(Gtk.SearchBar):
         # The bar is a page's child: its children's signals are connected weakly
         # (widgets/util.py), or a popped page would never be freed.
         connect_weak(self.entry, 'search-changed', self._on_search_changed)
-        connect_weak(self.entry, 'stop-search', self._on_stop_search)
 
     @property
     def available(self):
@@ -195,8 +206,10 @@ class FilterBar(Gtk.SearchBar):
             capture.add_controller(self._escape)
 
     def set_focus_return(self, focus):
-        """Where the focus goes once Escape has closed the bar: focus(), a page's method
-        (held weakly: the page holds the bar)."""
+        """Where the focus goes once Escape has closed the bar: focus(obj), a page's method
+        (held weakly: the page holds the bar), puts it on obj's row or tile (the Item or
+        Track the focus was on, or None: the first) and answers True, or False when the page
+        shows no list to put it in (the button takes it then)."""
         self._focus_return = weak_method(focus)
 
     def focus(self):
@@ -234,8 +247,44 @@ class FilterBar(Gtk.SearchBar):
             self.search = search
             self.emit('changed')
 
+    def do_map(self):
+        Gtk.SearchBar.do_map(self)
+        # What the focus is on, followed while the page shows: the bar opens (Ctrl+F, the
+        # key capture's first key, the button) with the focus already in its entry.
+        root = self.get_root()
+        if root is not None:
+            self._root = root
+            self._root_handler = connect_weak(root, 'notify::focus-widget', self._on_focus)
+
+    def do_unmap(self):
+        Gtk.SearchBar.do_unmap(self)
+        root, handler = self._root, self._root_handler
+        self._root = self._root_handler = None
+        if handler is not None and root.handler_is_connected(handler):
+            root.disconnect(handler)
+
+    def _on_focus(self, root, _pspec):
+        """The focus moved: what it is on, while the bar is closed (not the moves of its
+        opening, into the entry, or of its closing, before the focus goes back)."""
+        if self._returning or self.get_search_mode():
+            return
+        focus = root.get_focus()
+        if focus is None or not focus.is_ancestor(self):
+            self._focused = self._focused_object()
+
+    def _focused_object(self):
+        """The Item or Track whose row or tile on the page has the focus, or None."""
+        page = self._escape.get_widget() if self._escape is not None else None
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        if page is None or focus is None or not focus.is_ancestor(page):
+            return None
+        found = context_menu.find(page, focus)
+        return found[1] if found is not None else None
+
     def _on_stop_search(self, _entry):
         # Gtk.SearchBar closes itself and clears the entry; the focus goes back to the page.
+        self._returning = True
         GLib.idle_add(self._return_focus)
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
@@ -244,11 +293,16 @@ class FilterBar(Gtk.SearchBar):
         if (keyval != Gdk.KEY_Escape or state & Gtk.accelerator_get_default_mod_mask()
                 or not self.get_search_mode()):
             return False
+        # From the list filtered: the item focused there, if the focus is on one.
+        self._focused = self._focused_object() or self._focused
+        self._returning = True
         self.close()
         GLib.idle_add(self._return_focus)
         return True
 
     def _return_focus(self):
+        focused, self._returning = self._focused, False
         if self._focus_return is not None and self.get_mapped():
-            self._focus_return()
+            if not self._focus_return(focused) and self.button.get_visible():
+                self.button.grab_focus()
         return GLib.SOURCE_REMOVE

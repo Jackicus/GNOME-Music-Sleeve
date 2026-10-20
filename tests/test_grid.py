@@ -294,6 +294,41 @@ class GridTest(PageTestCase):
         self.assertEqual(self.app.settings.get_strv('favourites-only'), [])
         again.activate_action('page.sort', GLib.Variant('s', 'title'))
 
+    async def filter_grid(self, count):
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+
+        items = [Item(album(n)) for n in range(count)]
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, items)
+        page = GridPage(self.library, 'Invented Grid', store, sorts=('title', 'artist'),
+                        icon_name='media-optical-cd-audio-symbolic',
+                        filter_words=('Filter Albums', lambda shown, total: '{shown} of {total}'))
+        await self.show_root(page)
+        return page, items
+
+    async def test_escape_from_the_filter_puts_the_focus_back_on_the_tile_it_was_on(self):
+        # The grid's own focus would be a recycled tile out of view, bound to another album.
+        page, items = await self.filter_grid(90)
+        grid = page.grid_view
+        # A filter that leaves the album out, one that leaves some albums, and none.
+        self.assertTrue(await self.escape_from_filter(page, grid, items[80], 'album 00'),
+                        self.window.get_focus())
+        self.assertTrue(await self.escape_from_filter(page, grid, items[85], 'album 08'))
+        self.assertTrue(await self.escape_from_filter(page, grid, items[70], 'nothing'),
+                        self.window.get_focus())
+        # From outside the grid (its filter's button), the first album.
+        page.filter_bar.button.grab_focus()
+        self.assertTrue(page.focus_filter())
+        self.assertTrue(await self.until_focused(page.filter_bar.entry))
+        page.filter_bar.set_text('album 08')
+        await self.turn()
+        page.filter_bar.entry.emit('stop-search')
+        self.assertTrue(await self.until(lambda: self.focused_in(grid) is items[0]),
+                        self.window.get_focus())
+
     async def test_the_filter_bar_filters_by_title_and_artist_with_favourites_only(self):
         from gi.repository import Gdk, Gio, GLib, Gtk
 

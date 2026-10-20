@@ -378,6 +378,83 @@ async def library_filter(window, page, name):
               and inside(window.get_focus(), bar.entry),
               (bar.get_search_mode(), bar.entry.get_text(), describe(window.get_focus())))
         await key(window, 'Escape', 0.8)
+    await filter_far_down(window, page, name)
+
+
+def focused_object(window, view):
+    """The Item or Track of the row or tile of view with the focus, while that widget is on
+    screen (a recycled one scrolled out of view is not), else None."""
+    from applemusic.widgets import context_menu
+
+    focus = window.get_focus()
+    if focus is None or focus is view or not inside(focus, view) or not focus.get_mapped():
+        return None
+    found = context_menu.find(view, focus)
+    return found[1] if found is not None else None
+
+
+def recycling_letter(view, avoid):
+    """A letter that some of view's items match but not all, nor `avoid`: a filter of it
+    recycles avoid's row or tile for another item."""
+    from applemusic.library import filter_matches
+
+    model = view.get_model()
+    keys = [model.get_item(n).search_key for n in range(model.get_n_items())
+            if getattr(model.get_item(n), 'search_key', None) is not None]
+    partial = [letter for letter in 'aeiourstnlmdhcbgkpvwy'
+               if 0 < sum(filter_matches(letter, key) for key in keys) < len(keys)]
+    return next((letter for letter in partial if not filter_matches(letter, avoid.search_key)),
+                partial[0] if partial else 'a')
+
+
+async def filter_far_down(window, page, name):
+    """Escape out of a filter with the focus far down the list (docs/accessibility.md): the
+    focus on the last item (End), Ctrl+F, a letter that leaves that item out, Escape: the
+    focus back on it, on screen, and Up moves on from it; then a filter that matches nothing,
+    Escape, and the focus is on the item again, not on the bare list."""
+    view = filter_view(page)
+    bar = page.filter_bar
+    if not inside(window.get_focus(), view):
+        await key(window, '<primary>2', 0.6)
+    await key(window, 'End', 0.6)
+    model = view.get_model()
+    items = [model.get_item(n) for n in range(model.get_n_items())
+             if getattr(model.get_item(n), 'search_key', None) is not None]
+    last = next(n for n in reversed(range(model.get_n_items())) if model.get_item(n) is items[-1])
+    if focused_object(window, view) is not items[-1] and last < model.get_n_items() - 1:
+        # A playlist's list ends with its suggestions, which End goes to (or, from a song,
+        # not at all): the last song, as Up from them would reach it.
+        from applemusic.widgets.util import focus_position
+
+        focus_position(view, last)
+        await asyncio.sleep(0.4)
+    before = focused_object(window, view)
+    check(f'the focus at the end of {name}', before is items[-1],
+          before.title if before is not None else describe(window.get_focus()))
+    if before is None:
+        return
+    letter = recycling_letter(view, before)
+    await key(window, '<primary>f', 0.6)
+    await type_into(bar.entry, letter, 0.8)
+    total = shown_count(view)
+    await key(window, 'Escape', 0.8)
+    after = focused_object(window, view)
+    check(f'Escape from a filter of {letter!r} on {name}: the focus back on the item it was '
+          'on, on screen', after is before,
+          (total, after.title if after is not None else describe(window.get_focus())))
+    await key(window, 'Up', 0.4)
+    moved = focused_object(window, view)
+    check(f'Up moves on from it in {name}', moved is not None and moved is not before,
+          moved.title if moved is not None else describe(window.get_focus()))
+    if moved is None:
+        return
+    await key(window, '<primary>f', 0.6)
+    await type_into(bar.entry, 'zzqx', 0.8)  # which no item has
+    await key(window, 'Escape', 0.8)
+    after = focused_object(window, view)
+    check(f'Escape from a filter matching nothing on {name}: the focus on the item again, '
+          'not the bare list', after is moved,
+          after.title if after is not None else describe(window.get_focus()))
 
 
 def first_playlist():
@@ -958,18 +1035,7 @@ async def walkthrough(window):
     await key(window, 'Tab', 0.1)
     check('Tab: Clear', window.get_focus() is queue_view.clear_button,
           describe(window.get_focus()))
-    cleared = []
-
-    async def clear():
-        cleared.append(True)
-        return 0
-    app.player.clear_up_next = clear
-    await key(window, 'space', 0.4)
-    del app.player.clear_up_next
-    check('Space on Clear clears Up Next', cleared == [True], cleared)
-    await key(window, 'Tab', 0.1)
-    check('Tab reaches Up Next', inside(window.get_focus(), sheet.queue_view.list_view),
-          describe(window.get_focus()))
+    await up_next_clear(window, queue_view)
     await key(window, 'Menu', 0.6)
     popover = harness.popovers(sheet.queue_view)
     check("Menu opens the focused entry's menu", bool(popover))
@@ -1214,7 +1280,8 @@ async def walkthrough(window):
     app.settings.reset('favourites-only')
     print("-- the library pages' filters (Ctrl+F)")
     for key_name, name in (('albums', 'Albums'), ('music-videos', 'Music Videos'),
-                           ('artists', 'Artists'), ('favourite-songs', 'Favourite Songs')):
+                           ('artists', 'Artists'), ('songs', 'Songs'),
+                           ('favourite-songs', 'Favourite Songs')):
         window.select_page(key_name)
         window.split_view.set_show_content(True)
         await asyncio.sleep(0.8)
@@ -1598,6 +1665,44 @@ async def up_next_remove(window, queue_view):
     await key(window, 'Delete', 0.4)
     check('Delete on the entry playing removes nothing', len(removed) == 1, removed)
     del player.remove_from_queue
+
+
+async def up_next_clear(window, queue_view):
+    """Space on Clear (the focus on it): the Player's own clear_up_next() takes everything
+    after the entry playing out of the queue (only MusicKit's answer stood in for: the demo
+    has no engine), Clear goes insensitive, and the focus, which GTK would drop to the window,
+    goes to the entry playing; Undo (the toast's action) puts the entries back."""
+    player, engine = app.player, app.engine
+    count = player.queue.get_n_items()
+    calls = []
+
+    async def queue_clear():
+        calls.append('clear')
+        return count - player.queue_index - 1
+
+    async def queue_undo_clear():
+        calls.append('undo')
+        return count - player.queue_index - 1
+    engine.queue_clear, engine.queue_undo_clear = queue_clear, queue_undo_clear
+    playing = player.queue.get_item(player.queue_index)
+    await key(window, 'space', 0.2)
+    await until(lambda: calls and player.queue.get_n_items() == player.queue_index + 1)
+    await asyncio.sleep(0.4)
+    focus = window.get_focus()
+    check('Space on Clear clears Up Next, and Clear goes insensitive',
+          calls == ['clear'] and player.queue.get_n_items() == player.queue_index + 1
+          and not queue_view.clear_button.get_sensitive(),
+          (calls, player.queue.get_n_items()))
+    check('the focus goes to the entry playing, on screen',
+          focused_entry(queue_view) is playing and focus.get_mapped(), describe(focus))
+    app.activate_action('undo-clear-up-next', None)
+    await until(lambda: player.queue.get_n_items() == count)
+    window.toast_overlay.dismiss_all()  # its Escape would close the toast, not a menu
+    del engine.queue_clear, engine.queue_undo_clear
+    check("the toast's Undo puts the entries back, the focus where it was",
+          calls == ['clear', 'undo'] and player.queue.get_n_items() == count
+          and queue_view.clear_button.get_sensitive()
+          and focused_entry(queue_view) is playing, (calls, player.queue.get_n_items()))
 
 
 async def up_next_history(window, queue_view):

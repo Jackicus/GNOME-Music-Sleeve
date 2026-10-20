@@ -6,7 +6,7 @@ weak_method(), the same for any other callback a child holds); MappedHandlers: a
 handlers on objects that outlive it (the library, the engine), connected only while it is
 mapped; next_frame(): wait for a widget's next frame; HeaderTitle: a page's title in its
 header bar only while its big title is out of view; descendants(), first_descendant() and
-has_ancestor(): the widget tree by class.
+has_ancestor(): the widget tree by class; focus_position(): the focus on a list's item.
 
 A widget that connects one of its children's signals (or an owned object's: a list factory,
 an adjustment, a sort model, an event controller) to one of its own bound methods makes a
@@ -279,3 +279,20 @@ def has_ancestor(widget, cls):
             return True
         widget = widget.get_parent()
     return False
+
+
+def focus_position(view, position):
+    """The keyboard focus on the row or tile at `position` of view (a Gtk.ListView,
+    GridView or ColumnView), scrolled into view. scroll_to(FOCUS) focuses the item only when
+    the focus is in the view already; from elsewhere (a header bar, an entry, the sidebar) it
+    only moves the view's own focus item there, which the view's grab_focus() then focuses.
+    The view's grab alone would focus the widget it last focused, which the view may have
+    recycled for another item since and scrolled out of view (gtk-notes.md)."""
+    if isinstance(view, Gtk.ColumnView):
+        view.scroll_to(position, None, Gtk.ListScrollFlags.FOCUS, None)
+    else:
+        view.scroll_to(position, Gtk.ListScrollFlags.FOCUS, None)
+    root = view.get_root()
+    focus = root.get_focus() if root is not None else None
+    if focus is None or focus is view or not focus.is_ancestor(view):
+        view.grab_focus()

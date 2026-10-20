@@ -199,7 +199,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   filter through one `widgets.filter_bar.FilterBar`: a `Gtk.SearchBar` added under the
   page's header bar in code (`add_top_bar`), its toggle `button` packed in the header bar,
   `set_available(has_items, capture)` (the button, and typing on `capture` starting it),
-  `set_focus_return()` (where Escape puts the focus), `changed` with `search` folded; Ctrl+F
+  `set_focus_return()` (where Escape puts the focus: the page's `focus(obj)` on the item the
+  focus was on as the bar opened, by `widgets.util.focus_position()`, else the first; False
+  and the button takes it), `changed` with `search` folded; Ctrl+F
   reaches it through the page's `focus_filter()`. Matching is `library.filter_matches()` on
   each object's `search_key`, in C through `filter_bar.text_filter()` (the Songs table in
   Python); it combines with Favourites Only, says the new count through `announce()`, shows
