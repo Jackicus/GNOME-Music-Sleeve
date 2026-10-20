@@ -61,8 +61,10 @@ touches widgets.
   write, put back if Apple refuses; once Apple shows it, a playlists pass reads that
   playlist's tracks into library.json (`sync_tracks()`, which Add and Remove from Playlist use
   too). Drags carry `library.ItemRefs` and every source and drop target goes through
-  `widgets/dnd.py`: the sidebar's rows, a playlist's own list, and the player bar, which
-  queues what is dropped on it (`item_actions.queue_drop()`).
+  `widgets/dnd.py`: the sidebar's rows, a playlist's own list, the grids' and shelves'
+  tiles, and the player bar, which queues what is dropped on it
+  (`item_actions.queue_drop()`); a sidebar playlist adds the songs of what is dropped on it
+  (`item_actions.drop()`: an album's or a playlist's through `tracks_of()`).
 - **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
   library pages bind the library's stores (Artists is a list beside the library's page of
   the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow); New,

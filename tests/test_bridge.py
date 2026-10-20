@@ -1070,6 +1070,8 @@ class BridgeTest(unittest.TestCase):
         await bridge.rating('album', '1000000002', 0);
         await bridge.addToLibrary('music-video', '1000000009');
         await bridge.addToPlaylist('p.pl1', 'i.song1', 'library-songs');
+        await bridge.addToPlaylist('p.pl1', [{id: 'i.song2', type: 'library-songs'},
+                                             {id: '1000000009', type: 'music-videos'}]);
         await bridge.rating('station', 'ra.1000000003', -1);
         mk.writeStatus = 403;
         let refused = null;
@@ -1077,7 +1079,7 @@ class BridgeTest(unittest.TestCase):
         return {calls: mk.calls, refused};
     """)
     def test_writes_go_through_the_request_builder(self, value):
-        self.assertEqual(value['calls'][:5], [
+        self.assertEqual(value['calls'][:6], [
             ['request', '/v1/me/ratings/library-songs/i.song1',
              {'params': {}, 'method': 'PUT', 'body': {'type': 'ratings',
                                                       'attributes': {'value': 1}}}],
@@ -1087,6 +1089,11 @@ class BridgeTest(unittest.TestCase):
             ['request', '/v1/me/library/playlists/p.pl1/tracks',
              {'params': {}, 'method': 'POST',
               'body': {'data': [{'id': 'i.song1', 'type': 'library-songs'}]}}],
+            # A list (an album's songs): one POST of all of them, in their order.
+            ['request', '/v1/me/library/playlists/p.pl1/tracks',
+             {'params': {}, 'method': 'POST',
+              'body': {'data': [{'id': 'i.song2', 'type': 'library-songs'},
+                                {'id': '1000000009', 'type': 'music-videos'}]}}],
             # Suggest Less: the rating -1.
             ['request', '/v1/me/ratings/stations/ra.1000000003',
              {'params': {}, 'method': 'PUT', 'body': {'type': 'ratings',

@@ -162,9 +162,32 @@ class MenuTest(unittest.TestCase):
             'win.item-play', 'win.item-play-next', 'win.item-play-later',
             'win.item-go-to-artist', 'win.item-love', 'win.item-unlove',
             'win.item-suggest-less', 'win.item-undo-suggest-less',
-            'win.item-open-in-browser', 'win.item-copy-link'])
+            'win.item-new-playlist', 'win.item-open-in-browser', 'win.item-copy-link'])
         self.assertTrue(all(target == ('album', 'l.alb1')
                             for _action, target in actions_of(build_menu(LIBRARY_ALBUM))))
+
+    def test_albums_and_playlists_add_their_songs_to_playlists(self):
+        # Add to Playlist, as for a song: the playlists, then New Playlist…, the target the
+        # album's or the playlist's own; a playlist is not offered to itself, nor a folder
+        # holding only it.
+        playlists = [('p.fd1', 'Evenings', [('p.pl1', 'Road Trip', None)]),
+                     ('p.pl3', 'Dusk', None)]
+        for obj in (LIBRARY_ALBUM, CATALOG_ALBUM, PLAYLIST, FAVOURITES):
+            with self.subTest(title=obj.title):
+                menu = build_menu(obj, playlists=playlists)
+                added = [target for action, target in actions_of(menu)
+                         if action == 'win.item-add-to-playlist']
+                if obj is PLAYLIST:
+                    self.assertEqual(added, [('p.pl3', 'playlist', 'p.pl1')])
+                    self.assertIsNone(submenu_of(menu, 'Evenings'))
+                else:
+                    self.assertEqual(added, [('p.pl1', *describe(obj)), ('p.pl3', *describe(obj))])
+                self.assertIn(('win.item-new-playlist', describe(obj)), actions_of(menu))
+        # Nothing else takes it: a folder, a station, an artist.
+        for obj in (FOLDER, STATION, CATALOG_ARTIST):
+            with self.subTest(title=obj.title):
+                self.assertNotIn('win.item-add-to-playlist',
+                                 names(build_menu(obj, playlists=playlists)) or [])
 
     def test_catalog_album_can_be_added(self):
         self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_ALBUM)))
@@ -339,8 +362,10 @@ class MenuTest(unittest.TestCase):
             'win.item-undo-suggest-less', 'win.item-open-in-browser', 'win.item-copy-link'])
         self.assertEqual(names(build_menu(FAVOURITES)), [
             'win.item-play', 'win.item-play-next', 'win.item-play-later',
+            'win.item-new-playlist',
             'win.item-open-in-browser'])  # its library route is the owner's: no Copy Link
-        self.assertEqual(names(build_menu(MADE_UP_ALBUM)), ['win.item-play'])
+        self.assertEqual(names(build_menu(MADE_UP_ALBUM)), ['win.item-play',
+                                                            'win.item-new-playlist'])
         self.assertNotIn('win.item-open-in-browser', names(build_menu(UPLOAD_TRACK)))
 
     def test_create_station_from_a_song_or_an_artist(self):
@@ -613,6 +638,7 @@ class FakeEngine(GObject.Object):
         self.related_answers = {}  # (kind, id) -> related()'s answer
         self.listings = []  # folder_children()'s answers, one per call; then none
         self.moving = None  # an asyncio.Event move_to_folder() waits for, when set
+        self.adding = None  # an asyncio.Event add_tracks_to_playlist() waits for, when set
         self.still_listed = []  # in_library()'s answers, one per call; then False
 
     async def _record(self, name, *args):
@@ -657,6 +683,12 @@ class FakeEngine(GObject.Object):
 
     async def add_to_playlist(self, playlist_id, song_id, kind='song'):
         await self._record('add_to_playlist', playlist_id, song_id, kind)
+
+    async def add_tracks_to_playlist(self, playlist_id, tracks):
+        if self.adding is not None:
+            await self.adding.wait()
+        await self._record('add_tracks_to_playlist', playlist_id, tuple(tracks))
+        return len(tracks)
 
     async def catalog_artist(self, name, song_ids):
         await self._record('catalog_artist', name, tuple(song_ids))
@@ -1206,12 +1238,143 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(self.actions.drop(playlist, ref))
         self.assertFalse(self.actions.drop(self.app.playlist, ItemRefs()))
         self.assertFalse(self.actions.drop(self.app.playlist, 'not a ref'))
-        # Only one track: a playlist, or several songs, is not added by a drop.
+        # A playlist is not dropped on itself; nor is a folder or a station on a playlist.
         self.assertFalse(self.actions.drop(self.app.playlist, ItemRefs.for_objects([PLAYLIST])))
-        self.assertFalse(self.actions.drop(self.app.playlist, ItemRefs(
-            [Ref('song', '1', 'One'), Ref('song', '2', 'Two')])))
+        for refused in (FOLDER, STATION):
+            self.assertFalse(self.actions.drop(self.app.playlist,
+                                               ItemRefs.for_objects([refused])))
         self.assertEqual(len([call for call in self.app.engine.calls
                               if call[0] == 'add_to_playlist']), 2)
+        # Several songs: all of them, in order, in one add.
+        self.app.toasts.clear()
+        self.assertTrue(self.actions.drop(self.app.playlist, ItemRefs(
+            [Ref('song', '1', 'One'), Ref('song', '2', 'Two')])))
+        await asyncio.gather(*self.app.tasks)
+        self.assertIn(('add_tracks_to_playlist', 'p.pl1', (('song', '1'), ('song', '2'))),
+                      self.app.engine.calls)
+        self.assertEqual(self.app.toasts, ['Added 2 songs to “Road Trip”'])
+
+    def adds(self):
+        return [call[1:] for call in self.app.engine.calls if call[0] == 'add_tracks_to_playlist']
+
+    async def test_an_albums_songs_are_added_to_a_playlist(self):
+        # A library album: its own tracks, in order, every disc, by their library ids (a
+        # music video as one); one add, one toast, the playlist fetched again.
+        album = Item({'id': 'l.alb9', 'kind': 'album', 'title': 'Tidewater', 'groups': [
+            {'name': 'Disc 1', 'entries': [
+                {'id': 'i.s1', 'title': 'One', 'type': 'library-songs'},
+                {'id': '', 'title': 'Lost'},  # no id: left out
+                {'id': 'i.v1', 'title': 'Two (Video)', 'type': 'library-music-videos'}]},
+            {'name': 'Disc 2', 'entries': [
+                {'id': 'i.s3', 'title': 'Three', 'type': 'library-songs'}]}]})
+        self.app.engine.items[('playlist', 'p.pl1')] = PLAYLIST_ANSWER
+        self.assertTrue(await self.actions.add_items_to_playlist('p.pl1', [album]))
+        self.assertEqual(self.adds(), [
+            ('p.pl1', (('song', 'i.s1'), ('video', 'i.v1'), ('song', 'i.s3')))])
+        self.assertEqual(self.app.toasts, ['Added 3 songs to “Road Trip”'])
+        self.assertIn(('item', 'playlist', 'p.pl1'), self.app.engine.calls)  # fetched again
+        self.assertNotIn(('item', 'album', 'l.alb9'), self.app.engine.calls)  # had them
+
+    async def test_a_catalog_albums_songs_are_read_first(self):
+        # One that came without its tracks (a shelf's): the engine's item() read gives them
+        # (all of them: it follows Apple's pages), by their catalog ids. Through the menu.
+        self.app.engine.items[('album', '1000000002')] = {
+            'id': '1000000002', 'kind': 'album', 'title': 'Harbour Suite', 'groups': [
+                {'name': '', 'entries': [{'id': '1000000020', 'title': 'Overture'},
+                                         {'id': '1000000021', 'title': 'Reprise'}]}]}
+        self.actions.menu_for(CATALOG_ALBUM)
+        await self.run_action('item-add-to-playlist', 'p.pl1', 'album', '1000000002')
+        self.assertIn(('item', 'album', '1000000002'), self.app.engine.calls)
+        self.assertEqual(self.adds(), [('p.pl1', (('song', '1000000020'),
+                                                  ('song', '1000000021')))])
+        self.assertEqual(self.app.toasts, ['Added 2 songs to “Road Trip”'])
+
+    async def test_a_playlists_songs_are_added_from_a_drop(self):
+        # A playlist's tile dropped on another playlist: its tracks, in its order.
+        source = Item({'id': 'p.pl7', 'kind': 'playlist', 'title': 'Mixtape', 'groups': [
+            {'name': '', 'entries': [{'id': 'i.s4', 'title': 'Four', 'type': 'library-songs'},
+                                     {'id': 'i.s5', 'title': 'Five',
+                                      'type': 'library-songs'}]}]})
+        refs = ItemRefs.for_objects([source])
+        self.assertTrue(self.actions.can_drop_refs(self.app.playlist, refs))
+        self.assertTrue(self.actions.drop(self.app.playlist, refs))
+        await asyncio.gather(*self.app.tasks)
+        self.assertEqual(self.adds(), [('p.pl1', (('song', 'i.s4'), ('song', 'i.s5')))])
+        # Its Refs alone (no objects): the library's playlist, or one read by its id.
+        self.app.engine.items[('album', '1000000002')] = {
+            'id': '1000000002', 'kind': 'album', 'groups': [
+                {'entries': [{'id': '1000000020', 'title': 'Overture'}]}]}
+        self.assertTrue(self.actions.drop(self.app.playlist, ItemRefs(
+            [Ref('album', '1000000002', 'Harbour Suite'), Ref('song', 'i.s9', 'Nine')])))
+        await asyncio.gather(*self.app.tasks)
+        self.assertEqual(self.adds()[-1], ('p.pl1', (('song', '1000000020'), ('song', 'i.s9'))))
+
+    async def test_the_same_add_is_not_made_twice_at_once(self):
+        self.app.engine.adding = asyncio.Event()
+        album = Item({'id': 'l.alb9', 'kind': 'album', 'title': 'Tidewater', 'groups': [
+            {'entries': [{'id': 'i.s1', 'title': 'One'}]}]})
+        first = self.actions.add_items_to_playlist('p.pl1', [album])
+        self.assertIsNone(self.actions.add_items_to_playlist('p.pl1', [album]))  # a 2nd click
+        other = self.actions.add_items_to_playlist('p.pl2', [album])  # another playlist: made
+        self.app.engine.adding.set()
+        self.assertTrue(await first)
+        self.assertTrue(await other)
+        self.assertEqual([playlist for playlist, _tracks in self.adds()], ['p.pl1', 'p.pl2'])
+        # Once it is done, it can be made again.
+        self.assertTrue(await self.actions.add_items_to_playlist('p.pl1', [album]))
+
+    async def test_a_failed_add_is_reported_and_followed(self):
+        album = Item({'id': 'l.alb9', 'kind': 'album', 'title': 'Tidewater', 'groups': [
+            {'entries': [{'id': 'i.s1', 'title': 'One'}]}]})
+        self.app.engine.items[('playlist', 'p.pl1')] = PLAYLIST_ANSWER
+        self.app.engine.fail = EngineError('api', 'HTTP 403 Forbidden')
+        self.assertIs(await self.actions.add_items_to_playlist('p.pl1', [album]), False)
+        self.assertEqual(self.app.reported, ['api'])
+        self.assertEqual(self.app.toasts, [])
+        # A catalog album whose read fails: reported, nothing sent.
+        self.app.engine.fail = None
+        self.app.engine.calls.clear()
+        self.assertIs(await self.actions.add_items_to_playlist('p.pl1', [CATALOG_ALBUM]), False)
+        self.assertEqual(self.app.reported, ['api', 'api'])
+        self.assertEqual(self.adds(), [])
+        # Nothing to add (an album without songs): said, nothing sent.
+        empty = Item({'id': 'l.alb_00000000none', 'kind': 'album', 'title': 'Empty'})
+        self.assertIs(await self.actions.add_items_to_playlist('p.pl1', [empty]), False)
+        self.assertEqual(self.app.toasts, ['There are no songs to add'])
+        self.assertEqual(self.adds(), [])
+        self.app.demo = True
+        self.assertIsNone(self.actions.add_items_to_playlist('p.pl1', [album]))
+
+    async def test_a_new_playlist_of_an_albums_songs(self):
+        # New Playlist… in an album's Add to Playlist: the name filled in with its title,
+        # its songs read, the playlist made holding them, the toast counting them.
+        asked = []
+        self.actions.ask_name = lambda *args: asked.append(args)
+        album = Item({'id': 'l.alb9', 'kind': 'album', 'title': 'Tidewater', 'groups': [
+            {'entries': [{'id': 'i.s1', 'title': 'One'}, {'id': 'i.s2', 'title': 'Two'}]}]})
+        self.actions.menu_for(album)
+        self.actions.actions['item-new-playlist'].activate(GLib.Variant('(ss)',
+                                                                        ('album', 'l.alb9')))
+        _heading, _confirm, name, _description, done = asked[0]
+        self.assertEqual(name, 'Tidewater')
+        await done('Tidewater', '')
+        self.assertIn(('create_playlist', 'Tidewater', '', (('song', 'i.s1'), ('song', 'i.s2')),
+                       None), self.app.engine.calls)
+        self.assertEqual(self.app.toasts[0], 'Added 2 songs to the new playlist “Tidewater”')
+
+    def test_container_tracks_and_the_messages(self):
+        self.assertIsNone(actions_module.container_tracks(CATALOG_ALBUM))  # read them first
+        self.assertEqual(actions_module.container_tracks(LOOSE_ARTIST),
+                         [('song', 'i.song7')])
+        self.assertEqual(actions_module.added_message(1, 'Road Trip'),
+                         'Added 1 song to “Road Trip”')
+        self.assertEqual(actions_module.added_message(12, ''), 'Added 12 songs to the playlist')
+        self.assertTrue(actions_module.adds_songs(CATALOG_ALBUM))
+        self.assertTrue(actions_module.adds_songs(PLAYLIST))
+        self.assertFalse(actions_module.adds_songs(FOLDER))
+        self.assertFalse(actions_module.adds_songs(CATALOG_SONG))
+        self.assertTrue(actions_module.new_playlist_refs(ItemRefs.for_objects([LIBRARY_ALBUM])))
+        self.assertFalse(actions_module.new_playlist_refs(ItemRefs.for_objects([PLAYLIST])))
 
     async def test_drops_on_the_player_bar_are_queued(self):
         def calls():

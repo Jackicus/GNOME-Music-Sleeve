@@ -1121,14 +1121,14 @@
             return { has: true };
         },
 
-        // `type` is the song's resource type: 'songs' for a catalog id (the
-        // default), 'library-songs' for a library one.
-        addToPlaylist: async function (playlistId, songId, type) {
+        // `tracks` [{id, type}], appended in their order by one POST (the engine
+        // sends an album's or a playlist's in batches); or one song's id, with
+        // `type` its resource type: 'songs' for a catalog id (the default),
+        // 'library-songs' for a library one.
+        addToPlaylist: async function (playlistId, tracks, type) {
             const path = '/v1/me/library/playlists/' + playlistId + '/tracks';
-            return await apiWrite(path, {}, {
-                method: 'POST',
-                body: { data: [{ id: songId, type: type || 'songs' }] }
-            });
+            const data = Array.isArray(tracks) ? tracks : [{ id: tracks, type: type || 'songs' }];
+            return await apiWrite(path, {}, { method: 'POST', body: { data: data } });
         },
 
         // The playlist writes music.apple.com's own web player makes (its

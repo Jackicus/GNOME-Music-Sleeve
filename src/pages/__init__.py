@@ -211,7 +211,7 @@ def _all_playlists(destination, library):
     page = GridPage(library, destination.title, lambda: library.folder_items(ROOT_FOLDER),
                     icon_name=destination.icon_name,
                     empty_title=_('No Playlists'),
-                    empty_description=_('Playlists in your library appear here'), drag=True)
+                    empty_description=_('Playlists in your library appear here'))
     add_folder_buttons(page, library, ROOT_FOLDER)
     return page
 
@@ -265,8 +265,7 @@ def folder(library, folder_id, title, root=True):
                     icon_name=FOLDER_ICON, empty_title=_('Empty Folder'),
                     empty_description=_('Playlists you put in this folder appear here'),
                     missing_title=_('Folder Not Found'),
-                    missing_description=_('This folder is no longer in your library'),
-                    drag=True)
+                    missing_description=_('This folder is no longer in your library'))
     item = library.by_id('folder', folder_id) if not root else None
     if item is not None:
         item.bind_property('title', page, 'title', GObject.BindingFlags.SYNC_CREATE)

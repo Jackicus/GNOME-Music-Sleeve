@@ -107,7 +107,8 @@ list and the script together.
     screen reader hears; dragging a playlist onto a sidebar folder does the same by pointer.
     The other drops have their keys too: Play Later and Play Next in a menu are what a drop
     on the player bar does, Add to Playlist › New Playlist… what songs dropped on All
-    Playlists do.
+    Playlists do, and an album's or playlist's Add to Playlist what its tile dropped on a
+    sidebar playlist does.
 12. On a playlist of your own, Alt+Down on the focused song moves it one place down and
     Alt+Up one place up; the focus stays on the song, and the move is announced ("“Song”
     moved to position 3 of 12"). Menu on a song lists Move Up and Move Down (Move Up not on

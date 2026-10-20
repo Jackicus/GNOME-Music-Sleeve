@@ -104,7 +104,7 @@ class LibraryArtistPage(Adw.NavigationPage):
         self._set_columns(estimate_columns())
         connect_weak(self.grid_view.get_hadjustment(), 'changed', self._on_width)
         self.grid_view.set_model(Gtk.NoSelection(model=self._shown))
-        context_menu.attach(self.grid_view)
+        context_menu.attach(self.grid_view, drag=True)  # the albums onto playlists, the bar
 
         connect_weak(self.name_button, 'clicked', self._on_name_clicked)
         connect_weak(self.play_button, 'clicked', self._on_play_clicked, False)

@@ -14,6 +14,7 @@ actions, the menus that offer them, and what a drop on the sidebar or the player
     actions.known_rating(('artist', id))   # 1, 0, -1 as the engine last said, or None
     actions.fill_sidebar_menu(menu, item)  # a sidebar playlist's or folder's menu
     actions.drop(playlist, refs)           # a library.ItemRefs dropped on a sidebar playlist
+    actions.add_items_to_playlist(playlist_id, [album])   # its songs, in order, one toast
     actions.drop_new_playlist(refs)        # songs dropped on All Playlists: a new playlist
     actions.queue_drop(refs, next_up=False)   # dropped on the player bar: queued
     actions.move_to_folder(obj, folder_id) # a playlist (or folder) into a folder, at once
@@ -42,10 +43,14 @@ what it acts on (an Item's kind and id, or 'song' and a Track's id):
     item-copy-link       that page's address, on the clipboard
 
 and item-add-to-playlist, "(sss)" (playlist id, kind, id): a song or a music video added to a
-library playlist. The playlists' own, each through a dialog (dialogs/playlist.py):
+library playlist, or every song of an album or a playlist (tracks_of(): the library's, else
+the engine's read of them), in order, in batches, with one toast that counts them; the same
+add is not made twice while it runs. The playlists' own, each through a dialog
+(dialogs/playlist.py):
 
     item-new-playlist    a playlist named in a dialog: holding the song or video of the
-                         target, or in the folder it names ('folder', 'root': the top level)
+                         target (an album's or a playlist's songs, named after it), or in
+                         the folder it names ('folder', 'root': the top level)
     item-rename          a playlist's name and description, or a folder's name
     item-delete          a playlist, or a folder with what is in it, once a dialog confirms
     item-new-folder      a folder named in a dialog, in the folder the target names
@@ -79,11 +84,12 @@ Remove from Favourites, then Suggest Less or Undo Suggest Less (all four, of whi
 shows those whose actions are enabled: rating_actions(), by the item's rating; as on
 Apple's players, a favourite offers no Suggest Less; an artist whose catalog id is known has
 Favourite or Remove from Favourites alone: favourite_items()), Add to Library (not what the
-library holds already), Add to Playlist (the library's playlists that take songs, each
-folder a submenu, then New Playlist…), Move to Folder (a playlist's or folder's: Top
-Level, the folders it can go into, a folder holding others a submenu headed by itself, then
-New Folder…: move_targets()), Remove from Playlist and, where it can go, Move Up and Move
-Down (a track shown in a playlist of the user's: `container`); Open in Browser, Copy Link
+library holds already), Add to Playlist (a song's, a video's, an album's or a playlist's: the
+library's playlists that take songs, each folder a submenu, a playlist not offered to
+itself, then New Playlist…), Move to Folder (a playlist's or folder's: Top Level, the
+folders it can go into, a folder holding others a submenu headed by itself, then New
+Folder…: move_targets()), Remove from Playlist and, where it can go, Move Up and Move Down
+(a track shown in a playlist of the user's: `container`); Open in Browser, Copy Link
 (only an address anyone can open: not the web player's library routes; a library artist's is
 the catalog artist's page, which the engine finds through their songs); Rename… and Delete
 Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs),
@@ -176,6 +182,8 @@ SYNTHETIC_PREFIXES = ('l.alb_', 'l.art_')
 
 MENU_KINDS = ('album', 'playlist', 'song', 'station', 'artist', 'video', 'folder')
 QUEUE_KINDS = ('album', 'playlist')
+# The Items whose songs Add to Playlist and a drop on a sidebar playlist add, all of them.
+SOURCE_KINDS = ('album', 'playlist')
 RATED_KINDS = ('album', 'playlist', 'station', 'video')
 LIBRARY_KINDS = ('song', 'album', 'playlist', 'video')
 
@@ -299,10 +307,58 @@ def queue_message(title, later, count=1):
 def new_playlist_tracks(refs):
     """What the playlist made from a drop of `refs` on All Playlists holds: the songs and
     music videos, in order, as (kind, id) by their own ids (as Add to Playlist adds them);
-    None when refs is no ItemRefs or carries anything else (playlists moved there instead)."""
+    None when refs is no ItemRefs or carries anything else (an album: new_playlist_refs();
+    playlists are moved there instead)."""
     if not isinstance(refs, ItemRefs) or not refs.only(*TRACK_REF_KINDS):
         return None
     return [(ref.kind, ref.id) for ref in refs]
+
+
+def new_playlist_refs(refs):
+    """Whether a drop of `refs` on All Playlists makes a new playlist of what it carries:
+    songs, music videos and albums alone (an album's songs: ItemActions.tracks_of()), not
+    playlists or folders (which are moved to the top level instead)."""
+    return isinstance(refs, ItemRefs) and refs.only(*TRACK_REF_KINDS, 'album')
+
+
+def adds_songs(obj):
+    """Whether Add to Playlist adds obj's songs: an album or a playlist Item with an id (a
+    folder holds playlists, a station no songs)."""
+    return isinstance(obj, Item) and obj.kind in SOURCE_KINDS and bool(obj.id)
+
+
+def container_tracks(item):
+    """The songs and music videos of an album or a playlist Item that Add to Playlist adds,
+    in its order (every disc of an album), as (kind, id) by their own ids
+    (library.track_ref(): a library song's "i." id, a catalog one's); those without an id
+    are left out. None when the Item came without its tracks (no groups: a shelf's, a
+    search's), which the engine's item() read then gives."""
+    groups = item.groups
+    if not groups:
+        return None
+    tracks = []
+    for group in groups:
+        entries = group.entries
+        for position in range(entries.get_n_items()):
+            ref = track_ref(entries.get_item(position))
+            if ref is not None:
+                tracks.append((ref.kind, ref.id))
+    return tracks
+
+
+def added_message(count, playlist='', new=False):
+    """The toast after `count` songs (an album's, a playlist's) were added to the playlist
+    named `playlist`, or (`new`) to the new playlist of that name."""
+    if new:
+        return ngettext('Added {count} song to the new playlist “{playlist}”',
+                        'Added {count} songs to the new playlist “{playlist}”',
+                        count).format(count=count, playlist=playlist)
+    if playlist:
+        return ngettext('Added {count} song to “{playlist}”',
+                        'Added {count} songs to “{playlist}”',
+                        count).format(count=count, playlist=playlist)
+    return ngettext('Added {count} song to the playlist', 'Added {count} songs to the playlist',
+                    count).format(count=count)
 
 
 def station_target(obj):
@@ -630,12 +686,17 @@ def mnemonic_escaped(title):
 def playlist_submenu(entries, named):
     """The Add to Playlist items for `entries` ((id, title, children), as
     ItemActions.playlists() lists them), each folder a submenu of its own entries: adding
-    the song or video `named` ((kind, id)) to the playlist chosen."""
+    the song or video `named` ((kind, id)), or an album's or a playlist's songs, to the
+    playlist chosen. A playlist is not offered its own songs (nor a folder holding only
+    it)."""
     menu = Gio.Menu()
     for entry_id, title, children in entries:
         if children is not None:
-            menu.append_submenu(mnemonic_escaped(title or _('Untitled Folder')),
-                                playlist_submenu(children, named))
+            inside = playlist_submenu(children, named)
+            if inside.get_n_items():
+                menu.append_submenu(mnemonic_escaped(title or _('Untitled Folder')), inside)
+        elif tuple(named) == ('playlist', entry_id):
+            continue
         else:
             menu.append_item(menu_item(
                 'item-add-to-playlist', GLib.Variant('(sss)', (entry_id, *named)),
@@ -785,9 +846,9 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         keep.append_item(item)
     if library_target(obj) is not None and removable is None:
         keep.append_item(menu_item('item-add-to-library', target))
-    if playlist_song(obj):
+    if playlist_song(obj) or adds_songs(obj):
         # The playlists that take songs, folders as submenus, then New Playlist…, one
-        # holding this song.
+        # holding this song (an album's or a playlist's songs).
         submenu = Gio.Menu()
         listed = playlist_submenu(playlists, named)
         if listed.get_n_items():
@@ -926,6 +987,7 @@ class ItemActions:
         self._remembered = OrderedDict()  # (kind, id) -> the object a menu was built for
         self._ratings = {}  # rating_target -> 1, 0 or -1, as the engine last said
         self._menu_rated = None  # the rating target of the last menu built
+        self._adding = set()  # (playlist id, what) of each add of many songs under way
         app.engine.connect('rated', self._on_rated)
         handlers = {
             'item-play': self._on_play,
@@ -983,7 +1045,8 @@ class ItemActions:
         named = describe(obj)
         if named is None:
             return None
-        menu = build_menu(obj, self.playlists() if playlist_song(obj) else (),
+        menu = build_menu(obj, self.playlists() if playlist_song(obj) or adds_songs(obj)
+                          else (),
                           self._storefront(), here=self._shown(), queued=queued,
                           container=self.container(obj), moves=self.move_targets(obj),
                           removable=self.removal_target(obj), queue_entry=queue_entry,
@@ -1359,6 +1422,8 @@ class ItemActions:
     def _on_add_to_playlist(self, _action, parameter):
         playlist_id, kind, item_id = parameter.unpack()
         obj = self._resolve(kind, item_id)
+        if kind in SOURCE_KINDS:
+            return self.add_items_to_playlist(playlist_id, [self._source(obj, kind, item_id)])
         track = playlist_track(obj) if obj is not None else (kind, item_id)
         if track is None:
             track = (kind, item_id)
@@ -1382,6 +1447,76 @@ class ItemActions:
             message = _('Added to the playlist')
         return self._run(self.engine.add_to_playlist, (playlist_id, song_id, kind), message,
                          after=lambda: self._follow_tracks(playlist_id), playlist=playlist_id)
+
+    def add_items_to_playlist(self, playlist_id, objects):
+        """The songs of `objects` (albums, playlists, songs and music videos: Items and
+        Tracks, in order; tracks_of()) added to the end of the library playlist in that
+        order, in batches (Engine.add_tracks_to_playlist), with one toast for them all
+        (added_message()); the playlist is then fetched again, as for one song, also after
+        a failure partway (what went in stays). An add of the same things to the same
+        playlist while one is under way (a second click) is not made again. The task,
+        whose result says whether they were added (False once reported, or when there was
+        nothing to add), or None (the demo library, or that add under way)."""
+        if self.app.refuse_in_demo():
+            return None
+        key = (playlist_id, tuple(describe(obj) for obj in objects))
+        if key in self._adding:
+            log.debug('adding to %s already', playlist_id)
+            return None
+        self._adding.add(key)
+        playlist = self.library.by_id('playlist', playlist_id)
+        name = playlist.title if playlist is not None else ''
+
+        async def run():
+            sent = False
+            try:
+                await self.app.player.ensure_engine()
+                tracks = await self.tracks_of(objects)
+                if not tracks:
+                    self.app.toast(_('There are no songs to add'))
+                    return False
+                await self.playlist_order.flush(playlist_id)
+                sent = True
+                count = await self.engine.add_tracks_to_playlist(playlist_id, tracks)
+            except EngineError as error:
+                self.app.report(error)
+                if sent:
+                    await self._follow_tracks(playlist_id)
+                return False
+            finally:
+                self._adding.discard(key)
+            self.app.toast(added_message(count, name))
+            await self._follow_tracks(playlist_id)
+            return True
+
+        return self.app.spawn(run())
+
+    async def tracks_of(self, objects):
+        """The songs and music videos `objects` add to a playlist, in order, as (kind, id):
+        a track's own (playlist_track()), an album's or a playlist's (container_tracks();
+        one that came without them read through the engine's item(), which has them all,
+        however Apple pages them). Raises the engine's EngineError."""
+        tracks = []
+        for obj in objects:
+            track = playlist_track(obj)
+            if track is not None:
+                tracks.append(track)
+                continue
+            if not adds_songs(obj):
+                continue
+            found = container_tracks(obj)
+            if found is None and not _synthetic(obj.id):
+                found = container_tracks(Item(await self.engine.item(obj.kind, obj.id)))
+            tracks.extend(found or ())
+        return tracks
+
+    @staticmethod
+    def _source(obj, kind, item_id):
+        """The album or playlist a target names: the object itself, else one made of its
+        kind and id, whose songs tracks_of() reads through the engine."""
+        if isinstance(obj, Item) and obj.kind == kind:
+            return obj
+        return Item({'kind': kind, 'id': item_id})
 
     async def _refresh_playlist(self, playlist_id):
         """Bring a library playlist up to date after it changed on Apple's side
@@ -1433,16 +1568,40 @@ class ItemActions:
         songs; not a folder, not a fixed item, not Favourite Songs)."""
         return isinstance(playlist, Item) and playlist.editable
 
+    def can_drop_refs(self, playlist, refs):
+        """Whether a drop of `refs` (a library.ItemRefs) on this sidebar playlist Item adds
+        what it carries: a playlist that takes songs (can_drop()), and songs, music videos,
+        albums and playlists alone, the playlist itself not among them."""
+        return (self.can_drop(playlist) and isinstance(refs, ItemRefs)
+                and refs.only(*TRACK_REF_KINDS, *SOURCE_KINDS)
+                and not any(ref.kind == 'playlist' and ref.id == playlist.id for ref in refs))
+
     def drop(self, playlist, refs):
-        """A library.ItemRefs of one song or music video dropped on a sidebar playlist:
-        added to it. False when the playlist takes nothing (the drop is refused) or the drag
-        carries anything but one track."""
-        tracks = refs.tracks() if isinstance(refs, ItemRefs) else ()
-        if not self.can_drop(playlist) or len(tracks) != 1 or len(refs) != 1:
+        """A library.ItemRefs dropped on a sidebar playlist (can_drop_refs()): one song or
+        music video added to it (add_to_playlist(), the toast naming it), or the songs of
+        all it carries, albums' and playlists' too (add_items_to_playlist()). False when
+        the drop is refused."""
+        if not self.can_drop_refs(playlist, refs):
             return False
-        ref = tracks[0]
-        self.add_to_playlist(playlist.id, ref.id, ref.title, kind=ref.kind)
+        if len(refs) == 1 and refs.tracks():
+            ref = refs.refs[0]
+            self.add_to_playlist(playlist.id, ref.id, ref.title, kind=ref.kind)
+        else:
+            self.add_items_to_playlist(playlist.id, self._ref_objects(refs))
         return True
+
+    def _ref_objects(self, refs):
+        """The objects an ItemRefs names, in order: those its drag source gave
+        (ItemRefs.objects), else made of the Refs (the library's album or playlist, or one
+        made of its kind and id; a track as an Item of its kind)."""
+        if len(refs.objects) == len(refs):
+            return refs.objects
+        objects = []
+        for ref in refs:
+            obj = self.library.by_id(ref.kind, ref.id) if ref.kind in SOURCE_KINDS else None
+            objects.append(obj if obj is not None else
+                           Item({'kind': ref.kind, 'id': ref.id, 'title': ref.title}))
+        return objects
 
     def can_move_refs(self, refs, folder_id):
         """Whether the playlists and folders a drag carries (an ItemRefs of nothing else)
@@ -1483,19 +1642,23 @@ class ItemActions:
         return True
 
     def drop_new_playlist(self, refs):
-        """Songs or music videos (a library.ItemRefs of nothing else) dropped on All
-        Playlists: New Playlist's dialog, the name filled in with the first one's title,
-        makes a playlist holding them all (create_playlist()), whose page is then shown.
-        False when the drop is refused (new_playlist_tracks())."""
-        tracks = new_playlist_tracks(refs)
-        if not tracks:
+        """Songs, music videos or albums (a library.ItemRefs of nothing else) dropped on
+        All Playlists: New Playlist's dialog, the name filled in with the first one's title,
+        makes a playlist holding them all, an album's songs (create_playlist()), whose page
+        is then shown. False when the drop is refused (new_playlist_refs())."""
+        if not new_playlist_refs(refs):
             return False
         name = refs.refs[0].title
-        title = name if len(tracks) == 1 else ''
+        tracks = new_playlist_tracks(refs)
+        if tracks:
+            title, objects = (name if len(tracks) == 1 else ''), None
+        else:
+            title, objects = '', self._ref_objects(refs)
         self.ask_name(
             _('New Playlist'), _('_Create'), name, '',
-            lambda name, description: self.create_playlist(name, description, tracks, None,
-                                                           title, show=True))
+            lambda name, description: self.create_playlist(name, description, tracks or (),
+                                                           None, title, show=True,
+                                                           objects=objects))
         return True
 
     def drop_into_folder(self, folder_id, refs):
@@ -1530,8 +1693,15 @@ class ItemActions:
 
     def _on_new_playlist(self, _action, parameter):
         """A new playlist, named in a dialog: in the folder the target names, or holding the
-        song or video it names."""
+        song or video it names, or the songs of the album or playlist it names (the name
+        filled in with its title)."""
         obj, kind, item_id = self._unpack(parameter)
+        if kind in SOURCE_KINDS:
+            source = self._source(obj, kind, item_id)
+            return self.ask_name(
+                _('New Playlist'), _('_Create'), str(source.raw.get('title') or ''), '',
+                lambda name, description: self.create_playlist(name, description,
+                                                               objects=[source]))
         if kind == 'folder':
             tracks, folder_id, title = (), item_id, ''
         else:
@@ -1544,10 +1714,12 @@ class ItemActions:
                                                            folder_id, title))
 
     def create_playlist(self, name, description='', tracks=(), folder_id=None, title='',
-                        show=False):
+                        show=False, objects=None):
         """Make the playlist (Engine.create_playlist), confirm with a toast and follow Apple's
-        listing; one made empty (New Playlist), or with `show`, is then shown. The task, or
-        None."""
+        listing; one made empty (New Playlist), or with `show`, is then shown. `objects`:
+        albums, playlists or tracks whose songs it holds in place of `tracks`
+        (tracks_of()), counted in the toast; with none to add no playlist is made. The
+        task, or None."""
         if self.app.refuse_in_demo():
             return None
         if title:
@@ -1557,8 +1729,15 @@ class ItemActions:
             message = _('Created “{playlist}”').format(playlist=name)
 
         async def run():
+            nonlocal tracks, message
             try:
                 await self.app.player.ensure_engine()
+                if objects is not None:
+                    tracks = await self.tracks_of(objects)
+                    if not tracks:
+                        self.app.toast(_('There are no songs to add'))
+                        return
+                    message = added_message(len(tracks), name, new=True)
                 new_id = await self.engine.create_playlist(name, description, tracks,
                                                            folder_id)
             except EngineError as error:

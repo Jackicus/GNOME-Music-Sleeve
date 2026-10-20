@@ -74,6 +74,11 @@ MOVE_FOLDERS = False
 # The id the library calls the top level of the folders (library.ROOT_FOLDER), and Apple's.
 ROOT_FOLDER = 'root'
 APPLE_ROOT_FOLDER = 'p.playlistsroot'
+# How many tracks one POST of a playlist's tracks carries (Engine.add_tracks_to_playlist,
+# and a new playlist's first ones): a whole album or playlist added goes in runs of this
+# many, in order. Apple documents no limit and none has been checked yet; the web player
+# sends an album's tracks in one request.
+PLAYLIST_BATCH = 100
 
 BROWSE_ENDPOINT = '/v1/editorial/{storefront}/groupings'
 BROWSE_PARAMS = {'name': 'music', 'platform': 'web', 'extend': 'editorialArtwork'}
@@ -318,6 +323,25 @@ def track_type(kind, item_id):
     if base not in ('song', 'music-video') or item_id in (None, ''):
         return None
     return f'{"library-" if is_library_id(item_id) else ""}{base}s'
+
+
+def playlist_entries_for(tracks):
+    """The `data` of a playlist's tracks POST for songs and music videos `tracks` ((kind,
+    id) pairs, as track_type() takes them), in their order: [{id, type}]. EngineError
+    ('usage') when one of them cannot go into a playlist."""
+    entries = []
+    for kind, track_id in tracks:
+        track_type_ = track_type(kind, track_id)
+        if track_type_ is None:
+            raise EngineError('usage', f'cannot put {kind or "nothing"} {track_id} in a '
+                                       'playlist')
+        entries.append({'id': str(track_id), 'type': track_type_})
+    return entries
+
+
+def batches(entries, size):
+    """`entries` in runs of at most `size`, in order (none for no entries)."""
+    return [entries[start:start + size] for start in range(0, len(entries), size)]
 
 
 def library_twin_params(kind, catalog_id):
