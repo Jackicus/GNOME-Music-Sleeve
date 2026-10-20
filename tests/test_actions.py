@@ -14,12 +14,12 @@ from gi.repository import Gio, GLib, GObject
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.actions import (ItemActions, build_menu, can_play, fill_sidebar_menu,
+from applemusic.actions import (ItemActions, build_menu, can_play, describe, fill_sidebar_menu,
                                 is_apple_music_url, is_removable_playlist, is_shareable,
                                 library_target, main_menu_section, mnemonic_escaped,
                                 move_targets, now_playing_track, playlist_song, playlist_track,
                                 queue_target, rating_target, removal_target, removal_words,
-                                share_url, web_url)
+                                share_url, station_target, web_url)
 from applemusic.backend import api
 from applemusic import actions as actions_module
 from applemusic.backend.errors import EngineError
@@ -185,6 +185,7 @@ class MenuTest(unittest.TestCase):
             ('win.item-play', ('song', 'i.song1')),
             ('win.item-play-next', ('song', 'i.song1')),
             ('win.item-play-later', ('song', 'i.song1')),
+            ('win.item-create-station', ('song', 'i.song1')),
             ('win.item-go-to-album', ('song', 'i.song1')),
             ('win.item-go-to-artist', ('song', 'i.song1')),
             ('win.item-love', ('song', 'i.song1')),
@@ -270,7 +271,8 @@ class MenuTest(unittest.TestCase):
 
     def test_other_kinds(self):
         self.assertEqual(names(build_menu(CATALOG_ARTIST)), [
-            'win.item-play', 'win.item-open-in-browser', 'win.item-copy-link'])
+            'win.item-play', 'win.item-create-station', 'win.item-open-in-browser',
+            'win.item-copy-link'])
         self.assertEqual(names(build_menu(STATION)), [
             'win.item-play', 'win.item-love', 'win.item-unlove', 'win.item-open-in-browser',
             'win.item-copy-link'])
@@ -279,6 +281,38 @@ class MenuTest(unittest.TestCase):
             'win.item-open-in-browser'])  # its library route is the owner's: no Copy Link
         self.assertEqual(names(build_menu(MADE_UP_ALBUM)), ['win.item-play'])
         self.assertNotIn('win.item-open-in-browser', names(build_menu(UPLOAD_TRACK)))
+
+    def test_create_station_from_a_song_or_an_artist(self):
+        # The station Apple seeds from a song or an artist is ra.<its catalog id>.
+        library_artist = Item({'id': 'r.art1', 'kind': 'artist', 'title': 'Someone',
+                               'catalogId': '1000000017', 'play': {}})
+        library_song = Item({'id': 'i.song9', 'kind': 'song', 'title': 'Lantern',
+                             'catalogId': '1000000018'})
+        catalog_only = Track({'id': '1000000019', 'title': 'Undertow'})
+        for obj, station in ((LIBRARY_TRACK, 'ra.1000000001'), (CATALOG_TRACK, 'ra.1000000009'),
+                             (CATALOG_SONG, 'ra.1000000007'), (library_song, 'ra.1000000018'),
+                             (catalog_only, 'ra.1000000019'),
+                             (CATALOG_ARTIST, 'ra.1000000005'),
+                             (library_artist, 'ra.1000000017')):
+            with self.subTest(title=obj.title):
+                self.assertEqual(station_target(obj), station)
+                self.assertIn(('win.item-create-station', describe(obj)),
+                              actions_of(build_menu(obj)))
+        # None without a catalog id (an upload, an artist the library made up), nor for a
+        # music video, an album, a playlist or a station.
+        for obj in (UPLOAD_TRACK, LIBRARY_ARTIST, BAND, LOOSE_ARTIST, VIDEO_TRACK, CATALOG_VIDEO,
+                    LIBRARY_ALBUM, CATALOG_ALBUM, PLAYLIST, STATION, FOLDER):
+            with self.subTest(title=obj.title):
+                self.assertIsNone(station_target(obj))
+                self.assertNotIn('win.item-create-station', names(build_menu(obj)) or [])
+        # It follows Play Later in the first section, and stays in the queue's menus (the
+        # item playing's, Up Next's), which have no Play.
+        self.assertEqual(names(build_menu(CATALOG_TRACK))[:4], [
+            'win.item-play', 'win.item-play-next', 'win.item-play-later',
+            'win.item-create-station'])
+        self.assertEqual(names(build_menu(LIBRARY_TRACK, queued=True))[:3], [
+            'win.item-play-next', 'win.item-play-later', 'win.item-create-station'])
+        self.assertIn('Create _Station', labels_of(build_menu(CATALOG_ARTIST)))
 
     def test_a_playlist_of_the_users_is_renamed_and_deleted(self):
         self.assertEqual(names(build_menu(PLAYLIST))[-2:], ['win.item-rename', 'win.item-delete'])
@@ -818,7 +852,7 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-add-to-library', 'item-add-to-playlist', 'item-open-in-browser',
             'item-copy-link', 'item-go-to-album', 'item-go-to-artist', 'item-new-playlist',
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
-            'item-move-to-folder', 'item-remove-from-library']))
+            'item-move-to-folder', 'item-remove-from-library', 'item-create-station']))
         self.assertEqual(
             self.window.actions['item-remove-from-playlist'].get_parameter_type().dup_string(),
             '(ssi)')
@@ -1008,6 +1042,26 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.window.played, [
             ({'kind': 'album', 'id': 'l.alb1'}, 2), ({'kind': 'album', 'id': 'l.alb1'}, None),
             ({'kind': 'station', 'id': 'ra.unknown'}, None)])
+
+    async def test_create_station_plays_it_at_once(self):
+        # A library song by its catalog id; an artist by theirs; a target not known to the
+        # actions by the catalog id it names.
+        self.actions.menu_for(LIBRARY_TRACK)
+        await self.run_action('item-create-station', 'song', 'i.song1')
+        self.actions.menu_for(CATALOG_ARTIST)
+        await self.run_action('item-create-station', 'artist', '1000000005')
+        await self.run_action('item-create-station', 'song', '1000000020')
+        self.assertEqual(self.window.played, [
+            ({'kind': 'station', 'id': 'ra.1000000001'}, None),
+            ({'kind': 'station', 'id': 'ra.1000000005'}, None),
+            ({'kind': 'station', 'id': 'ra.1000000020'}, None)])
+        # Nothing to seed it from: a toast, no play.
+        self.actions.menu_for(UPLOAD_TRACK)
+        await self.run_action('item-create-station', 'song', 'i.song2')
+        await self.run_action('item-create-station', 'artist', 'l.art_00000000band')
+        await self.run_action('item-create-station', 'album', '1000000002')
+        self.assertEqual(len(self.window.played), 3)
+        self.assertEqual(self.app.toasts, ['No station can be made from this'] * 3)
 
     async def test_links(self):
         # A library playlist's page opens, but is nobody else's to copy.

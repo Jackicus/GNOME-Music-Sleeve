@@ -290,6 +290,14 @@ changes, change it here, with the date. The plan they came from is in
   account's: the web player keeps it in its page's local storage for the account's token, so
   an Autoplay toggle in the app is the app's setting and does not follow the account to
   Apple's other players.
+- **Create Station plays at once, by an id it builds** (2026-10-20, #339, checked live). As
+  in Apple's players, Create Station is in the menus of songs and artists (the item playing's
+  too) and replaces the queue with the station at once, with no toast: the bar says what
+  plays. The station's id is `ra.<catalog id>`, which the web player builds rather than
+  reads, so the app asks Apple nothing first; the item is offered only where that catalog id
+  is known (a library song's `catalogId`, a library artist's when the library has one), so it
+  never names a station that is not there. What it plays is a station like any other: a
+  song-seeded one's queue cannot be edited (the entry above).
 - **The last session, shown paused, handed over at Play** (2026-10-20, #342). As Apple's own
   apps do, the app opens with the last item in the bar, paused where it stopped, and its
   queue. It is kept in the cache (`session.json`: library ids and titles, so not the

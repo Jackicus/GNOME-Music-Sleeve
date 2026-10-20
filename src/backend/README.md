@@ -123,6 +123,19 @@ were not tried; the web player removes them by the same request (`music-videos`,
 removed out of its models at once and until a load no longer meets it (`Library.hide`), and
 syncs once `libraryHas` answers false (actions.py).
 
+### Stations from a song or an artist
+
+Create Station (`actions.station_target()`). Checked against a real account on 2026-10-20
+(MusicKit `playback/AppleMusic-2642.7.0-external`, the `gb` storefront):
+`GET /v1/catalog/<sf>/songs/<id>?include=station` and `.../artists/<id>?include=station`
+both answer `relationships.station.data[0]`, a `stations` resource whose id is `ra.<the
+song's or artist's catalog id>` (`attributes.kind` `songSeeded` or `artistSeeded`, `isLive`
+false). The web player's Create Station does not read it: it builds the id and plays
+`mk.setQueue({station: 'ra.' + id})`. The app does the same, with no read: the bridge's
+`play('station', 'ra.<id>')` plays it as it is (a song first, two entries queued, rolling),
+and on it `mk.capabilities.canEditPlaybackQueue` is false. A library song is seeded by its
+`catalogId`; a library artist only by the catalog id the library has for them.
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -170,15 +183,6 @@ and a position inside it (from about 112, counting up), with `isPlayingAtLiveEdg
 does nothing, `pause()` leaves it playing, `mk.stop()` ends it (state `stopped`, no item).
 The bridge's `nowPlaying()` gives `track.type: 'radioStation'`, `durationMs: 0` and that
 position and duration. So a live item is told by its type and `isLive`, not by its duration.
-
-### Stations from a song or an artist (#339)
-
-`GET /v1/catalog/<sf>/songs/<id>?include=station` and `.../artists/<id>?include=station`
-both answer `relationships.station.data[0]`, a `stations` resource whose id is `ra.<the
-song's or artist's catalog id>` (`attributes.kind` `songSeeded` or `artistSeeded`, `isLive`
-false). The web player's Create Station does not read it: it builds the id and plays
-`mk.setQueue({station: 'ra.' + id})`. The bridge's `play('station', 'ra.<id>')` plays it as
-it is (a song first, two entries queued).
 
 ### Favourites and Suggest Less (#357)
 
