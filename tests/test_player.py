@@ -7,6 +7,7 @@ engine. GObject only, no GTK or display; the commands run under asyncio.run."""
 import asyncio
 import contextlib
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -18,7 +19,7 @@ from tests.gtk import iterate
 from applemusic.backend.errors import EngineError
 from applemusic.lyrics import Lyrics
 from applemusic.player import (ACTIVE_STATES, STOPPED_STATES, NowPlaying, Player, format_time,
-                               playback_error_text)
+                               playback_error_text, undone_tail)
 
 
 class Clock:
@@ -2204,10 +2205,11 @@ class QueueEditTest(unittest.TestCase):
     """Up Next's Remove, Clear and its Undo: the store at once, then the engine; the events
     that follow change nothing; a failure shows MusicKit's queue again."""
 
-    def playing(self, count=6, index=1, **snapshot):
-        """A Player with an invented queue of `count`, the entry at `index` playing."""
+    def playing(self, count=6, index=1, items=None, **snapshot):
+        """A Player with an invented queue of `count` (or `items`), the entry at `index`
+        playing."""
         player, engine, app = make_player(state='up')
-        items = entries(count)
+        items = entries(count) if items is None else items
         engine.event('queueItemsDidChange', dict(snapshot, index=index, items=items))
         engine.event('nowPlayingItemDidChange', {'track': items[index], 'index': index})
         return player, engine, app, items
@@ -2298,6 +2300,63 @@ class QueueEditTest(unittest.TestCase):
             self.assertEqual(await player.undo_clear(), 0)  # nothing cleared: no toast
             self.assertEqual(len(app.toasts), 1)
         asyncio.run(go())
+
+    def test_undo_after_autoplays_refill_leaves_one_autoplay_batch(self):
+        async def go():
+            items = entries(6)
+            for item in items[4:]:
+                item['autoplay'] = True
+            player, engine, app, _items = self.playing(items=items)
+            await app.settle()
+            self.assertEqual(await player.clear_up_next(), 4)
+            # MusicKit's autoplay refills the queue after the Clear (about 2 s later).
+            refill = [dict(entry, autoplay=True, index=2 + number)
+                      for number, entry in enumerate(entries(3, tag='r'))]
+            engine.event('queueItemsDidChange', {'index': 1, 'items': items[:2] + refill})
+            self.assertEqual(player.queue.get_n_items(), 5)
+            self.assertEqual(await player.undo_clear(), 4)
+            # As before the Clear: the refill gone, one Autoplay batch.
+            self.assertEqual(self.ids(player), [item['id'] for item in items])
+            self.assertEqual([entry.autoplay for entry in player.queue],
+                             [False] * 4 + [True] * 2)
+            self.assertEqual([entry.index for entry in player.queue], list(range(6)))
+            changes = []
+            player.queue.connect('items-changed', lambda *args: changes.append(args[1:]))
+            engine.event('queueItemsDidChange', {'index': 1, 'items': items})
+            self.assertEqual(changes, [])  # MusicKit's queue after the bridge's Undo
+        asyncio.run(go())
+
+    def test_undo_keeps_what_was_queued_since_and_a_refill_after_the_users_songs(self):
+        async def go():
+            player, engine, app, items = self.playing()
+            await app.settle()
+            self.assertEqual(await player.clear_up_next(), 4)  # none of autoplay's
+            queued = dict(entries(1, tag='q')[0], index=2)
+            refill = [dict(entry, autoplay=True, index=3 + number)
+                      for number, entry in enumerate(entries(2, tag='r'))]
+            engine.event('queueItemsDidChange',
+                         {'index': 1, 'items': items[:2] + [queued] + refill})
+            kept = player.queue.get_item(2)
+            self.assertEqual(await player.undo_clear(), 4)
+            self.assertEqual(self.ids(player), [item['id'] for item in items]
+                             + ['i.q0000', 'i.r0000', 'i.r0001'])
+            self.assertIs(player.queue.get_item(6), kept)  # the same entry, renumbered
+            self.assertEqual([entry.index for entry in player.queue], list(range(9)))
+        asyncio.run(go())
+
+    def test_undone_tail_orders_the_entries_as_the_bridge_does(self):
+        def entry(name, autoplay=False):
+            return types.SimpleNamespace(name=name, autoplay=autoplay)
+
+        def names(tail):
+            return [item.name for item in tail]
+
+        user, auto = [entry('b'), entry('c')], [entry('a1', True), entry('a2', True)]
+        since = [entry('x'), entry('r1', True), entry('r2', True)]
+        self.assertEqual(names(undone_tail(user + auto, since)), ['b', 'c', 'x', 'a1', 'a2'])
+        self.assertEqual(names(undone_tail(user, since)), ['b', 'c', 'x', 'r1', 'r2'])
+        self.assertEqual(names(undone_tail(auto, [])), ['a1', 'a2'])
+        self.assertEqual(names(undone_tail([], since)), ['x', 'r1', 'r2'])
 
     def test_a_failed_undo_shows_musickits_queue_again(self):
         async def go():

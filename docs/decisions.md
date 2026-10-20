@@ -471,6 +471,18 @@ changes, change it here, with the date. The plan they came from is in
   on MusicKit at every engine start and after the page reloads; the entries it adds are
   listed under an Autoplay heading. While a session is restored (#342), the edits change it
   alone, and it is queued as its songs from then on.
+- **Autoplay for every queue; Clear's Undo leaves one Autoplay batch** (2026-10-20, #471,
+  #473). MusicKit makes an autoplay station for each new queue itself, but a queue set
+  with `startWith` asks the old station for songs first and, when that answer lands after
+  the station has gone, MusicKit's controller is left "loading" for good: no autoplay for
+  any later queue until the page reloads (src/backend/README.md, "Autoplay across
+  queues"). The bridge's `play()` stops MusicKit's autoplay before `setQueue` and clears a
+  load left stuck, rather than stopping passing `startWith` (a track row and a restored
+  session need it) or reloading the page. Clear's Undo puts the queue back as it was: the
+  ten entries autoplay added after the Clear go when Clear took autoplay entries of its
+  own (the user's songs and their autoplay come back as one batch), and stay after the
+  user's songs when it took none (they are then the queue's autoplay); songs queued
+  between Clear and Undo go before autoplay's, where Play Later puts them.
 - **Up Next with covers and History; Now Playing tinted by the artwork** (2026-10-20,
   #353). As Apple's queues do, each Up Next row shows its entry's cover in place of a
   number (the entry playing has the track rows' play symbol over its cover), under a

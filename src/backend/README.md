@@ -52,7 +52,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `signin()` | `mk.authorize()`, then `{authorized}` |
 | `signout()` | `mk.unauthorize()`, which revokes the session at Apple's end: `{ok: true}` or `{error}`, never a throw |
 | `api(path, params, options)`, `apiAll(paths)` | the API's answer body (`mk.api.music()`); `apiAll` answers null in place of a failed read |
-| `play(kind, id, {startWith, startId, shuffle, startTime, paused})` | `{ok: true}` (with `moved: {from, to}` when the queue held another item than `startId` at `startWith` and was moved to it, and `sought: true` when it sought to `startTime` itself), or `{error, code}` when MusicKit refuses. `kind`: `album playlist station song musicVideo artist songs` (`songs`: ids joined by commas; `artist`: its top songs, else its station). `shuffle` true turns shuffle on, false off, null leaves it. `startTime` (seconds: a restored session's position) goes to `setQueue`, and once the item plays, when MusicKit began it more than 2 s earlier and it is `startId`'s, a `seekToTime` follows. `paused` queues it without playing or moving it (`startPlaying: false`); the start time then waits for the next `control('play')` or `'toggle'` (a `pause` keeps it, anything else gives it up) |
+| `play(kind, id, {startWith, startId, shuffle, startTime, paused})` | `{ok: true}` (with `moved: {from, to}` when the queue held another item than `startId` at `startWith` and was moved to it, and `sought: true` when it sought to `startTime` itself), or `{error, code}` when MusicKit refuses. `kind`: `album playlist station song musicVideo artist songs` (`songs`: ids joined by commas; `artist`: its top songs, else its station). `shuffle` true turns shuffle on, false off, null leaves it. `startTime` (seconds: a restored session's position) goes to `setQueue`, and once the item plays, when MusicKit began it more than 2 s earlier and it is `startId`'s, a `seekToTime` follows. `paused` queues it without playing or moving it (`startPlaying: false`); the start time then waits for the next `control('play')` or `'toggle'` (a `pause` keeps it, anything else gives it up). With autoplay on, MusicKit's autoplay station is stopped first ("Autoplay across queues") |
 | `playNext(kind, id)`, `playLater(kind, id)` | `{ok: true}` |
 | `control(action)` | `play pause toggle next previous stop`: `{ok: true}` |
 | `seek(seconds)` | `{ok: true}` |
@@ -62,7 +62,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `queue()` | `{index, items: [Track], editable, canAutoplay, autoplay}`: `editable` and `canAutoplay` are `mk.capabilities`' `canEditPlaybackQueue` and `canAutoplay` (true when MusicKit has none), `autoplay` is `mk.autoplayEnabled`; a Track autoplay added carries `autoplay: true` (its queue item's `isAutoplay`) |
 | `queueRemove(index, id)` | `{ok: true}` once the queue's entry at `index`, when it is still `id` and not the item playing, is out of the queue (`queue.spliceQueueItems(index, 1)`, else the deprecated `queue.remove(index)`), or `{error, code}`: `NOT_EDITABLE` (a station's queue), `CURRENT`, `STALE` (another entry is there now) |
 | `queueClear()` | `{ok: true, cleared}`: everything after the item playing out of the queue (`queue.clearAfterCurrent()`), its queue items kept for `queueUndoClear()`; or `{error, code: 'NOT_EDITABLE'}` |
-| `queueUndoClear()` | `{ok: true, restored}`: the queue items the last `queueClear()` took, spliced back after the item playing while it is the same item (`queue.spliceQueueItems(position + 1, 0, items)`, the items as one array), once, kept until the splice is done; `restored` is how many MusicKit put in; or `{error, code}` (`STALE`: nothing kept, or another item plays) |
+| `queueUndoClear()` | `{ok: true, restored}`: the queue items the last `queueClear()` took, spliced back after the item playing while it is the same item (`queue.spliceQueueItems(position + 1, count, items)` over what follows it, the items as one array, autoplay's refill dropped when Clear took autoplay entries: "Autoplay across queues"), once, kept until the splice is done; `restored` is how many of Clear's MusicKit put in; or `{error, code}` (`STALE`: nothing kept, or another item plays) |
 | `autoplay(on)` | `{autoplay, canAutoplay}` after `mk.autoplayEnabled = on` (null: only read) |
 | `queueJump(index)` | `{ok: true}` (`mk.changeToMediaAtIndex`) |
 | `rating(kind, id, value)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, tracks)` | `{ok: true}`, or a throw with Apple's status and message. `tracks` is `[{id, type}]`, appended in order by one `POST /v1/me/library/playlists/<id>/tracks` `{data: tracks}` (`addToPlaylist(playlistId, songId, type)`, one song, still works); the engine sends an album's or a playlist's in runs of `api.PLAYLIST_BATCH` (100), one after the other: Apple documents no limit, and none has been checked yet. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
@@ -183,6 +183,63 @@ Autoplay is the page's, not the account's: the web player keeps it in the page's
 `localStorage` under `music-app-pref:autoplay-<music user token>` and sets
 `mk.autoplayEnabled` from it when it loads, and the page started with it off; the app sets
 its own `autoplay` setting at every start and after a reload (`Player.apply_autoplay`).
+
+### Autoplay across queues (#471)
+
+Autoplay is run by MusicKit's `SerialPlaybackController` (`mk.playbackControllers.serial`,
+also `mk._playbackController` while it plays; every queue but a station's), read in the
+page's bundle (MusicKit `playback/AppleMusic-2642.7.0-external`):
+
+- `mk.setQueue()` loads the items and calls the controller's `replaceQueue`: the old item
+  stopped, a new queue posted with `queueItemsDidChange`, then `stopAutoplay()` (the
+  station dropped: `_autoplayStation` undefined, `queue.hasAutoplayStation` false, the
+  unplayed autoplay entries removed) and `startAutoplay()`, which makes a station from the
+  last ten items (`POST /v1/me/stations/continuous`) and asks it for songs
+  (`queueAutoplayTracks()`: `POST /v1/me/stations/next-tracks/<id>`, enough for ten
+  unplayed autoplay entries, appended as `{item, isAutoplay: true}`, one
+  `queueItemsDidChange`). Every `queueItemsDidChange`, `queuePositionDidChange` and
+  `nowPlayingItemDidChange` asks for more the same way (so Clear refills it, about 2 s
+  later); nothing more is needed per queue, and the web player does nothing more
+  (`await setQueue(…); await play()`).
+- `queueAutoplayTracks()` sets `loadingAutoplayTracks` before its request and clears it
+  after, with no `finally`, and between the two reads `this._autoplayStation.id` again for
+  a log line. A queue set with `startWith` (the bridge always passed one, 0 for the top;
+  the web player only when a track is picked) starts initiated (`position` set), so its
+  first `queueItemsDidChange` asks the **old** station for songs before `stopAutoplay()`
+  drops it; that answer lands while the new station is being made, the log line throws a
+  `TypeError` (an unhandled rejection), and `loadingAutoplayTracks` stays true: from then
+  on every `queueAutoplayTracks()` returns at "already loading", for every later queue,
+  while `hasAutoplayStation` and `autoplayEnabled` say true and toggling `autoplayEnabled`
+  changes nothing, until the page reloads. The first queue after a load had no old station,
+  so it alone got autoplay's songs.
+- The bridge's `play()` therefore calls the controller's `stopAutoplay()` and clears
+  `loadingAutoplayTracks` before `setQueue` (`releaseAutoplay`, only while autoplay is on):
+  the new queue asks nothing until its own station is made, and a flag left stuck (autoplay
+  turned off while a request was out, a station's controller taking over) is cleared. When
+  `setQueue` fails before replacing the queue, `startAutoplay()` gives the queue that stays
+  a station again. `autoplay(true)` clears a stuck flag too, when no station is held. A
+  request still out when its station goes may yet land on the new queue (MusicKit appends
+  it, so ten more autoplay entries); rare, and better than none.
+- Live, 2026-10-20 (.Devel, Autoplay on): before, a page's first queue got its ten
+  autoplay entries in about 2 s and seven later ones (library albums by `l.` id, the
+  bridge's `play()`) none within 25 s, `hasAutoplayStation` true, `autoplayItems` empty.
+  `mk.setQueue({album})` straight, without `startWith`, got ten twice in a row; with the
+  fix, three albums in a row through the app each made a station of its own and asked it
+  for songs, the ten entries there when read after they landed, no `TypeError` among the
+  page's unhandled rejections and `loadingAutoplayTracks` never left stuck.
+
+Clear's Undo (`queueUndoClear`, #473): about 2 s after a Clear, autoplay refills the queue
+with ten new entries. Undo puts Clear's entries back as `undoneTail()` orders them with what
+follows the item then, in one `spliceQueueItems(position + 1, count, queueItems)`: those
+Clear took, the songs queued since (not autoplay's) before the first autoplay entry among
+them, and the refill dropped when Clear took autoplay entries (else it stays, after the
+rest), so Up Next has one Autoplay batch. An Undo made while the refill is still out
+(`loadingAutoplayTracks`) arms `lateRefill`: the autoplay entries that arrive after it are
+taken out in the bridge's own `queueItemsDidChange` handler, before the event is posted, so
+the app never sees them. `Player.undo_clear()` orders its store the same way
+(`player.undone_tail()`). Live: a queue of the item and five songs, Clear, the refill, Undo
+4 s later: the five back and the refill after them (16 entries, ten autoplay, one batch);
+then Clear and Undo 0.2 s later, before the refill: 16 entries, ten autoplay, one batch.
 
 ### Ratings: Favourite and Suggest Less
 
