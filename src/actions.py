@@ -9,6 +9,7 @@ actions, the menus that offer them, and what a track dragged onto a sidebar play
     menu = actions.menu_for(track, queued=True)   # the item playing's, or Up Next's
     actions.go_to(obj, 'album')            # obj's album's page ('artist': its artist's)
     actions.show_artist(obj)               # a link's artist: the library's page of them
+    actions.add_to_library(item)           # a catalog album's or playlist's page's Add button
     actions.fill_sidebar_menu(menu, item)  # a sidebar playlist's or folder's menu
     actions.drop(playlist, refs)           # a library.ItemRefs dropped on a sidebar playlist
     actions.move_to_folder(obj, folder_id) # a playlist (or folder) into a folder, at once
@@ -57,7 +58,9 @@ action awaits the engine (started first when it is down and the account is signe
 play request does) and confirms with a toast, or reports the EngineError
 (app.report: signed out, that opens the sign-in). After a song was added to a playlist, or a
 song loved or unloved, the playlist (Favourite Songs) is fetched again and merged into the
-library's Item, so an open page shows the change at once.
+library's Item, so an open page shows the change at once. After an album or a playlist was
+added to the library, the library notes it (Library.note_added(): its page says In Library at
+once, ahead of Apple's listing) and a quick sync reads it back.
 
 The menus are built in code, per kind (build_menu): Play, Play Next, Play Later, Create
 Station (a song's or an artist's whose catalog id is known: station_target); Go to Album,
@@ -1062,15 +1065,27 @@ class ItemActions:
 
     def _on_add_to_library(self, _action, parameter):
         obj, kind, item_id = self._unpack(parameter)
-        target = library_target(obj) if obj is not None else (kind, item_id)
+        return self.add_to_library(obj, (kind, item_id))
+
+    def add_to_library(self, obj, target=None):
+        """Add obj (an Item or a Track; failing one, the (kind, id) `target`) to the
+        library, confirmed with a toast; then an album or playlist is noted as added
+        (Library.note_added()) and a quick sync reads it back. The task, whose result says
+        whether the add succeeded (_run()), or None (nothing to add, or the demo library)."""
+        target = library_target(obj) if obj is not None else target
         if target is None:
             self.app.toast(_('This is in your library already'))
             return None
         title = obj.title if obj is not None else ''
         message = (_('Added “{title}” to your library').format(title=title) if title
                    else _('Added to your library'))
-        return self._run(self.engine.add_to_library, target, message,
-                         after=self._refresh_library)
+
+        async def after():
+            if isinstance(obj, Item):
+                self.library.note_added(obj)
+            await self._refresh_library()
+
+        return self._run(self.engine.add_to_library, target, message, after=after)
 
     def _on_go_to_album(self, _action, parameter):
         return self.go_to(self._unpack(parameter)[0], 'album')

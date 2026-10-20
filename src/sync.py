@@ -618,6 +618,7 @@ def _playlists(raw_playlists, playlist_tracks, cache_dir, art_urls, previous):
         tracks = playlist_tracks.get(playlist_id)
         item = normalize.normalize_playlist(raw, cache_dir, tracks=tracks or [],
                                             art_urls=art_urls)
+        item.pop('modified', None)  # the listing's date: the tracks' stamp is set below
         flag_favourites(item, raw)
         if tracks is None:
             old = previous.playlist(playlist_id)

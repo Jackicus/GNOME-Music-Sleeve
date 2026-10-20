@@ -713,6 +713,10 @@ class FakeLibrary:
         self.placed = 0
         self.released = []
         self.hidden = []  # ('hide' or 'unhide', the refs), in order
+        self.noted = []  # note_added()'s Items
+
+    def note_added(self, item):
+        self.noted.append(item)
 
     def hold(self, change):
         self.changes.append(change)
@@ -1020,12 +1024,26 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         # account and nowhere in the app until the next full sync.
         await self.run_action('item-add-to-library', 'album', '1000000002')
         self.assertEqual(self.app.syncs, [True])
+        # And the library notes the album, so its page says In Library ahead of the listing.
+        self.assertEqual([item.id for item in self.app.library.noted], ['1000000002'])
+
+    async def test_a_page_adds_its_item_and_learns_how_it_went(self):
+        # The Add button's way in: the task says whether the write went through.
+        task = self.actions.add_to_library(CATALOG_ALBUM)
+        self.assertTrue(await task)
+        self.assertEqual(self.app.engine.calls, [('add_to_library', 'album', '1000000002')])
+        self.assertEqual(self.app.library.noted, [CATALOG_ALBUM])
+        self.app.engine.fail = EngineError('api', 'HTTP 403 Forbidden')
+        self.assertFalse(await self.actions.add_to_library(CATALOG_ALBUM))
+        self.assertEqual(self.app.library.noted, [CATALOG_ALBUM])  # not noted again
+        self.assertIsNone(self.actions.add_to_library(LIBRARY_ALBUM))  # the library's own
 
     async def test_nothing_is_synced_when_the_add_fails(self):
         self.app.engine.fail = EngineError('api', 'HTTP 403 Forbidden')
         await self.run_action('item-add-to-library', 'album', '1000000002')
         self.assertEqual(self.app.reported, ['api'])
         self.assertEqual(self.app.syncs, [])
+        self.assertEqual(self.app.library.noted, [])
 
     async def test_add_to_playlist_and_refresh_it(self):
         self.app.engine.items[('playlist', 'p.pl1')] = PLAYLIST_ANSWER

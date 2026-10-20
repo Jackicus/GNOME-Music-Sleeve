@@ -552,6 +552,26 @@ changes, change it here, with the date. The plan they came from is in
   that the live row shows are left out of it; Apple's links (More to Explore, the genres)
   wait for #370. The page is a `ShelvesPage` with an `arrange` of its own rather than a
   class of its own: PyGObject refuses a subclass of a `Gtk.Template` class.
+- **A playlist's header, and Add / In Library** (2026-10-20). A playlist's hero says what
+  Apple Music's does: its curator under the title (the account's name for one of the
+  user's, which carry none), then "Updated" and the day it last changed (today, yesterday,
+  a weekday within the week, else the date: Apple's `lastModifiedDate`, the `modified` the
+  sync keeps), then its songs and time; the genre and the year that were there (the year
+  was the modified date's) are gone. An album's caption is unchanged. An album or playlist
+  of the catalog's has **Add** beside Play and Shuffle (an album opened from a shelf, which
+  is subtitled with its year, is by its `artistName`: `release.album_artist()`), which becomes **In Library**, a
+  state with no action (the menu has the rest), once the library holds it; the library's
+  own pages show neither, being the library's (#351). Whether the library holds it is
+  answered from what is loaded (`Library.holds()`), never with a request on the page's
+  first build: by catalog id (an Apple playlist added names its catalog playlist as its
+  play parameters' `globalId`), else, for an album, which a library album carries no
+  catalog id for, by title and artist, confirmed by a song when the page has them. Apple
+  lists an addition seconds to a minute after taking it, later than the quick sync that
+  follows, so a successful add is noted in the library (`note_added()`) until a reload
+  lists it: In Library does not flip back meanwhile. Add and More Options keep together,
+  on the buttons' line or, where it has no room (a phone, a narrow window beside the
+  cover), on one of their own under Play and Shuffle (an `AdwWrapBox`), rather than
+  ellipsizing the buttons or moving the cover's breakpoint.
 - **An artist of the library is shown as the library holds them** (2026-10-03). Apple Music
   has two pages of an artist: the catalog's, and its library's (Library › Artists: a list
   of artists beside the one chosen, their albums in the library under the name, Play and

@@ -16,9 +16,10 @@ template $AppleMusicDetailPage: Adw.NavigationPage {
     }
 
     // Narrow: the cover goes above the text, and the hero centres. The cover beside the text
-    // needs 650 px: the cover, their 24 px gap, the buttons row (318 px, 12 px apart) and the
-    // row's 24 px inset each side (style.css's track-list rows); narrower, the page would ask
-    // for more than it has.
+    // needs 650 px: the cover, their 24 px gap, Play, Shuffle and More Options in a row
+    // (318 px, 12 px apart) and the row's 24 px inset each side (style.css's track-list
+    // rows); narrower, the page would ask for more than it has. Add (or In Library) and More
+    // Options go on a line of their own where the row has no room for them.
     Adw.Breakpoint {
       condition ("max-width: 650sp")
 
@@ -34,6 +35,7 @@ template $AppleMusicDetailPage: Adw.NavigationPage {
         caption_label.xalign: 0.5;
         caption_label.justify: center;
         buttons_box.halign: center;
+        buttons_box.align: 0.5;
         summary_label.xalign: 0.5;
         summary_label.justify: center;
         more_notes_button.halign: center;
@@ -41,7 +43,7 @@ template $AppleMusicDetailPage: Adw.NavigationPage {
     }
 
     // Narrower still (a phone): the buttons 6 px apart, as one group, since the row's inset
-    // leaves 312 px at the 360 px minimum. The last breakpoint that matches is the one
+    // leaves 312 px at the 360 px minimum (Play, Shuffle and More Options take 312). The last breakpoint that matches is the one
     // applied, so this repeats the one above.
     Adw.Breakpoint {
       condition ("max-width: 400sp")
@@ -58,7 +60,9 @@ template $AppleMusicDetailPage: Adw.NavigationPage {
         caption_label.xalign: 0.5;
         caption_label.justify: center;
         buttons_box.halign: center;
-        buttons_box.spacing: 6;
+        buttons_box.align: 0.5;
+        buttons_box.child-spacing: 6;
+        actions_box.spacing: 6;
         summary_label.xalign: 0.5;
         summary_label.justify: center;
         more_notes_button.halign: center;
@@ -190,11 +194,14 @@ Box hero {
         ]
       }
 
-      // Play, Shuffle and More Options. The labels may ellipsize (can-shrink): a language
-      // whose words are long keeps the row within the 360 px minimum rather than pushing the
-      // page past it; the English ones fit whole (tests/test_detail_page.py).
-      Box buttons_box {
-        spacing: 12;
+      // Play, Shuffle, then Add or In Library with More Options, those two together on a
+      // second line where they do not fit on the first. The labels may ellipsize
+      // (can-shrink): a language whose words are long keeps the row within the 360 px
+      // minimum rather than pushing the page past it; the English ones fit whole
+      // (tests/test_detail_page.py).
+      Adw.WrapBox buttons_box {
+        child-spacing: 12;
+        line-spacing: 12;
         margin-top: 12;
 
         Button play_button {
@@ -222,19 +229,62 @@ Box hero {
           ]
         }
 
-        // The item's own menu (Favourite, Add to Library, Play Next…), made as it opens.
-        MenuButton more_button {
-          icon-name: "view-more-symbolic";
-          tooltip-text: _("More Options");
-          valign: center;
+        Box actions_box {
+          spacing: 12;
 
-          accessibility {
-            label: _("More Options");
+          // An album or playlist of the catalog's that the library lacks: Add adds it
+          // (detail.library_state()); once the library holds it, In Library says so instead.
+          Button add_button {
+            visible: false;
+            tooltip-text: _("Add to Library");
+
+            child: Adw.ButtonContent {
+              icon-name: "list-add-symbolic";
+              label: _("Add");
+              can-shrink: true;
+            };
+
+            styles [
+              "pill",
+            ]
           }
 
-          styles [
-            "circular",
-          ]
+          // A state, not a button: the item's menu has what more can be done.
+          Box in_library_box {
+            visible: false;
+            spacing: 6;
+            valign: center;
+            margin-start: 6;
+            margin-end: 6;
+
+            Image {
+              icon-name: "object-select-symbolic";
+              accessible-role: presentation;
+            }
+
+            Label {
+              label: _("In Library");
+            }
+
+            styles [
+              "dimmed",
+            ]
+          }
+
+          // The item's own menu (Favourite, Add to Library, Play Next…), made as it opens.
+          MenuButton more_button {
+            icon-name: "view-more-symbolic";
+            tooltip-text: _("More Options");
+            valign: center;
+
+            accessibility {
+              label: _("More Options");
+            }
+
+            styles [
+              "circular",
+            ]
+          }
         }
       }
     }

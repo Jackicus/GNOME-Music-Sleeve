@@ -225,12 +225,18 @@ def classes():
             self.went = []  # (obj, kind) per go_to()
             self.added = []  # (playlist id, song id, title) per add_to_playlist()
             self.add_succeeds = True  # what the write's task answers
+            self.library_adds = []  # (Item, its task) per add_to_library(): the test ends it
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
             self.added.append((playlist_id, song_id, title))
             # The task the real one answers: whether the write succeeded.
             task = asyncio.get_running_loop().create_future()
             task.set_result(self.add_succeeds)
+            return task
+
+        def add_to_library(self, obj):
+            task = asyncio.get_running_loop().create_future()
+            self.library_adds.append((obj, task))
             return task
 
         def menu_for(self, obj, queued=False, queue_entry=None):
@@ -261,6 +267,7 @@ def classes():
         def reset(self):
             self.item_actions.went = []
             self.item_actions.added = []
+            self.item_actions.library_adds = []
             self.opened = []
             self.artist_pages = []  # open_artist_page()'s, Apple Music's pages of artists
             self.shelves_opened = []

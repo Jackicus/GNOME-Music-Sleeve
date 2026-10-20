@@ -300,6 +300,27 @@ class DetailPageTest(PageTestCase):
         page = await self.push(self.page(album(3)))
         self.assertFalse(page.artist_button.get_visible())
 
+    async def test_a_shelf_album_subtitled_with_its_year_is_by_its_artist(self):
+        # An artist page's or Other Versions' album: subtitled with its year, its artist in
+        # artistName. The page means the artist wherever it says one: the link, the rows.
+        data = dict(album(1), id='1000000310', subtitle='2018', artistName='Invented Artist')
+        page = await self.push(self.page(data))
+        self.assertTrue(page.artist_button.get_visible())
+        self.assertEqual(page.artist_label.get_label(), 'Invented Artist')
+        self.assertEqual(page._album_artist, 'Invented Artist')  # its rows leave it out
+        # One that came without its tracks: the answer merged in keeps the artist.
+        answer = dict(album(2), id='1000000311')  # subtitled with the artist, as item() is
+        self.app.engine.answers['item'] = answer
+        data = dict(album(2, tracks=0), id='1000000311', subtitle='2019',
+                    artistName='Invented Artist')
+        page = await self.push(self.page(data))
+        self.assertEqual(page.artist_label.get_label(), 'Invented Artist')
+        await self.settle()
+        self.assertTrue(await self.until(lambda: self.rows(page) > 1))
+        self.assertEqual(self.item.subtitle, 'Invented Artist')
+        self.assertEqual(page.artist_label.get_label(), 'Invented Artist')
+        self.assertEqual(page._album_artist, 'Invented Artist')
+
     async def test_a_wide_playlist_is_a_table(self):
         # The stand-in window is 1000 px wide: the page's breakpoint makes it a table, its
         # column titles the tracks' header and each row's artist and album links.
@@ -357,6 +378,78 @@ class DetailPageTest(PageTestCase):
         self.assertIs(self.window.item_actions.asked[-1], self.item)
         page.more_button.popdown()
 
+    @staticmethod
+    def catalog(data):
+        """An invented album or playlist dict as the catalog's: its id a catalog one."""
+        catalog_id = '1724049' + data['id'][-3:]
+        play = dict(data['play'], id=catalog_id)
+        groups = [dict(group, play=play) for group in data['groups']]
+        return dict(data, id=catalog_id, play=play, groups=groups)
+
+    async def test_add_and_then_in_library(self):
+        page = await self.push(self.page(self.catalog(album(1))))
+        self.assertTrue(page.add_button.get_visible())
+        self.assertFalse(page.in_library_box.get_visible())
+        self.assertTrue(page.add_button.grab_focus())
+        page.add_button.emit('clicked')
+        [(item, task)] = self.window.item_actions.library_adds
+        self.assertIs(item, self.item)
+        page.add_button.emit('clicked')  # under way: not twice
+        self.assertEqual(len(self.window.item_actions.library_adds), 1)
+        # Apple took it: the item actions note it in the library, which the page follows.
+        self.library.note_added(item)
+        task.set_result(True)
+        self.assertTrue(await self.until(lambda: page.in_library_box.get_visible()))
+        self.assertFalse(page.add_button.get_visible())
+        focus = self.window.get_focus()  # not lost with Add: More Options has it
+        self.assertTrue(focus is page.more_button or focus.is_ancestor(page.more_button))
+
+    async def test_an_add_that_fails_offers_add_again(self):
+        page = await self.push(self.page(self.catalog(album(1, kind='playlist'))))
+        page.add_button.emit('clicked')
+        [(_item, task)] = self.window.item_actions.library_adds
+        task.set_result(False)  # reported already, by the item actions
+        await self.turn()
+        self.assertTrue(page.add_button.get_visible())
+        self.assertFalse(page.in_library_box.get_visible())
+        page.add_button.emit('clicked')  # and it can be tried again
+        self.assertEqual(len(self.window.item_actions.library_adds), 2)
+
+    async def test_in_library_or_neither(self):
+        from applemusic.library import Item
+
+        # A catalog album the library holds (here, one just added, which it notes ahead of
+        # Apple's listing).
+        held = Item(self.catalog(album(2)))
+        self.library.note_added(held)
+        page = await self.push(self.page(held.raw))
+        self.assertTrue(page.in_library_box.get_visible())
+        self.assertFalse(page.add_button.get_visible())
+        # The library's own album or playlist: its page is the library's, so neither.
+        for kind in ('album', 'playlist'):
+            page = await self.push(self.page(album(3, kind=kind)))
+            self.assertFalse(page.add_button.get_visible(), kind)
+            self.assertFalse(page.in_library_box.get_visible(), kind)
+
+    async def test_a_playlists_curator_and_when_it_was_updated(self):
+        data = album(1, kind='playlist')
+        data.update(subtitle='Invented Curator', genre='Pop', modified='2026-01-01T12:00:00Z',
+                    trackCount=3, durationMs=540000)
+        page = await self.push(self.page(data))
+        self.assertEqual(page.subtitle_label.get_label(), 'Invented Curator')
+        self.assertTrue(page.caption_label.get_label().startswith('Updated '))
+        self.assertTrue(page.caption_label.get_label().endswith(' · 3 songs, 9 min'))
+        self.assertNotIn('Pop', page.caption_label.get_label())
+        # One of the user's, which carries no curator: the account's name.
+        self.app.settings.set_string('account-name', 'Alex Rivera')
+        self.addCleanup(self.app.settings.reset, 'account-name')
+        page = await self.push(self.page(dict(album(2, kind='playlist'), subtitle='')))
+        self.assertEqual(page.subtitle_label.get_label(), 'Alex Rivera')
+        self.assertTrue(page.subtitle_label.get_visible())
+        # An album's caption is as it was: genre, year and songs.
+        page = await self.push(self.page(album(3, year=2003)))
+        self.assertTrue(page.caption_label.get_label().startswith('Pop · 2003 · '))
+
     async def shown_at(self, page, width):
         """page shown width px wide: in a clamp of that width (which hands its child that
         much, whatever the child's natural width) under the harness window's root page (its
@@ -411,17 +504,31 @@ class DetailPageTest(PageTestCase):
             .get_family() == 'Adwaita Sans'), 'the font setting applied')
         scale = text_scale(self.gtk_settings)  # the breakpoints are in sp
         narrow = 650 * scale
-        for kind in ('album', 'playlist'):
+        for kind in ('album', 'playlist', 'catalog album'):
             for width in (360, round(600 * scale) + 1, round(narrow) + 1):
-                page = self.page(album(1, tracks=3, kind=kind))
+                data = album(1, tracks=3, kind=kind.split()[-1])
+                page = self.page(self.catalog(data) if kind.startswith('catalog') else data)
                 clamp = await self.shown_at(page, width)
                 self.assertLessEqual(self.minimum_width(page), width, f'{kind} at {width}')
                 hero_row = page.cover.get_parent()
                 stacked = hero_row.get_orientation() == Gtk.Orientation.VERTICAL
                 self.assertEqual(stacked, width <= narrow, f'{kind} at {width}')
+                # Play, Shuffle and More Options on one line; Add, when there is one, on it
+                # too or on the next, never cut.
                 buttons = page.play_button.get_parent()
-                natural = buttons.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
-                self.assertGreaterEqual(buttons.get_width(), natural, f'{kind} at {width}')
+                self.assertEqual(page.add_button.get_visible(), kind.startswith('catalog'))
+                lines = {child.compute_bounds(buttons)[1].get_y()
+                         for child in (page.play_button, page.shuffle_button)}
+                self.assertEqual(len(lines), 1, f'{kind} at {width}')
+                for child in (page.play_button, page.shuffle_button, page.add_button,
+                              page.more_button):
+                    if child.get_visible():
+                        natural = child.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+                        bounds = child.compute_bounds(buttons)[1]  # padding included
+                        self.assertGreaterEqual(bounds.get_width(), natural - 0.5,
+                                                f'{kind} at {width}')
+                        self.assertLessEqual(bounds.get_x() + bounds.get_width(),
+                                             buttons.get_width() + 0.5, f'{kind} at {width}')
                 self.window.root_box.remove(clamp)
 
     async def test_shift_tab_from_the_first_track_goes_back_to_the_hero(self):

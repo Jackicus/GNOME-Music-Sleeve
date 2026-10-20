@@ -89,6 +89,9 @@ EDITABLE = 'canEdit'
 # library (Apple's canDelete, which the sync copies there when it is false).
 REMOVABLE = 'canDelete'
 
+# The kinds of Item Library.holds() answers for: what has an Add button on its page.
+HELD_KINDS = ('album', 'playlist')
+
 # The id of the folders entry that lists the top level: the playlists and folders in no folder.
 ROOT_FOLDER = 'root'
 
@@ -1104,6 +1107,8 @@ class Library(GObject.Object):
     (place_playlists()), or made again with a change to the folders held ahead of Apple's
     listing (hold(), release(): a playlist moved or a folder made, shown at once and kept
     through reloads until library.json shows it or PENDING_HOLD has passed).
+    `item-added` (kind, id) says an album or playlist of the catalog's was added to the
+    library (note_added()), which holds() answers at once, ahead of Apple's listing.
     """
 
     __gtype_name__ = 'AppleMusicLibrary'
@@ -1111,6 +1116,7 @@ class Library(GObject.Object):
     __gsignals__ = {
         'changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'playlists-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
+        'item-added': (GObject.SignalFlags.RUN_FIRST, None, (str, str)),
     }
 
     def _get_syncing(self):
@@ -1152,6 +1158,8 @@ class Library(GObject.Object):
         self._tree = PlaylistTree()
         self._folders = []  # library.json's `folders`, as the last load read them
         self._changes = []  # TreeChanges held ahead of Apple's listing (hold())
+        self._held = None  # holds()'s dictionaries, made at its first question after a load
+        self._added = {}  # (kind, id) -> the Item, for what note_added() noted
         self._generation = 0
         self._paused = 0.0  # when a load or Songs build last paused for a frame (_pause())
         self._syncing = False
@@ -1287,6 +1295,66 @@ class Library(GObject.Object):
         if tree.changed:
             self._notify_changed(dict.fromkeys(tree.changed))
         self.emit('playlists-changed')
+
+    def holds(self, item):
+        """Whether the library holds `item`, an album or playlist Item: one of its own, or one
+        of the catalog's it has added, found by its catalog id (an Apple playlist added
+        carries one) or, for an album, by its title and artist (a library album carries no
+        catalog id: the sync's) and, when `item` has its songs, by one of them; or one that
+        note_added() noted and the library does not list yet. Shelves are not the library:
+        only the Albums and Playlists sections count. Dictionaries made at the first question
+        after each load, so no request and no walk of the songs."""
+        if item is None or item.kind not in HELD_KINDS or not item.id:
+            return False
+        return (item.kind, item.id) in self._added or self._find_held(item) is not None
+
+    def note_added(self, item):
+        """Note that `item`, an album or playlist of the catalog's, was just added to the
+        library (Apple took the write): holds() says so at once, ahead of the listing (Apple
+        lists an addition seconds to a minute later, src/backend/README.md), and emits
+        `item-added`. A reload() that lists it drops the note; load() forgets them all."""
+        if item is None or item.kind not in HELD_KINDS or not item.id:
+            return
+        self._added[(item.kind, item.id)] = item
+        self.emit('item-added', item.kind, item.id)
+
+    def _find_held(self, item):
+        """The library's album or playlist Item that `item` is, or None (holds())."""
+        if self._held is None:
+            self._held = self._held_index()
+        by_id, by_title = self._held
+        for value in (item.id, item.catalog_id):
+            found = by_id.get((item.kind, value)) if value else None
+            if found is not None:
+                return found
+        if item.kind != 'album':
+            return None
+        candidates = by_title.get(_album_key(item.raw))
+        if not candidates:
+            return None
+        ids = {value for group in item.groups for track in group.entries
+               for value in (track.id, track.catalog_id) if value}
+        if not ids:
+            return candidates[0]
+        return next((album for album in candidates
+                     if any(track.catalog_id in ids or track.id in ids
+                            for group in album.groups for track in group.entries)), None)
+
+    def _held_index(self):
+        """({(kind, id or catalog id): Item}, {album key: [Item]}) for the Albums and
+        Playlists sections, from the Items' raw dicts (no property is read)."""
+        by_id = {}
+        by_title = {}
+        for kind, store in (('album', self.albums), ('playlist', self.playlists)):
+            for position in range(store.get_n_items()):
+                item = store.get_item(position)
+                raw = item.raw
+                for value in (raw.get('id'), raw.get('catalogId')):
+                    if value:
+                        by_id.setdefault((kind, _text(value)), item)
+                if kind == 'album':
+                    by_title.setdefault(_album_key(raw), []).append(item)
+        return by_id, by_title
 
     def favourite_songs(self):
         """The Favourite Songs playlist (Item.favourites), or None when the library has none."""
@@ -1504,6 +1572,10 @@ class Library(GObject.Object):
         self._tree = tree
         self._index = index
         self._favourites = next((item for item in self.playlists if item.favourites), None)
+        # holds() asks the stores as they are now; what it noted stays until they list it.
+        self._held = None
+        self._added = {key: item for key, item in self._added.items()
+                       if self._find_held(item) is None} if keep else {}
         for item in tree.changed:
             changed[item] = None
         if changed:
@@ -1813,6 +1885,14 @@ class SongOrder:
 def _clamp(number):
     """A number as an array('l') element holds it: huge values from a damaged file capped."""
     return max(-2**62, min(number, 2**62))
+
+
+def _album_key(raw):
+    """An album's title and artist as holds() matches a catalog album to the library's: case
+    and accents ignored; the artist its artistName when it has one (a shelf's album is
+    subtitled with its year), else its subtitle."""
+    artist = _text(raw.get('artistName')) or _text(raw.get('subtitle')) or ''
+    return fold(_text(raw.get('title')) or ''), fold(artist)
 
 
 def fold(text):

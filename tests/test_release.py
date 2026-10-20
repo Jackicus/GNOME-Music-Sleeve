@@ -9,8 +9,11 @@ import unittest
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
 from applemusic.library import Item
-from applemusic.release import (album_shelves, album_target, footer_lines, length_text,
-                                release_date_text, shelf_title)
+from gi.repository import GLib
+
+from applemusic.release import (album_artist, album_shelves, album_target, curator, footer_lines,
+                                hero_caption, length_text, release_date_text, shelf_title,
+                                updated_text)
 
 
 def album(album_id='l.alb001', catalog_id=None, songs=(None, '1724049201'), **extra):
@@ -43,6 +46,82 @@ class AlbumTargetTest(unittest.TestCase):
         self.assertIsNone(album_target(album('l.alb_0123456789ab')))  # loose songs' stand-in
         self.assertIsNone(album_target(Item({'id': 'p.1', 'kind': 'playlist'})))
         self.assertIsNone(album_target(None))
+
+
+def playlist(playlist_id='pl.0123abcd', **extra):
+    """An invented playlist Item."""
+    data = {'id': playlist_id, 'kind': 'playlist', 'title': 'Invented Picks',
+            'play': {'kind': 'playlist', 'id': playlist_id}, 'groups': []}
+    data.update(extra)
+    return Item(data)
+
+
+class HeroTest(unittest.TestCase):
+    """The hero's line under the title and its caption."""
+
+    # A Wednesday, at noon in the reader's time zone.
+    NOW = GLib.DateTime.new_local(2026, 10, 21, 12, 0, 0)
+
+    @staticmethod
+    def utc(year, month, day, hour=12):
+        """Noon (or `hour`) local time that day, as Apple writes a date: ISO 8601, in UTC."""
+        date = GLib.DateTime.new_local(year, month, day, hour, 0, 0).to_utc()
+        return date.format('%Y-%m-%dT%H:%M:%SZ')
+
+    def test_when_a_playlist_was_updated(self):
+        self.assertEqual(updated_text(self.utc(2026, 10, 21, 1), self.NOW), 'Updated today')
+        self.assertEqual(updated_text(self.utc(2026, 10, 20, 23), self.NOW), 'Updated yesterday')
+        self.assertEqual(updated_text(self.utc(2026, 10, 19), self.NOW), 'Updated Monday')
+        self.assertEqual(updated_text(self.utc(2026, 10, 15), self.NOW), 'Updated Thursday')
+        self.assertEqual(updated_text(self.utc(2026, 10, 14), self.NOW), 'Updated 14 October')
+        self.assertEqual(updated_text(self.utc(2026, 1, 1), self.NOW), 'Updated 1 January')
+        self.assertEqual(updated_text(self.utc(2025, 12, 31), self.NOW),
+                         'Updated 31 December 2025')
+        # A clock behind Apple's is still today.
+        self.assertEqual(updated_text(self.utc(2026, 10, 22), self.NOW), 'Updated today')
+        self.assertEqual(updated_text('2026-01-01', self.NOW), 'Updated 1 January')
+        for text in (None, '', 'soon', '2026-13-01T00:00:00Z', 20261021):
+            self.assertEqual(updated_text(text, self.NOW), '', text)
+
+    def test_a_playlists_caption_says_when_and_how_long(self):
+        apple = playlist(subtitle='Invented Curator', genre='Pop', year=2026,
+                         modified=self.utc(2026, 10, 19), trackCount=22, durationMs=6120000)
+        self.assertEqual(hero_caption(apple, self.NOW), 'Updated Monday · 22 songs, 1 hr 42 min')
+        # No date (an older library.json, an answer without one): the songs alone.
+        self.assertEqual(hero_caption(playlist(trackCount=3, durationMs=540000), self.NOW),
+                         '3 songs, 9 min')
+        self.assertEqual(hero_caption(playlist(), self.NOW), '')
+
+    def test_an_albums_caption_is_unchanged(self):
+        record = album(genre='Pop', year=2001, trackCount=12, durationMs=43 * 60000,
+                       modified=self.utc(2026, 10, 19))
+        self.assertEqual(hero_caption(record, self.NOW), 'Pop · 2001 · 12 songs, 43 min')
+        self.assertEqual(hero_caption(None), '')
+
+    def test_an_albums_artist(self):
+        self.assertEqual(album_artist(album()), 'Invented Artist')
+        # A shelf's album (an artist page's, Other Versions') is subtitled with its year.
+        shelf = album('1724049100', subtitle='2018', artistName='Invented Band')
+        self.assertEqual(album_artist(shelf), 'Invented Band')
+        self.assertEqual(curator(shelf, 'Alex'), 'Invented Band')
+        self.assertEqual(album_artist(playlist(subtitle='Invented Curator')), '')
+        self.assertEqual(album_artist(None), '')
+
+    def test_the_curator(self):
+        self.assertEqual(curator(playlist(subtitle='Invented Curator'), 'Alex'),
+                         'Invented Curator')
+        self.assertEqual(curator(album(), 'Alex'), 'Invented Artist')
+        # The user's own carry none: the account's name, when the app knows it.
+        own = playlist('p.mine')
+        self.assertEqual(curator(own, 'Alex Rivera'), 'Alex Rivera')
+        self.assertEqual(curator(own, ''), '')
+        favourites = playlist('p.fav', attributes={'isFavourites': True})
+        self.assertEqual(curator(favourites, 'Alex Rivera'), 'Alex Rivera')
+        # One of Apple's in the library, which names no curator, and a catalog one: nobody.
+        self.assertEqual(curator(playlist('p.apple', attributes={'canEdit': False}), 'Alex'),
+                         '')
+        self.assertEqual(curator(playlist(), 'Alex'), '')
+        self.assertEqual(curator(None, 'Alex'), '')
 
 
 class FooterTest(unittest.TestCase):

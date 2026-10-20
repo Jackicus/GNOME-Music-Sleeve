@@ -31,8 +31,10 @@ list and the script together.
    closes it.
 3. On an album or playlist: Play, Tab to Shuffle and to More Options (the item's menu), Tab to
    the first track (Shift+Tab goes back to More Options), Down, and Enter plays from that
-   track. Alt+Left (or Escape inside the page) goes back. On an artist: Play, More Options,
-   the latest release, then (past the Top Songs arrows and See All) the top songs, where the
+   track. One of Apple Music's the library lacks has Add between Shuffle and More Options;
+   once added, the focus goes to More Options and "In Library" is read as text. Alt+Left
+   (or Escape inside the page) goes back. On an artist: Play, More Options, the latest
+   release, then (past the Top Songs arrows and See All) the top songs, where the
    arrows move from song to song and Enter plays the top songs from the one focused. On
    Artists, Ctrl+2 puts the focus on the list's selected artist; Up and Down move through the
    list (in the wide layout they select, which shows the artist beside it; in the narrow one

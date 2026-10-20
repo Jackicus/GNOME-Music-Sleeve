@@ -45,6 +45,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   <kbd>Esc</kbd> clears the filter. Click a column title to sort by it, or use **Sort By**.
 - In a wide window a playlist's songs are a table, as the Songs page is: click an artist
   or an album there to open its page.
+- A playlist's page names its curator under its title (your name, for your own playlists,
+  once Music Sleeve knows it from the sign-in), then when it was last updated and how long
+  it is. An album or playlist from Apple Music that is not in your library has **Add**
+  beside **Play** and **Shuffle**: it adds it to your library, and the page then says
+  **In Library**, as it does for one you added before. Apple Music takes up to a minute to
+  list what you add; the page shows it at once all the same.
 - An album's page ends as Apple Music's does: under the last song, the release date, how
   many songs and minutes it holds and its ℗ line, then **Other Versions** (deluxe editions,
   remasters), **Music Videos**, **More By** the artist, **Featured On** (playlists with its
