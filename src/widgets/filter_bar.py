@@ -165,6 +165,8 @@ class FilterBar(Gtk.SearchBar):
         self._root = None  # while mapped: the window, and its focus handler
         self._root_handler = None
         self._escape = None  # the Escape controller on the page whose keys start the filter
+        self._available = False  # the page has something to filter
+        self._button_hidden = False  # the button left out of the header bar for now
         self.entry = Gtk.SearchEntry(placeholder_text=label, hexpand=True)
         self.entry.update_property([Gtk.AccessibleProperty.LABEL], [label])
         self.set_child(Adw.Clamp(maximum_size=400, child=self.entry))
@@ -183,13 +185,21 @@ class FilterBar(Gtk.SearchBar):
 
     @property
     def available(self):
-        """Whether the page has something to filter (the button shows)."""
-        return self.button.get_visible()
+        """Whether the page has something to filter (the button shows, unless hidden)."""
+        return self._available
+
+    def hide_button(self, hidden):
+        """Leave the button out of the header bar (a list's selection mode, whose header bar
+        has no room for it at 360 px), or put it back while the filter is offered. The
+        filter itself stays as it is (Ctrl+F, typing on the page)."""
+        self._button_hidden = bool(hidden)
+        self.button.set_visible(self._available and not self._button_hidden)
 
     def set_available(self, available, capture=None):
         """Offer the filter (the button, and typing on `capture`, the page, starting it) or
         not (a page with nothing to filter yet). The bar stays as it is: close() closes it."""
-        self.button.set_visible(available)
+        self._available = bool(available)
+        self.button.set_visible(self._available and not self._button_hidden)
         capture = capture if available else None
         # The controller, not the page: the bar is the page's child, and holding the page
         # would keep it alive.

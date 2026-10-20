@@ -19,8 +19,9 @@ template $AppleMusicDetailPage: Adw.NavigationPage {
     // needs 650 px: the cover, their 24 px gap, Play, Shuffle and More Options in a row
     // (318 px, 12 px apart) and the row's 24 px inset each side (style.css's track-list
     // rows); narrower, the page would ask for more than it has. Add (or In Library) and More
-    // Options go on a line of their own where the row has no room for them.
-    Adw.Breakpoint {
+    // Options go on a line of their own where the row has no room for them. The selection
+    // mode's bar has its narrow layout from here down (detail.py follows apply and unapply).
+    Adw.Breakpoint hero_breakpoint {
       condition ("max-width: 650sp")
 
       setters {
@@ -45,7 +46,7 @@ template $AppleMusicDetailPage: Adw.NavigationPage {
     // Narrower still (a phone): the buttons 6 px apart, as one group, since the row's inset
     // leaves 312 px at the 360 px minimum (Play, Shuffle and More Options take 312). The last breakpoint that matches is the one
     // applied, so this repeats the one above.
-    Adw.Breakpoint {
+    Adw.Breakpoint phone_breakpoint {
       condition ("max-width: 400sp")
 
       setters {

@@ -203,6 +203,127 @@ class SongsPageTest(PageTestCase):
         self.assertTrue(page.column_view.get_single_click_activate())
         self.assertIsInstance(page.column_view.get_model(), Gtk.NoSelection)
 
+    async def test_a_plain_click_plays_and_a_ctrl_click_starts_selecting(self):
+        """A click plays a song (docs/decisions.md), the selection mode or not; a Ctrl+click
+        or a Shift+click enters the mode, and in it a click selects instead of playing."""
+        from gi.repository import Gdk
+
+        page = await self.songs_page(6)
+        mode, view, window = page.selection_mode, page.column_view, page.get_root()
+        self.assertTrue(await self.until(lambda: len(page._title_cells) == 6))
+        songs = [page._rows.get_item(n) for n in range(6)]
+
+        def click(position, modifiers=0):
+            with mock.patch('applemusic.widgets.dnd.modifiers', return_value=modifiers):
+                page.on_activate(view, position)
+
+        click(1)
+        self.assertEqual(window.played[-1], (songs[1].play, songs[1].index, None))
+        self.assertFalse(mode.active)
+        self.assertTrue(mode.select_button.get_visible())
+        played = len(window.played)
+        click(2, Gdk.ModifierType.CONTROL_MASK)
+        self.assertEqual(len(window.played), played)  # selected, not played
+        self.assertTrue(mode.active)
+        self.assertEqual(mode.selection.ordered(songs), [songs[2]])
+        click(4)  # in the mode, a plain click selects too
+        click(2)  # and a second unselects
+        click(0, Gdk.ModifierType.SHIFT_MASK)  # from the last toggled (2) up to it
+        chosen = [songs[0], songs[1], songs[2], songs[4]]
+        self.assertEqual(mode.selection.ordered(songs), chosen)
+        self.assertEqual(len(window.played), played)
+        # Shown: the check boxes, the count, Cancel for Select, the bar; Sort and Filter
+        # leave the header bar Cancel's room.
+        cells = {cell.get_item(): cell.get_child() for cell in page._title_cells}
+        self.assertTrue(all(cell.check.get_visible() for cell in cells.values()))
+        self.assertEqual([song for song in songs if cells[song].check.get_active()], chosen)
+        self.assertIs(page.header_bar.get_title_widget(), mode.title_button)
+        self.assertEqual(mode.title, '4 Selected')
+        self.assertTrue(page.header_bar.get_show_title())
+        self.assertEqual((mode.select_button.get_visible(), mode.cancel_button.get_visible()),
+                         (False, True))
+        self.assertTrue(mode.bar.get_revealed())
+        self.assertFalse(page.sort_button.get_visible())
+        self.assertFalse(page.filter_bar.button.get_visible())
+        self.assertTrue(page.filter_bar.available)  # Ctrl+F still filters
+        rows = {row.get_item(): row for row in page._row_items}
+        self.assertEqual(rows[songs[0]].get_accessible_description(), 'Selected, 3:00')
+        self.assertEqual(rows[songs[5]].get_accessible_description(), 'Not Selected, 3:00')
+        # Escape (keyboard.selection_key's 'leave'): back as it was, nothing selected.
+        self.assertTrue(mode.key('leave'))
+        self.assertFalse(mode.active)
+        self.assertFalse(any(cell.check.get_visible() for cell in cells.values()))
+        self.assertIsNot(page.header_bar.get_title_widget(), mode.title_button)
+        self.assertTrue(page.sort_button.get_visible())
+        self.assertTrue(page.filter_bar.button.get_visible())
+        self.assertEqual(rows[songs[0]].get_accessible_description(), '3:00')
+        click(3)
+        self.assertEqual(window.played[-1], (songs[3].play, songs[3].index, None))
+
+    async def test_the_keys_and_the_filter(self):
+        page = await self.songs_page(12)
+        mode = page.selection_mode
+        songs = [page._rows.get_item(n) for n in range(12)]
+        self.assertFalse(mode.key('toggle'))  # no song focused
+        self.assertTrue(mode.key('select-all'))  # Ctrl+A on a song starts it
+        self.assertEqual(mode.selection.count, 12)
+        self.assertTrue(mode.key('toggle', songs[0]))
+        self.assertTrue(mode.key('extend', songs[3]))  # Shift+Space from the last toggled
+        self.assertEqual(mode.selection.count, 12)
+        mode.key('select-none')
+        for song in songs[:3]:
+            mode.key('toggle', song)
+        # What the filter hides leaves the selection, and an action never reaches it.
+        page.set_filter('Song 0001')
+        self.assertEqual(mode.selection.ordered(page._matches), [songs[1]])
+        self.assertEqual(mode.selection.count, 1)
+        page.set_filter('')
+        self.assertEqual(mode.selection.count, 1)
+        # Hidden (another destination shown, or a page pushed over it): the mode ends.
+        page.do_hidden()
+        self.assertFalse(mode.active)
+
+    async def test_the_bar_runs_the_item_actions_on_the_selection(self):
+        page = await self.songs_page(4)
+        mode = page.selection_mode
+        actions = page.get_root().item_actions
+        songs = [page._rows.get_item(n) for n in range(4)]
+        self.assertFalse(mode.actions.get_action_enabled('play-next'))  # nothing selected
+        for name, expected in (('play-next', ('queue', [songs[1], songs[3]], False)),
+                               ('play-later', ('queue', [songs[1], songs[3]], True)),
+                               ('new-playlist', ('new-playlist', [songs[1], songs[3]])),
+                               ('remove-from-library',
+                                ('remove-from-library', [songs[1], songs[3]]))):
+            mode.key('toggle', songs[3])
+            mode.key('toggle', songs[1])
+            self.assertTrue(mode.actions.get_action_enabled(name))
+            mode.actions.activate_action(name, None)
+            self.assertEqual(actions.batches[-1], expected, name)  # in the order shown
+            self.assertFalse(mode.active)  # an action ends the mode
+        mode.key('toggle', songs[0])
+        from gi.repository import GLib
+        mode.actions.activate_action('add-to-playlist', GLib.Variant('s', 'l.playlist009'))
+        self.assertEqual(actions.batches[-1], ('add', [songs[0]], 'l.playlist009'))
+        # The Songs table is no playlist: no Remove from Playlist.
+        mode.key('toggle', songs[0])
+        self.assertFalse(mode.actions.get_action_enabled('remove-from-playlist'))
+
+    async def test_a_drag_of_a_selected_song_carries_the_selection(self):
+        from applemusic.widgets import context_menu
+
+        page = await self.songs_page(4)
+        mode = page.selection_mode
+        songs = [page._rows.get_item(n) for n in range(4)]
+        objects = page.column_view._drag_objects
+        self.assertIsNone(objects(songs[0]))  # not selecting: the song alone
+        mode.key('toggle', songs[2])
+        mode.key('toggle', songs[0])
+        self.assertEqual(objects(songs[2]), [songs[0], songs[2]])
+        self.assertIsNone(objects(songs[1]))  # one not selected: itself
+        refs = context_menu.drag_refs_of(objects(songs[2]))
+        self.assertEqual([ref.id for ref in refs], [songs[0].id, songs[2].id])
+        self.assertEqual(context_menu.songs_label(len(refs)), '2 Songs')
+
     async def test_the_song_playing_is_marked(self):
         page = await self.songs_page(5)
         self.assertTrue(await self.until(lambda: len(page._title_cells) == 5))

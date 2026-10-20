@@ -18,7 +18,8 @@ class SongTitle(Gtk.Box):
     the Player: style.css's `.playing`), and a heart at the cell's end for a favourite
     (`favourite`, shown by its opacity), none of which changes the cell's size. With
     set_stacked(True) (the narrow table, every cell at once) the artist shows in a dimmed
-    line under the title.
+    line under the title. In the table's selection mode the cell starts with a check box
+    (set_selected(), widgets/selection_mode.py).
 
     bind(track) and unbind() are called by the column's factory as rows are recycled. The
     thumbnail is an AppleMusicCover: asked for only while the cell is on screen, in an idle
@@ -29,6 +30,7 @@ class SongTitle(Gtk.Box):
 
     __gtype_name__ = 'AppleMusicSongTitle'
 
+    check = Gtk.Template.Child()
     cover = Gtk.Template.Child()
     playing_scrim = Gtk.Template.Child()
     label = Gtk.Template.Child()
@@ -39,6 +41,8 @@ class SongTitle(Gtk.Box):
     _track = None
     _playing = False
     _favourite = False
+    _selecting = False
+    _selected = False
     _stacked = False
 
     @property
@@ -71,6 +75,19 @@ class SongTitle(Gtk.Box):
         self.artist_label.set_text(self._track.artist if self._stacked and self._track
                                    else None)
         self.artist_label.set_visible(self._stacked)
+
+    def set_selected(self, selecting, selected=False):
+        """In the list's selection mode (`selecting`) show the check box, ticked when
+        `selected`; out of it, none. Only what changes is set: a check box shown or hidden
+        lays the list out again, which the mode's start and end do once."""
+        selecting = bool(selecting)
+        selected = selecting and bool(selected)
+        if selecting != self._selecting:
+            self._selecting = selecting
+            self.check.set_visible(selecting)
+        if selected != self._selected:
+            self._selected = selected
+            self.check.set_active(selected)
 
     def set_favourite(self, favourite):
         """Show the heart at the cell's end for one of the account's favourites

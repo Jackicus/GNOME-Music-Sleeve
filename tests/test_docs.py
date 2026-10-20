@@ -49,7 +49,9 @@ PHASE_RE = re.compile(r'\bphase \d+|\bphases? \d+ to \d+', re.IGNORECASE)
 
 # Keys the docs may name that are not the app's own: GTK's and libadwaita's navigation and a
 # terminal's interrupt.
-OTHER_KEYS = {'Shift+Tab', 'Ctrl+C'}
+# Keys and clicks the docs name that no shortcut table holds: Tab's way back, a copy, and a
+# selection mode's modified clicks (widgets/selection_mode.py reads them as a row activates).
+OTHER_KEYS = {'Shift+Tab', 'Ctrl+C', 'Ctrl+click', 'Shift+click'}
 KEY_RE = re.compile(r'\b((?:(?:Ctrl|Alt|Shift|Super)\+)+(?:[A-Za-z0-9]+\b|[?,.]))')
 
 
@@ -90,7 +92,9 @@ def app_keys():
         found.update(accelerator_names(accelerator) for accelerator in accelerators)
     for accelerator in (shortcuts.MAIN_MENU, *shortcuts.CONTEXT_MENU.split(), shortcuts.CLOSE,
                         shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.MOVE_UP,
-                        shortcuts.MOVE_DOWN, shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN):
+                        shortcuts.MOVE_DOWN, shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN,
+                        shortcuts.SELECT_TOGGLE, shortcuts.SELECT_RANGE, shortcuts.SELECT_ALL,
+                        shortcuts.SELECT_NONE, shortcuts.LEAVE_SELECTION):
         found.add(accelerator_names(accelerator))
     return found
 

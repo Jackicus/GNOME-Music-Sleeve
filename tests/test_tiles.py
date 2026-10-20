@@ -835,7 +835,7 @@ class FavouriteMarkTest(WidgetTestCase):
         box.append(header)
         box.append(row)
         self.show(box)
-        columns = header.get_first_child().get_next_sibling()
+        columns = header.columns
 
         def bounds(widget):
             found, rect = widget.compute_bounds(box)

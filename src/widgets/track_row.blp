@@ -10,6 +10,22 @@ using Gtk 4.0;
 template $AppleMusicTrackRow: Box {
   spacing: 12;
 
+  // In the list's selection mode (widgets/selection_mode.py): whether the row is selected.
+  // The row's, not a control of its own: a click or a key on the row toggles it, and the
+  // row's description says it ("Selected"). Shown only in the mode, which lays the list out
+  // once as it starts and ends, never as rows are rebound.
+  CheckButton check {
+    valign: center;
+    visible: false;
+    can-focus: false;
+    can-target: false;
+    accessible-role: presentation;
+
+    styles [
+      "selection-mode",
+    ]
+  }
+
   // Albums: the track number, in a column as wide as two digits, and three when there is
   // room (a box set's hundredth track); a play icon in its place while the track is the one
   // playing. Both pages stay visible, so the stack keeps one size whichever it shows.

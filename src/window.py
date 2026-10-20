@@ -210,7 +210,8 @@ class Window(Adw.ApplicationWindow):
         something plays, unless the keys belong to the focus (keyboard.playback_action), and
         the Now Playing tab keys (keyboard.TAB_KEYS) win.show-lyrics and win.show-queue on
         the same terms (keyboard.tab_action), and the volume keys (keyboard.VOLUME_KEYS) step
-        the volume while something plays (keyboard.volume_step). A key nothing handles goes
+        the volume while something plays (keyboard.volume_step); before them, a track list's
+        selection mode takes its keys (_selection_key). A key nothing handles goes
         on to the focus widget. F10 opens the primary menu when
         the sidebar holding it is hidden (GTK's own F10 needs it shown)."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
@@ -230,6 +231,8 @@ class Window(Adw.ApplicationWindow):
 
         dialog_open = self.get_visible_dialog() is not None
         in_popover = has_ancestor(focus, Gtk.Popover)
+        if self._selection_key(keyval, mods, focus, dialog_open, in_popover):
+            return True
         name = keyboard.playback_action(keyval, mods, type(focus), dialog_open, in_popover,
                                         enabled)
         if name is not None:
@@ -247,6 +250,19 @@ class Window(Adw.ApplicationWindow):
             self._step_volume(step)
             return True
         return False
+
+    def _selection_key(self, keyval, mods, focus, dialog_open, in_popover):
+        """A track list's selection mode's key (keyboard.selection_key), given to the page
+        the focus is on (its `selection_mode`, widgets/selection_mode.py): True when taken.
+        Before the playback keys: Space on a song in the mode selects it."""
+        page = focus.get_ancestor(Adw.NavigationPage) if focus is not None else None
+        mode = getattr(page, 'selection_mode', None)
+        if mode is None:
+            return False
+        track = page.focused_track(focus)
+        name = keyboard.selection_key(keyval, mods, type(focus), dialog_open, in_popover,
+                                      mode.active, track is not None)
+        return name is not None and mode.key(name, track)
 
     def _step_volume(self, step):
         """Ctrl+Up (1) or Ctrl+Down (-1): the volume a step up or down, through the player

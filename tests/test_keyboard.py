@@ -135,6 +135,54 @@ class MoveStepTest(unittest.TestCase):
         self.assertIsNone(self.step(shortcuts.MOVE_DOWN, in_popover=True))
 
 
+class SelectionKeyTest(unittest.TestCase):
+    """A track list's selection mode's keys (shortcuts.SELECT_*, LEAVE_SELECTION): the
+    window asks before the playback keys, so Space selects a song in the mode and plays or
+    pauses outside it."""
+
+    def key(self, accel, focus_type=ListItemWidget, active=True, on_row=True,
+            dialog_open=False, in_popover=False):
+        _ok, keyval, mods = Gtk.accelerator_parse(accel)
+        if accel == 'Escape':
+            keyval, mods = Gdk.KEY_Escape, 0
+        if accel == '<primary><shift>a':
+            keyval = Gdk.KEY_A  # a press with Shift held reports the capital
+        return keyboard.selection_key(keyval, mods, focus_type, dialog_open, in_popover,
+                                      active, on_row)
+
+    def test_in_the_mode(self):
+        self.assertEqual(self.key(shortcuts.SELECT_TOGGLE), 'toggle')
+        self.assertEqual(self.key('KP_Space'), 'toggle')
+        self.assertEqual(self.key(shortcuts.SELECT_RANGE), 'extend')
+        self.assertEqual(self.key(shortcuts.SELECT_ALL), 'select-all')
+        self.assertEqual(self.key('<primary><shift>a'), 'select-none')
+        self.assertEqual(self.key('Escape'), 'leave')
+        # Off a song (the hero's Play, the bar's buttons): Space is the button's; the rest
+        # still the mode's.
+        self.assertIsNone(self.key('space', Gtk.Button, on_row=False))
+        self.assertIsNone(self.key('space', Gtk.CheckButton))
+        self.assertEqual(self.key('Escape', Gtk.Button, on_row=False), 'leave')
+        self.assertEqual(self.key(shortcuts.SELECT_ALL, Gtk.Button, on_row=False),
+                         'select-all')
+        for other in ('Return', 'a', '<primary>space', '<alt>Up'):
+            self.assertIsNone(self.key(other), other)
+
+    def test_outside_the_mode_only_ctrl_a_on_a_song_starts_it(self):
+        self.assertEqual(self.key(shortcuts.SELECT_ALL, active=False), 'select-all')
+        self.assertIsNone(self.key(shortcuts.SELECT_ALL, active=False, on_row=False))
+        for accel in ('space', '<shift>space', '<primary><shift>a', 'Escape'):
+            self.assertIsNone(self.key(accel, active=False), accel)  # Space plays, Escape backs
+        # And the playback keys still have Space there.
+        self.assertEqual(route('space', ListItemWidget), 'play-pause')
+
+    def test_typing_a_dialog_or_a_menu_keeps_them(self):
+        for accel in ('space', shortcuts.SELECT_ALL, 'Escape'):
+            # Ctrl+A selects the filter's text, Escape closes the filter first.
+            self.assertIsNone(self.key(accel, Gtk.Text), accel)
+            self.assertIsNone(self.key(accel, dialog_open=True), accel)
+            self.assertIsNone(self.key(accel, in_popover=True), accel)
+
+
 class VolumeStepTest(unittest.TestCase):
     """Ctrl+Up and Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN): the volume a step, except
     where the keys are the focused widget's own."""
@@ -224,6 +272,15 @@ class KeysTest(unittest.TestCase):
         for accel, step in ((shortcuts.VOLUME_UP, 1), (shortcuts.VOLUME_DOWN, -1)):
             _ok, keyval, mods = Gtk.accelerator_parse(accel)
             self.assertEqual(keyboard.VOLUME_KEYS[(keyval, int(mods))], step)
+
+    def test_the_selection_keys_are_the_shortcuts_tables(self):
+        for accel, name in ((shortcuts.SELECT_TOGGLE, 'toggle'),
+                            (shortcuts.SELECT_RANGE, 'extend'),
+                            (shortcuts.SELECT_ALL, 'select-all'),
+                            (shortcuts.SELECT_NONE, 'select-none'),
+                            (shortcuts.LEAVE_SELECTION, 'leave')):
+            _ok, keyval, mods = Gtk.accelerator_parse(accel)
+            self.assertEqual(keyboard.SELECTION_KEYS[(keyval, int(mods))], name, accel)
 
     def test_the_main_menu_key(self):
         self.assertTrue(keyboard.is_main_menu(Gdk.KEY_F10, 0))

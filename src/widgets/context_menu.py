@@ -6,6 +6,8 @@ Gtk.ColumnView of tiles or rows, a Gtk.FlowBox or Gtk.ListBox, or a single widge
 
     context_menu.attach(view)              # menus on right-click, long-press, Menu, Shift+F10
     context_menu.attach(view, drag=True)   # and its items dragged (widgets/dnd.py)
+    context_menu.set_drag_objects(view, objects)   # a drag of obj carries objects(obj), when
+                                                   # not None (a selection: several rows)
     context_menu.popup(widget, obj, x, y)  # the menu for obj, at (x, y) in widget
 
 A widget offering a menu has a `context_item` attribute: the Item or Track it shows, or None
@@ -28,6 +30,8 @@ tile whose menu is open is marked `.has-open-popup` meanwhile, as GTK's own menu
 theirs, so it stays highlighted while the pointer is in the menu. The sidebar's playlist
 and folder rows open theirs through popup() too (sidebar_view.py).
 """
+
+from gettext import ngettext
 
 from gi.repository import Gdk, GLib, Graphene, Gtk
 
@@ -80,6 +84,17 @@ def find(view, widget):
         if obj is not None:
             return view, obj
     return None
+
+
+def focused(view, focus):
+    """The Item or Track of view's row or tile that has the keyboard focus (`focus`, the
+    window's focus widget), or None: the focus elsewhere, or on none of the view's items."""
+    if focus is None or not (focus is view or focus.is_ancestor(view)):
+        return None
+    found = find(view, focus)
+    if found is None and focus is not view:
+        found = _descendant(focus)
+    return found[1] if found is not None else None
 
 
 def owner(widget):
@@ -189,9 +204,27 @@ def drag_refs(obj):
     return ItemRefs.for_objects([obj], origin)
 
 
+def set_drag_objects(view, objects):
+    """What a drag from view carries: objects(obj) for the item obj pressed, a list of
+    Tracks in order (a selection's, widgets/selection_mode.py), or None for obj alone.
+    `objects` is held by the view: pass one that does not hold the view's page
+    (weak_method())."""
+    view._drag_objects = objects
+
+
+def drag_refs_of(objects):
+    """What a drag of several tracks carries (a selection's): their library.ItemRefs, with
+    the list of the first as the origin (so it is never taken for one song's reorder: that
+    is a drag of one); None when none can be dragged."""
+    play = objects[0].play if objects and isinstance(objects[0], Track) else {}
+    origin = (play.get('kind'), play.get('id')) if play.get('kind') and play.get('id') else None
+    return ItemRefs.for_objects(objects, origin)
+
+
 def _drag_finder(view):
-    """attach_source()'s find for view: what is under (x, y) and its widget as the icon.
-    It holds the view by a GObject weak reference (a page that can be dropped owns it)."""
+    """attach_source()'s find for view: what is under (x, y) and its widget as the icon (a
+    selection's several, with their count as the icon instead). It holds the view by a
+    GObject weak reference (a page that can be dropped owns it)."""
     view_ref = view.weak_ref()
 
     def found(x, y):
@@ -200,10 +233,20 @@ def _drag_finder(view):
         if hit is None:
             return None
         widget, obj = hit
+        objects = getattr(view, '_drag_objects', None)
+        several = objects(obj) if objects is not None else None
+        if several and len(several) > 1:
+            refs = drag_refs_of(several)
+            return (refs, widget, songs_label(len(refs))) if refs is not None else None
         refs = drag_refs(obj)
         return (refs, widget) if refs is not None else None
 
     return found
+
+
+def songs_label(count):
+    """A drag of several songs' icon: "3 Songs"."""
+    return ngettext('{count} Song', '{count} Songs', count).format(count=f'{count:n}')
 
 
 def attach(view, drag=False):

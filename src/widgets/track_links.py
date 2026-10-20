@@ -9,6 +9,7 @@ when it has them, else Apple Music's page, as Go to Artist (item_actions.show_ar
     link.show(track)                  # bind: the track's artist (or album), a link when it has
                                       # somewhere to go (related.has_artist, has_album)
     track_links.attach(view)          # a click on a link in view opens its page
+    track_links.set_inert(view, True) # not while the list is in its selection mode
 
 A TrackLink is a one-line label as wide as its text, so only the text is the link: underlined
 under the pointer (style.css), with the pointer cursor. The click is the view's, not each
@@ -17,7 +18,8 @@ the press is on a link, so the row is neither selected nor activated nor dragged
 opens on the release, over the same link. Not from a touchscreen, where a tap selects the row
 and a long press opens its menu as anywhere else in the list. The row's Track is found as its
 context menu finds it (its `context_item`). The links take no focus: the keyboard's way to
-the same pages is the context menu's Go to Album and Go to Artist.
+the same pages is the context menu's Go to Album and Go to Artist. In a list's selection mode
+(widgets/selection_mode.py) they are inert: a click on one toggles its row, as anywhere else.
 """
 
 from gi.repository import Gdk, Gtk, Pango
@@ -84,6 +86,12 @@ def open_link(view, link):
     return True
 
 
+def set_inert(view, inert):
+    """Whether the links in view open nothing (a list in its selection mode): the press is
+    then the row's."""
+    view._track_links_inert = bool(inert)
+
+
 def attach(view):
     """Make the TrackLinks in view's rows open their pages when clicked. Once per view."""
     if getattr(view, '_track_links_attached', False):
@@ -96,7 +104,8 @@ def attach(view):
         if device is not None and device.get_source() == Gdk.InputSource.TOUCHSCREEN:
             pressed.clear()
             return
-        link = link_at(gesture.get_widget(), x, y)
+        view = gesture.get_widget()
+        link = None if getattr(view, '_track_links_inert', False) else link_at(view, x, y)
         pressed[:] = [link] if link is not None and n_press == 1 else []
         if link is not None:
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)

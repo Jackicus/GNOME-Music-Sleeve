@@ -287,6 +287,31 @@ changes, change it here, with the date. The plan they came from is in
   have): GTK selects the hovered row of a single-click list, which would have followed the
   pointer around. The track playing is marked in every row that shows it, as Up Next marks
   its entry (#241).
+- **Several songs are selected in a selection mode; a click still plays** (2026-10-20,
+  #362). Apple's players select with Ctrl- and Shift-clicks and act on the selection; here a
+  plain click plays a song (above), so selecting is a mode of its own, as GNOME Music and
+  Files have one: the Songs table, an album's and a playlist's songs (Favourite Songs' too),
+  not Search's songs, a shelf's or Up Next. It is entered by the header bar's Select, by a
+  Ctrl+click or Shift+click on a song (as Files' Ctrl+click selects: the modifiers are read
+  as the row is activated, so a drag, Shift's Play Next on the player bar too, stays a
+  drag), or by Ctrl+A on a song; in it a click, Enter or Space toggles a song and Shift
+  extends from the last one toggled, Ctrl+A and Ctrl+Shift+A select all and none, and
+  Cancel, Escape or any batch action leaves it, as does leaving the page. Outside it nothing
+  changed: a plain click and Enter play, Space plays or pauses. The lists stay
+  `Gtk.NoSelection` (nothing follows the pointer); the selection is a set of the Track
+  objects (`src/selection.py`), which a reload keeps and a filter's new rows do not lose,
+  where a `Gtk.MultiSelection`'s positions go at every key, and a filter narrows it to what
+  it still shows, so an action never reaches a song out of sight. Rows show a check box and
+  say "Selected"; the header bar shows the count (a menu of Select All and Select None) and
+  Cancel in place of Select, Sort and Filter, which leave it the room at 360 px; a bar under
+  the list holds Play Next and Play Later (one queue command for each run of songs, MusicKit's
+  `songs` list; one song at a time if it refuses one), Add to Playlist (#340's batched add,
+  or a New Playlist… of them), Remove from Playlist (one write of the entries kept, with Undo
+  on its toast, as Up Next's Clear has, rather than a dialog) and Remove from Library… (one
+  confirmation, a removal each, one sync after). A drag of a selected song carries the whole
+  selection, its icon its count. While selecting, a playlist's songs do not move. Batch
+  Favourite is left out: one rating write per song, and ambiguous over a mixed selection
+  (#491 for Favourite Songs' Remove from Favourites).
 - **One look for loading, status pages, links and grids** (2026-10-01). A page that waits
   shows a bare 32 px `AdwSpinner`, the album and artist pages' sections under their hero too,
   in place of three looks (that spinner, a hand-made "Loading…", a status page with a spinner

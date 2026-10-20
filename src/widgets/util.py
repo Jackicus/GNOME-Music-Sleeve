@@ -184,13 +184,15 @@ class HeaderTitle:
     update() looks again (the page calls it when its content changes: a stack switched, the
     title moved); scrolling `scrolled_window` (any of them, for a page with several) and the
     title mapping and unmapping look again by themselves. The header bar is changed only
-    when the answer flips.
+    when the answer flips. hold(True) shows the header's title whatever the answer (a list's
+    selection mode puts its count there), hold(False) the answer again.
     """
 
     def __init__(self, header_bar, title_label, *scrolled_windows):
         self._header_bar = header_bar
         self._title_label = title_label
         self._shown = None
+        self._held = False
         self._painted = None  # (the frame clock, the after-paint handler) while waiting
         for scrolled_window in scrolled_windows:
             connect_weak(scrolled_window.get_vadjustment(), 'value-changed', self._on_moved)
@@ -240,8 +242,18 @@ class HeaderTitle:
         show = not in_view
         if show != self._shown:
             self._shown = show
-            self._header_bar.set_show_title(show)
+            if not self._held:
+                self._header_bar.set_show_title(show)
         return True
+
+    def hold(self, held):
+        """Show the header's title while `held`, whatever update() answers; the answer again
+        once let go."""
+        held = bool(held)
+        if held == self._held:
+            return
+        self._held = held
+        self._header_bar.set_show_title(True if held else bool(self._shown))
 
 
 # The widget tree by class, for the few places that need a widget the toolkit does not hand

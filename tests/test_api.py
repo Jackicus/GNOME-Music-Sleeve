@@ -12,7 +12,8 @@ from applemusic.backend.api import (LIBRARY_ROUTES, api_error, http_status, is_d
                                     is_final, is_library_id, item_endpoint, library_twin,
                                     library_twin_params, lyrics_languages, next_offset,
                                     page_data,
-                                    playlist_entries, reordered_entries, resource_type,
+                                    kept_entries, playlist_entries, reordered_entries,
+                                    resource_type,
                                     track_type)
 from applemusic.backend import api
 from applemusic.backend.errors import EngineError
@@ -135,6 +136,24 @@ class PlaylistTest(unittest.TestCase):
                 reordered_entries(listed, ['i.a', 'i.b', 'i.a'], order)
             self.assertEqual(raised.exception.code, 'usage', order)
         self.assertEqual(reordered_entries([], [], []), [])
+
+    def test_entries_taken_out_of_the_list_shown(self):
+        listed = [{'id': track_id, 'type': 'library-songs'} for track_id in ('i.a', 'i.b',
+                                                                             'i.a', 'i.c')]
+        shown = ['i.a', 'i.b', 'i.a', 'i.c']
+        kept, removed = kept_entries(listed, shown, [2, 1])
+        # Of the song held twice, only the entry chosen; the removed in the list's order.
+        self.assertEqual([entry['id'] for entry in kept], ['i.a', 'i.c'])
+        self.assertEqual([entry['id'] for entry in removed], ['i.b', 'i.a'])
+        kept, removed = kept_entries(listed, shown, [0, 1, 2, 3])
+        self.assertEqual((kept, len(removed)), ([], 4))
+        with self.assertRaises(EngineError) as raised:
+            kept_entries(listed[:3], shown, [0])  # changed elsewhere since it was shown
+        self.assertEqual(raised.exception.code, 'conflict')
+        for positions in ([], [0, 0], [4], [-1], [True], [1.0]):
+            with self.assertRaises(EngineError) as raised:
+                kept_entries(listed, shown, positions)
+            self.assertEqual(raised.exception.code, 'usage', positions)
 
 
 class LibraryTwinTest(unittest.TestCase):

@@ -100,6 +100,9 @@ class TrackRow(Gtk.Box):
     the page plays the track's group from the track (window.play_request). The Track bound is
     the row's `context_item`: the view's context menu and drag (widgets/context_menu.py).
 
+    In the list's selection mode the row starts with a check box (set_selected(), as the
+    page reads the selection: widgets/selection_mode.py), shown only in the mode.
+
     The row of the track playing (`playing`, set by bind() or set_playing() as the page
     follows the Player) shows a play icon in the number's slot, or over the thumbnail, and
     its title bold (style.css's `.playing`): nothing that changes its size. A favourite's row
@@ -111,10 +114,13 @@ class TrackRow(Gtk.Box):
     _track = None
     _playing = False
     _favourite = False
+    _selecting = False
+    _selected = False
 
     number_stack = Gtk.Template.Child()
     number_label = Gtk.Template.Child()
     cover_slot = Gtk.Template.Child()
+    check = Gtk.Template.Child()
     cover = Gtk.Template.Child()
     playing_scrim = Gtk.Template.Child()
     columns = Gtk.Template.Child()
@@ -172,6 +178,19 @@ class TrackRow(Gtk.Box):
         self.set_playing(playing)
         self.set_favourite(favourite)
 
+    def set_selected(self, selecting, selected=False):
+        """In the list's selection mode (`selecting`) show the check box, ticked when
+        `selected`; out of it, none. Only what changes is set: a check box shown or hidden
+        lays the list out again, which the mode's start and end do once."""
+        selecting = bool(selecting)
+        selected = selecting and bool(selected)
+        if selecting != self._selecting:
+            self._selecting = selecting
+            self.check.set_visible(selecting)
+        if selected != self._selected:
+            self._selected = selected
+            self.check.set_active(selected)
+
     def set_favourite(self, favourite):
         """Show the heart of a favourite, or not: by its opacity, only when it changes."""
         favourite = bool(favourite)
@@ -219,8 +238,14 @@ class TrackTableHeader(Gtk.Box):
     def __init__(self, **kwargs):
         super().__init__(spacing=12, **kwargs)
         self.add_css_class('track-table-header')
+        # Over the rows' check boxes in the selection mode: one of them, never seen, so the
+        # titles keep over their columns.
+        self._check = Gtk.CheckButton(visible=False, opacity=0, can_focus=False,
+                                      can_target=False, css_classes=['selection-mode'],
+                                      accessible_role=Gtk.AccessibleRole.PRESENTATION)
+        self.append(self._check)
         self.append(Gtk.Box(width_request=COVER_SIZE))  # over the thumbnails
-        columns = Gtk.Box(spacing=12, homogeneous=True, hexpand=True)
+        self.columns = columns = Gtk.Box(spacing=12, homogeneous=True, hexpand=True)
         for title in (_('Title'), _('Artist'), _('Album')):
             columns.append(self._title(Gtk.Label(label=title, xalign=0)))
         self.append(columns)
@@ -235,6 +260,10 @@ class TrackTableHeader(Gtk.Box):
         time.add_child(self._title(Gtk.Label(label=_('Time'), xalign=1)))
         time.set_visible_child(time.get_last_child())
         self.append(time)
+
+    def set_selecting(self, selecting):
+        """Leave room for the rows' check boxes (the list's selection mode), or not."""
+        self._check.set_visible(bool(selecting))
 
     @staticmethod
     def _title(label):

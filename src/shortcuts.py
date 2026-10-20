@@ -12,8 +12,10 @@ and sidebar_view.py binds FOLDER_OPEN and FOLDER_CLOSE on the sidebar (keys for 
 row, only with the focus in the sidebar), as widgets/queue.py binds QUEUE_REMOVE on Up Next's
 list; a playlist's page runs MOVE_UP and MOVE_DOWN on its focused song (keyboard.move_step():
 Alt+Up and Alt+Down, as GNOME Text Editor moves a line), and keyboard.py parses VOLUME_UP and
-VOLUME_DOWN into its VOLUME_KEYS, the window's too. tests/test_shortcuts.py checks that the
-dialog lists every one of them. Keys that are none of these are listed as they are: Escape
+VOLUME_DOWN into its VOLUME_KEYS, the window's too, and the selection mode's keys (SELECT_*,
+LEAVE_SELECTION) into its SELECTION_KEYS: a track list's, which the window's key controller
+gives the page in that mode. tests/test_shortcuts.py checks that the dialog lists every one
+of them. Keys that are none of these are listed as they are: Escape
 (the dialogs', the Now Playing sheet's, the full-screen player's), under General with the
 other keys that act on windows.
 
@@ -89,6 +91,15 @@ MOVE_DOWN = '<alt>Down'
 # a step (widgets/transport.VOLUME_STEP), announced.
 VOLUME_UP = '<primary>Up'
 VOLUME_DOWN = '<primary>Down'
+# A track list's selection mode (widgets/selection_mode.py; keyboard.selection_key, the
+# window's): Space on a song selects or unselects it and Shift+Space selects from the last
+# one to it, in the mode only (Space plays or pauses otherwise); Ctrl+A selects every song
+# shown (and starts the mode from a song), Ctrl+Shift+A none; Escape leaves the mode.
+SELECT_TOGGLE = 'space'
+SELECT_RANGE = '<shift>space'
+SELECT_ALL = '<primary>a'
+SELECT_NONE = '<primary><shift>a'
+LEAVE_SELECTION = 'Escape'
 
 
 def accelerator(key):
@@ -145,5 +156,12 @@ def sections():
             (_('New Playlist'), 'win.new-playlist'),
             (_('Move Song Up'), MOVE_UP),
             (_('Move Song Down'), MOVE_DOWN),
+        ]),
+        (_('Selecting Songs'), [
+            (_('Select All'), SELECT_ALL),
+            (_('Select None'), SELECT_NONE),
+            (_('Select or Unselect the Song'), SELECT_TOGGLE),
+            (_('Select Up to the Song'), SELECT_RANGE),
+            (_('Stop Selecting'), LEAVE_SELECTION),
         ]),
     ]

@@ -6,6 +6,21 @@ using Gtk 4.0;
 template $AppleMusicSongTitle: Box {
   spacing: 12;
 
+  // In the table's selection mode (widgets/selection_mode.py): whether the row is selected,
+  // the row's (a click or a key on it toggles it; its description says it), shown only in
+  // the mode.
+  CheckButton check {
+    valign: center;
+    visible: false;
+    can-focus: false;
+    can-target: false;
+    accessible-role: presentation;
+
+    styles [
+      "selection-mode",
+    ]
+  }
+
   // The thumbnail. A cover keeps to its own size (it does not expand), so the title starts
   // right after it whatever the column's width. The track playing has a play icon laid over
   // it (shown by opacity: nothing in a recycled row changes size).

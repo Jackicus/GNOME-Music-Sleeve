@@ -7,6 +7,7 @@ their Item, and a detail page fits the width it has, from the 360 px minimum up.
 
 import asyncio
 import unittest
+from unittest import mock
 
 from tests.page_harness import PageTestCase, album, artist, artist_answer, playing, track
 
@@ -864,6 +865,79 @@ def suggestion(number):
     return {'id': song_id, 'kind': 'song', 'title': f'Suggested Song {number}',
             'subtitle': 'Other Artist', 'album': 'Other Album', 'art': None, 'thumb': None,
             'catalogId': song_id, 'play': {'kind': 'song', 'id': song_id}, 'groups': []}
+
+
+class SelectionTest(PageTestCase):
+    """A detail page's selection mode: its songs alone selectable, a playlist of the user's
+    offering Remove from Playlist and moving nothing while selecting."""
+
+    async def show(self, kind='playlist', **attributes):
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        data = album(1, tracks=4, kind=kind)
+        if attributes:
+            data['attributes'] = attributes
+        self.item = Item(data)
+        page = await self.push(DetailPage(self.library, self.item))
+        self.assertTrue(await self.until(lambda: len(page._bound) == 4, timeout=2))
+        return page
+
+    def songs(self):
+        entries = self.item.groups[0].entries
+        return [entries.get_item(n) for n in range(entries.get_n_items())]
+
+    async def test_only_the_songs_are_selected(self):
+        page = await self.show()
+        mode = page.selection_mode
+        self.assertTrue(mode.select_button.get_visible())
+        mode.select_button.emit('clicked')
+        self.assertTrue(mode.active)
+        mode.key('select-all')
+        self.assertEqual(mode.selection.ordered(self.songs()), self.songs())
+        self.assertEqual(mode.selection.count, 4)  # not the hero's row
+        rows = [item.get_child().track_row for item in page._bound]
+        self.assertTrue(all(row.check.get_visible() and row.check.get_active() for row in rows))
+        # Selecting, nothing moves: a drag of several is never a reorder.
+        self.assertFalse(page.can_reorder())
+        self.assertTrue(mode.actions.get_action_enabled('remove-from-playlist'))
+        mode.actions.activate_action('remove-from-playlist', None)
+        self.assertEqual(self.window.item_actions.batches[-1],
+                         ('remove-from-playlist', self.songs(), self.item.id))
+        self.assertFalse(mode.active)
+        self.assertTrue(page.can_reorder())
+        self.assertFalse(any(row.check.get_visible() for row in rows))
+
+    async def test_a_plain_click_still_plays(self):
+        page = await self.show()
+        with mock.patch('applemusic.widgets.dnd.modifiers', return_value=0):
+            page._on_activate(page.list_view, 2)  # the second song, after the hero
+        self.assertEqual(self.window.played[-1][1], 1)
+        self.assertFalse(page.selection_mode.active)
+
+    async def test_which_removals_each_page_offers(self):
+        page = await self.show()
+        self.assertEqual(page.selection_mode._layout()[0][-1][0],
+                         'selection.remove-from-playlist')
+        other = await self.show(canEdit=False)  # one of Apple's
+        self.assertNotIn('selection.remove-from-playlist',
+                         [action for action, _label in other.selection_mode._layout()[0]])
+        album_page = await self.show(kind='album')
+        self.assertEqual([action for action, _label in album_page.selection_mode._layout()[0]],
+                         ['selection.play-later', 'selection.remove-from-library'])
+        album_page.selection_mode.set_narrow(True)
+        shown, more = album_page.selection_mode._layout()
+        self.assertEqual((shown, [action for action, _label in more]),
+                         ([], ['selection.play-later', 'selection.remove-from-library']))
+
+    async def test_the_filter_narrows_the_selection_and_hiding_ends_it(self):
+        page = await self.show()
+        mode = page.selection_mode
+        mode.key('select-all')
+        page.filter_bar.set_text(self.songs()[0].title)
+        self.assertEqual(mode.selection.count, 1)
+        page.do_hidden()
+        self.assertFalse(mode.active)
 
 
 class SuggestionsTest(PageTestCase):

@@ -247,6 +247,20 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   filled in, and once Apple lists the new playlist, its page opens. The menus do the same
   from the keyboard: **Play Later**, **Play Next**, and **Add to Playlist › New
   Playlist…**.
+- To act on several songs at once, select them: on Songs, an album's page or a playlist's
+  page (Favourite Songs too), click the **Select** button in the header bar, or
+  <kbd>Ctrl</kbd>+click or <kbd>Shift</kbd>+click a song. Each song gets a check box: a
+  click (or <kbd>Space</kbd> on the focused song) selects or unselects it,
+  <kbd>Shift</kbd>+click (or <kbd>Shift</kbd>+<kbd>Space</kbd>) selects every song from the
+  last one you clicked, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects them all and
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> none (also in the menu of the header bar's
+  "3 Selected"). The bar at the bottom then has **Play Next**, **Play Later**, **Add to
+  Playlist** (or a **New Playlist…** of them), **Remove from Playlist** on one of your
+  playlists (one change, with **Undo** in the message that follows) and **Remove from
+  Library…** (asking once for them all); in a narrow window some are under its **⋮** menu.
+  Drag a selected song to drag them all, onto a playlist in the sidebar or the player bar.
+  A filter keeps only the selected songs it still shows. **Cancel**, <kbd>Esc</kbd> or any of
+  the bar's actions ends selecting. Without selecting, a click on a song still plays it.
 - **Remove from Library…** in the menu of a song, an album or a music video in your library,
   or of one of Apple's playlists you added, takes it out of your library on all your
   devices, after asking. A song goes from every playlist that held it too, and an album
