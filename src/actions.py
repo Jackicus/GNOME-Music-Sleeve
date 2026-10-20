@@ -20,8 +20,10 @@ what it acts on (an Item's kind and id, or 'song' and a Track's id):
     item-play            the item, or a track's album or playlist from the track
     item-play-next       queued after the item playing (mk.playNext)
     item-play-later      queued at the end (mk.playLater)
-    item-love            loved: a song goes into Favourite Songs
+    item-love            loved: a song goes into Favourite Songs (a Suggest Less replaced)
     item-unlove          the love taken back
+    item-suggest-less    Apple's Suggest Less: the rating -1, which replaces a favourite
+    item-undo-suggest-less   the Suggest Less taken back
     item-add-to-library  a catalog item added to the library
     item-remove-from-library   a song, album, music video or playlist of Apple's taken out
                          of the library, once a dialog confirms
@@ -57,9 +59,10 @@ library's Item, so an open page shows the change at once.
 
 The menus are built in code, per kind (build_menu): Play, Play Next, Play Later, Create
 Station (a song's or an artist's whose catalog id is known: station_target); Go to Album,
-Go to Artist (not where the page shown is that album or artist already); Favourite and
-Remove from Favourites (both, of which the menu shows the one whose action is enabled: the
-actions' state says whether the item is loved), Add to Library (not what the library holds
+Go to Artist (not where the page shown is that album or artist already); Favourite or
+Remove from Favourites, then Suggest Less or Undo Suggest Less (all four, of which the menu
+shows those whose actions are enabled: rating_actions(), by the item's rating; as on
+Apple's players, a favourite offers no Suggest Less), Add to Library (not what the library holds
 already), Add to Playlist (the library's playlists that take songs, each folder a submenu,
 then New Playlist…), Move to Folder (a playlist's or folder's: Top Level, the folders it can
 go into, a folder holding others a submenu headed by itself, then New Folder…:
@@ -85,8 +88,8 @@ through the playlists pass of a sync (sync.py). A track removed has its playlist
 as an add does.
 The menus of the player's queue (the item playing's in the Now Playing sheet and the player
 bar, Up Next's) have no Play, which would replace the queue: activating the row plays it.
-Whether an item is loved is not in the library: a menu shows what the engine said last (its
-`rated` signal), and asks again (engine.rating) as it opens.
+An item's rating (loved, Suggest Less or neither) is not in the library: a menu shows what
+the engine said last (its `rated` signal), and asks again (engine.rating) as it opens.
 
 Only Gio, GLib and GObject at import time besides Gtk's UriLauncher, used when a page is
 opened: tests build the menus and run the actions with a stand-in window, app and engine.
@@ -162,6 +165,8 @@ def action_labels():
         'item-play-later': _('Play _Later'),
         'item-love': _('_Favourite'),
         'item-unlove': _('_Remove from Favourites'),
+        'item-suggest-less': _('_Suggest Less'),
+        'item-undo-suggest-less': _('_Undo Suggest Less'),
         'item-add-to-library': _('_Add to Library'),
         'item-add-to-playlist': _('Add to Pla_ylist'),
         'item-go-to-album': _('_Go to Album'),
@@ -175,7 +180,7 @@ def action_labels():
         'item-move-to-folder': _('Mov_e to Folder'),
         'item-new-folder': _('New _Folder…'),
         'item-remove-from-library': _('Remove from Li_brary…'),
-        'item-create-station': _('Create _Station'),
+        'item-create-station': _('Create Stat_ion'),
     }
 
 
@@ -478,12 +483,29 @@ def menu_item(action, target, label=None):
     return item
 
 
-def favourite_items(target):
-    """Favourite and Remove from Favourites, of which a menu shows the one whose action is
-    enabled (GMenu's hidden-when): ItemActions keeps the two actions' state as the item's
-    loved state, so the menu follows an answer without its items being replaced."""
+RATING_ACTIONS = ('item-love', 'item-unlove', 'item-suggest-less', 'item-undo-suggest-less')
+
+
+def rating_actions(value):
+    """Which of RATING_ACTIONS are enabled (and so shown) for an item rated `value` (1
+    loved, -1 Suggest Less, 0 neither): Favourite or Remove from Favourites, and Suggest Less
+    or Undo Suggest Less, but no Suggest Less beside a favourite, as Apple's players have it.
+    Favourite replaces a Suggest Less (one rating an item)."""
+    return {
+        'item-love': value != 1,
+        'item-unlove': value == 1,
+        'item-suggest-less': value == 0,
+        'item-undo-suggest-less': value == -1,
+    }
+
+
+def rating_items(target):
+    """The rating's items (RATING_ACTIONS), of which a menu shows those whose actions are
+    enabled (GMenu's hidden-when): ItemActions keeps the actions' state as the item's
+    rating (rating_actions()), so the menu follows an answer without its items being
+    replaced."""
     items = []
-    for action in ('item-love', 'item-unlove'):
+    for action in RATING_ACTIONS:
         item = menu_item(action, target)
         item.set_attribute_value('hidden-when', GLib.Variant('s', 'action-disabled'))
         items.append(item)
@@ -637,7 +659,7 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if related.has_artist(obj) and not related.shows(here, obj, 'artist'):
         go.append_item(menu_item('item-go-to-artist', target))
     if rating_target(obj) is not None:
-        for item in favourite_items(target):
+        for item in rating_items(target):
             keep.append_item(item)
     if library_target(obj) is not None and removable is None:
         keep.append_item(menu_item('item-add-to-library', target))
@@ -741,6 +763,11 @@ def love_messages(kind):
     return _('Added to Favourites'), _('Removed from Favourites')
 
 
+def suggest_less_messages():
+    """(set, undone) toasts for Suggest Less and Undo Suggest Less."""
+    return _('Apple Music will suggest less like this'), _('Suggest Less undone')
+
+
 class ItemActions:
     """The window's item actions. `window` gives play_request(), get_clipboard() and
     add_action(); `app` the engine, the player, the library, spawn(), toast(), report() and
@@ -750,7 +777,7 @@ class ItemActions:
         self.window = window
         self.app = app
         self._remembered = OrderedDict()  # (kind, id) -> the object a menu was built for
-        self._loved = {}  # rating_target -> bool, as the engine last said
+        self._ratings = {}  # rating_target -> 1, 0 or -1, as the engine last said
         self._menu_rated = None  # the rating target of the last menu built
         app.engine.connect('rated', self._on_rated)
         handlers = {
@@ -759,6 +786,8 @@ class ItemActions:
             'item-play-later': self._on_play_later,
             'item-love': self._on_love,
             'item-unlove': self._on_unlove,
+            'item-suggest-less': self._on_suggest_less,
+            'item-undo-suggest-less': self._on_undo_suggest_less,
             'item-add-to-library': self._on_add_to_library,
             'item-go-to-album': self._on_go_to_album,
             'item-go-to-artist': self._on_go_to_artist,
@@ -796,9 +825,9 @@ class ItemActions:
 
     def menu_for(self, obj, queued=False):
         """The menu for obj (build_menu), obj remembered for its actions; None when nothing
-        applies. `queued`: obj is in the player's queue (now_playing_track()). The favourite
-        actions' state shows whether obj is loved, as last known; with the engine up, it is
-        asked again as the menu opens."""
+        applies. `queued`: obj is in the player's queue (now_playing_track()). The rating
+        actions' state shows obj's rating, as last known; with the engine up, it is asked
+        again as the menu opens."""
         named = describe(obj)
         if named is None:
             return None
@@ -811,7 +840,7 @@ class ItemActions:
         self._remember(named, obj)
         rated = rating_target(obj)
         self._menu_rated = rated
-        self._show_loved(bool(self._loved.get(rated)) if rated else False)
+        self._show_rating(self._ratings.get(rated, 0) if rated else 0)
         if rated is not None and self._engine_ready():
             self.app.spawn(self._refine(rated))
         return menu
@@ -854,11 +883,12 @@ class ItemActions:
             return found
         return entries(self.library.playlist_tree().root)
 
-    def _show_loved(self, loved):
-        """The favourite actions' state: a menu shows Favourite while the item is not
-        loved, Remove from Favourites while it is."""
-        self.actions['item-love'].set_enabled(not loved)
-        self.actions['item-unlove'].set_enabled(loved)
+    def _show_rating(self, value):
+        """The rating actions' state (rating_actions()): a menu shows Favourite while the
+        item is not loved, Remove from Favourites while it is, Suggest Less while it is
+        neither and Undo Suggest Less while it is rated -1."""
+        for action, enabled in rating_actions(value).items():
+            self.actions[action].set_enabled(enabled)
 
     async def _refine(self, rated):
         try:
@@ -867,9 +897,9 @@ class ItemActions:
             log.debug('rating of %s %s: %s', *rated, error)
 
     def _on_rated(self, _engine, kind, item_id, value):
-        self._loved[(kind, item_id)] = value == 1
+        self._ratings[(kind, item_id)] = value
         if (kind, item_id) == self._menu_rated:
-            self._show_loved(value == 1)
+            self._show_rating(value)
 
     def _remember(self, named, obj):
         self._remembered[named] = obj
@@ -995,6 +1025,29 @@ class ItemActions:
 
     def _on_unlove(self, _action, parameter):
         return self._rate(parameter, love=False)
+
+    def _suggest_less(self, parameter, undo):
+        """Suggest Less (the rating -1), or take it back (the rating removed). The menu
+        offers no Suggest Less for a favourite, but one chosen before the menu's read
+        answered may replace one, and a song is then out of Favourite Songs: that playlist
+        is fetched again unless the song was known not to be loved."""
+        obj, kind, item_id = self._unpack(parameter)
+        target = rating_target(obj) if obj is not None else (kind, item_id)
+        if target is None:
+            self.app.toast(_('This cannot be rated'))
+            return None
+        set_message, undone = suggest_less_messages()
+        if undo:
+            return self._run(self.engine.unlove, target, undone)
+        loved = target[0] == 'song' and self._ratings.get(target) not in (0, -1)
+        return self._run(self.engine.suggest_less, target, set_message,
+                         after=self._refresh_favourites if loved else None)
+
+    def _on_suggest_less(self, _action, parameter):
+        return self._suggest_less(parameter, undo=False)
+
+    def _on_undo_suggest_less(self, _action, parameter):
+        return self._suggest_less(parameter, undo=True)
 
     def _on_add_to_library(self, _action, parameter):
         obj, kind, item_id = self._unpack(parameter)

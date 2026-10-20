@@ -41,7 +41,9 @@ UI awaits.
                                            # format} (src/lyrics.py has every field), from
                                            # <cache>/lyrics/ when fetched this month
     await engine.love('song', id); await engine.unlove('album', id)   # the rating, set or gone
-    await engine.rating('song', id)        # 1 loved, -1 disliked, 0 neither
+    await engine.suggest_less('station', id)   # the rating -1 (in place of a favourite);
+                                               # unlove() takes it away too
+    await engine.rating('song', id)        # 1 loved, -1 Suggest Less, 0 neither
     await engine.add_to_library('album', catalog_id)
     await engine.remove_from_library('song', library_id)   # the library id removed (a catalog
                                                            # id is read for its twin first)
@@ -89,16 +91,16 @@ Properties `state` ('down', 'starting', 'up', 'signing-in'), `authorized`, `head
 Widevine (asked once per start, beside it: play() and queue_jump() then raise 'no-widevine', as
 no song would play; previews still do); the `event(name, data)` signal re-emits the bridge's
 MusicKit events (name without the 'am:' prefix), and `rated(kind, id, value)` follows love(),
-unlove() and rating() (the kind and id as they were asked, value 1 loved, 0 not), so a heart
-shows what a menu did, and `lost(reason)` says the engine went down on its own (Chrome crashed
-or was killed, the page crashed, closed or stopped answering), never for a stop, a restart or
-quitting. Every failure is an EngineError; nothing here blocks the loop: Chrome is a
-Gio.Subprocess (awaitable wait_async), the connection is the asynchronous CDPClient over
-Chrome's DevTools pipe (its descriptors 3 and 4: no port is open), and the JSON shaping and
-artwork HTTP of item() run in a thread. In demo mode (`demo=True`) start() and stop() do
-nothing and every command raises EngineError('engine-down') at once, but for a kept answer the
-demo library invented (scripts/demo_library.py writes its artists' and albums' pages, marked
-`demo`), answered from its cache.
+unlove(), suggest_less() and rating() (the kind and id as they were asked, value 1 loved, -1
+Suggest Less, 0 neither), so a heart shows what a menu did, and `lost(reason)` says the engine
+went down on its own (Chrome crashed or was killed, the page crashed, closed or stopped
+answering), never for a stop, a restart or quitting. Every failure is an EngineError; nothing
+here blocks the loop: Chrome is a Gio.Subprocess (awaitable wait_async), the connection is the
+asynchronous CDPClient over Chrome's DevTools pipe (its descriptors 3 and 4: no port is open),
+and the JSON shaping and artwork HTTP of item() run in a thread. In demo mode (`demo=True`)
+start() and stop() do nothing and every command raises EngineError('engine-down') at once, but
+for a kept answer the demo library invented (scripts/demo_library.py writes its artists' and
+albums' pages, marked `demo`), answered from its cache.
 
 The browser command (`browser_command`) and the preferred mode (`prefer_headless`) are read
 when Chrome is spawned, so a change applies at the next start and a running Chrome is left
@@ -1463,20 +1465,27 @@ class Engine(GObject.Object):
         """Love (favourite) a song, album, playlist, station or music video: PUT
         /v1/me/ratings/<type>s/<id> with the value 1. A library id rates the library item,
         a catalog id the catalog's; loving a song adds it to Favourite Songs."""
-        await self._rate(kind, item_id, True)
+        await self._rate(kind, item_id, 1)
+
+    async def suggest_less(self, kind, item_id):
+        """Suggest Less of a song, album, playlist, station or music video: the same PUT
+        with the value -1. An item has one rating, so this replaces a favourite (and a
+        song leaves Favourite Songs), as love() replaces it."""
+        await self._rate(kind, item_id, -1)
 
     async def unlove(self, kind, item_id):
-        """Take the rating away (DELETE /v1/me/ratings/<type>s/<id>)."""
-        await self._rate(kind, item_id, False)
+        """Take the rating away, a favourite or a Suggest Less (DELETE
+        /v1/me/ratings/<type>s/<id>)."""
+        await self._rate(kind, item_id, 0)
 
-    async def _rate(self, kind, item_id, love):
+    async def _rate(self, kind, item_id, value):
         rated = resource_type(kind, item_id)
         client = await self._require_signed_in('rate items')
-        await client.bridge('rating', rated, str(item_id), bool(love))
-        self.emit('rated', str(kind), str(item_id), 1 if love else 0)
+        await client.bridge('rating', rated, str(item_id), value)
+        self.emit('rated', str(kind), str(item_id), value)
 
     async def rating(self, kind, item_id):
-        """The item's rating: 1 loved, -1 disliked, 0 neither (a read of
+        """The item's rating: 1 loved, -1 Suggest Less, 0 neither (a read of
         /v1/me/ratings/<type>s?ids=<id>, which answers an empty list for an item without
         one, where the single-item path answers a 404)."""
         rated = resource_type(kind, item_id)

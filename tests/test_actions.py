@@ -18,7 +18,8 @@ from applemusic.actions import (ItemActions, build_menu, can_play, describe, fil
                                 is_apple_music_url, is_removable_playlist, is_shareable,
                                 library_target, main_menu_section, mnemonic_escaped,
                                 move_targets, now_playing_track, playlist_song, playlist_track,
-                                queue_target, rating_target, removal_target, removal_words,
+                                queue_target, rating_actions, rating_target, removal_target,
+                                removal_words, RATING_ACTIONS,
                                 share_url, station_target, web_url)
 from applemusic.backend import api
 from applemusic import actions as actions_module
@@ -155,6 +156,7 @@ class MenuTest(unittest.TestCase):
         self.assertEqual(names(build_menu(LIBRARY_ALBUM)), [
             'win.item-play', 'win.item-play-next', 'win.item-play-later',
             'win.item-go-to-artist', 'win.item-love', 'win.item-unlove',
+            'win.item-suggest-less', 'win.item-undo-suggest-less',
             'win.item-open-in-browser', 'win.item-copy-link'])
         self.assertTrue(all(target == ('album', 'l.alb1')
                             for _action, target in actions_of(build_menu(LIBRARY_ALBUM))))
@@ -162,11 +164,24 @@ class MenuTest(unittest.TestCase):
     def test_catalog_album_can_be_added(self):
         self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_ALBUM)))
 
-    def test_both_favourite_items_hide_with_their_action(self):
+    def test_the_rating_items_hide_with_their_action(self):
         menu = build_menu(LIBRARY_ALBUM)
         self.assertEqual(attributes_of(menu, 'hidden-when'),
                          {'win.item-love': 'action-disabled',
-                          'win.item-unlove': 'action-disabled'})
+                          'win.item-unlove': 'action-disabled',
+                          'win.item-suggest-less': 'action-disabled',
+                          'win.item-undo-suggest-less': 'action-disabled'})
+
+    def test_the_rating_shows_favourite_or_suggest_less(self):
+        def shown(value):
+            return sorted(action for action, enabled in rating_actions(value).items()
+                          if enabled)
+        self.assertEqual(shown(0), ['item-love', 'item-suggest-less'])
+        # A favourite offers no Suggest Less, as Apple's players have it.
+        self.assertEqual(shown(1), ['item-unlove'])
+        # Suggest Less: Favourite (which replaces it) and Undo Suggest Less.
+        self.assertEqual(shown(-1), ['item-love', 'item-undo-suggest-less'])
+        self.assertEqual(set(rating_actions(0)), set(RATING_ACTIONS))
 
     def test_labels_have_distinct_mnemonics(self):
         labels = labels_of(build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)]))
@@ -190,6 +205,8 @@ class MenuTest(unittest.TestCase):
             ('win.item-go-to-artist', ('song', 'i.song1')),
             ('win.item-love', ('song', 'i.song1')),
             ('win.item-unlove', ('song', 'i.song1')),
+            ('win.item-suggest-less', ('song', 'i.song1')),
+            ('win.item-undo-suggest-less', ('song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl5', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl2', 'song', 'i.song1')),
             ('win.item-add-to-playlist', ('p.pl1', 'song', 'i.song1')),
@@ -274,8 +291,8 @@ class MenuTest(unittest.TestCase):
             'win.item-play', 'win.item-create-station', 'win.item-open-in-browser',
             'win.item-copy-link'])
         self.assertEqual(names(build_menu(STATION)), [
-            'win.item-play', 'win.item-love', 'win.item-unlove', 'win.item-open-in-browser',
-            'win.item-copy-link'])
+            'win.item-play', 'win.item-love', 'win.item-unlove', 'win.item-suggest-less',
+            'win.item-undo-suggest-less', 'win.item-open-in-browser', 'win.item-copy-link'])
         self.assertEqual(names(build_menu(FAVOURITES)), [
             'win.item-play', 'win.item-play-next', 'win.item-play-later',
             'win.item-open-in-browser'])  # its library route is the owner's: no Copy Link
@@ -312,7 +329,7 @@ class MenuTest(unittest.TestCase):
             'win.item-create-station'])
         self.assertEqual(names(build_menu(LIBRARY_TRACK, queued=True))[:3], [
             'win.item-play-next', 'win.item-play-later', 'win.item-create-station'])
-        self.assertIn('Create _Station', labels_of(build_menu(CATALOG_ARTIST)))
+        self.assertIn('Create Stat_ion', labels_of(build_menu(CATALOG_ARTIST)))
 
     def test_a_playlist_of_the_users_is_renamed_and_deleted(self):
         self.assertEqual(names(build_menu(PLAYLIST))[-2:], ['win.item-rename', 'win.item-delete'])
@@ -565,6 +582,10 @@ class FakeEngine(GObject.Object):
     async def unlove(self, kind, item_id):
         await self._record('unlove', kind, item_id)
         self.emit('rated', kind, item_id, 0)
+
+    async def suggest_less(self, kind, item_id):
+        await self._record('suggest_less', kind, item_id)
+        self.emit('rated', kind, item_id, -1)
 
     async def rating(self, kind, item_id):
         await self._record('rating', kind, item_id)
@@ -846,13 +867,18 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         return (self.window.actions['item-love'].get_enabled(),
                 self.window.actions['item-unlove'].get_enabled())
 
+    def rating_shown(self):
+        """The rating actions a menu shows (those enabled), in RATING_ACTIONS's order."""
+        return [name for name in RATING_ACTIONS if self.window.actions[name].get_enabled()]
+
     async def test_every_action_is_added_with_its_target_type(self):
         self.assertEqual(sorted(self.window.actions), sorted([
             'item-play', 'item-play-next', 'item-play-later', 'item-love', 'item-unlove',
             'item-add-to-library', 'item-add-to-playlist', 'item-open-in-browser',
             'item-copy-link', 'item-go-to-album', 'item-go-to-artist', 'item-new-playlist',
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
-            'item-move-to-folder', 'item-remove-from-library', 'item-create-station']))
+            'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
+            'item-suggest-less', 'item-undo-suggest-less']))
         self.assertEqual(
             self.window.actions['item-remove-from-playlist'].get_parameter_type().dup_string(),
             '(ssi)')
@@ -889,6 +915,56 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         # An album loved touches no playlist.
         await self.run_action('item-love', 'album', 'l.alb1')
         self.assertEqual(self.app.engine.calls.count(('item', 'playlist', 'p.fav')), 1)
+
+    async def test_suggest_less_and_undo_it(self):
+        self.actions.menu_for(LIBRARY_TRACK)
+        await asyncio.gather(*self.app.tasks)  # the menu's read: neither
+        self.app.tasks.clear()
+        self.assertEqual(self.rating_shown(), ['item-love', 'item-suggest-less'])
+        await self.run_action('item-suggest-less', 'song', 'i.song1')
+        self.assertIn(('suggest_less', 'song', '1000000001'), self.app.engine.calls)
+        self.assertEqual(self.app.toasts, ['Apple Music will suggest less like this'])
+        self.assertEqual(self.app.player.ensured, 1)
+        # Known not loved: Favourite Songs is not fetched again.
+        self.assertNotIn('item', [call[0] for call in self.app.engine.calls])
+        self.assertEqual(self.rating_shown(), ['item-love', 'item-undo-suggest-less'])
+        await self.run_action('item-undo-suggest-less', 'song', 'i.song1')
+        self.assertEqual(self.app.engine.calls[-1], ('unlove', 'song', '1000000001'))
+        self.assertEqual(self.app.toasts[-1], 'Suggest Less undone')
+        self.assertEqual(self.rating_shown(), ['item-love', 'item-suggest-less'])
+        # Favourite replaces a Suggest Less: the menu then offers only Remove from Favourites.
+        await self.run_action('item-suggest-less', 'song', 'i.song1')
+        await self.run_action('item-love', 'song', 'i.song1')
+        self.assertEqual(self.rating_shown(), ['item-unlove'])
+
+    async def test_suggest_less_on_albums_playlists_stations_and_videos(self):
+        for kind, item_id, rated in (('album', 'l.alb1', ('album', 'l.alb1')),
+                                     ('playlist', 'p.pl1', ('playlist', 'p.pl1')),
+                                     ('station', 'ra.1000000006', ('station', 'ra.1000000006')),
+                                     ('song', 'i.vid1', ('video', '1000000011'))):
+            with self.subTest(kind=kind):
+                self.actions.menu_for(VIDEO_TRACK)  # the track its target names
+                await self.run_action('item-suggest-less', kind, item_id)
+                self.assertEqual(self.app.engine.calls[-1], ('suggest_less', *rated))
+
+    async def test_suggest_less_before_the_rating_is_known_refreshes_favourite_songs(self):
+        # A song loved elsewhere loses its favourite to a Suggest Less chosen before the
+        # menu's read answered: Favourite Songs is fetched again.
+        answer = dict(PLAYLIST_ANSWER, id='p.fav', title='Favourite Songs',
+                      attributes={'isFavourites': True})
+        self.app.engine.items[('playlist', 'p.fav')] = answer
+        self.app.engine.state = 'down'  # no read as the menu opens
+        self.actions.menu_for(LIBRARY_TRACK)
+        self.app.engine.state = 'up'
+        await self.run_action('item-suggest-less', 'song', 'i.song1')
+        self.assertIn(('item', 'playlist', 'p.fav'), self.app.engine.calls)
+
+    async def test_the_menu_shows_a_suggest_less_it_reads(self):
+        self.app.engine.ratings[('album', 'l.alb1')] = -1
+        self.actions.menu_for(LIBRARY_ALBUM)
+        self.assertEqual(self.rating_shown(), ['item-love', 'item-suggest-less'])
+        await asyncio.gather(*self.app.tasks)
+        self.assertEqual(self.rating_shown(), ['item-love', 'item-undo-suggest-less'])
 
     async def test_unlove_an_album_from_the_library(self):
         await self.run_action('item-unlove', 'album', 'l.alb1')

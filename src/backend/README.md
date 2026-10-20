@@ -58,7 +58,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume}`; `state` is MusicKit's `PlaybackStates` name |
 | `queue()` | `{index, items: [Track]}` |
 | `queueJump(index)` | `{ok: true}` (`mk.changeToMediaAtIndex`) |
-| `rating(kind, id, love)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, songId, type)` | `{ok: true}`, or a throw with Apple's status and message. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
+| `rating(kind, id, value)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, songId, type)` | `{ok: true}`, or a throw with Apple's status and message. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
 | `createPlaylist(attributes, tracks, parentId)` | `{id}`, the new playlist's; `attributes` `{name, description?}`, `tracks` `[{id, type}]` |
 | `removeFromLibrary(type, id)` | `{ok: true}`, or a throw as above: `DELETE /v1/me/library/<type>/<id>` (below) |
 | `libraryHas(type, id)` | `{has}`: `GET /v1/me/library/<type>/<id>` through the request builder (a read that must see a removal), `has` false for Apple's 404; a throw for any other failure |
@@ -136,6 +136,26 @@ false). The web player's Create Station does not read it: it builds the id and p
 and on it `mk.capabilities.canEditPlaybackQueue` is false. A library song is seeded by its
 `catalogId`; a library artist only by the catalog id the library has for them.
 
+### Ratings: Favourite and Suggest Less
+
+An item has one rating, `PUT /v1/me/ratings/<type>s/<id>` with `{type: 'ratings',
+attributes: {value}}` (the bridge's `rating(kind, id, value)`): 1 is a favourite
+(`Engine.love()`), -1 Suggest Less (`Engine.suggest_less()`), and `DELETE` takes either
+away (`Engine.unlove()`); `Engine.rating()` reads it back from `GET
+/v1/me/ratings/<type>s?ids=<id>`. `<type>` is `api.resource_type()`'s: `songs`, `albums`,
+`playlists`, `stations`, `music-videos`, or the `library-` type for a library id. A PUT
+replaces the rating there was, so Suggest Less replaces a favourite and Favourite a Suggest
+Less. Checked against a real account on 2026-10-20 (MusicKit
+`playback/AppleMusic-2642.7.0-external`, the `gb` storefront) on a song:
+
+| Request | Apple's answer |
+|---|---|
+| `PUT /v1/me/ratings/songs/<id>` `{type: 'rating', attributes: {value: -1}}` | 200 with the rating (`value` -1): Suggest Less. `GET` answers it, the catalog read gives `personalRating: -1`; `DELETE` takes it away (204, then 404). The web player offers Suggest Less for albums, artists, music videos, playlists, songs and stations, and not with a favourite |
+
+The menus follow the web player: Favourite or Remove from Favourites, and Suggest Less (not
+beside a favourite) or Undo Suggest Less (`actions.rating_actions()`). An artist's favourite
+is not a rating (below).
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -184,7 +204,7 @@ does nothing, `pause()` leaves it playing, `mk.stop()` ends it (state `stopped`,
 The bridge's `nowPlaying()` gives `track.type: 'radioStation'`, `durationMs: 0` and that
 position and duration. So a live item is told by its type and `isLive`, not by its duration.
 
-### Favourites and Suggest Less (#357)
+### Favourites of artists (#357)
 
 The catalog read that finds an item's library twin (`api.library_twin_params()`, above) also
 gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
@@ -196,7 +216,6 @@ gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
 | `GET /v1/catalog/<sf>/artists/<id>?extend=inFavorites` | `attributes.inFavorites`, a boolean, true within 200 ms of the POST |
 | `GET /v1/catalog/<sf>?ids[artists]=<id>&fields[artists]=personalRating&relate=library&omit[resource]=autos` | `personalRating: 1` while favourited, absent otherwise |
 | `GET /v1/me/ratings/artists/<id>` | 404 whether favourited or not: an artist's favourite is not a rating |
-| `PUT /v1/me/ratings/songs/<id>` `{type: 'rating', attributes: {value: -1}}` | 200 with the rating (`value` -1): Suggest Less. `GET` answers it, the catalog read gives `personalRating: -1`; `DELETE` takes it away (204, then 404). The web player offers Suggest Less for albums, artists, music videos, playlists, songs and stations, and not with a favourite |
 
 Favouriting an artist does not add them to the library.
 

@@ -98,6 +98,13 @@ changes, change it here, with the date. The plan they came from is in
   drop it.
 - **Favourite is a heart** (2026-09-28), everywhere: the sidebar's Favourite Songs and its
   page as well as the player bar and Now Playing, with the bundled heart icons.
+- **Suggest Less in the menus, not on the heart** (2026-10-20, #341). An item has one rating
+  at Apple: 1 a favourite, -1 Suggest Less. A menu shows Favourite or Remove from Favourites,
+  and Suggest Less or Undo Suggest Less, but no Suggest Less beside a favourite, as the web
+  player has it; Favourite on an item rated Suggest Less replaces it. The heart of the player
+  bar, Now Playing and the full-screen player stays two states (a Suggest Less shows it
+  empty): a third state there would be a control nobody could read at a glance. A menu asks
+  the engine for the rating as it opens, the one read it made for the favourite already.
 - **A refresh on a schedule** (2026-09-28). The library is synced when the last sync is older
   than the chosen interval, or when library.json is missing, unreadable or of an older
   version, checked by a timer, when the engine comes up and when the library has been read;

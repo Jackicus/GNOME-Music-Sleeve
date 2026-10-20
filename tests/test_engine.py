@@ -1976,28 +1976,38 @@ class LibraryWriteTest(EngineFixture):
         await self.engine.love('playlist', 'pl.u-1')
         await self.engine.love('video', '1000000009')
         await self.engine.unlove('station', 'ra.1')
+        await self.engine.suggest_less('station', 'ra.1')
+        await self.engine.suggest_less('album', 'l.alb1')
         self.assertEqual(self.page.bridge_calls, [
-            ('rating', 'song', '1000000001', True),
-            ('rating', 'library-song', 'i.song1', True),
-            ('rating', 'library-album', 'l.alb1', False),
-            ('rating', 'playlist', 'pl.u-1', True),
-            ('rating', 'music-video', '1000000009', True),
-            ('rating', 'station', 'ra.1', False)])
+            ('rating', 'song', '1000000001', 1),
+            ('rating', 'library-song', 'i.song1', 1),
+            ('rating', 'library-album', 'l.alb1', 0),
+            ('rating', 'playlist', 'pl.u-1', 1),
+            ('rating', 'music-video', '1000000009', 1),
+            ('rating', 'station', 'ra.1', 0),
+            ('rating', 'station', 'ra.1', -1),
+            ('rating', 'library-album', 'l.alb1', -1)])
         self.assertEqual(rated, [('song', '1000000001', 1), ('song', 'i.song1', 1),
                                  ('album', 'l.alb1', 0), ('playlist', 'pl.u-1', 1),
-                                 ('video', '1000000009', 1), ('station', 'ra.1', 0)])
+                                 ('video', '1000000009', 1), ('station', 'ra.1', 0),
+                                 ('station', 'ra.1', -1), ('album', 'l.alb1', -1)])
 
     async def test_rating_reads_the_ids_form(self):
         await self.up()
         self.page.api_answers['/v1/me/ratings/songs'] = {
             'data': [{'id': '1000000001', 'type': 'ratings', 'attributes': {'value': 1}}]}
         self.page.api_answers['/v1/me/ratings/library-albums'] = {'data': []}
+        self.page.api_answers['/v1/me/ratings/stations'] = {
+            'data': [{'id': 'ra.1', 'type': 'ratings', 'attributes': {'value': -1}}]}
         rated = []
         self.engine.connect('rated', lambda _e, *args: rated.append(args))
         self.assertEqual(await self.engine.rating('song', '1000000001'), 1)
         self.assertEqual(await self.engine.rating('album', 'l.alb1'), 0)
-        self.assertEqual(self.page.api_params[-2:], [{'ids': '1000000001'}, {'ids': 'l.alb1'}])
-        self.assertEqual(rated, [('song', '1000000001', 1), ('album', 'l.alb1', 0)])
+        self.assertEqual(await self.engine.rating('station', 'ra.1'), -1)  # Suggest Less
+        self.assertEqual(self.page.api_params[-3:], [{'ids': '1000000001'}, {'ids': 'l.alb1'},
+                                                     {'ids': 'ra.1'}])
+        self.assertEqual(rated, [('song', '1000000001', 1), ('album', 'l.alb1', 0),
+                                 ('station', 'ra.1', -1)])
 
     async def test_nothing_to_rate(self):
         await self.up()

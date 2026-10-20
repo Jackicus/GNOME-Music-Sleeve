@@ -894,12 +894,15 @@
             return { ok: true };
         },
 
-        rating: async function (kind, id, love) {
+        // The item's rating set (`value` 1, a favourite, or -1, Suggest Less: a PUT, which
+        // replaces the other) or taken away (anything else: a DELETE).
+        rating: async function (kind, id, value) {
             const path = '/v1/me/ratings/' + kind + 's/' + id;
-            if (love) {
+            const rating = Number(value);
+            if (rating === 1 || rating === -1) {
                 return await apiWrite(path, {}, {
                     method: 'PUT',
-                    body: { type: 'ratings', attributes: { value: 1 } }
+                    body: { type: 'ratings', attributes: { value: rating } }
                 });
             }
             return await apiWrite(path, {}, { method: 'DELETE' });
