@@ -274,7 +274,7 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(path for path, _params in engine.calls),
                          sorted(path for path, _params in plain.calls))
         data = self.read_json()
-        self.assertEqual(data['version'], 3)
+        self.assertEqual(data['version'], app_sync.LIBRARY_VERSION)
         self.assertEqual(data['favourites'], {
             'songs': ['1724040711'], 'albums': ['l.alb123'], 'playlists': ['p.pl123'],
             'videos': ['i.mv0001', '1724040900']})
@@ -339,6 +339,38 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after['videos'], before['videos'])
         self.assertEqual(after['albums'], [])
         self.assertEqual(after['songs'], ['987654321', '987654322', '987654323'])
+
+    async def test_a_short_pass_keeps_an_older_files_version(self):
+        """A short pass over a file of an older version keeps that version: what it kept of
+        the file is no newer, so the full sync the upgrade is due stays due (#437)."""
+        engine = FakeEngine(favoured(answers()))
+        await app_sync.sync_library(engine, self.library)
+        data = self.read_json()
+        data['version'] = 2  # the file as 0.13 wrote it: no favourites
+        del data['favourites']
+        with open(os.path.join(self.cache, 'library.json'), 'w', encoding='utf-8') as file:
+            json.dump(data, file)
+        await self.library.load()
+        self.assertFalse(app_sync.library_ok(self.library))
+        for options in ({'quick': True}, {'quick': True, 'videos': True,
+                                          'tracks_of': ('p.pl456',)},
+                        {'playlists': True}, {'playlists': True, 'tracks_of': ('p.pl456',)},
+                        {'shelves': True}):
+            await app_sync.sync_library(engine, self.library, **options)
+            self.assertEqual(self.read_json()['version'], 2, options)
+            self.assertFalse(app_sync.library_ok(self.library), options)
+        # The full pass writes the current version.
+        await app_sync.sync_library(engine, self.library)
+        self.assertEqual(self.read_json()['version'], app_sync.LIBRARY_VERSION)
+        self.assertTrue(app_sync.library_ok(self.library))
+        # A short pass over a current file keeps it current; one with no file to keep from
+        # writes none a full sync made.
+        await app_sync.sync_library(engine, self.library, quick=True)
+        self.assertEqual(self.read_json()['version'], app_sync.LIBRARY_VERSION)
+        os.remove(os.path.join(self.cache, 'library.json'))
+        await app_sync.sync_library(engine, self.library, quick=True)
+        self.assertEqual(self.read_json()['version'], 0)
+        self.assertFalse(app_sync.library_ok(self.library))
 
     async def test_not_signed_in_writes_nothing(self):
         engine = FakeEngine(answers(), authorized=False)

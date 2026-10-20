@@ -53,7 +53,8 @@ Gtk.FilterListModel of the bar's text, shown through a ShownModel (filters_songs
 album's tracks are never filtered), and the sections' positions are worked out again as it
 changes. While it filters, the songs cannot be moved (can_reorder()): the order shown is not
 the playlist's. A filter that leaves none shows No Results Found in the status box, and the
-new count is announced.
+new count is announced. Go to Current Song (reveal_playing()) clears a filter that hides the
+song playing.
 
 A suggested song clicked plays in full, as a track row's song does, or, with the
 `preview-suggestions` setting, Apple's 30-second preview of it (Player.start_preview(): the
@@ -1339,7 +1340,9 @@ class DetailPage(Adw.NavigationPage):
     def reveal_playing(self):
         """Go to Current Song (the window's Ctrl+L): scroll to the row of the song playing
         and put the focus on it, once the page shows and its tracks are there (fetched, for
-        an album or playlist that came without them). Nothing when the page lacks the song."""
+        an album or playlist that came without them). A filter on a playlist's songs that
+        hides the song is cleared first; one it matches stays. Nothing when the page lacks
+        the song."""
         self._reveal_wanted = True
         self._start_reveal()
 
@@ -1359,11 +1362,19 @@ class DetailPage(Adw.NavigationPage):
         return None if ordinal is None else self._starts[0] + ordinal
 
     def _track_end(self):
-        """The list position after the last track (the tracks' sections are one run after
-        the hero)."""
+        """The list position after the last track shown (the tracks' sections are one run
+        after the hero, each as its filter leaves it)."""
         if self.item is None or not self._starts:
             return 0
-        return self._starts[0] + sum(group.entries.get_n_items() for group in self.item.groups)
+        return self._starts[0] + self._shown_tracks()
+
+    def _filtered_out(self):
+        """Whether the filter hides the song playing, which the playlist holds."""
+        player = self._playing.player
+        if not self.filter_bar.search or player is None or player.track is None:
+            return False
+        tracks = (track for group in self.item.groups for track in group.entries)
+        return playing_ordinal(tracks, self._playing.ids, player.track.index) is not None
 
     async def _reveal(self):
         """reveal_playing()'s work: scroll_to() the row with the focus, a frame or more
@@ -1374,6 +1385,9 @@ class DetailPage(Adw.NavigationPage):
             if not self._reveal_wanted:
                 return
             position = self._playing_position()
+            if position is None and self._starts and self._filtered_out():
+                self.filter_bar.set_text('')  # every song shown again, the one playing too
+                position = self._playing_position()
             if position is None:
                 if self._starts:  # the tracks are there, and the song is not among them
                     self._reveal_wanted = False

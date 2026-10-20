@@ -49,7 +49,9 @@ older than it would keep them for good. A `shelves` pass (sync_library(shelves=T
 LibrarySync.start(shelves=True)) is Home's Refresh: it reads the Home shelves alone and
 keeps everything else of last time's file; with no file to keep from, LibrarySync runs a
 full sync instead. A recommendation's reason (normalize.recommendation_reason) is its
-shelf's `subtitle`.
+shelf's `subtitle`. No short pass (quick, playlists, shelves) writes a newer `version` than
+the file it kept the rest from had: only a full pass writes LIBRARY_VERSION, so a file of an
+older version is still due the full sync that brings it up to date (library_ok).
 
 A playlist or folder the account deleted is still listed by Apple for a while (minutes, seen
 on 2026-10-03), nameless (api.is_deleted): the listings leave it out.
@@ -160,9 +162,11 @@ SHELF_DEFS = (
 
 
 # library.json's format: 2 since each album's tracks are numbered across its discs, 3 since
-# Items carry `added` and the file `favourites`. A file of an older version is synced again
-# at once (sync_due's library_ok).
-LIBRARY_VERSION = 3
+# Items carry `added` and the file `favourites`, 4 (the same shape) since only a full pass
+# writes the current version (a short pass keeps its file's): 1.0.0's short passes stamped 3
+# on a version 2 file they had not rebuilt, so a 3 may lack the dates and the favourites. A
+# file of an older version is synced again at once (sync_due's library_ok).
+LIBRARY_VERSION = 4
 
 # The sections of library.json's `favourites`, each the ids normalize.favourite_ids() gives.
 FAVOURITE_SECTIONS = ('songs', 'albums', 'playlists', 'videos')
@@ -310,6 +314,7 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     previous = _Previous(cache_dir)  # last time's file, read (in a thread) when first asked
 
     if shelves:
+        raw['short'] = True
         raw['shelves'] = await _fetch_shelves(engine, report)
         raw['songs'] = raw['playlists'] = raw['videos'] = raw['stations'] = None
         raw['folders'] = None
@@ -317,6 +322,7 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
         return await _build(cache_dir, storefront, raw, library, report, generation, previous)
 
     if playlists:
+        raw['short'] = True
         report('playlists', 0, None)
         raw['playlists'] = await _fetch_playlists(engine)
         raw['tracks'] = await _fetch_tracks_of(engine, raw['playlists'], tracks_of, report)
@@ -352,6 +358,7 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     # these stops the sync: what fails is None here, and keeps last time's entry — which is
     # also how a quick pass leaves the three a library write cannot have changed.
     if quick:
+        raw['short'] = True
         raw['folders'] = raw['stations'] = None
         raw['videos'] = await _fetch_videos(engine, report) if videos else None
         raw['shelves'] = await _fetch_shelves(engine, report)
@@ -629,11 +636,15 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
     shelves = _shelves(raw['shelves'], cache_dir, art_urls, previous)
     folders = raw['folders'] if raw['folders'] is not None else previous.folders()
     favourites = _favourites(raw, sections['playlists'], previous)
+    # A short pass keeps most of last time's file, which is then no newer than it was: only
+    # a full pass writes LIBRARY_VERSION, so the full sync an older file is due stays due.
+    version = (min(previous.version(), LIBRARY_VERSION) if raw.get('short')
+               else LIBRARY_VERSION)
     raw.clear()  # the answers are not needed for the long artwork step
     previous.forget()
 
     library_data = {
-        'version': LIBRARY_VERSION,
+        'version': version,
         'generated': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'storefront': storefront,
         'sections': sections,
@@ -815,6 +826,11 @@ class _Previous:
 
     def folders(self):
         return [entry for entry in self._read().get('folders') or [] if isinstance(entry, dict)]
+
+    def version(self):
+        """Last time's version: 0 for no file, or one without a version."""
+        version = self._read().get('version')
+        return version if isinstance(version, int) and not isinstance(version, bool) else 0
 
     def favourites(self, name):
         """Last time's favourites of one section (FAVOURITE_SECTIONS): none from a file
