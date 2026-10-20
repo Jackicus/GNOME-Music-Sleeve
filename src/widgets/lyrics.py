@@ -6,7 +6,8 @@
 A Gtk.Stack of four pages: synced lyrics as a Gtk.ListView over the Lyrics object's store
 of LyricLine, unsynced lyrics as one wrapping label in a scrolled window, a spinner while
 the engine reads them, and a compact status page otherwise: "Lyrics" with nothing playing,
-"No Lyrics" for a song without them.
+"No Lyrics" for a song without them, and for a live radio station, whose lyrics are never
+asked (the song on air is not known).
 
 A synced row (`lyric-row`) is the dots of the instrumental break before its line, if it has
 one, over the line's box (`lyric-line`) of wrapping labels, one for each of PARTS, top to
@@ -323,7 +324,8 @@ class LyricsView(Gtk.Stack):
     def _update_page(self):
         """The page for what there is: the synced list, the text, the spinner while the
         engine reads, else the status page, which says what it can: with nothing playing
-        that lyrics appear here, for a song without them that there are none."""
+        that lyrics appear here, for a live station that it has none, for a song without
+        them that there are none."""
         lyrics = self._lyrics
         if lyrics is not None and lyrics.synced:
             self.set_visible_child_name('synced')
@@ -335,6 +337,9 @@ class LyricsView(Gtk.Stack):
             if self._player is None or self._player.track is None:
                 self.empty_page.set_title(_('Lyrics'))
                 self.empty_page.set_description(_('Lyrics for the song playing appear here'))
+            elif self._player.live:
+                self.empty_page.set_title(_('No Lyrics'))
+                self.empty_page.set_description(_('Lyrics are not available for live radio'))
             else:
                 self.empty_page.set_title(_('No Lyrics'))
                 self.empty_page.set_description(_('No lyrics are available for this song'))

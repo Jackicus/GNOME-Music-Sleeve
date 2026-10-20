@@ -125,8 +125,7 @@ class NowPlayingSheet(Adw.Bin):
         self.tab_stack.connect('notify::visible-child-name', lambda *_: self._on_open_changed())
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
-                                   sensitive=(self.seek_box, self.shuffle_button,
-                                              self.repeat_button, self.volume_button),
+                                   sensitive=(self.seek_box, self.volume_button),
                                    tooltips=True)
         self._seek = SeekControl(self.seek_scale, self.seek_adjustment, self.elapsed_label,
                                  self.remaining_label, self.live_label)

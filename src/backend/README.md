@@ -58,7 +58,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `seek(seconds)` | `{ok: true}` |
 | `volume(level)` | `{volume}`: MusicKit's level after the set (0 to 1; the page keeps it) |
 | `shuffle(on\|off\|toggle)`, `repeat(none\|one\|all\|cycle)` | `{shuffle, repeat}` |
-| `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume, capabilities}`; `state` is MusicKit's `PlaybackStates` name; `capabilities` is `{canSeek, canPause, canSkipToNextItem, canSkipToPreviousItem}`, `mk.capabilities`' (true when MusicKit has none; all false on a live station: below) |
+| `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume, capabilities}`; `state` is MusicKit's `PlaybackStates` name; `capabilities` is `{canSeek, canPause, canSkipToNextItem, canSkipToPreviousItem, canSetShuffleMode, canSetRepeatMode}`, `mk.capabilities`' (each true when MusicKit has none, or not that one; all false on a live station: below) |
 | `queue()` | `{index, items: [Track], editable, canAutoplay, autoplay}`: `editable` and `canAutoplay` are `mk.capabilities`' `canEditPlaybackQueue` and `canAutoplay` (true when MusicKit has none), `autoplay` is `mk.autoplayEnabled`; a Track autoplay added carries `autoplay: true` (its queue item's `isAutoplay`) |
 | `queueRemove(index, id)` | `{ok: true}` once the queue's entry at `index`, when it is still `id` and not the item playing, is out of the queue (`queue.spliceQueueItems(index, 1)`, else the deprecated `queue.remove(index)`), or `{error, code}`: `NOT_EDITABLE` (a station's queue), `CURRENT`, `STALE` (another entry is there now) |
 | `queueClear()` | `{ok: true, cleared}`: everything after the item playing out of the queue (`queue.clearAfterCurrent()`), its queue items kept for `queueUndoClear()`; or `{error, code: 'NOT_EDITABLE'}` |
@@ -176,7 +176,8 @@ changed the playback state, the item or the time (no gap), and each splice posts
 | `mk.autoplayEnabled` | read and written as a property; `autoplayEnabledDidChange` carries the new boolean. Set true at the end of a queue, it adds about ten entries some 2 s later (one `queueItemsDidChange`), each `isAutoplay: true`, a song whose `container` is a `stations` resource with an `ra.cp-…` id. Set false, it removes them one at a time (a `queueItemsDidChange` each). It does not start while repeat is on |
 
 `mk.capabilities` says what may be done now: `canEditPlaybackQueue`, `canAutoplay`, `canSeek`,
-`canPause`, `canSkipToNextItem`, `canSkipToPreviousItem`. On an album or a playlist they
+`canPause`, `canSkipToNextItem`, `canSkipToPreviousItem` (and the bridge passes on
+`canSetShuffleMode` and `canSetRepeatMode`, true when MusicKit leaves them out). On an album or a playlist they
 are all true; on a song-seeded station `canEditPlaybackQueue` is false (its queue is the
 station's, two entries at a time) and the rest true; on a live station all are false.
 Autoplay is the page's, not the account's: the web player keeps it in the page's
@@ -440,8 +441,10 @@ The bridge's `nowPlaying()` gives `track.type: 'radioStation'`, `durationMs: 0` 
 position and duration. So a live item is told by its type and `isLive`, not by its duration:
 `formatTrack()` gives it `isLive: true` (`isLiveRadioStation`, or the type with
 `attributes.isLive`), and `capabilities` (all false) come with its item and its states. The
-app shows LIVE in place of the slider and the times, Stop in place of Pause, Next and
-Previous off, and publishes no length or position on MPRIS (src/player.py's `live`).
+app shows LIVE in place of the slider and the times, Stop in place of Pause, Next,
+Previous, Shuffle and Repeat off (whatever the capabilities say: a mode set on a stream
+would only change what plays after it), and publishes no length or position on MPRIS
+(src/player.py's `live`).
 
 ## Checked live, not used yet
 

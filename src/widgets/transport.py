@@ -16,9 +16,10 @@ starts, then what the engine's rating() answers (one read per item, nothing poll
 whatever its `rated` signal says after (the heart's own love, a context menu's); a click
 loves or unloves the item's catalog song, and puts the heart back when that fails.
 
-A live radio station (player.live) has no length and cannot be paused or sought: the play
-button is a Stop button while it plays, and SeekControl shows a LIVE badge in place of the
-slider and the times.
+A live radio station (player.live) has no length and cannot be paused, sought, shuffled or
+repeated: the play button is a Stop button while it plays, described as "Live Radio" for
+assistive technology (the LIVE badge is a label no focus reaches), SeekControl shows a LIVE
+badge in place of the slider and the times, and ModeControl's toggles are insensitive.
 
 The seek slider's decisions are a SeekGuard (no GTK, tested on its own): nothing incoming
 counts while a seek waits to be sent (SEEK_SETTLE after the last movement), and after it
@@ -155,9 +156,9 @@ def track_subtitle(track):
 class TrackTitles:
     """The title and subtitle labels of the bar and the sheet: the item's title ("Unknown
     Title" without one) and track_subtitle(), or "Not Playing" and no subtitle; the
-    `sensitive` widgets (the seek box, the toggles, the volume) follow whether there is an
-    item. With `tooltips`, the labels carry their full text as a tooltip (the sheet's wrap
-    to two lines and may still cut a long one)."""
+    `sensitive` widgets (the seek box, the volume; the mode toggles are ModeControl's)
+    follow whether there is an item. With `tooltips`, the labels carry their full text as a
+    tooltip (the sheet's wrap to two lines and may still cut a long one)."""
 
     def __init__(self, title_label, subtitle_label, sensitive=(), tooltips=False):
         self.title_label = title_label
@@ -187,6 +188,12 @@ class TrackTitles:
             widget.set_sensitive(self.playing)
 
 
+def live_description():
+    """What a screen reader hears of a live station on the play button (the LIVE badge's
+    own name, which no focus reaches)."""
+    return _('Live Radio')
+
+
 def play_button_look(active, live):
     """(icon name, tooltip) of the play button: Pause while playback is under way, Stop
     instead for a live station (it cannot be paused: app.play-pause stops it), else Play."""
@@ -201,14 +208,17 @@ class PlayButton:
     """A play/pause button whose icon and tooltip follow the Player's state
     (play_button_look(): Stop for a live station playing), with a spinner in place of the
     icon while a play request is with the engine (`pending`); its action (app.play-pause) is
-    the template's. Its icons are the bundled transport-* ones, which no icon theme replaces:
-    a theme's 24 px media-playback-start can be a 16 px glyph in a larger canvas, small and
-    off-centre at the sheet's size."""
+    the template's. While the item is a live station its accessible description is "Live
+    Radio", so a screen reader on the focused button hears what the LIVE badge shows. Its
+    icons are the bundled transport-* ones, which no icon theme replaces: a theme's 24 px
+    media-playback-start can be a 16 px glyph in a larger canvas, small and off-centre at
+    the sheet's size."""
 
     def __init__(self, button):
         self.button = button
         self._player = None
         self._spinner = None
+        self._live = False  # whether the description says live
 
     def attach(self, player):
         self._player = player
@@ -229,6 +239,14 @@ class PlayButton:
         else:
             self.button.set_icon_name(icon)
         self.button.set_tooltip_text(tooltip)
+        live = player is not None and player.live
+        if live != self._live:
+            self._live = live
+            if live:
+                self.button.update_property([Gtk.AccessibleProperty.DESCRIPTION],
+                                            [live_description()])
+            else:
+                self.button.reset_property(Gtk.AccessibleProperty.DESCRIPTION)
 
 
 class SeekControl:
@@ -365,7 +383,9 @@ class SeekControl:
 
 
 class ModeControl:
-    """Shuffle and repeat Gtk.ToggleButtons: a click asks the Player, the events set them."""
+    """Shuffle and repeat Gtk.ToggleButtons: a click asks the Player, the events set them.
+    Each is sensitive while there is an item and the Player allows its mode (can_shuffle,
+    can_repeat: not for a live station)."""
 
     def __init__(self, shuffle_button, repeat_button):
         self.shuffle_button = shuffle_button
@@ -381,7 +401,16 @@ class ModeControl:
         self._app = app
         player.connect('notify::shuffle', lambda *_: self.update())
         player.connect('notify::repeat', lambda *_: self.update())
+        for name in ('track', 'can-shuffle', 'can-repeat'):
+            player.connect(f'notify::{name}', lambda *_: self._update_sensitive())
         self.update()
+        self._update_sensitive()
+
+    def _update_sensitive(self):
+        player = self._player
+        item = player.track is not None
+        self.shuffle_button.set_sensitive(item and player.can_shuffle)
+        self.repeat_button.set_sensitive(item and player.can_repeat)
 
     def update(self):
         if self._player is None:

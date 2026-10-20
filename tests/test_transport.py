@@ -83,7 +83,21 @@ class Button:
         self.icon = None
         self.tooltip = None
         self.sensitive = True
+        self.description = None  # the accessible description, None when reset
         self._handlers = []
+
+    def update_property(self, properties, values):
+        from gi.repository import Gtk
+
+        for prop, value in zip(properties, values, strict=True):
+            if prop == Gtk.AccessibleProperty.DESCRIPTION:
+                self.description = value
+
+    def reset_property(self, prop):
+        from gi.repository import Gtk
+
+        if prop == Gtk.AccessibleProperty.DESCRIPTION:
+            self.description = None
 
     def connect(self, _signal, handler):
         self._handlers.append(handler)
@@ -347,6 +361,28 @@ class ModeControlTest(unittest.TestCase):
         asyncio.run(go())
 
 
+class ModeSensitivityTest(unittest.TestCase):
+    def test_the_mode_toggles_are_off_for_a_live_station(self):
+        """#441: Shuffle and Repeat insensitive while a live station plays (MusicKit's
+        modes would only change what plays after it), and with nothing playing; a song
+        makes them sensitive again, as far as MusicKit allows each."""
+        from applemusic.widgets.transport import ModeControl
+        from tests.test_player import EVERYTHING, live_playing
+
+        player, engine, app = make_player()
+        shuffle, repeat = Button(), Button()
+        ModeControl(shuffle, repeat).attach(player, app)
+        self.assertEqual((shuffle.sensitive, repeat.sensitive), (False, False))  # no item
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+        self.assertEqual((shuffle.sensitive, repeat.sensitive), (True, True))
+        live_playing(engine)
+        self.assertEqual((shuffle.sensitive, repeat.sensitive), (False, False))
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2,
+                                                 'capabilities': dict(
+                                                     EVERYTHING, canSetRepeatMode=False)})
+        self.assertEqual((shuffle.sensitive, repeat.sensitive), (True, False))
+
+
 class Adjustment:
     """A Gtk.Adjustment's surface the volume button uses (0 to 1)."""
 
@@ -533,6 +569,24 @@ class PlayButtonTest(unittest.TestCase):
                 play.update()
                 self.assertIn(button.icon, bundled)
                 self.assertEqual(button.tooltip, tooltip)
+
+    def test_a_live_station_is_described_on_the_button(self):
+        """#455: the LIVE badge is a label no focus reaches; the play button, which the
+        focus does reach, is described as "Live Radio" while the item is live, playing or
+        stopped, and not otherwise."""
+        from applemusic.widgets.transport import PlayButton
+        from tests.test_player import live_playing
+
+        player, engine, app = make_player()
+        button = Button()
+        PlayButton(button).attach(player)
+        self.assertIsNone(button.description)
+        live_playing(engine)
+        self.assertEqual((button.tooltip, button.description), ('Stop', 'Live Radio'))
+        engine.event('playbackStateDidChange', {'state': 'paused'})
+        self.assertEqual((button.tooltip, button.description), ('Play', 'Live Radio'))
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+        self.assertIsNone(button.description)
 
 
 if __name__ == '__main__':

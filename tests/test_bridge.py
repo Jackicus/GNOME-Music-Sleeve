@@ -40,7 +40,7 @@ EVENTS = ('authorizationStatusDidChange', 'playbackStateDidChange', 'nowPlayingI
 
 # What a state or item event says MusicKit allows when the instance has no capabilities.
 ALLOWED = {'canSeek': True, 'canPause': True, 'canSkipToNextItem': True,
-           'canSkipToPreviousItem': True}
+           'canSkipToPreviousItem': True, 'canSetShuffleMode': True, 'canSetRepeatMode': True}
 
 # Apple's TTML lyrics, as the catalog's /lyrics answers carry them (invented words): two
 # stanzas, entities, word-timed spans, a <br>, CDATA, the four time formats, a blank line.
@@ -643,7 +643,8 @@ class BridgeTest(unittest.TestCase):
         mk.currentPlaybackTime = 112;
         mk.currentPlaybackDuration = 160;   // the stream's window
         mk.capabilities = {canSeek: false, canPause: false, canSkipToNextItem: false,
-                           canSkipToPreviousItem: false, canEditPlaybackQueue: false};
+                           canSkipToPreviousItem: false, canSetShuffleMode: false,
+                           canSetRepeatMode: false, canEditPlaybackQueue: false};
         mk.fire('nowPlayingItemDidChange', {});
         mk.fire('capabilitiesChanged', {});
         const answer = bridge.nowPlaying();

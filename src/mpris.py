@@ -602,9 +602,9 @@ class Mpris:
 
     def _on_set_property(self, _connection, _sender, _path, interface, name, value):
         """LoopStatus, Shuffle and Volume ask the Player (its events then change the
-        property); Rate 0 pauses, as the spec asks, and any other rate is taken and ignored
-        (1.0 is all there is); Fullscreen is taken and ignored. True: the set was
-        accepted."""
+        property; it sends no mode while it cannot be set: a live station); Rate 0
+        pauses, as the spec asks, and any other rate is taken and ignored (1.0 is all there
+        is); Fullscreen is taken and ignored. True: the set was accepted."""
         if interface == PLAYER_INTERFACE:
             if name == 'LoopStatus':
                 mode = repeat_mode(value.get_string())

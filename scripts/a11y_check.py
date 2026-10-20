@@ -933,12 +933,22 @@ async def walkthrough(window):
     await playing_keys(window)
     print('-- a live station')
     bar = window.player_bar
+    said = []
+    window.announce = lambda text, _priority: said.append(text)
     app.player.apply(harness.invented_live_state(app))
     await until(bar.live_label.get_mapped)
+    del window.announce
     check('a live station: LIVE in place of the slider, Stop on the play button, the focus '
           'kept', bar.live_label.get_mapped() and not bar.seek_scale.get_mapped()
           and bar.play_button.get_tooltip_text() == 'Stop'
           and window.get_focus() is bar.play_button, describe(window.get_focus()))
+    described = [Gtk.test_accessible_has_property(button, Gtk.AccessibleProperty.DESCRIPTION)
+                 for button in (bar.play_button, window.now_playing.play_button)]
+    check('a screen reader hears it is live: "Now playing live: …" announced, the play '
+          'buttons (bar, sheet) described, Shuffle and Repeat off',
+          len(said) == 1 and said[0].startswith('Now playing live: ') and all(described)
+          and not bar.shuffle_button.get_sensitive()
+          and not bar.repeat_button.get_sensitive(), (said, described))
     actions = []
     handlers = [(app.lookup_action(name), app.lookup_action(name).connect(
         'activate', lambda action, _parameter: actions.append(action.get_name())))

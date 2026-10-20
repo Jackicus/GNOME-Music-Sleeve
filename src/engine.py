@@ -1478,7 +1478,8 @@ class Engine(GObject.Object):
         carries it ('loading', 'playing', 'paused'…; 'stopped' without MusicKit), the track
         the Track shape (or None; `isLive` for a live radio station) and the capabilities
         what MusicKit allows now ({canSeek, canPause, canSkipToNextItem,
-        canSkipToPreviousItem}; none without MusicKit)."""
+        canSkipToPreviousItem, canSetShuffleMode, canSetRepeatMode}; none without
+        MusicKit)."""
         client = await self._ready()
         answer = await client.bridge('nowPlaying')
         if not isinstance(answer, dict):
