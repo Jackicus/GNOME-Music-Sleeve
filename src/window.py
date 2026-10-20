@@ -944,8 +944,10 @@ class Window(Adw.ApplicationWindow):
         page = self.navigation_view.get_visible_page()
         if page is None:
             return GLib.SOURCE_REMOVE
+        # Artists knows which of its panes shows, Songs its table, Home and the pages of
+        # shelves their first shelf (in the shelves' order, not the box's Tab order).
         own = getattr(page, 'focus_content', None)
-        if own is not None:  # Artists knows which of its panes shows, Songs its table
+        if own is not None:
             own()
             return GLib.SOURCE_REMOVE
         toolbar = first_descendant(page, Adw.ToolbarView)

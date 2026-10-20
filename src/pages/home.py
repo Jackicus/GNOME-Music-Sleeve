@@ -265,3 +265,18 @@ class HomePage(Adw.NavigationPage):
         else:
             name = 'empty'
         self.stack.set_visible_child_name(name)
+
+    def focus_content(self):
+        """Ctrl+2 (win.focus-content): the focus on the first shelf, in the shelves' order
+        (ShelfColumn.focus(): a shelf bound since the last layout would come first in the
+        box's own), or the empty page's button; nothing moves when the focus is in the
+        page's content already."""
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        if focus is not None and focus is not self.scrolled_window and (
+                focus is self.stack or focus.is_ancestor(self.stack)):
+            return
+        if self.stack.get_visible_child_name() == 'items' and self._column.focus():
+            return
+        if not self.stack.child_focus(Gtk.DirectionType.TAB_FORWARD):
+            self.child_focus(Gtk.DirectionType.TAB_FORWARD)

@@ -4,13 +4,14 @@
 
 """Walk the keyboard checklist and list unnamed widgets, with no one at the keyboard.
 
-    scripts/a11y_check.py [--size WxH] [--light] [--names] [--emulate-keys]
+    scripts/a11y_check.py [--size WxH] [--light] [--names] [--emulate-keys] [--step radio]
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) on the demo
 library, as screenshot.py --demo does (scripts/harness.py: memory settings, animations off,
 no engine), and walks the
 keyboard walkthrough in docs/accessibility.md key by key, printing PASS or FAIL for each step;
-the exit status is 1 when a step fails. Use --size 360x640 for the narrow layout.
+the exit status is 1 when a step fails. Use --size 360x640 for the narrow layout, and
+--step radio to walk the Radio page's steps alone (to repeat them).
 
 Under scripts/headless.sh the keys are real: scripts/remote_keys.py opens a session on the
 headless mutter's org.gnome.Mutter.RemoteDesktop and injects them as a keyboard would, so the
@@ -54,6 +55,8 @@ parser.add_argument('--names', action='store_true',
 parser.add_argument('--emulate-keys', action='store_true',
                     help="dispatch each press through GTK's handlers instead of sending a real "
                          "key through the compositor's RemoteDesktop interface")
+parser.add_argument('--step', choices=['radio'],
+                    help='walk that step alone, from the window as it opens')
 parser.add_argument('--dump', action='store_true', help=argparse.SUPPRESS)  # the lister
 args = parser.parse_args()
 
@@ -549,6 +552,41 @@ async def until(condition, timeout=2.0):
     return condition()
 
 
+async def shelves_shown(window, ready=None, frames=120, timeout=20.0):
+    """Wait for the page shown, a page of shelves (its ShelfColumn, `_column`), to have the
+    engine's answer (and `ready(page)`, when given), every one of its shelves bound (the
+    first few at once, the rest one a frame) and each laid out, then for one frame more, or
+    for `frames` of the window's frames at most (the step's checks then say what is
+    missing); the page shown. In frames, not seconds: a loaded machine draws them slowly
+    (the first ones compile shaders), and a key pressed between a shelf's binding and its
+    first layout is the one this waits out."""
+    ticks = [0]
+
+    def tick(*_args):
+        ticks[0] += 1
+        return GLib.SOURCE_CONTINUE
+
+    def settled():
+        page = window.navigation_view.get_visible_page()
+        column = getattr(page, '_column', None)
+        widgets = column.widgets if column is not None else []
+        return (column is not None and column.shelves and len(widgets) == len(column.shelves)
+                and all(widget.get_width() > 0 for widget in widgets)
+                and (ready is None or ready(page)))
+
+    handle = window.add_tick_callback(tick)
+    deadline = time.monotonic() + timeout
+    try:
+        while not settled() and ticks[0] < frames and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        seen = ticks[0]
+        while ticks[0] <= seen and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        return window.navigation_view.get_visible_page()
+    finally:
+        window.remove_tick_callback(handle)
+
+
 def dialog_shown(window, kind):
     """The dialog of kind shown over window, inside it or as a window of its own (an
     Adw.Dialog over a window that is neither maximized nor tiled), or None."""
@@ -872,6 +910,40 @@ async def playing_keys(window):
     app.player.apply(harness.invented_playing_state(app, lyrics=True))
     await asyncio.sleep(0.3)
     await key(window, '<primary>3')
+
+
+async def radio_step(window):
+    """Radio: its shelves, then Ctrl+2, Tab and the arrows into the live stations (also alone:
+    --step radio)."""
+    print('-- radio')
+    window.select_page('radio')
+    radio = await shelves_shown(window)  # the demo's invented answer, then its shelves
+    shelves = radio._column.widgets
+    live = shelves[0] if shelves else None
+    check('Radio shows the live stations as large cards, then Recently Played',
+          live is not None and live.props.hero and len(shelves) > 1
+          and shelves[1].shelf.items is app.library.radio,
+          [widget.shelf.key for widget in shelves])
+    if live is not None:
+        await key(window, '<primary>2', 0.6)
+        check('Ctrl+2 puts the focus in the live stations', inside(window.get_focus(), live),
+              describe(window.get_focus()))
+        for _ in range(3):  # the shelf's paging arrows and See All, then its cards
+            if inside(window.get_focus(), live.list_view):
+                break
+            await key(window, 'Tab')
+        check('Tab reaches the first live station', inside(window.get_focus(), live.list_view),
+              describe(window.get_focus()))
+        requests = []
+        play_request = window.play_request
+        window.play_request = lambda play, start_with=None, shuffle=None, start_id=None: (
+            requests.append(play))
+        await key(window, 'Right')
+        await key(window, 'Return')
+        window.play_request = play_request
+        second = live.shelf.items.get_item(1)
+        check('Right, Enter plays the second live station', requests == [second.play],
+              requests)
 
 
 async def walkthrough(window):
@@ -1534,43 +1606,13 @@ async def walkthrough(window):
     await key(window, 'Escape', 0.8)
     check('Escape again goes back', window.navigation_view.get_visible_page() is albums,
           window.navigation_view.get_visible_page())
-    print('-- radio')
-    window.select_page('radio')
-    await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound
-    radio = window.navigation_view.get_visible_page()
-    shelves = radio._column.widgets
-    live = shelves[0] if shelves else None
-    check('Radio shows the live stations as large cards, then Recently Played',
-          live is not None and live.props.hero and len(shelves) > 1
-          and shelves[1].shelf.items is app.library.radio,
-          [widget.shelf.key for widget in shelves])
-    if live is not None:
-        await key(window, '<primary>2', 0.6)
-        check('Ctrl+2 puts the focus in the live stations', inside(window.get_focus(), live),
-              describe(window.get_focus()))
-        for _ in range(3):  # the shelf's paging arrows and See All, then its cards
-            if inside(window.get_focus(), live.list_view):
-                break
-            await key(window, 'Tab')
-        check('Tab reaches the first live station', inside(window.get_focus(), live.list_view),
-              describe(window.get_focus()))
-        requests = []
-        play_request = window.play_request
-        window.play_request = lambda play, start_with=None, shuffle=None, start_id=None: (
-            requests.append(play))
-        await key(window, 'Right')
-        await key(window, 'Return')
-        window.play_request = play_request
-        second = live.shelf.items.get_item(1)
-        check('Right, Enter plays the second live station', requests == [second.play],
-              requests)
+    await radio_step(window)
     print('-- new')
     from applemusic.widgets.banner_tile import BannerTile
     from applemusic.widgets.explore import LinkChild
 
     window.select_page('new')
-    await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound
-    new = window.navigation_view.get_visible_page()
+    new = await shelves_shown(window)  # the demo's invented answer, then its shelves
     shelves = new._column.widgets
     featured = shelves[0] if shelves else None
     check('New opens with its banners as wide cards',
@@ -1608,8 +1650,7 @@ async def walkthrough(window):
     from applemusic.widgets.song_shelf import SongShelf
 
     window.open_item(charts_item())  # as New's and Search's Top Charts tile opens it
-    await asyncio.sleep(1.0)  # the demo's invented answer, then its shelves bound
-    charts = window.navigation_view.get_visible_page()
+    charts = await shelves_shown(window)  # the demo's invented answer, then its shelves
     shelves = charts._column.widgets
     songs = shelves[0] if shelves else None
     check('Charts shows Top Songs as a numbered grid of songs, then numbered tiles',
@@ -1664,8 +1705,8 @@ async def walkthrough(window):
           window.navigation_view.get_visible_page())
     print('-- home')
     window.select_page('home')
-    await asyncio.sleep(1.0)  # the demo's invented Recently Played, then the shelves bound
-    home = window.navigation_view.get_visible_page()
+    home = await shelves_shown(  # the demo's invented Recently Played among the shelves
+        window, lambda page: page._recent.shelf in page._column.shelves)
     keys = [widget.shelf.key for widget in home._column.widgets if widget.get_visible()]
     check('Home shows Recently Played after its first shelf',
           keys[1:2] == ['recently-played'], keys)
@@ -2373,8 +2414,11 @@ async def run():
             # the window is active and no step's first key is lost.
             keyboard.nudge()
             check('the window takes the keyboard', await until(window.is_active, 5.0))
-        await walkthrough(window)
-        if args.names:
+        if args.step == 'radio':
+            await radio_step(window)
+        else:
+            await walkthrough(window)
+        if args.names and not args.step:
             await names(window)
     except Exception as error:  # a step that raised is a failure too
         import traceback

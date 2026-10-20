@@ -129,7 +129,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - A page of shelves is a vertical `Gtk.Box` of a handful of `AppleMusicShelf`, each a horizontal
   `Gtk.ListView` in its own scrolled window, placed by a `widgets.shelf.ShelfColumn`: a shelf
   shown again keeps its widget (moved into place), new ones are bound a frame apart after
-  `FIRST_SHELVES`, and leftover widgets are hidden for later. A shelf's form picks its widget
+  `FIRST_SHELVES`, and leftover widgets are hidden for later; Ctrl+2 there (Home's and a
+  `ShelvesPage`'s `focus_content()`) goes to the first shelf in the column's order
+  (`ShelfColumn.focus()`), and a Ctrl+2 while a ShelvesPage loads to its first shelf as the
+  answer shows, unless the focus moved meanwhile. A shelf's form picks its widget
   (`shelf.form_for()`): a ShelfModel whose `form` is 'songs' (a chart's Top Songs) is a
   `SongShelf`; one `ranked` (a chart's) numbers its tiles (`shelf.RankedTile`, the number
   over the cover) or songs, and its list items' names start with the place

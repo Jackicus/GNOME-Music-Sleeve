@@ -88,6 +88,14 @@ class WidgetTestCase(unittest.TestCase):
     def scale(self, widget):
         return widget.get_scale_factor()
 
+    def frames(self, widget, count=2):
+        """Let `count` frames of widget's clock pass: a change is laid out on the next one.
+        Counted in frames, not trusted to one pump(): the process's first frames compile
+        shaders into a cold cache (tests.md) and one can take a second."""
+        seen = []
+        widget.add_tick_callback(lambda *_: seen.append(True) or len(seen) < count)
+        self.assertTrue(wait_for(lambda: len(seen) >= count, timeout=5))
+
     def drop(self, widget):
         """Remove the widget from the window: a GObject weak reference to it (widgets/util.py).
         The caller then lets go of its own reference, and assert_freed(ref)."""
@@ -190,13 +198,6 @@ class PlayingMarkTest(WidgetTestCase):
 
 class TrackRowTest(WidgetTestCase):
     """The mark of the track playing changes nothing of a recycled row's size."""
-
-    def frames(self, widget, count=2):
-        """Let `count` frames of widget's clock pass: a style change is laid out on the
-        next one."""
-        seen = []
-        widget.add_tick_callback(lambda *_: seen.append(True) or len(seen) < count)
-        self.assertTrue(wait_for(lambda: len(seen) >= count))
 
     def sizes(self, row):
         placed, title = row.title_label.compute_bounds(row)
@@ -820,8 +821,11 @@ class FavouriteMarkTest(WidgetTestCase):
     opacity, following the Item, and never changing the widget's size."""
 
     def sizes(self, widget, *children):
+        """The sizes of widget and its children once a frame has laid out what changed: a
+        widget just shown may not have had its first layout yet."""
         widget.queue_allocate()
-        pump()
+        self.frames(widget)
+        self.assertGreater(widget.get_width(), 0)
         return [(child.get_width(), child.get_height()) for child in (widget, *children)]
 
     def test_a_tiles_heart_follows_its_item(self):
