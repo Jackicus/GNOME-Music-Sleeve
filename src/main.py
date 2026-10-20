@@ -10,8 +10,10 @@ do_dbus_register exports the Shell's search provider (search_provider.py) beside
 GApplication's own object, before the app's bus name is owned. do_startup makes the parts (a
 picture of them is in CLAUDE.md): the Library, whose first load() starts reading
 library.json at once; the Engine (Chrome, stopped); the Player over it; LibrarySync
-(sync.py), which runs the syncs and schedules them; BackgroundPlayback; Mpris. do_activate
-builds the Window (imported only then) and starts the engine when the settings ask: not
+(sync.py), which runs the syncs and schedules them; BackgroundPlayback; Mpris; the
+SessionKeeper (session.py), which keeps the last session. do_activate builds the Window
+(imported only then), shows the last session paused once the library has loaded, and starts
+the engine when the settings ask: not
 do_startup, so the app the bus starts for a search (the D-Bus service file's
 --gapplication-service, which runs startup alone) shows no window and starts no Chrome
 until a result is activated, and quits SERVICE_LINGER_MS after its last call. The library's
@@ -54,6 +56,7 @@ from .mpris import Mpris  # noqa: E402
 from .player import Player  # noqa: E402
 from .recent_searches import FILE_NAME as RECENT_SEARCHES, RecentSearches  # noqa: E402
 from .search_provider import OBJECT_NAME, SearchProvider  # noqa: E402
+from .session import FILE_NAME as SESSION_FILE, SessionKeeper  # noqa: E402
 from .shortcuts import ACCELS  # noqa: E402
 from .sync import LibrarySync, install_scaler  # noqa: E402
 from .timing import PROCESS_START, StartupMarks  # noqa: E402, F401  (bench.py reads it here)
@@ -117,6 +120,7 @@ class Application(Adw.Application):
         self.search_provider = None  # the Shell's, exported in do_dbus_register (not demo)
         self.presence = None  # Discord rich presence, while its setting is on
         self.library_sync = None  # created in do_startup
+        self.session = None  # created in do_startup (not demo): the last session, kept
         self.background = None  # created in do_startup: the window closed, the music on
         self._tasks = set()  # strong references: asyncio only keeps weak ones
         self._quitting = None  # the task stopping the engine before the app quits
@@ -264,6 +268,8 @@ class Application(Adw.Application):
         self.player.connect('notify::track', self._on_track_changed)
         self.player.connect('error', self._on_playback_error)
         self.library_sync = LibrarySync(self)
+        if not self.demo:
+            self.session = SessionKeeper(self, config.cache_dir() / SESSION_FILE)
         self._follow_account()
         if not self.demo:
             self.library_sync.schedule()  # the timed refresh, and a sync when the engine is up
@@ -326,6 +332,7 @@ class Application(Adw.Application):
             window.connect('realize', lambda _window: self.mark('window-realized'))
             window.connect('map', self._timing.on_window_mapped)
             self.spawn(self._log_event_loop())
+            self.spawn(self._restore_session())
             if self._autostart_wanted():
                 self._autostart_task = self.spawn(self._autostart())
         else:
@@ -368,6 +375,14 @@ class Application(Adw.Application):
             # What only grows (remote art, lyrics, day-old answers, crash leftovers), trimmed
             # once the window is up; each sync trims it too.
             await asyncio.to_thread(normalize.prune_caches, str(config.cache_dir()))
+
+    async def _restore_session(self):
+        """The last session on the Player, paused (SessionKeeper.load), once the library has
+        loaded: its file is read in a thread, after the library's parse. Only with the
+        window: an app the bus started for a search shows nothing in the media controls."""
+        await self.load_library()
+        if self.session is not None and self._quitting is None:
+            await self.session.load()
 
     # -- the engine ----------------------------------------------------------------------
 
@@ -627,7 +642,8 @@ class Application(Adw.Application):
             self._quitting = self.spawn(self._quit())
 
     async def _quit(self):
-        """Everything shown goes at once; then a start the app asked for is cancelled (it
+        """Everything shown goes at once, and the last session is written as it is
+        (SessionKeeper.save_now); then a start the app asked for is cancelled (it
         would hold the engine's stop until Chrome is up), and the sync (its thread included)
         and the engine are stopped, QUIT_TIMEOUT at most; a sign-out under way is given
         SIGN_OUT_WAIT more to finish; then Chrome is killed if it still runs."""
@@ -638,6 +654,8 @@ class Application(Adw.Application):
         for window in self.get_windows():
             if hasattr(window, 'prepare_quit'):  # a dialog's toplevel has none
                 window.prepare_quit()  # remembers its state and hides at once
+        # The last session as it is now, before the engine's stop empties the Player.
+        saving = self.session.save_now() if self.session is not None else None
         # Nothing more starts: a start or a sign-in's finish under way is cancelled, and a
         # sign-out's revocation (its wipe goes on); no sync starts.
         for task in (self._autostart_task, self._engine_start, self.sign_in_finish,
@@ -645,6 +663,8 @@ class Application(Adw.Application):
             if task is not None and not task.done():
                 task.cancel()
         stopping = [self.engine.stop(grace=QUIT_GRACE)]
+        if saving is not None:
+            stopping.append(saving)
         if self.library_sync is not None:
             self.library_sync.hold()
             stopping.append(self.library_sync.cancel())

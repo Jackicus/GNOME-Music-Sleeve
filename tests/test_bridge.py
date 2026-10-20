@@ -484,6 +484,100 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(value['changes'], [['changeToMediaAtIndex', 2]] * 2)
 
     @scenario("""
+        // MusicKit's queue for the session: the item where startWith says, or one later.
+        mk.setQueue = async function (options) {
+            this.calls.push(['setQueue', options]);
+            this.queue = {position: options.startWith, items: [
+                {id: 'i.one'}, {id: 'i.two'}, {id: 'i.three'}]};
+        };
+        mk.changeToMediaAtIndex = async function (index) {
+            this.calls.push(['changeToMediaAtIndex', index]);
+            this.queue.position = index;
+        };
+        const seeks = () => mk.calls.filter(call => call[0] === 'seekToTime');
+        const out = {};
+        // MusicKit began the item at 0: the bridge seeks.
+        out.ignored = await bridge.play('songs', 'i.one,i.two,i.three',
+                                        {startWith: 1, startId: 'i.two', startTime: 83});
+        out.ignoredSeeks = seeks();
+        out.queued = mk.calls.find(call => call[0] === 'setQueue')[1];
+        // MusicKit took the start time: no seek.
+        mk.calls = [];
+        mk.play = async function () { this.calls.push(['play']); this.currentPlaybackTime = 83; };
+        out.taken = await bridge.play('songs', 'i.one,i.two,i.three',
+                                      {startWith: 1, startId: 'i.two', startTime: 83});
+        out.takenSeeks = seeks();
+        // The item moved: the start is still its.
+        mk.calls = [];
+        mk.currentPlaybackTime = 0;
+        delete mk.play;
+        out.moved = await bridge.play('album', 'l.alb1',
+                                      {startWith: 0, startId: 'i.three', startTime: 40});
+        out.movedSeeks = seeks();
+        // Not in the queue: the item playing is another, started from the top.
+        mk.calls = [];
+        out.missing = await bridge.play('album', 'l.alb1',
+                                        {startWith: 1, startId: 'i.gone', startTime: 40});
+        out.missingSeeks = seeks();
+        return out;
+    """)
+    def test_a_restored_session_starts_at_its_position(self, value):
+        self.assertEqual(value['queued'], {'songs': ['i.one', 'i.two', 'i.three'],
+                                           'startWith': 1, 'startPlaying': True,
+                                           'startTime': 83})
+        self.assertEqual(value['ignored'], {'ok': True, 'sought': True})
+        self.assertEqual(value['ignoredSeeks'], [['seekToTime', 83]])
+        self.assertEqual(value['taken'], {'ok': True})
+        self.assertEqual(value['takenSeeks'], [])
+        self.assertEqual(value['moved'], {'ok': True, 'moved': {'from': 0, 'to': 2},
+                                          'sought': True})
+        self.assertEqual(value['movedSeeks'], [['seekToTime', 40]])
+        self.assertEqual(value['missing'], {'ok': True})
+        self.assertEqual(value['missingSeeks'], [])
+
+    @scenario("""
+        mk.setQueue = async function (options) {
+            this.calls.push(['setQueue', options]);
+            this.queue = {position: options.startWith, items: [{id: 'i.one'}, {id: 'i.two'}]};
+        };
+        const names = () => mk.calls.map(call => call[0]);
+        const out = {};
+        // Loaded paused (Play Next before the first Play): queued, not played or moved.
+        out.answer = await bridge.play('songs', 'i.one,i.two',
+                                       {startWith: 1, startId: 'i.two', startTime: 83,
+                                        paused: true});
+        out.queued = mk.calls[0][1];
+        out.loaded = names();
+        await bridge.playNext('song', '1000000005');
+        await bridge.control('pause');   // a pause before the first play keeps the start
+        mk.calls = [];
+        await bridge.control('play');    // the first play: there
+        out.first = mk.calls;
+        mk.calls = [];
+        mk.isPlaying = true;
+        await bridge.control('toggle');
+        mk.isPlaying = false;
+        await bridge.control('toggle');  // played once: the start is spent
+        out.again = names();
+        // A seek of the user's gives it up.
+        await bridge.play('songs', 'i.one,i.two',
+                          {startWith: 1, startId: 'i.two', startTime: 83, paused: true});
+        await bridge.seek(10);
+        mk.calls = [];
+        await bridge.control('play');
+        out.afterSeek = names();
+        return out;
+    """)
+    def test_a_session_loaded_paused_starts_at_its_position_on_the_first_play(self, value):
+        self.assertEqual(value['answer'], {'ok': True})
+        self.assertEqual(value['queued'], {'songs': ['i.one', 'i.two'], 'startWith': 1,
+                                           'startPlaying': False, 'startTime': 83})
+        self.assertEqual(value['loaded'], ['setQueue'])
+        self.assertEqual(value['first'], [['play'], ['seekToTime', 83]])
+        self.assertEqual(value['again'], ['pause', 'play'])
+        self.assertEqual(value['afterSeek'], ['play'])
+
+    @scenario("""
         mk.nowPlayingItem = {id: 'i.video1', type: 'library-music-videos',
                              attributes: {name: 'Harbour Lights (Live)'}};
         const video = bridge.nowPlaying().track;

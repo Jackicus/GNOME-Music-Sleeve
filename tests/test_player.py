@@ -84,6 +84,7 @@ class FakeEngine(GObject.Object):
         self.answers = {}
         self.gates = {}
         self.fail = None  # an EngineError every command raises
+        self.play_options = []  # each play's start_id, and start_time and paused when given
 
     def event(self, name, data):
         self.emit('event', name, data)
@@ -112,7 +113,9 @@ class FakeEngine(GObject.Object):
             raise EngineError('api', 'the page gave no now-playing answer')
         return answer
 
-    async def play(self, kind, item_id, start_with=None, shuffle=None, start_id=None):
+    async def play(self, kind, item_id, start_with=None, shuffle=None, start_id=None,
+                   **options):
+        self.play_options.append(dict(options, start_id=start_id))  # start_time, paused
         return await self._command('play', kind, item_id, start_with, shuffle)
 
     async def play_next(self, kind, item_id):
@@ -1279,6 +1282,356 @@ class LyricsTest(unittest.TestCase):
         self.assertEqual(player.lyrics.catalog_id, '1000000001')
         self.assertTrue(player.lyrics.synced)
         self.assertFalse(player.lyrics_loading)
+
+
+# An invented session as session.read() gives it: QUEUE's three songs, the third paused 83 s
+# in, from an album that still is the queue.
+SESSION = {
+    'queue': [{key: value for key, value in entry.items() if key != 'index'}
+              for entry in QUEUE['items']],
+    'index': 2, 'offset': 0, 'position': 83.0, 'duration': 214.0, 'repeat': 'all',
+    'source': {'kind': 'album', 'id': 'l.alb1'},
+}
+
+
+def session(**changes):
+    return dict(SESSION, **changes)
+
+
+class RestoreTest(unittest.TestCase):
+    """The last session shown paused (restore), held while MusicKit holds nothing, changed
+    locally, and handed to MusicKit by Play (restore_session)."""
+
+    def restored(self, state='down', **changes):
+        player, engine, app = make_player(state=state)
+        self.assertTrue(player.restore(session(**changes)))
+        return player, engine, app
+
+    def test_restore_shows_the_item_paused(self):
+        player, engine, app = self.restored()
+        self.assertTrue(player.restored)
+        self.assertEqual(player.track.id, 'i.demo0001')
+        self.assertEqual(player.queue_index, 2)
+        self.assertEqual([entry.title for entry in player.queue],
+                         ['Shoreline', 'Pilot Light', 'Harbour Lights'])
+        self.assertEqual(player.state, 'paused')
+        self.assertFalse(player.active)
+        self.assertFalse(player.stopped)
+        self.assertEqual(player.position, 83.0)
+        self.assertEqual(player.duration, 214.0)
+        self.assertEqual(player.repeat, 'all')
+        self.assertFalse(player.shuffle)  # the queue comes back in its order
+        self.assertEqual(player.source, {'kind': 'album', 'id': 'l.alb1'})
+        self.assertEqual(engine.calls, [])  # nothing asked of the engine for it
+        self.assertEqual(app.spawned, ['Player._load_lyrics'])  # the lyrics from the cache
+
+    def test_restore_takes_nothing_over_an_item_or_a_bad_session(self):
+        player, engine, app = make_player()
+        player.apply({'track': TRACK, 'state': 'playing'})
+        self.assertFalse(player.restore(session()))
+        self.assertFalse(player.restored)
+        player, engine, app = make_player()
+        for bad in (None, session(queue=[]), session(index=3), session(index=-1)):
+            self.assertFalse(player.restore(bad))
+        self.assertIsNone(player.track)
+
+    def test_musickit_holding_nothing_changes_nothing(self):
+        player, engine, app = self.restored(state='up')
+        engine.event('nowPlayingItemDidChange', {'track': None, 'index': 0})
+        engine.event('playbackStateDidChange', {'state': 'none', 'position': 0})
+        engine.event('playbackTimeDidChange', {'position': 0, 'duration': 0})
+        engine.event('queueItemsDidChange', {'index': 0, 'items': []})
+        engine.event('shuffleModeDidChange', {'shuffle': 'on'})
+        engine.event('repeatModeDidChange', {'repeat': 'none'})
+        engine.event('bridgeReset', {})
+        engine.event('playbackVolumeDidChange', {'volume': 0.4})
+        engine.state = 'down'
+        engine.state = 'up'
+        self.assertTrue(player.restored)
+        self.assertEqual((player.track.id, player.state, player.position, player.repeat,
+                          player.shuffle, player.queue.get_n_items()),
+                         ('i.demo0001', 'paused', 83.0, 'all', False, 3))
+        self.assertEqual(player.volume, 0.4)  # MusicKit's own, whatever it holds
+
+    def test_the_engine_coming_up_empty_keeps_it(self):
+        async def go():
+            player, engine, app = self.restored()
+            engine.answers['now_playing'] = {'state': 'none', 'track': None, 'position': 0,
+                                             'shuffle': 'on', 'repeat': 'none', 'volume': 0.5}
+            await player.refresh()
+            self.assertTrue(player.restored)
+            self.assertEqual((player.track.id, player.repeat, player.shuffle, player.volume),
+                             ('i.demo0001', 'all', False, 0.5))
+        asyncio.run(go())
+
+    def test_musickit_playing_something_of_its_own_ends_it(self):
+        player, engine, app = self.restored(state='up')
+        other = dict(TRACK, id='i.demo0009', title='Elsewhere', index=0)
+        engine.event('nowPlayingItemDidChange', {'track': other, 'index': 0})
+        self.assertFalse(player.restored)
+        self.assertEqual(player.track.id, 'i.demo0009')
+        player, engine, app = self.restored(state='up')
+        engine.event('queueItemsDidChange', {'index': 0, 'items': [other]})
+        self.assertFalse(player.restored)
+
+    def test_seek_next_and_previous_are_local_and_paused(self):
+        async def go():
+            player, engine, app = self.restored()
+            await player.seek(120)
+            self.assertEqual(player.position, 120.0)
+            await player.seek(999)
+            self.assertEqual(player.position, 214.0)  # no further than its end
+            await player.previous()  # more than a few seconds in: back to the top
+            self.assertEqual((player.queue_index, player.position), (2, 0.0))
+            await player.previous()
+            self.assertEqual((player.track.title, player.queue_index, player.position),
+                             ('Pilot Light', 1, 0.0))
+            await player.next()
+            self.assertEqual(player.track.title, 'Harbour Lights')
+            await player.next()  # the end of the queue: nothing further
+            self.assertEqual(player.queue_index, 2)
+            await player.seek(30)
+            await player.stop()  # MPRIS Stop: back to the top, still paused
+            self.assertEqual(player.position, 0.0)
+            await player.pause()
+            self.assertEqual(player.state, 'paused')
+            self.assertTrue(player.restored)
+            self.assertEqual(engine.calls, [])
+        asyncio.run(go())
+
+    def test_shuffle_repeat_and_volume_wait_for_the_play(self):
+        async def go():
+            player, engine, app = self.restored()
+            await player.set_repeat('one')
+            await player.set_shuffle(True)
+            self.assertEqual(await player.set_volume(0.3), 0.3)
+            self.assertEqual((player.repeat, player.shuffle, player.volume), ('one', True, 0.3))
+            self.assertEqual(engine.calls, [])
+            await player.toggle()
+            self.assertEqual([call[0] for call in engine.calls],
+                             ['start', 'repeat', 'volume', 'play', 'shuffle'])
+            self.assertEqual(engine.calls[1], ('repeat', 'one'))
+            self.assertEqual(engine.calls[2], ('volume', 0.3))
+            self.assertEqual(engine.calls[3], ('play', 'album', 'l.alb1', 2, False))
+            self.assertEqual(engine.calls[4], ('shuffle', 'on'))  # what follows, shuffled
+        asyncio.run(go())
+
+    def test_play_hands_the_source_to_musickit_at_the_position(self):
+        async def go():
+            player, engine, app = self.restored(offset=40)
+            pending = []
+            player.connect('notify::pending', lambda p, _pspec: pending.append(
+                (p.pending, p.resting, p.restored)))
+            await player.toggle()
+            self.assertEqual(engine.calls[0], ('start', None))  # the engine started for it
+            self.assertEqual(app.toasts, ['Starting playback engine…'])
+            self.assertEqual(engine.calls[-1], ('play', 'album', 'l.alb1', 42, False))
+            self.assertEqual(engine.play_options,
+                             [{'start_id': 'i.demo0001', 'start_time': 83.0}])
+            self.assertFalse(player.restored)
+            # Pending from the request on, paused held meanwhile; MusicKit's from the play.
+            self.assertEqual(pending, [(True, 'paused', True), (False, 'paused', False)])
+        asyncio.run(go())
+
+    def test_without_a_source_the_songs_are_queued_by_id(self):
+        async def go():
+            video = dict(QUEUE['items'][1], id='i.video1', type='library-music-videos')
+            queue = [SESSION['queue'][0], video, SESSION['queue'][2]]
+            player, engine, app = self.restored(state='up', source=None, queue=queue)
+            await player.resume()
+            # The music video is left out: the item is the second of the songs.
+            self.assertEqual(engine.calls[-1],
+                             ('play', 'songs', 'i.demo0003,i.demo0001', 1, False))
+            self.assertEqual(engine.play_options[-1]['start_id'], 'i.demo0001')
+        asyncio.run(go())
+
+    def test_a_video_item_plays_alone_and_a_station_live(self):
+        async def go():
+            video = dict(SESSION['queue'][2], type='music-videos', catalogId='1000000009')
+            player, engine, app = self.restored(state='up', source=None, queue=[video],
+                                                index=0)
+            await player.resume()
+            self.assertEqual(engine.calls[-1], ('play', 'musicVideo', '1000000009', None, False))
+            self.assertEqual(engine.play_options[-1]['start_time'], 83.0)
+            player, engine, app = self.restored(state='up', index=0, position=0.0,
+                                                source={'kind': 'station', 'id': 'ra.1'},
+                                                queue=[SESSION['queue'][2]])
+            await player.resume()
+            self.assertEqual(engine.calls[-1], ('play', 'station', 'ra.1', None, False))
+            self.assertEqual(engine.play_options[-1], {'start_id': None})  # live: no position
+        asyncio.run(go())
+
+    def test_an_item_that_ended_starts_from_the_top(self):
+        async def go():
+            player, engine, app = self.restored(state='up', position=213.5)
+            await player.resume()
+            self.assertEqual(engine.play_options[-1], {'start_id': 'i.demo0001'})
+        asyncio.run(go())
+
+    def test_an_up_next_row_plays_that_entry_from_the_top(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            await player.queue_jump(0)
+            self.assertEqual(engine.calls[-1], ('play', 'album', 'l.alb1', 0, False))
+            self.assertEqual(engine.play_options[-1], {'start_id': 'i.demo0003'})
+        asyncio.run(go())
+
+    def test_play_next_queues_the_session_paused_first(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            await player.play_next('song', '1000000005')
+            self.assertEqual([call[0] for call in engine.calls], ['repeat', 'play', 'play_next'])
+            self.assertEqual(engine.play_options[-1],
+                             {'start_id': 'i.demo0001', 'start_time': 83.0, 'paused': True})
+            await player.play_later('song', '1000000006')  # MusicKit has it now
+            self.assertEqual(engine.calls[-1], ('play_later', 'song', '1000000006'))
+            self.assertEqual(len(engine.play_options), 1)
+        asyncio.run(go())
+
+    def test_another_play_replaces_the_session(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            await player.play({'kind': 'playlist', 'id': 'p.pl1'}, shuffle=False)
+            self.assertFalse(player.restored)
+            self.assertEqual(engine.calls, [('play', 'playlist', 'p.pl1', None, False)])
+            self.assertEqual(engine.play_options, [{'start_id': None}])
+        asyncio.run(go())
+
+    def test_a_failed_start_or_sign_in_gives_the_session_back(self):
+        async def go():
+            for error in (EngineError('engine-down', 'no Chrome'),
+                          EngineError('not-signed-in', 'expired'),
+                          EngineError('no-widevine', 'no module')):
+                player, engine, app = self.restored(state='up')
+                engine.fail = error
+                with self.assertRaises(EngineError):
+                    await player.toggle()
+                self.assertTrue(player.restored, error.code)
+                self.assertEqual((player.track.id, player.state, player.position,
+                                  player.queue.get_n_items()),
+                                 ('i.demo0001', 'paused', 83.0, 3))
+                self.assertFalse(player.pending)
+        asyncio.run(go())
+
+    def test_signed_out_the_session_stays(self):
+        async def go():
+            player, engine, app = make_player(signed_in=False)
+            player.restore(session())
+            with self.assertRaises(EngineError) as raised:
+                await player.toggle()
+            self.assertEqual(raised.exception.code, 'not-signed-in')
+            self.assertTrue(player.restored)
+        asyncio.run(go())
+
+    def test_the_engines_empty_answer_as_it_starts_for_the_play_wipes_nothing(self):
+        async def go():
+            player, engine, app = self.restored()
+            read = engine.gate('now_playing')  # the read the engine coming up makes
+            play = engine.gate('play')
+            engine.answers['now_playing'] = {'state': 'none', 'track': None, 'volume': 0.5}
+            task = asyncio.ensure_future(player.toggle())
+            for _ in range(5):
+                await asyncio.sleep(0)
+            self.assertFalse(player.restored)
+            self.assertTrue(player.pending)
+            read.set()  # MusicKit answers before it has the queue: nothing
+            for _ in range(5):
+                await asyncio.sleep(0)
+            self.assertEqual(player.track.id, 'i.demo0001')  # older than the request
+            self.assertEqual(player.volume, 0.5)
+            play.set()
+            await task
+            await app.settle()
+            self.assertEqual(player.track.id, 'i.demo0001')
+        asyncio.run(go())
+
+    def test_a_failed_other_play_gives_the_session_back_too(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            engine.fail = EngineError('api', 'play album: refused',
+                                      musickit_code='CONTENT_UNAVAILABLE')
+            with self.assertRaises(EngineError):
+                await player.play({'kind': 'album', 'id': 'l.other'})
+            self.assertTrue(player.restored)  # the session was not what MusicKit refused
+            self.assertEqual(player.source, {'kind': 'album', 'id': 'l.alb1'})
+        asyncio.run(go())
+
+    def test_musickit_refusing_the_session_drops_it(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            dropped, errors = [], []
+            player.connect('session-dropped', lambda _p: dropped.append(True))
+            player.connect('error', lambda _p, message: errors.append(message))
+            engine.fail = EngineError('api', 'play album: refused',
+                                      musickit_code='CONTENT_UNAVAILABLE')
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.toggle()  # answered, not raised: the toast is the error signal
+            self.assertFalse(player.restored)
+            self.assertIsNone(player.track)
+            self.assertEqual(player.queue.get_n_items(), 0)
+            self.assertEqual(dropped, [True])
+            self.assertEqual(errors, [playback_error_text('CONTENT_UNAVAILABLE')])
+        asyncio.run(go())
+
+    def test_an_item_of_musickits_during_a_failed_request_is_kept(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            gate = engine.gate('play')
+            task = asyncio.ensure_future(player.toggle())
+            await asyncio.sleep(0)
+            other = dict(TRACK, id='i.demo0009', title='Elsewhere', index=0)
+            engine.event('nowPlayingItemDidChange', {'track': other, 'index': 0})
+            engine.fail = EngineError('engine-down', 'the page went')
+            gate.set()
+            with self.assertRaises(EngineError):
+                await task
+            self.assertFalse(player.restored)  # MusicKit's item shows: it is what plays
+        asyncio.run(go())
+
+    def test_forget_session(self):
+        player, engine, app = self.restored()
+        player.forget_session()
+        self.assertFalse(player.restored)
+        self.assertIsNone(player.track)
+        self.assertIsNone(player.source)
+        player, engine, app = make_player(state='up')
+        player.apply({'track': TRACK, 'state': 'playing'})
+        player.forget_session()  # MusicKit's own: the engine's to stop
+        self.assertIsNotNone(player.track)
+
+
+class SourceTest(unittest.TestCase):
+    """What a queue came from, while it still is that queue."""
+
+    def test_an_album_in_order_is_its_queue_until_the_queue_changes(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await player.play({'kind': 'album', 'id': 'l.alb1'}, shuffle=False)
+            engine.event('queueItemsDidChange', QUEUE)
+            self.assertEqual(player.source, {'kind': 'album', 'id': 'l.alb1'})
+            engine.event('queueItemsDidChange', QUEUE)  # sent again, the same
+            self.assertEqual(player.source, {'kind': 'album', 'id': 'l.alb1'})
+            more = dict(QUEUE, items=QUEUE['items'] + [dict(TRACK, id='i.demo0004')])
+            engine.event('queueItemsDidChange', more)  # Play Later, MusicKit's autoplay
+            self.assertIsNone(player.source)
+        asyncio.run(go())
+
+    def test_shuffled_songs_and_artists_have_none(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            for play, shuffle in (({'kind': 'album', 'id': 'l.alb1'}, True),
+                                  ({'kind': 'songs', 'id': 'i.a,i.b'}, False),
+                                  ({'kind': 'artist', 'id': 'r.1'}, False)):
+                await player.play(play, shuffle=shuffle)
+                self.assertIsNone(player.source, play)
+            player._set_shuffle(True)
+            await player.play({'kind': 'playlist', 'id': 'p.pl1'})  # the mode as it is
+            self.assertIsNone(player.source)
+            await player.play({'kind': 'station', 'id': 'ra.1'})  # a station is always its own
+            engine.event('queueItemsDidChange', QUEUE)
+            engine.event('queueItemsDidChange', dict(QUEUE, items=QUEUE['items'][:1]))
+            self.assertEqual(player.source, {'kind': 'station', 'id': 'ra.1'})
+        asyncio.run(go())
 
 
 class FormatTimeTest(unittest.TestCase):

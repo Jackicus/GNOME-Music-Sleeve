@@ -78,6 +78,11 @@ touches widgets.
   standard library and asyncio only.
 - **Player** (`player.py`): what is playing, as GObject properties fed by MusicKit's events,
   and the playback commands. The player bar, the Now Playing sheet and MPRIS all follow it.
+- **The last session** (`session.py`): the `SessionKeeper` (`app.session`) writes what the
+  Player holds to `<cache>/session.json` (after a change, every 30 s while playing, at quit),
+  and at launch shows it on the Player paused (`Player.restore()`, `restored`), MusicKit not
+  asked until the first Play hands it over as one play request (the album or playlist it
+  came from, else its songs' ids, the position as the start time).
 - **MPRIS** (`mpris.py`): the app on the session bus as `org.mpris.MediaPlayer2.<app id>`, for
   GNOME Shell's media controls and the media keys. Chrome's own MPRIS player is switched off.
 - **Search provider** (`search_provider.py`): `org.gnome.Shell.SearchProvider2` under the
@@ -105,7 +110,8 @@ touches widgets.
 - **Startup.** `do_dbus_register` exports the search provider; `do_startup` starts reading
   library.json in a thread, then makes the engine, the player, the sync, MPRIS and the
   Discord presence; `do_activate` builds the window, awaits the library (then trims the
-  caches in a thread) and, when the account is signed in and `engine-autostart` is on,
+  caches in a thread, and reads the last session in one, which the bar shows paused) and,
+  when the account is signed in and `engine-autostart` is on,
   starts the engine, whose coming up starts a sync when one is due. A search from the
   overview starts the app over the bus instead (the service file's `Exec` has
   `--gapplication-service`), which runs `do_startup` alone; the provider's first call

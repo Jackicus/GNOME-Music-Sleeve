@@ -23,6 +23,8 @@ UI awaits.
     await engine.unauthorize()          # revoke the session at Apple's (sign-out); True if done
     await engine.account_name()         # the name on the page, or '' (best effort)
     await engine.play(kind, id, start_with=None, shuffle=None, start_id=None)  # setQueue, play
+                                        # start_time=83.0: that far in (a restored session);
+                                        # paused=True: queued, not played yet
     await engine.play_next(kind, id); await engine.play_later(kind, id)
     await engine.control('toggle')      # play, pause, toggle, next, previous, stop
     await engine.seek(seconds); await engine.volume(level)   # volume answers the level set
@@ -1260,7 +1262,8 @@ class Engine(GObject.Object):
             raise EngineError('not-signed-in', f'sign in to Apple Music to {what}')
         return client
 
-    async def play(self, kind, item_id, start_with=None, shuffle=None, start_id=None):
+    async def play(self, kind, item_id, start_with=None, shuffle=None, start_id=None,
+                   start_time=None, paused=False):
         """Play an album, playlist, station, song, musicVideo or artist (its top songs) by
         id, or `songs` (song ids joined by commas: a stand-in album of loose songs), from
         queue position `start_with` (a track row): the bridge's play(), that is
@@ -1268,9 +1271,12 @@ class Engine(GObject.Object):
         row's own id, is the item that must play: where MusicKit's queue holds another at
         `start_with`, the bridge moves to the one with that id (logged). `shuffle` True turns
         MusicKit's shuffle on (a Shuffle button), False off (a Play button plays in order),
-        None leaves it as it is (a track row). Needs a signed-in engine: library ids and
-        full songs are the account's. MusicKit refusing is EngineError('api') with its code
-        as `musickit_code` ('CONTENT_UNAVAILABLE'…)."""
+        None leaves it as it is (a track row). `start_time` (seconds, a restored session's
+        position) starts the item that far in: setQueue's startTime, and a seek once it plays
+        when MusicKit began it further back (logged). `paused` queues it without playing
+        (the start waits for the next control('play')). Needs a signed-in engine: library ids
+        and full songs are the account's. MusicKit refusing is EngineError('api') with its
+        code as `musickit_code` ('CONTENT_UNAVAILABLE'…)."""
         client = await self._require_signed_in('play')
         if not kind or item_id in (None, ''):
             raise EngineError('usage', 'play needs a kind and an id')
@@ -1279,6 +1285,10 @@ class Engine(GObject.Object):
                    'shuffle': None if shuffle is None else bool(shuffle)}
         if start_id:
             options['startId'] = str(start_id)
+        if start_time:
+            options['startTime'] = max(0.0, float(start_time))
+        if paused:
+            options['paused'] = True
         answer = await client.bridge('play', str(kind), str(item_id), options,
                                      timeout=PLAY_TIMEOUT)
         if isinstance(answer, dict) and answer.get('error'):
@@ -1288,6 +1298,8 @@ class Engine(GObject.Object):
         if isinstance(moved, dict):
             log.info('play %s: MusicKit queued %s at %s, not %s; moved to %s', kind, start_id,
                      moved.get('to'), moved.get('from'), moved.get('to'))
+        if isinstance(answer, dict) and answer.get('sought'):
+            log.info('play %s: MusicKit began before %.0f s; sought there', kind, start_time)
 
     async def play_next(self, kind, item_id):
         """Queue an item right after the one playing (mk.playNext)."""

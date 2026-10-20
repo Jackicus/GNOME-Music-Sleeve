@@ -197,6 +197,39 @@ class QuitTest(AppTestCase):
         app.settings.set_boolean('signed-in', True)
         self.assertIsNone(app.library_sync.start())  # held: nothing starts while quitting
 
+    async def test_the_last_session_is_taken_before_the_engine_stops(self):
+        app = self.app
+        order = app.engine.calls
+
+        class Keeper:
+            def save_now(self):
+                order.append(('save', app.engine.state))  # the Player not emptied yet
+                return asyncio.ensure_future(asyncio.sleep(0, 'written'))
+
+        app.engine.state = 'up'
+        app.session = Keeper()
+        await app._quit()
+        self.assertEqual(order, [('save', 'up'), ('stop', main.QUIT_GRACE), 'quit'])
+
+    async def test_the_last_session_is_restored_once_the_library_has_loaded(self):
+        app = self.app
+        order = []
+
+        async def load_library():
+            order.append('library')
+
+        class Keeper:
+            async def load(self):
+                order.append('session')
+
+        app.load_library = load_library
+        app.session = Keeper()
+        await app._restore_session()
+        self.assertEqual(order, ['library', 'session'])
+        app._quitting = object()  # quitting meanwhile: nothing shown
+        await app._restore_session()
+        self.assertEqual(order, ['library', 'session', 'library'])
+
     def test_activating_while_quitting_shows_nothing(self):
         self.app._quitting = object()
         self.app.do_activate()  # no window made: the stand-ins have none to give
@@ -270,6 +303,7 @@ class DemoTest(unittest.TestCase):
             app._make_parts()
         mpris.assert_not_called()
         self.assertIsNone(app.mpris)
+        self.assertIsNone(app.session)  # the demo keeps no session, reads none
         self.assertTrue(app.engine.demo)
 
 

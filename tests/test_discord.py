@@ -327,6 +327,7 @@ class FakePlayer(GObject.Object):
     position = GObject.Property(type=float, default=0.0)
     duration = GObject.Property(type=float, default=0.0)
     pending = GObject.Property(type=bool, default=False)
+    restored = GObject.Property(type=bool, default=False)
 
     @property
     def resting(self):
@@ -408,6 +409,22 @@ class PresenceTest(unittest.IsolatedAsyncioTestCase):
         activity = self.discord.frames[1][1]['args']['activity']
         self.assertEqual(activity['details'], 'Low Tide Warning')
         self.assertEqual(activity['type'], discord.LISTENING)
+
+    async def test_the_last_session_restored_reaches_nothing_until_it_plays(self):
+        self.app.settings.set_boolean('discord-presence', True)
+        self.presence.start()
+        player = self.app.player
+        player.restored = True  # shown paused at launch: nobody is listening yet
+        player.track = Track()
+        player.duration = 303.0
+        player.state = 'paused'
+        await self.app.settle()
+        self.assertEqual(self.discord.frames, [])
+        player.restored = False  # Play: MusicKit has it
+        player.state = 'playing'
+        await self.app.settle()
+        await self.discord.wait_for(2)
+        self.assertEqual(self.activities()[-1]['details'], 'Low Tide Warning')
 
     async def test_turning_the_setting_off_clears_the_activity(self):
         self.app.settings.set_boolean('discord-presence', True)

@@ -74,8 +74,9 @@ class FakeEngine(GObject.Object):
             raise self.fail
         return None
 
-    async def play(self, kind, item_id, start_with=None, shuffle=None, start_id=None):
-        return await self._command('play', kind, item_id, start_with, shuffle)
+    async def play(self, kind, item_id, start_with=None, shuffle=None, start_id=None,
+                   **options):
+        return await self._command('play', kind, item_id, start_with, shuffle, options)
 
     async def now_playing(self):
         await self._command('now_playing')
@@ -674,6 +675,37 @@ class ServiceTest(unittest.TestCase):
             self.assertEqual(self.app.actions, ['quit'])
             unknown = call(PLAYER_INTERFACE, 'Bogus')
             self.assertEqual(unknown.error[0], 'org.freedesktop.DBus.Error.UnknownMethod')
+        asyncio.run(go())
+
+    def test_the_last_session_restored_shows_paused_and_play_restores_it(self):
+        """At launch, before the engine: the item paused with its metadata, CanPlay true (the
+        Shell shows the card); SetPosition moves it locally, Play hands it to MusicKit."""
+        async def go():
+            self.make()
+            entry = {key: value for key, value in TRACK.items() if key != 'index'}
+            self.player.restore({'queue': [entry], 'index': 0, 'offset': 0, 'position': 83.0,
+                                 'duration': 214.0, 'repeat': 'none',
+                                 'source': {'kind': 'album', 'id': 'l.alb1'}})
+            await self.app.settle()
+            values = {name: value.unpack()
+                      for name, value in self.connection.get_all(PLAYER_INTERFACE).items()}
+            self.assertEqual(values['PlaybackStatus'], 'Paused')
+            self.assertTrue(values['CanPlay'])
+            self.assertEqual(values['Metadata']['xesam:title'], 'Harbour Lights')
+            self.assertEqual(values['Position'], 83_000_000)
+            track_id = values['Metadata']['mpris:trackid']
+            self.assertIsNone(self.connection.call(
+                PLAYER_INTERFACE, 'SetPosition',
+                GLib.Variant('(ox)', (track_id, 100_000_000))).error)
+            await self.app.settle()
+            self.assertEqual(self.player.position, 100.0)
+            self.assertEqual([call for call in self.engine.calls if call[0] != 'lyrics'], [])
+            self.engine.state = 'up'
+            self.assertIsNone(self.connection.call(PLAYER_INTERFACE, 'Play').error)
+            await self.app.settle()
+            self.assertIn(('play', 'album', 'l.alb1', 0, False, {'start_time': 100.0}),
+                          self.engine.calls)
+            self.assertFalse(self.player.restored)
         asyncio.run(go())
 
     def test_stop_pauses_and_rewinds_and_keeps_the_player(self):

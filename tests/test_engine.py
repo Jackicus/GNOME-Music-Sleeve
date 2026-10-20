@@ -1163,6 +1163,23 @@ class PlaybackTest(EngineFixture):
             'play', 'album', 'l.alb1', {'startWith': 2, 'shuffle': None, 'startId': 'i.song3'}))
         self.assertIn('moved to 3', logged.output[0])
 
+    async def test_a_restored_session_starts_at_its_position_or_waits_paused(self):
+        await self.up()
+        self.page.bridge_answers['play'] = {'ok': True, 'sought': True}
+        with self.assertLogs('applemusic.engine', 'INFO') as logged:
+            await self.engine.play('songs', 'i.a,i.b', start_with=1, shuffle=False,
+                                   start_id='i.b', start_time=83)
+        self.assertIn('sought there', logged.output[0])
+        self.page.bridge_answers['play'] = {'ok': True}
+        await self.engine.play('album', 'l.alb1', start_with=1, start_id='i.b',
+                               start_time=83.5, paused=True)
+        self.assertEqual(self.page.bridge_calls[-2:], [
+            ('play', 'songs', 'i.a,i.b', {'startWith': 1, 'shuffle': False, 'startId': 'i.b',
+                                          'startTime': 83.0}),
+            ('play', 'album', 'l.alb1', {'startWith': 1, 'shuffle': None, 'startId': 'i.b',
+                                         'startTime': 83.5, 'paused': True}),
+        ])
+
     async def test_a_refused_play_carries_musickits_code(self):
         await self.up()
         self.page.bridge_answers['play'] = {'error': 'Content unavailable',
