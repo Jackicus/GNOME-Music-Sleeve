@@ -2031,6 +2031,200 @@ class RestoreTest(unittest.TestCase):
         self.assertIsNotNone(player.track)
 
 
+def not_found(*ids):
+    """MusicKit refusing a list of songs because some cannot be resolved, as seen live."""
+    return EngineError('api', 'play songs: [mk-007] NOT_FOUND; One or more items could not '
+                              f'be resolved: {", ".join(ids)}', musickit_code='NOT_FOUND')
+
+
+class SongListTest(unittest.TestCase):
+    """A list of songs by id that MusicKit refuses whole because some of them cannot be
+    found: played (or queued) once more without them, in order, from the song asked for or
+    the next one found, with one toast; never a third time. Each way into such a list: the
+    Songs page's Play and Shuffle, the library artist page's Play, a shelf of songs from the
+    one clicked, a selection's Play Next and Play Later."""
+
+    @staticmethod
+    def refusing(engine, *missing):
+        """The engine refusing any list of songs that holds one of `missing`, as MusicKit
+        does (NOT_FOUND, the songs named), and Apple's read by id not finding them."""
+        missing = set(missing)
+
+        def check(kind, item_id):
+            gone = [song_id for song_id in item_id.split(',') if song_id in missing]
+            if kind == 'songs' and gone:
+                raise not_found(*gone)
+
+        play, play_next, play_later = engine.play, engine.play_next, engine.play_later
+
+        async def refusing_play(kind, item_id, *args, **options):
+            await play(kind, item_id, *args, **options)
+            check(kind, item_id)
+
+        async def refusing_next(kind, item_id):
+            await play_next(kind, item_id)
+            check(kind, item_id)
+
+        async def refusing_later(kind, item_id):
+            await play_later(kind, item_id)
+            check(kind, item_id)
+
+        async def songs_found(song_ids):
+            engine.calls.append(('songs_found', list(song_ids)))
+            return {song_id for song_id in song_ids if song_id not in missing}
+
+        engine.play, engine.play_next, engine.play_later = (refusing_play, refusing_next,
+                                                            refusing_later)
+        engine.songs_found = songs_found
+
+    @staticmethod
+    def sent(engine, *names):
+        return [call for call in engine.calls if call[0] in (names or ('play',))]
+
+    def test_the_songs_pages_play_and_shuffle_play_the_rest(self):
+        """SongsPage's Play and Shuffle: songs.play_target()'s list, from its top."""
+        async def go():
+            for shuffle in (False, True):
+                player, engine, app = make_player(state='up')
+                self.refusing(engine, 'i.s2')
+                with self.assertLogs('applemusic.player', 'WARNING'):
+                    await player.play({'kind': 'songs', 'id': 'i.s1,i.s2,i.s3'},
+                                      shuffle=shuffle)
+                self.assertEqual(self.sent(engine), [
+                    ('play', 'songs', 'i.s1,i.s2,i.s3', None, shuffle),
+                    ('play', 'songs', 'i.s1,i.s3', None, shuffle)])
+                self.assertEqual(app.toasts, ['1 song could not be played'])
+                self.assertFalse(player.pending)
+        asyncio.run(go())
+
+    def test_the_library_artist_pages_play_plays_the_rest(self):
+        """LibraryArtistPage's Play: discography.play_target() of the albums shown."""
+        from applemusic.discography import play_target
+        from applemusic.library import Item
+
+        def album(album_id, prefix):
+            play = {'kind': 'album', 'id': album_id}
+            return Item({'id': album_id, 'kind': 'album', 'title': 'Invented', 'play': play,
+                         'groups': [{'name': '', 'play': play, 'entries': [
+                             {'id': f'i.{prefix}{number}', 'title': f'Song {number}'}
+                             for number in range(3)]}]})
+
+        async def go():
+            player, engine, app = make_player(state='up')
+            self.refusing(engine, 'i.a1', 'i.b0')
+            target = play_target([album('l.alb1', 'a'), album('l.alb2', 'b')])
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.play(target, shuffle=False)
+            self.assertEqual(self.sent(engine), [
+                ('play', 'songs', 'i.a0,i.a1,i.a2,i.b0,i.b1,i.b2', None, False),
+                ('play', 'songs', 'i.a0,i.a2,i.b1,i.b2', None, False)])
+            self.assertEqual(app.toasts, ['2 songs could not be played'])
+        asyncio.run(go())
+
+    def test_a_shelf_of_songs_starts_at_the_song_clicked_where_it_now_is(self):
+        """SongShelf: the list from the song activated (start_with, start_id)."""
+        async def go():
+            player, engine, app = make_player(state='up')
+            self.refusing(engine, 'i.s1')
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.play({'kind': 'songs', 'id': 'i.s0,i.s1,i.s2,i.s3'},
+                                  start_with=2, start_id='i.s2')
+            self.assertEqual(self.sent(engine)[-1], ('play', 'songs', 'i.s0,i.s2,i.s3', 1,
+                                                     None))
+            self.assertEqual(engine.play_options[-1], {'start_id': 'i.s2'})
+        asyncio.run(go())
+
+    def test_the_song_clicked_gone_starts_at_the_next_found(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            self.refusing(engine, 'i.s1', 'i.s2')
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.play({'kind': 'songs', 'id': 'i.s0,i.s1,i.s2,i.s3'},
+                                  start_with=1, start_id='i.s1')
+            self.assertEqual(self.sent(engine)[-1], ('play', 'songs', 'i.s0,i.s3', 1, None))
+            self.assertEqual(engine.play_options[-1], {'start_id': 'i.s3'})
+            self.assertEqual(app.toasts, ['2 songs could not be played'])
+            # None found after it: MusicKit's refusal stands.
+            player, engine, app = make_player(state='up')
+            self.refusing(engine, 'i.s2')
+            with self.assertRaises(EngineError) as raised:
+                await player.play({'kind': 'songs', 'id': 'i.s0,i.s1,i.s2'}, start_with=2,
+                                  start_id='i.s2')
+            self.assertEqual(raised.exception.musickit_code, 'NOT_FOUND')
+            self.assertEqual(len(self.sent(engine)), 1)
+            self.assertEqual(app.toasts, [])
+        asyncio.run(go())
+
+    def test_a_second_refusal_stands_and_nothing_is_tried_again(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            engine.play_failures = [not_found('i.s1'), not_found('i.s2')]
+            engine.answers['songs_found'] = ['i.s0', 'i.s2']
+            with self.assertRaises(EngineError):
+                await player.play({'kind': 'songs', 'id': 'i.s0,i.s1,i.s2'})
+            self.assertEqual(self.sent(engine), [
+                ('play', 'songs', 'i.s0,i.s1,i.s2', None, None),
+                ('play', 'songs', 'i.s0,i.s2', None, None)])
+            self.assertEqual(app.toasts, [])
+            self.assertFalse(player.pending)
+        asyncio.run(go())
+
+    def test_only_a_refusal_for_songs_not_found_is_tried_again(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            engine.play_failures = [EngineError('api', 'play songs: refused',
+                                                musickit_code='CONTENT_UNAVAILABLE')]
+            with self.assertRaises(EngineError):
+                await player.play({'kind': 'songs', 'id': 'i.s0,i.s1'})
+            self.assertEqual(len(self.sent(engine)), 1)
+            self.assertNotIn('songs_found', [call[0] for call in engine.calls])
+            # An album is not a list of ids.
+            player, engine, app = make_player(state='up')
+            engine.play_failures = [not_found('l.alb1')]
+            with self.assertRaises(EngineError):
+                await player.play({'kind': 'album', 'id': 'l.alb1'})
+            self.assertNotIn('songs_found', [call[0] for call in engine.calls])
+            # Nothing found missing, or every song: the refusal stands.
+            for missing in ((), ('i.s0', 'i.s1')):
+                player, engine, app = make_player(state='up')
+                self.refusing(engine, *missing)
+                engine.play_failures = [not_found()]
+                with self.assertRaises(EngineError):
+                    await player.play({'kind': 'songs', 'id': 'i.s0,i.s1'})
+                self.assertEqual(len(self.sent(engine)), 1)
+        asyncio.run(go())
+
+    def test_play_next_and_later_of_a_list_queue_the_rest(self):
+        """A selection's Play Next and Play Later (actions.queue_commands()' runs of songs),
+        and a drop on the player bar."""
+        async def go():
+            for name in ('play_next', 'play_later'):
+                player, engine, app = make_player(state='up')
+                self.refusing(engine, 'i.s1')
+                with self.assertLogs('applemusic.player', 'WARNING'):
+                    await getattr(player, name)('songs', 'i.s0,i.s1,i.s2')
+                self.assertEqual(self.sent(engine, name), [
+                    (name, 'songs', 'i.s0,i.s1,i.s2'), (name, 'songs', 'i.s0,i.s2')])
+                self.assertEqual(app.toasts, ['1 song could not be played'])
+            # MusicKit's playNext and playLater throw: its code is only in the message.
+            player, engine, app = make_player(state='up')
+            engine.fail = EngineError('api', 'MKError: [mk-007] NOT_FOUND; One or more items '
+                                             'could not be resolved: i.s1')
+            engine.answers['songs_found'] = ['i.s0']
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                with self.assertRaises(EngineError):
+                    await player.play_later('songs', 'i.s0,i.s1')
+            self.assertEqual(self.sent(engine, 'play_later'), [
+                ('play_later', 'songs', 'i.s0,i.s1'), ('play_later', 'songs', 'i.s0')])
+            # A song alone is not tried again.
+            player, engine, app = make_player(state='up')
+            engine.fail = not_found('i.s1')
+            with self.assertRaises(EngineError):
+                await player.play_next('song', 'i.s1')
+            self.assertEqual(len(self.sent(engine, 'play_next')), 1)
+        asyncio.run(go())
+
+
 class SourceTest(unittest.TestCase):
     """What a queue came from, while it still is that queue."""
 

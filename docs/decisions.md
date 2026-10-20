@@ -621,11 +621,22 @@ changes, change it here, with the date. The plan they came from is in
   Since 2026-10-20 (#464, #465), two answers from the live check: MusicKit refuses a whole
   queue by ids when one song cannot be resolved (`NOT_FOUND`, a song since removed from the
   library), so that refusal is tried once more without the songs MusicKit names and those a
-  read by id does not find, and only the item itself gone drops the session; and the
+  read by id does not find, and only the item itself gone drops the session (since #508
+  every list of songs by id is retried so: see below); and the
   session keeps the user's queue only, without what autoplay added after the item, since
   autoplay's songs restored by id came back as songs the user queued, with ten more of
   autoplay's after them. MusicKit's autoplay (when on) adds its own again after the queue
   once it plays.
+- **A list of songs MusicKit cannot all find plays without the missing ones** (#508). Every
+  play of song ids (Songs' Play and Shuffle, a library artist's Play, a shelf of songs, a
+  selection's Play Next and Play Later, the session restored) goes through the Player's
+  `play()`, `play_next()` or `play_later()`, and MusicKit refuses such a list whole when one
+  song in it is gone (`NOT_FOUND`). So the Player, not each page, sends it once more without
+  the songs MusicKit names and those a read by id does not find, in order, from the song
+  asked for or the next one found, with one toast that counts them ("2 songs could not be
+  played"): a song gone from a 300-song Shuffle should cost that song, not the play. Once:
+  a second refusal is shown as it is, never a loop of reads and plays. The session restored
+  keeps its rule that its item gone drops it (it is not shown at another song).
 
 ## Engine
 
