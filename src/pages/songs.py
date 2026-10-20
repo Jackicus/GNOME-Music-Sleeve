@@ -63,12 +63,20 @@ from ..widgets.labels import track_label
 from ..widgets.song_title import SongTitle
 from ..widgets.track_links import TrackLink
 from ..widgets.track_row import PlayingMark
-from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
-                            weak_method)
+from ..widgets.util import (GrowBack, HeaderTitle, MappedHandlers, connect_weak,
+                            focus_position, rows_kept, weak_method)
 from . import SignInOffer, app, mark_bound
 
 # The columns' names in the Sort By menu's targets and SongOrder's keys.
 COLUMNS = ('title', 'artist', 'album', 'time')
+
+# The rows the table is given at a frame while it grows back to many (_show()): each about
+# 1.5 ms to make, bind and lay out (twelve made a frame of 18-27 ms).
+GROW_ROWS = 6
+
+# The texts whose matches the filter keeps (_filter()): a Backspace back to one of them, or
+# the same key typed again, filters nothing.
+KEPT_SEARCHES = 16
 
 
 def _string_sorter(name):
@@ -142,8 +150,10 @@ class SongsPage(Adw.NavigationPage):
         self._search = ''  # the filter's text, folded
         self._favourites_only = False  # the menu's Favourites Only
         self._matches = []  # the ordered songs that match it
-        self._filtered_by = None  # (the songs ordered, the text, Favourites Only) _matches are of
-        self._shown = []  # what the table's rows hold (the last matches that were any)
+        # The matches of the texts filtered by lately ({text: matches}), of these songs
+        # ordered and Favourites Only: (the songs, Favourites Only, the texts' matches).
+        self._kept = (None, False, {})
+        self._shown = []  # what the table's rows hold, or will once they have grown back
         self._follow = False  # the songs changed: the rows follow, keeping their place
         self._prepare_task = None  # the SongOrder being prepared
         self._quiet = False  # the page is changing the sort itself
@@ -228,6 +238,8 @@ class SongsPage(Adw.NavigationPage):
             connect_weak(column, 'notify::fixed-width', self._on_fixed_width)
 
         self._rows = Gio.ListStore(item_type=Track)
+        # The rows a filter brings back, a few a frame (_show()).
+        self._grow = GrowBack(self.column_view, self._replace_rows, GROW_ROWS)
         self.column_view.set_model(Gtk.NoSelection(model=self._rows))
         # Every cell of a row finds the row's Track in its title cell (SongTitle.context_item).
         context_menu.attach(self.column_view, drag=True)
@@ -387,18 +399,31 @@ class SongsPage(Adw.NavigationPage):
 
     def _filter(self):
         search = self._search
-        last, self._filtered_by = self._filtered_by, (self._ordered, search, self._favourites_only)
-        if (last is not None and last[0] is self._ordered and last[2] == self._favourites_only
-                and narrows(last[1], search)):
-            # A longer text (a key typed): only what matched the shorter can match it.
-            matches = [track for track in self._matches if search in track.search_key]
-        else:
-            matches = self._ordered
-            if self._favourites_only:
-                is_favourite = self._library.is_favourite
-                matches = [track for track in matches if is_favourite(track)]
-            if search:  # library.filter_matches(), inline: 40,000 calls fewer
-                matches = [track for track in matches if search in track.search_key]
+        ordered, favourites_only, kept = self._kept
+        if ordered is not self._ordered or favourites_only != self._favourites_only:
+            kept = {}
+            self._kept = (self._ordered, self._favourites_only, kept)
+        # A text filtered by lately (a Backspace, or a key typed again) matches what it did.
+        matches = kept.get(search) if search else None
+        if matches is None:
+            # A longer text (a key typed): only what a shorter one it holds matched can
+            # match it (the longest of those kept: the text before, as a rule).
+            within = max((text for text in kept if narrows(text, search)), key=len,
+                         default=None)
+            if within is not None:
+                matches = [track for track in kept[within] if search in track.search_key]
+            else:
+                matches = self._ordered
+                if self._favourites_only:
+                    is_favourite = self._library.is_favourite
+                    matches = [track for track in matches if is_favourite(track)]
+                if search:  # library.filter_matches(), inline: 40,000 calls fewer
+                    matches = [track for track in matches if search in track.search_key]
+        if search:
+            kept.pop(search, None)
+            kept[search] = matches  # the latest last
+            while len(kept) > KEPT_SEARCHES:
+                del kept[next(iter(kept))]
         self._matches = matches
         # With no matches the rows stay as they were, hidden behind "No Results Found": the
         # next matches can then recycle their widgets rather than build new ones.
@@ -417,20 +442,41 @@ class SongsPage(Adw.NavigationPage):
         new rows push the old ones down with the view following them; moving the view back to
         the top leaves the old rows' widgets out of view, where the view recycles them for the
         new rows; removing the old rows then removes rows without widgets.
+
+        That recycles only the rows pushed past the 200 the view keeps. Fewer rows than that
+        (a filter that left 69 songs) growing back to many (a Backspace: 5,817) would have
+        the view make a row for every new track up to 200, 130 ms at once: when every row
+        shown stays, the new tracks go in between them instead, GROW_ROWS at once and
+        GROW_ROWS a frame (widgets.util.GrowBack).
         """
         follow, self._follow = self._follow, False
         if tracks == self._shown:
             return
         if follow and self._shown:
+            self._grow.finish()
             apply_diff(self._rows, tracks, old=self._shown)
             self._shown = tracks
             return
         old = self._rows.get_n_items()
+        if 0 < old < rows_kept(self.column_view):  # not the first rows: the page's first build
+            shown = self._shown
+            if self._grow.pending:  # the rows an earlier growth has given so far
+                shown = [self._rows.get_item(position) for position in range(old)]
+            if self._grow.start(shown, tracks):
+                self._shown = tracks
+                if tracks:
+                    self.column_view.scroll_to(0, None, Gtk.ListScrollFlags.NONE, None)
+                return
+        self._grow.stop()
         self._rows.splice(0, 0, tracks)
         if tracks:
             self.column_view.scroll_to(0, None, Gtk.ListScrollFlags.NONE, None)
         self._rows.splice(len(tracks), old, [])
         self._shown = tracks
+
+    def _replace_rows(self, position, removed, tracks):
+        """GrowBack's change: tracks at position, in place of `removed` rows."""
+        self._rows.splice(position, removed, tracks)
 
     def _update_state(self, *_args):
         total = len(self._ordered)
@@ -495,6 +541,7 @@ class SongsPage(Adw.NavigationPage):
         if (not self.get_mapped() or self.results_stack.get_visible_child_name() != 'table'
                 or not self._rows.get_n_items()):
             return False
+        self._grow.finish()  # every row there, if the table was growing back
         found, position = self._rows.find(track) if track is not None else (False, 0)
         focus_position(self.column_view, position if found else 0)
         return True
@@ -608,7 +655,7 @@ class SongsPage(Adw.NavigationPage):
         """The account's favourites changed (a sync, or a heart here): the bound rows show
         them again, and Favourites Only shows the new ones, keeping its place."""
         is_favourite = self._library.is_favourite
-        self._filtered_by = None  # the favourites the matches were of are not these
+        self._kept = (None, False, {})  # the favourites the matches were of are not these
         for cell in self._title_cells:
             cell.get_child().set_favourite(is_favourite(cell.get_item()))
         for row in self._row_items:

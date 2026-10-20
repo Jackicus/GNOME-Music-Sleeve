@@ -228,6 +228,37 @@ its "Performance pass" section.
   a grid or list keeps rows for about 30 rows of tiles or 200 items, and those had gone
   with the items, so they are built again; it happens once, after the typing has paused.
   No frame of the typing itself went over 20 ms on the grids and Artists.
+- Lists growing back, and a filter's Backspace that brings nothing back (#418, 2026-10-20,
+  headless, build/demo-big and the 5,000-song playlist, `scroll_test.py --type midnight`,
+  three runs of origin/main and the change in turns). GTK keeps the row of an item one
+  change removes and adds back, and lays out again every row a change above it moves (six
+  label rows inserted above 65 cost a frame 8.8 ms, at the end 3.1 ms). So a list of a few
+  items that a Backspace brings many back to is grown in place (`widgets.util.GrowBack`):
+  its old items keep their rows, those that will be past the rows the view keeps go at
+  once, and the new ones come a few a frame from the top. Backspace "mid" → "mi": Albums
+  66-69 → 13-14 ms, Songs 157-158 → 17-24 ms, the playlist 130-131 → 17-19 ms; Artists
+  "mi" → "m" 50-54 → 6.7-6.8 ms. The steps a frame are what keeps those frames near 10 ms
+  (tiles 12, Songs rows 6, a playlist's 5: twelve Songs rows made frames of 15-20 ms). A
+  Backspace that leaves the same matches ("midnight" back to "mid") now filters nothing:
+  Albums 7.5-8.8 → 0.3 ms, Songs 22-25 → 0.2-0.3 ms, the playlist 9-11 → 0.3-0.4 ms,
+  Artists 2.0-2.7 → 0.3 ms (`filter_bar.SearchText`, the Songs table's kept matches). The
+  first key ("m": Songs 60-72 ms, 26,801 rows) and the narrowing ones are as they were.
+- The Charts page's first frames (#475, 2026-10-20, headless, build/demo-big at 1100x760,
+  the audit's scratch script over `scripts/harness.py`: the main loop's longest stall, a
+  4 ms timeout's lateness, and the longest frame, three runs, the second round warm). The
+  Top Songs grid made a row for every song up to 90 (30 columns of three) in one frame,
+  about a millisecond each with its layout, on top of the first shelves' 24 and 12 tiles.
+  With the songs given 9 then 6 a frame and a shelf's row 10 tiles then 6 a frame
+  (`PagedRow.give_items()`, both after the frame that draws the first): 50 songs, stall
+  50-57 → 14-23 ms, frame 23-35 → 14-23 ms; 100 songs, stall 82-90 → 15-22 ms, frame
+  34-49 → 14-23 ms; warm, no frame over 16.7 ms. A cold first visit still has one 22-31 ms
+  frame: GTK's first render of the page's kind.
+- Up Next's first rows made while a long queue scrolls (#411, 2026-10-20, headless,
+  build/demo-big, 500 invented entries, 420x760, 4,000 px/s): not reproduced. The list has
+  207 children from the start and makes one more on the way down; the frames that make it
+  took 3.1-7.8 ms over 22 runs (also at 360x640, 1100x760, a 20,000 px/s fling, and the
+  scroll at once after the queue's paint). Runs that had frames over 16.7 ms had them all
+  along the scroll, with as many late compositor frames: other load on the machine.
 
 ## Memory
 

@@ -134,6 +134,38 @@ class SongsPageTest(PageTestCase):
         self.assertEqual(page.title_column.get_fixed_width(), 300 - 70)
         self.assertTrue(page.artist_column.get_expand())
 
+    async def test_a_filter_bringing_many_back_keeps_the_rows_and_adds_a_few_a_frame(self):
+        from applemusic.pages.songs import GROW_ROWS
+
+        page = await self.songs_page(400)
+        page.set_filter('Song 0011')
+        self.assertEqual(page._rows.get_n_items(), 1)
+        row = page._rows.get_item(0)
+        page.set_filter('')
+        # Song 0011's row stays where it will be, the others come a few a frame.
+        self.assertLessEqual(page._rows.get_n_items(), 1 + GROW_ROWS)
+        self.assertTrue(await self.until_frames(
+            page.column_view, lambda: page._rows.get_n_items() == 400, 60))
+        self.assertIs(page._rows.get_item(11), row)
+        self.assertEqual([page._rows.get_item(n).title for n in range(400)],
+                         [f'Song {n:04d}' for n in range(400)])
+        self.assertEqual(page.count_label.get_label(), '400 songs')
+
+    async def test_a_backspace_to_a_text_filtered_by_lately_tests_no_song(self):
+        page = await self.songs_page(30)
+        for text in ('Song 00', 'Song 001', 'Song 0012'):
+            page.set_filter(text)
+        typed = page._matches
+        page.set_filter('Song 001')
+        self.assertEqual([track.title for track in page._matches],
+                         [f'Song {n:04d}' for n in range(10, 20)])
+        page.set_filter('Song 0012')
+        self.assertIs(page._matches, typed)  # kept: nothing tested again
+        # Favourites Only, or new songs, forget them.
+        page.activate_action('songs.favourites-only', None)
+        page.set_filter('Song 001')
+        self.assertEqual(page._matches, [])
+        page.activate_action('songs.favourites-only', None)  # off again, as remembered
     async def test_a_filter_set_from_elsewhere_applies_at_once(self):
         page = await self.songs_page(12)
         page.set_filter('Song 0011')

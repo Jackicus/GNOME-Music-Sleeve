@@ -96,7 +96,7 @@ from ..remote import fetch_cover, fetch_shelf_art, remote_item
 from ..widgets import context_menu, dnd, track_links
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
-from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
+from ..widgets.filter_bar import FilterBar, SearchText, ShownModel
 from ..widgets.selection_mode import SelectionMode, row_description
 from ..widgets.labels import track_label
 from ..widgets.suggested_songs import SuggestedSongs
@@ -112,6 +112,9 @@ FETCHED_KINDS = ('album', 'playlist')
 # Frames Go to Current Song waits, at most, for the row of the song playing to take the focus
 # (the list lays the row out a frame after scroll_to()).
 REVEAL_FRAMES = 10
+# The songs a playlist's filter gives the list at a frame as it grows back (ShownModel): a
+# row about 1.5 ms to make, bind and lay out (twelve made frames of 17-21 ms).
+GROW_TRACKS = 5
 
 
 def playing_ordinal(tracks, ids, index):
@@ -510,7 +513,8 @@ class DetailPage(Adw.NavigationPage):
             connect_weak(breakpoint, 'apply', self._on_narrow, True)
             connect_weak(breakpoint, 'unapply', self._on_narrow, False)
         # A playlist's filter: the bar under the header bar, the text filtering every group.
-        self._text_filter = text_filter()
+        self._text = SearchText()  # a Backspace that brings nothing back filters nothing
+        self._filtered = []  # the groups' Gtk.FilterListModels of it, while it filters
         self.filter_bar = FilterBar(_('Filter Songs'))
         self.toolbar.add_top_bar(self.filter_bar)
         self.header_bar.pack_end(self.filter_bar.button)
@@ -667,12 +671,20 @@ class DetailPage(Adw.NavigationPage):
 
         self._shown_groups = item.groups
         groups = [group for group in item.groups if group.entries.get_n_items()]
+        # New groups (or another item): what each text matched is not known for them.
+        self._text.forget()
         if filters_songs(item):  # through the filter bar's text
-            # Shown through a ShownModel, which a filter's change recycles the rows for.
-            self._track_models = [ShownModel(Gtk.FilterListModel(model=group.entries,
-                                                                 filter=self._text_filter))
-                                  for group in groups]
+            # Shown through a ShownModel, which a filter's change recycles the rows for, and
+            # which gives the list a few a frame when it grows back (the sections after it
+            # placed again as it does).
+            self._filtered = [Gtk.FilterListModel(model=group.entries, filter=self._text.filter)
+                              for group in groups]
+            self._track_models = [ShownModel(model, self.list_view, GROW_TRACKS)
+                                  for model in self._filtered]
+            for model in self._track_models:
+                connect_weak(model, 'items-changed', self._place_sections)
         else:
+            self._filtered = []
             self._track_models = [group.entries for group in groups]
         self._starts = []
         self._headings = []
@@ -739,13 +751,8 @@ class DetailPage(Adw.NavigationPage):
         with contextlib.ExitStack() as stack:
             for model in self._track_models:
                 stack.enter_context(model.replacing(self._scroll_top))
-            self._text_filter.set_search(bar.search or None)
-        position = 1  # after the hero
-        for index, model in enumerate(self._track_models):
-            self._starts[index] = position
-            position += model.get_n_items()
-        if self._suggestions_start is not None:
-            self._suggestions_start = position
+            self._text.set_search(bar.search, self._filtered)
+        self._place_sections()
         self._update_filter()
         self.selection_mode.prune()
         if bar.search and self._track_models:
@@ -753,6 +760,18 @@ class DetailPage(Adw.NavigationPage):
             total = self._track_total
             words = ngettext('{shown} of {total} song', '{shown} of {total} songs', total)
             bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
+
+    def _place_sections(self, *_args):
+        """The positions of the sections of tracks, and of the suggestions after them, as
+        the filter changes what they show."""
+        if len(self._starts) != len(self._track_models):
+            return  # the sections are being made (_show_item places them)
+        position = 1  # after the hero
+        for index, model in enumerate(self._track_models):
+            self._starts[index] = position
+            position += model.get_n_items()
+        if self._suggestions_start is not None:
+            self._suggestions_start = position
 
     def _scroll_top(self):
         self.list_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
@@ -784,6 +803,9 @@ class DetailPage(Adw.NavigationPage):
         if self.stack.get_visible_child_name() != 'item' or not self._shown_tracks():
             return False
         position = None
+        for model in self._track_models:
+            if isinstance(model, ShownModel):
+                model.finish()  # every row there, if the songs were growing back
         for start, model in zip(self._starts, self._track_models, strict=True):
             index = model.find(track) if isinstance(model, ShownModel) else None
             if index is not None:
@@ -1403,6 +1425,9 @@ class DetailPage(Adw.NavigationPage):
         player = self._playing.player
         if player is None or player.track is None or not self._starts:
             return None
+        for model in self._track_models:
+            if isinstance(model, ShownModel):
+                model.finish()  # every song the filter leaves shown, if it was growing back
         self._playing.update()
         tracks = (self._rows.get_item(position)
                   for position in range(self._starts[0], self._track_end()))

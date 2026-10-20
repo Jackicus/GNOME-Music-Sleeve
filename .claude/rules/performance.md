@@ -65,6 +65,15 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   splices), so the list keeps its scroll position. A filter's change over GTK's models goes
   through `widgets.filter_bar.ShownModel`, the list's own model, under `replacing(scroll)`:
   it shows the change the same way (the grids, Artists, a playlist's songs).
+- That recycles only the rows the insertion pushes past those the view keeps
+  (`widgets.util.rows_kept()`). A list of a few items growing back to many (a Backspace)
+  goes through `widgets.util.GrowBack` instead (ShownModel, given its view, and the Songs
+  table): the items shown keep their rows (a change that removes an item and puts it back
+  keeps its row), the new ones go in a few a frame from the top, and the old ones that will
+  be past the rows kept go at once (a row a change above moves is laid out again). A list or
+  shelf given many items at once grows the same way: a shelf's row gets `FIRST_TILES` (a
+  chart's songs `FIRST_SONGS`) and more a frame after the one that draws them
+  (`PagedRow.give_items()`), as Artists' first build does.
 - A `Gtk.GridView` keeps about 30 rows of `max-columns` tiles alive however few it shows: set
   `max-columns` to what fits (`grid.columns_for()`; `COLUMN_WIDTH` and `VIDEO_COLUMN_WIDTH`
   are a tile, `tile.ART_SIZE` or a video grid's `tile.GRID_VIDEO_SIZE`, plus Adwaita's
@@ -85,8 +94,11 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   only sorts (library.md).
 - Filter after sorting (`Gtk.FilterListModel` over the `Gtk.SortListModel`): a filter's
   change then only removes and puts back, and never sorts again. The Songs table tests only
-  the last matches when the text grows (`songs.narrows()`). Measure a filter with
-  `scroll_test.py --type TEXT` (docs/notes.md).
+  the last matches when the text grows (`songs.narrows()`) and keeps the matches of the texts
+  it filtered by lately (`KEPT_SEARCHES`: a Backspace tests nothing); GTK's pages set their
+  text through `filter_bar.SearchText`, which leaves the models alone when a shorter text is
+  known to match no more than the longer did. Measure a filter with `scroll_test.py --type
+  TEXT` (docs/notes.md).
 
 ## Startup and the main loop
 

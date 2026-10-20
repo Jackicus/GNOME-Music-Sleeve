@@ -598,7 +598,15 @@ class PageTestCase(unittest.IsolatedAsyncioTestCase):
         from gi.repository import Gtk
 
         model = view.get_model()
-        position = next(n for n in range(model.get_n_items()) if model.get_item(n) is focused)
+
+        def position_of_focused():
+            return next((n for n in range(model.get_n_items()) if model.get_item(n) is focused),
+                        None)
+
+        # A list that a filter left few items in grows back a few a frame (ShownModel).
+        self.assertTrue(await self.until_frames(
+            view, lambda: position_of_focused() is not None, 60))
+        position = position_of_focused()
         view.grab_focus()
         if isinstance(view, Gtk.ColumnView):
             view.scroll_to(position, None, Gtk.ListScrollFlags.FOCUS, None)

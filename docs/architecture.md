@@ -74,7 +74,8 @@ touches widgets.
   Albums, Artists, Music Videos, Songs and a playlist's songs filter as the user types
   through one `widgets/filter_bar.py` (`FilterBar`, a search bar under the header bar, over
   `ShownModel`, the list's own model, which shows a filter's change without rebuilding the
-  rows). Songs, an album's and a playlist's songs select several in a selection mode
+  rows, and one that brings many back a few rows a frame).
+  Songs, an album's and a playlist's songs select several in a selection mode
   (`widgets/selection_mode.py` over `selection.py`'s `Selection`, a set of the Track objects
   the lists' binds read; the lists themselves select nothing), whose bar runs the item
   actions on them all (`queue_objects()`, `add_items_to_playlist()`, `remove_entries()`,

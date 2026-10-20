@@ -11,10 +11,10 @@ from gi.repository import Adw, Gdk, GLib, GObject, Gtk
 
 from ..widgets import context_menu
 from ..widgets.artist_row import ArtistRow
-from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
+from ..widgets.filter_bar import FilterBar, SearchText, ShownModel
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.util import (MappedHandlers, connect_weak, first_descendant, focus_position,
-                            next_frame)
+                            next_frame, weak_method)
 from . import SignInOffer, app, mark_bound
 from .grid import make_sorter
 from .library_artist import LibraryArtistPage
@@ -92,15 +92,21 @@ class ArtistsPage(Adw.NavigationPage):
         # the order alone, as the grid pages' does).
         self._choosing = False  # the filter is changing what is selected
         self._shown_artist = None  # the artist whose albums show
-        self._text_filter = text_filter()
+        self._text = SearchText()  # a Backspace that brings nothing back filters nothing
         sorter, _backwards = make_sorter('title')
         self._sorted = Gtk.SortListModel(model=library.artists, sorter=sorter)
-        self._filtered = Gtk.FilterListModel(model=self._sorted, filter=self._text_filter)
-        # The list's first rows at once, the rest a few frames apart (_grow()).
-        self._shown = ShownModel(self._filtered)
+        self._filtered = Gtk.FilterListModel(model=self._sorted, filter=self._text.filter)
+        self._text.watch(self._sorted, 'items-changed')
+        # The list's first rows at once, the rest a few frames apart (_grow()), as after a
+        # filter's change that brings many back (ShownModel).
+        self._shown = ShownModel(self._filtered, self.list_view)
         self._slice = Gtk.SliceListModel(model=self._shown, offset=0, size=FIRST_ROWS)
         self._growing = None  # the task giving the list the rest, once the page has mapped
+        self._select_later = None  # the artist selected once the list has grown back to it
+        self._select_idle = 0
         self._selection = Gtk.SingleSelection(model=self._slice, autoselect=True)
+        # After the selection has taken the change in (it emits it on).
+        connect_weak(self._selection, 'items-changed', self._on_rows_changed)
         connect_weak(self._selection, 'notify::selected-item', self._on_selected)
         connect_weak(self._filtered, 'items-changed', self._update_state)
 
@@ -179,18 +185,23 @@ class ArtistsPage(Adw.NavigationPage):
         change of the albums shown, not one for the neighbour GTK would select first), and
         the new count is announced."""
         selected = self._shown_artist  # the one the albums are of (none may be selected)
+        self._select_later = None
         self._choosing = True
         try:
             with self._shown.replacing(self._scroll_top):  # the rows recycled (ShownModel)
-                self._text_filter.set_search(bar.search or None)
+                self._text.set_search(bar.search, [self._filtered])
             position = self._shown.find(selected) if selected is not None else None
-            if position is None or position >= self._slice.get_n_items():
-                position = 0
-            if self._slice.get_n_items():
-                self._selection.set_selected(position)
+            if position is not None and position >= self._slice.get_n_items():
+                # Not in the list yet, which grows back a few rows a frame (ShownModel):
+                # selected as its row comes (_on_rows_changed), its albums shown meanwhile.
+                self._select_later = selected
+                self._selection.set_autoselect(False)
+                self._selection.set_selected(Gtk.INVALID_LIST_POSITION)
+            elif self._slice.get_n_items():
+                self._selection.set_selected(position or 0)
         finally:
             self._choosing = False
-        if self._selection.get_selected_item() is not selected:
+        if self._selection.get_selected_item() is not selected and self._select_later is None:
             self._on_selected()
         self._update_state()
         shown, total = self._filtered.get_n_items(), self._library.artists.get_n_items()
@@ -220,6 +231,8 @@ class ArtistsPage(Adw.NavigationPage):
         selected one, else the first; False with no list."""
         if self.list_stack.get_visible_child_name() != 'list' or not self._slice.get_n_items():
             return False
+        self._shown.finish()  # every row there, if the list was growing back
+        self._select_kept()
         position = self._shown.find(artist) if artist is not None else None
         if position is not None and position < self._slice.get_n_items():
             self._selection.set_selected(position)
@@ -234,9 +247,39 @@ class ArtistsPage(Adw.NavigationPage):
 
     # The list.
 
+    def _on_rows_changed(self, *_args):
+        """The list grew back (or changed): the artist the filter kept selected once its row
+        is there, after the list has taken the change in (a selection changed from within
+        the change crashed GTK)."""
+        if self._select_later is not None and not self._choosing and not self._select_idle:
+            self._select_idle = GLib.idle_add(weak_method(self._select_kept))
+
+    def _select_kept(self):
+        self._select_idle = 0
+        artist = self._select_later
+        if artist is None or self._choosing:
+            return GLib.SOURCE_REMOVE
+        position = self._shown.find(artist)
+        if position is not None and position >= self._slice.get_n_items():
+            return GLib.SOURCE_REMOVE  # still to come
+        self._select_later = None
+        self._choosing = True
+        try:
+            if position is not None:
+                self._selection.set_selected(position)
+            self._selection.set_autoselect(True)
+        finally:
+            self._choosing = False
+        if self._selection.get_selected_item() is not artist:
+            self._on_selected()
+        return GLib.SOURCE_REMOVE
+
     def _on_selected(self, *_args):
         if self._choosing:
             return  # the filter chooses, once it has filtered (_on_filter_changed)
+        if self._select_later is not None:  # another artist chosen meanwhile
+            self._select_later = None
+            self._selection.set_autoselect(True)
         artist = self._selection.get_selected_item()
         if artist is None and self._filtered.get_n_items() == 0 and self.filter_bar.search:
             return  # nothing matches the filter: the albums shown stay

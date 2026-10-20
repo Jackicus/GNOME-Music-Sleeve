@@ -94,7 +94,9 @@ class ShelfTest(PageTestCase):
         from applemusic.widgets.shelf import ROW_LIMIT
 
         shelf = await self.shown(model('long', 40))
-        self.assertEqual(shelf.list_view.get_model().get_n_items(), ROW_LIMIT)
+        # Its first tiles at once, the rest a few a frame (give_items()).
+        self.assertTrue(await self.until_frames(
+            shelf.list_view, lambda: shelf.list_view.get_model().get_n_items() == ROW_LIMIT))
         self.assertTrue(shelf.see_all_button.get_visible())
         self.assertTrue(shelf.next_button.get_visible())
         self.assertFalse(shelf.previous_button.get_sensitive())  # at the start
@@ -367,6 +369,37 @@ class RankedShelfTest(PageTestCase):
         self.assertEqual(self.window.played, [({'kind': 'songs', 'id': '1900,1901,1902,1903'},
                                                2, None)])
         self.assertEqual(self.window.started_with, ['1902'])
+
+    async def test_a_long_shelf_gives_its_row_the_first_items_then_a_few_a_frame(self):
+        # A chart's 100 songs at once held the main loop 80-90 ms: the first FIRST_SONGS,
+        # then MORE_SONGS a frame after the one that draws them, until the grid makes no
+        # more rows (30 columns of three), then the rest; activating plays them all still.
+        from applemusic.library import Item, ShelfModel
+        from applemusic.widgets.song_shelf import FIRST_SONGS, MORE_SONGS, SongShelf
+
+        songs = [Item({'id': f'19{n:03d}', 'kind': 'song', 'title': f'Invented Song {n}',
+                       'subtitle': 'Invented Artist',
+                       'play': {'kind': 'song', 'id': f'19{n:03d}'}}) for n in range(100)]
+        top = ShelfModel('charts-songs', 'Top Songs', songs)
+        top.ranked = True
+        shelf = SongShelf()
+        shelf.bind_shelf(top)
+        model = shelf.grid_view.get_model()
+        self.assertEqual(model.get_n_items(), FIRST_SONGS)
+        sizes = [model.get_n_items()]
+        model.connect('items-changed', lambda *_args: sizes.append(model.get_n_items()))
+        self.window.root_box.append(shelf)
+        self.assertTrue(await self.until_frames(
+            shelf.grid_view, lambda: model.get_n_items() == 100, 60))
+        steps = [b - a for a, b in zip(sizes, sizes[1:], strict=False)]
+        self.assertTrue(all(step == MORE_SONGS for step in steps[:-1]), steps)
+        self.assertLessEqual(sizes[-2], 90)  # the rest at once once the grid keeps no more
+        shelf.grid_view.emit('activate', 99)
+        self.assertEqual(self.window.started_with, ['19099'])
+        # Another shelf: its own first ones, and the first one's growing stopped.
+        shelf.bind_shelf(ShelfModel('more', 'More', songs[:3]))
+        self.assertEqual(shelf.grid_view.get_model().get_n_items(), 3)
+        self.assertIsNone(shelf._growing)
 
 
 if __name__ == '__main__':

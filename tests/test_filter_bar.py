@@ -126,6 +126,105 @@ class ShownModelTest(unittest.TestCase):
         self.assertIsNone(model.get_item(3))
 
 
+class GrowBackTest(unittest.TestCase):
+    def test_a_list_holds_another_in_order(self):
+        from applemusic.widgets.util import holds_in_order
+
+        self.assertTrue(holds_in_order([2, 5], [1, 2, 3, 5, 8]))
+        self.assertTrue(holds_in_order([], [1]))
+        self.assertTrue(holds_in_order([1, 2], [1, 2]))
+        self.assertFalse(holds_in_order([5, 2], [1, 2, 3, 5]))  # another order
+        self.assertFalse(holds_in_order([2, 9], [1, 2, 3]))  # one gone
+        self.assertFalse(holds_in_order([1, 2, 3], [1, 2]))
+
+
+@requires_gtk
+class GrowingBackTest(unittest.TestCase):
+    def test_a_replacement_bringing_many_back_keeps_the_old_items_and_grows_in_place(self):
+        from gi.repository import Gio, Gtk
+
+        from applemusic.widgets.filter_bar import GROW_STEP, ShownModel
+
+        items = [Gtk.StringObject.new(f'{n:03d}') for n in range(300)]
+        source = Gio.ListStore(item_type=Gtk.StringObject)
+        source.splice(0, 0, [items[5], items[150], items[250]])
+        view = Gtk.ListView()  # never shown: keeps rows for about 200 items, grows by hand
+        model = ShownModel(source, view)
+        changes = []
+        model.connect('items-changed', lambda _model, *change: changes.append(change))
+
+        def shown():
+            return [model.get_item(n).get_string() for n in range(model.get_n_items())]
+
+        scrolled = []
+        with model.replacing(lambda: scrolled.append(shown())):
+            source.splice(0, 3, items)
+        # The old item that will be past the rows the view keeps goes at once, from the end;
+        # then the first GROW_STEP new ones go in with the old among them, which stay put.
+        self.assertEqual(changes[0], (2, 1, 0))
+        self.assertEqual(changes[1], (0, 1, GROW_STEP + 1))  # 000-012: 005 removed, put back
+        self.assertEqual(shown(), [f'{n:03d}' for n in range(GROW_STEP + 1)] + ['150'])
+        self.assertEqual(len(scrolled), 1)
+        self.assertTrue(model.growing)
+        self.assertEqual(model.find(items[299]), 299)  # where it will be
+        model.finish()  # the rest, in one change
+        self.assertFalse(model.growing)
+        self.assertEqual(changes[-1], (GROW_STEP + 1, 1, 300 - GROW_STEP - 1))
+        self.assertEqual(shown(), [item.get_string() for item in items])
+        # A change that does not hold what shows is a replacement, as before.
+        changes.clear()
+        with model.replacing(lambda: None):
+            source.splice(0, 300, [items[1], items[0]])
+        self.assertEqual(changes, [(0, 0, 2), (2, 300, 0)])
+
+    def test_a_backspace_that_brings_nothing_back_filters_nothing(self):
+        from gi.repository import Gio, GObject, Gtk
+
+        from applemusic.widgets.filter_bar import SearchText
+
+        reads = []
+
+        class Keyed(GObject.Object):
+            def __init__(self, key):
+                super().__init__()
+                self.key = key
+
+            @property
+            def search_key(self):
+                reads.append(self.key)
+                return self.key
+
+        store = Gio.ListStore(item_type=Keyed)
+        store.splice(0, 0, [Keyed(key) for key in ('midnight', 'midday', 'morning', 'dusk')])
+        text = SearchText()
+        model = Gtk.FilterListModel(model=store, filter=text.filter)
+        text.watch(store, 'items-changed')
+
+        def shown():
+            return [model.get_item(n).key for n in range(model.get_n_items())]
+
+        for search in ('m', 'mi', 'mid', 'midn', 'midni'):
+            text.set_search(search, [model])
+        self.assertEqual(shown(), ['midnight'])
+        reads.clear()
+        text.set_search('midn', [model])  # matched as many as now: nothing tested
+        self.assertEqual(reads, [])
+        self.assertEqual(shown(), ['midnight'])
+        text.set_search('mid', [model])  # brings midday back: tested
+        self.assertTrue(reads)
+        self.assertEqual(shown(), ['midnight', 'midday'])
+        text.set_search('midn', [model])
+        text.set_search('midni', [model])
+        # A new item that "midn" matches and "midni" does not: what it matched is not
+        # known any more, and the Backspace tests again.
+        store.append(Keyed('midnoon'))
+        reads.clear()
+        text.set_search('midn', [model])
+        self.assertEqual(shown(), ['midnight', 'midnoon'])
+        text.set_search('', [model])
+        self.assertEqual(len(shown()), 5)
+
+
 class FilterBarTest(PageTestCase):
     async def bar(self):
         from gi.repository import Gtk
