@@ -44,6 +44,11 @@ selected in the table's selection mode instead (widgets/selection_mode.py: Selec
 header bar, a Ctrl+click or Shift+click, Ctrl+A), whose bar acts on them all; its check box is
 in the title cell (SongTitle), and a row's description says whether it is selected.
 
+The optional Genre and Year columns (song_columns.py: Genre Column and Year Column in the
+menu, the song-columns setting a playlist's table shares) show where the table has room for
+them: not while the medium or the narrow breakpoint applies, when their menu items hide too.
+Their headers sort as the others do (SongOrder's 'genre' and 'year').
+
 Play and Shuffle, beside the title (under it in a narrow window), play what the table shows,
 in its order and under its filter and Favourites Only: Play from its first song, Shuffle a
 random draw of them, shuffled; at most PLAY_LIMIT songs either way (play_target()).
@@ -60,6 +65,7 @@ from gettext import ngettext
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+from .. import song_columns
 from ..discography import PLAY_LIMIT
 from ..library import SongOrder, Track, apply_diff
 from ..widgets import context_menu, track_links
@@ -74,7 +80,7 @@ from ..widgets.util import (GrowBack, HeaderTitle, MappedHandlers, connect_weak,
 from . import SignInOffer, app, mark_bound
 
 # The columns' names in the Sort By menu's targets and SongOrder's keys.
-COLUMNS = ('title', 'artist', 'album', 'time')
+COLUMNS = ('title', 'artist', 'album', 'genre', 'year', 'time')
 
 # The rows the table is given at a frame while it grows back to many (_show()): each about
 # 1.5 ms to make, bind and lay out (twelve made a frame of 18-27 ms).
@@ -166,7 +172,10 @@ class SongsPage(Adw.NavigationPage):
     title_column = Gtk.Template.Child()
     artist_column = Gtk.Template.Child()
     album_column = Gtk.Template.Child()
+    genre_column = Gtk.Template.Child()
+    year_column = Gtk.Template.Child()
     time_column = Gtk.Template.Child()
+    medium_breakpoint = Gtk.Template.Child()
     narrow_breakpoint = Gtk.Template.Child()
     heading_box = Gtk.Template.Child()
     play_button = Gtk.Template.Child()
@@ -193,6 +202,10 @@ class SongsPage(Adw.NavigationPage):
         self._row_items = set()  # and the rows bound (their descriptions)
         self._favourites_restored = False  # Favourites Only as last chosen, once mapped
         self._stacked = False  # the narrow table's: the artist under the title, not beside it
+        self._medium = False  # the medium breakpoint applies: no room for Genre and Year
+        self._settings = getattr(app(), 'settings', None)
+        self._optional = song_columns.shown(self._settings)  # the optional columns chosen
+        self._label_columns = frozenset()  # and those shown: the rows' names read them
 
         self.title_label.set_label(title)
         self._header_title = HeaderTitle(self.header_bar, self.title_label)  # while loading
@@ -227,11 +240,17 @@ class SongsPage(Adw.NavigationPage):
             self.title_column: 'title',
             self.artist_column: 'artist',
             self.album_column: 'album',
+            self.genre_column: 'genre',
+            self.year_column: 'year',
             self.time_column: 'time',
         }
+        self._optional_columns = {'genre': self.genre_column, 'year': self.year_column}
         self.title_column.set_sorter(_string_sorter('title'))
         self.artist_column.set_sorter(_string_sorter('artist'))
         self.album_column.set_sorter(_string_sorter('album'))
+        self.genre_column.set_sorter(_string_sorter('genre'))
+        self.year_column.set_sorter(Gtk.NumericSorter(
+            expression=Gtk.PropertyExpression.new(Track, None, 'year')))
         self.time_column.set_sorter(Gtk.NumericSorter(
             expression=Gtk.PropertyExpression.new(Track, None, 'duration_ms')))
 
@@ -239,6 +258,9 @@ class SongsPage(Adw.NavigationPage):
                                                     self._unbind_title))
         self.artist_column.set_factory(self._link_factory('artist'))
         self.album_column.set_factory(self._link_factory('album'))
+        self.genre_column.set_factory(self._text_factory('genre'))
+        self.year_column.set_factory(self._text_factory('year', numeric=True,
+                                                        text=song_columns.year_text))
         self.time_column.set_factory(self._text_factory('duration_label', numeric=True))
 
         # Each row reads its title, artist and album to assistive technology (labels.py),
@@ -251,6 +273,9 @@ class SongsPage(Adw.NavigationPage):
         # title while its breakpoint applies.
         connect_weak(self.narrow_breakpoint, 'apply', self._set_stacked, True)
         connect_weak(self.narrow_breakpoint, 'unapply', self._set_stacked, False)
+        # Genre and Year only from the medium breakpoint's width up (_update_columns).
+        connect_weak(self.medium_breakpoint, 'apply', self._set_medium, True)
+        connect_weak(self.medium_breakpoint, 'unapply', self._set_medium, False)
 
         # Dragging a divider: GTK sets the column's fixed width to its allocated width, which
         # for an expanding column already holds its share of the spare room, then adds the
@@ -266,7 +291,8 @@ class SongsPage(Adw.NavigationPage):
         connect_weak(drag, 'drag-begin', self._on_drag_begin)
         connect_weak(drag, 'drag-end', self._on_drag_end)
         self.column_view.add_controller(drag)
-        for column in (self.title_column, self.artist_column, self.album_column):
+        for column in (self.title_column, self.artist_column, self.album_column,
+                       self.genre_column):
             self._fixed[column] = column.get_fixed_width()
             connect_weak(column, 'notify::fixed-width', self._on_fixed_width)
 
@@ -296,6 +322,12 @@ class SongsPage(Adw.NavigationPage):
             'favourites-only', None, GLib.Variant('b', False))
         connect_weak(self._favourites_action, 'change-state', self._on_favourites_only)
         actions.add_action(self._favourites_action)
+        # The optional columns (song_columns.py): check items after the rest, their state
+        # the song-columns setting's, hidden while the table has no room for them.
+        self._column_actions = song_columns.make_actions(
+            actions, weak_method(self._on_column_chosen))
+        self.sort_button.get_menu_model().append_section(
+            None, song_columns.menu_section('songs'))
         self.insert_action_group('songs', actions)
         self.column_view.sort_by_column(self.title_column, Gtk.SortType.ASCENDING)
         self.column_view.get_sorter().connect('changed', self._on_sort_changed)
@@ -304,10 +336,14 @@ class SongsPage(Adw.NavigationPage):
         self._handlers.add(library, 'notify::songs-ready', self._update_state)
         self._handlers.add(library, 'notify::syncing', self._update_state)
         self._handlers.add(library, 'favourites-changed', self._on_favourites_changed)
+        if self._settings is not None:
+            self._handlers.add(self._settings, 'changed::' + song_columns.SETTING,
+                               self._on_columns_changed)
         # The item playing (a test's stand-in application may have no player).
         self._playing = PlayingMark(getattr(app(), 'player', None))
         if self._playing.player is not None:
             self._handlers.add(self._playing.player, 'notify::track', self._on_track_changed)
+        self._update_columns()
         self._update_state()
 
     # The library and the player outlive the window, so the page listens to them only while
@@ -338,6 +374,7 @@ class SongsPage(Adw.NavigationPage):
         self._update_state()
         self._update_playing()  # the item playing now, changed or not while hidden
         self._on_favourites_changed()  # and the favourites, changed or not while hidden
+        self._on_columns_changed()  # and the columns chosen (a playlist's table shares them)
 
     def do_hidden(self):
         self.selection_mode.leave()  # the mode is the page's while it shows
@@ -628,7 +665,9 @@ class SongsPage(Adw.NavigationPage):
             factory.connect('unbind', unbind)
         return factory
 
-    def _text_factory(self, name, numeric=False):
+    def _text_factory(self, name, numeric=False, text=None):
+        """Cells of an inscription showing the Track's property `name`, through
+        `text(value)` when given (the Year column's year_text())."""
         def setup(_factory, cell):
             # Centred at its one line's height: given the row's height, it would wrap text
             # too long for the column onto a second line.
@@ -638,8 +677,12 @@ class SongsPage(Adw.NavigationPage):
                 inscription.add_css_class('numeric')
             cell.set_child(inscription)
 
-        def bind(_factory, cell):
-            cell.get_child().set_text(getattr(cell.get_item(), name))
+        if text is None:
+            def bind(_factory, cell):
+                cell.get_child().set_text(getattr(cell.get_item(), name))
+        else:
+            def bind(_factory, cell):
+                cell.get_child().set_text(text(getattr(cell.get_item(), name)))
 
         return self._factory(setup, bind)
 
@@ -657,7 +700,8 @@ class SongsPage(Adw.NavigationPage):
     def _bind_row(self, _factory, row):
         track = row.get_item()
         self._row_items.add(row)
-        row.set_accessible_label(track_label(track, favourite=self._library.is_favourite(track)))
+        row.set_accessible_label(track_label(track, favourite=self._library.is_favourite(track),
+                                             columns=self._label_columns))
         selection = self.selection_mode.selection
         row.set_accessible_description(row_description(
             selection.active, selection.has(track),
@@ -692,6 +736,43 @@ class SongsPage(Adw.NavigationPage):
         for cell in self._title_cells:
             cell.get_child().set_stacked(stacked)
         self.selection_mode.set_narrow(stacked)  # the selection bar's narrow layout too
+        self._update_columns()
+
+    # The optional columns (song_columns.py).
+
+    def _set_medium(self, _breakpoint, medium):
+        self._medium = medium
+        self._update_columns()
+
+    def _on_column_chosen(self, name, show):
+        """Genre Column or Year Column in the menu: the setting, which every song table
+        follows (this one at once)."""
+        song_columns.set_shown(self._settings, name, show)
+        self._on_columns_changed()
+
+    def _on_columns_changed(self, *_args):
+        optional = song_columns.shown(self._settings)
+        if optional != self._optional:
+            self._optional = optional
+            self._update_columns()
+
+    def _update_columns(self):
+        """Show the optional columns chosen where the table has room for them (neither the
+        medium nor the narrow breakpoint applies), the menu's items saying so; the bound rows
+        are named again with what they show."""
+        room = not (self._medium or self._stacked)
+        shown = self._optional if room else frozenset()
+        for name, column in self._optional_columns.items():
+            if column.get_visible() != (name in shown):
+                column.set_visible(name in shown)
+        song_columns.show_states(self._column_actions, self._optional, room)
+        if shown != self._label_columns:
+            self._label_columns = shown
+            is_favourite = self._library.is_favourite
+            for row in self._row_items:
+                track = row.get_item()
+                row.set_accessible_label(track_label(track, favourite=is_favourite(track),
+                                                     columns=shown))
 
     # Favourites.
 
@@ -718,7 +799,8 @@ class SongsPage(Adw.NavigationPage):
             cell.get_child().set_favourite(is_favourite(cell.get_item()))
         for row in self._row_items:
             track = row.get_item()
-            row.set_accessible_label(track_label(track, favourite=is_favourite(track)))
+            row.set_accessible_label(track_label(track, favourite=is_favourite(track),
+                                                 columns=self._label_columns))
         if self._favourites_only and self._ordered:
             self._follow = True
             self._filter()

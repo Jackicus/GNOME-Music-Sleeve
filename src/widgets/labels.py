@@ -62,13 +62,19 @@ def ranked(rank, label):
     return _format('rank').format(rank=rank, label=label) if rank else label
 
 
-def track_label(track, show_artist=True, show_album=True, favourite=False):
+def track_label(track, show_artist=True, show_album=True, favourite=False, columns=()):
     """A track row's name: its title, then its artist and its album when the row shows them
-    and they are known (a missing one is left out, not read as an empty field), "explicit"
-    for explicit lyrics (the badge the row shows), and "favourite" for one of the account's
-    favourites (`favourite`: the row's heart)."""
+    and they are known (a missing one is left out, not read as an empty field), its genre
+    and year when the table shows those columns (`columns`: song_columns.OPTIONAL names),
+    "explicit" for explicit lyrics (the badge the row shows), and "favourite" for one of the
+    account's favourites (`favourite`: the row's heart)."""
     parts = [track.title, track.artist if show_artist else '',
              track.album if show_album else '']
+    if columns:
+        if 'genre' in columns:
+            parts.append(track.genre)
+        if 'year' in columns and track.year:
+            parts.append(str(track.year))
     parts = [part for part in parts if part]
     label = parts[0] if parts else ''
     for part in parts[1:]:

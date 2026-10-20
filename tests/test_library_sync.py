@@ -454,8 +454,10 @@ class WhenDueTest(unittest.TestCase):
         library = Library()
         self.assertTrue(app_sync.library_ok(library))  # not read yet
         # 3 since the dates added and the favourites, 4 since only a full pass writes the
-        # current version: a 3 may be 1.0.0's short pass over a version 2 file, synced again.
-        for state, version, ok in (('ok', 4, True), ('ok', 5, True), ('ok', 3, False),
+        # current version (a 3 may be 1.0.0's short pass over a version 2 file), 5 since the
+        # tracks' genres and years: an older file is synced again.
+        for state, version, ok in (('ok', 5, True), ('ok', 6, True), ('ok', 4, False),
+                                   ('ok', 3, False),
                                    ('ok', 2, False), ('ok', 1, False),
                                    ('ok', 0, False), ('missing', 0, False),
                                    ('unreadable', 0, False)):

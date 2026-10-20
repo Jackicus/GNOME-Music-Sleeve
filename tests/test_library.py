@@ -101,6 +101,8 @@ def collation_order(tracks, column, descending=False):
         raw = track.raw
         if name == 'time':
             return library_module._number(raw.get('durationMs'))
+        if name == 'year':
+            return library_module._number(raw.get('year'))
         if name == 'track':
             return (library_module._number(raw.get('discNumber')),
                     library_module._number(raw.get('trackNumber')))
@@ -696,6 +698,20 @@ class TestReadLibrary(unittest.TestCase):
         self.path.write_text(json.dumps({'version': 1, 'sections': sections}), encoding='utf-8')
         return library_module._read_library(self.path)
 
+    def test_repeated_values_are_one_object(self):
+        # SHARED_KEYS: two albums' songs of one genre and year share the decoder's strings
+        # and ints (a year past 256 is an object of its own for each one decoded).
+        albums = [album(f'l.a{n}', f'A{n}', [f'i.{n}.1', f'i.{n}.2']) for n in (1, 2)]
+        for each in albums:
+            for entry in each['groups'][0]['entries']:
+                entry.update(genre='Nu-' + 'Jazz', year=2000 + 19)
+        data, _count, _state = self.read({'albums': albums})
+        entries = [entry for each in data['sections']['albums']
+                   for entry in each['groups'][0]['entries']]
+        self.assertEqual(len({id(entry.get('genre')) for entry in entries}), 1)
+        self.assertEqual(len({id(entry.get('year')) for entry in entries}), 1)
+        self.assertEqual(entries[0].get('year'), 2019)
+
     def test_artist_tracks_dropped_only_for_albums_in_the_library(self):
         albums = [album('l.a1', 'A1', ['i.1', 'i.2'])]
         artists = [self.artist('l.r1', ['l.a1', 'l.gone'])]
@@ -777,6 +793,10 @@ class TestTrack(unittest.TestCase):
         self.assertEqual(entry.get_property('duration-ms'), 180000)
         self.assertEqual(entry.thumb, '/album.jpg')  # its own is null: the album's
         self.assertEqual(Track({}).title, '')
+        # A library.json from before version 5 has no genre or year: '' and 0.
+        self.assertEqual((Track({}).genre, Track({}).year), ('', 0))
+        self.assertEqual((Track({'genre': 'Nu-Jazz', 'year': 2021}).genre,
+                          Track({'genre': 'Nu-Jazz', 'year': 2021}).year), ('Nu-Jazz', 2021))
         self.assertIsNone(Track({}).id)
         with self.assertRaises(TypeError):
             entry.set_property('title', 'Other')  # read-only: the dict is the truth
@@ -947,11 +967,12 @@ class TestTrackRecord(unittest.TestCase):
         self.assertNotEqual(TrackRecord(one), TrackRecord(without))  # null is not absent
 
     def test_a_track_reads_it_as_the_dict(self):
-        entry = dict(track('i.1', 'Song', 4), catalogId=123, explicit=True, type='songs')
+        entry = dict(track('i.1', 'Song', 4), catalogId=123, explicit=True, type='songs',
+                     genre='Shoegaze', year=2019)
         over_dict, over_record = Track(entry), Track(TrackRecord(entry))
         for name in ('id', 'catalog-id', 'title', 'artist', 'album', 'track-number',
                      'disc-number', 'duration-ms', 'duration-label', 'explicit', 'index',
-                     'kind', 'thumb'):
+                     'kind', 'thumb', 'genre', 'year'):
             with self.subTest(name=name):
                 self.assertEqual(over_record.get_property(name), over_dict.get_property(name))
         self.assertEqual(over_record.search_key, over_dict.search_key)
@@ -1991,6 +2012,83 @@ class TestSongOrder(unittest.TestCase):
         self.assertTrue(all(any(t is u for u in self.tracks) for t in first))
         self.assertEqual(self.order.tracks('artist'), first)
         self.assertEqual(SongOrder([]).tracks('title'), [])
+
+    def test_genre_and_year_break_ties_by_artist_album_and_track(self):
+        # The optional columns (song_columns.py): a genre's text ignoring case, a year as a
+        # number (none is 0, first), each then by artist, album and disc and track.
+        rows = [
+            # id, artist, album, track, genre, year
+            ('i.1', 'Bea', 'North', 2, 'Shoegaze', 2019),
+            ('i.2', 'Bea', 'North', 1, 'shoegaze', 2019),
+            ('i.3', 'Abe', 'South', 1, 'Ambient', 2021),
+            ('i.4', 'Cy', 'East', 1, None, None),
+            ('i.5', 'Abe', 'West', 1, 'Shoegaze', 2007),
+        ]
+        tracks = [Track({'id': i, 'title': i, 'artist': artist, 'album': name,
+                         'discNumber': 1, 'trackNumber': number, 'genre': genre, 'year': year})
+                  for i, artist, name, number, genre, year in rows]
+        order = SongOrder(tracks)
+        asyncio.run(order.prepare('genre'))
+
+        def ids(column, descending=False):
+            return [t.id for t in order.tracks(column, descending)]
+
+        self.assertEqual(ids('genre'), ['i.4', 'i.3', 'i.5', 'i.2', 'i.1'])
+        self.assertEqual(ids('genre', descending=True), ['i.5', 'i.2', 'i.1', 'i.3', 'i.4'])
+        self.assertEqual(ids('year'), ['i.4', 'i.5', 'i.2', 'i.1', 'i.3'])
+        self.assertEqual(ids('year', descending=True), ['i.3', 'i.2', 'i.1', 'i.5', 'i.4'])
+
+
+class TestGenres(unittest.TestCase):
+    """The Genres page's Items (genre_items(), Library.genres())."""
+
+    def album(self, album_id, title, genre, thumb=None):
+        return dict(album(album_id, title, []), genre=genre, thumb=thumb)
+
+    def test_one_item_a_genre_by_name_with_its_count_and_first_cover(self):
+        albums = [Item(self.album('l.a1', 'One', 'Shoegaze')),
+                  Item(self.album('l.a2', 'Two', 'ambient', thumb='/t/2.jpg')),
+                  Item(self.album('l.a3', 'Three', 'Shoegaze', thumb='/t/3.jpg')),
+                  Item(self.album('l.a4', 'Four', None)),
+                  Item(self.album('l.a5', 'Five', '  ')),
+                  Item(self.album('l.a6', 'Six', 'Shoegaze', thumb='/t/6.jpg'))]
+        items = library_module.genre_items(albums)
+        self.assertEqual([item['title'] for item in items], ['ambient', 'Shoegaze'])
+        shoegaze = items[1]
+        self.assertEqual(shoegaze['id'], library_module.GENRE_PREFIX + 'Shoegaze')
+        self.assertEqual(shoegaze['kind'], 'genre')
+        self.assertEqual(shoegaze['albumCount'], 3)
+        self.assertEqual(shoegaze['subtitle'], '3 albums')
+        self.assertEqual(shoegaze['thumb'], '/t/3.jpg')  # the first album with a cover
+        self.assertEqual(items[0]['subtitle'], '1 album')
+        self.assertEqual(library_module.genre_items([]), [])
+
+    def test_made_when_first_asked_and_kept_up_to_date_by_every_load(self):
+        with tempfile.TemporaryDirectory() as cache_dir:
+            write_library(cache_dir, [self.album('l.a1', 'One', 'Shoegaze'),
+                                      self.album('l.a2', 'Two', 'Ambient')])
+            library = load(cache_dir)
+            self.assertEqual(library._genres.get_n_items(), 0)  # not asked for: not made
+            genres = library.genres()
+            self.assertEqual([item.title for item in genres], ['Ambient', 'Shoegaze'])
+            shoegaze = genres.get_item(1)
+            self.assertEqual(shoegaze.kind, 'genre')
+            self.assertEqual(shoegaze.subtitle, '1 album')
+            notified = []
+            shoegaze.connect('notify::subtitle', lambda *_args: notified.append(True))
+            write_library(cache_dir, [self.album('l.a1', 'One', 'Shoegaze'),
+                                      self.album('l.a3', 'Three', 'Shoegaze'),
+                                      self.album('l.a4', 'Four', 'Nu-Jazz')])
+            with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache_dir}):
+                asyncio.run(library.reload())
+            self.assertIs(library.genres(), genres)  # the same store
+            self.assertEqual([item.title for item in genres], ['Nu-Jazz', 'Shoegaze'])
+            self.assertIs(genres.get_item(1), shoegaze)  # a reload keeps the Item
+            self.assertEqual(shoegaze.subtitle, '2 albums')
+            self.assertEqual(notified, [True])
+            load(cache_dir, library)  # a load makes new Items
+            self.assertIsNot(genres.get_item(1), shoegaze)
+            self.assertEqual(genres.get_item(1).title, 'Shoegaze')
 
 
 def held_library():

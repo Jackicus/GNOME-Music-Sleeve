@@ -151,5 +151,15 @@
       <summary>Library pages showing favourites only</summary>
       <description>The pages (albums, music-videos, songs) last left with Favourites Only chosen in their Sort and Filter menu.</description>
     </key>
+    <key name="show-genres" type="b">
+      <default>false</default>
+      <summary>Show Genres in the sidebar</summary>
+      <description>Whether the sidebar's Library section lists Genres: the library's albums by genre.</description>
+    </key>
+    <key name="song-columns" type="as">
+      <default>[]</default>
+      <summary>Optional columns of the song tables</summary>
+      <description>The optional columns (genre, year) the Songs table and a playlist's table show, as last chosen in their menus. Narrow windows leave them out.</description>
+    </key>
   </schema>
 </schemalist>

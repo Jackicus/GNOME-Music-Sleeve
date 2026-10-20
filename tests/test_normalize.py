@@ -105,6 +105,23 @@ class TestSync(unittest.TestCase):
         self.assertEqual(track['index'], 2)
         self.assertIsNone(track['thumb'])
         self.assertEqual(track['type'], 'songs')
+        self.assertIsNone(track['genre'])  # none given
+        self.assertIsNone(track['year'])
+
+    def test_a_track_keeps_its_genre_and_year(self):
+        # The tables' Genre and Year columns: the first of genreNames, releaseDate's year.
+        track = normalize.normalize_track({'id': 'i.1', 'type': 'library-songs', 'attributes': {
+            'name': 'Glass Tide', 'genreNames': ['Shoegaze', 'Music'],
+            'releaseDate': '2019-04-12'}})
+        self.assertEqual((track['genre'], track['year']), ('Shoegaze', 2019))
+        for released, year in (('2007', 2007), ('', None), ('soon', None), (None, None)):
+            with self.subTest(released=released):
+                self.assertEqual(normalize.track_year({'releaseDate': released}, {}), year)
+        # A Track dict normalised again keeps what it carries; never a playlist's date.
+        self.assertEqual(normalize.track_year({}, {'year': 1999}), 1999)
+        self.assertIsNone(normalize.track_year({'lastModifiedDate': '2026-01-01'}, {}))
+        again = normalize.normalize_track(track)
+        self.assertEqual((again['genre'], again['year']), ('Shoegaze', 2019))
 
     def test_a_track_keeps_its_api_type(self):
         video = normalize.normalize_track({'id': 'i.video1', 'type': 'library-music-videos',

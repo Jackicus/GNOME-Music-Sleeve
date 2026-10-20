@@ -147,6 +147,63 @@ class SongsPageTest(PageTestCase):
         self.assertEqual(page._sort_column.get_state().get_string(), 'album')
         self.assertEqual(page._sort_order.get_state().get_string(), 'ascending')
 
+    async def test_genre_and_year_columns_follow_the_setting_where_there_is_room(self):
+        """The optional columns (song_columns.py): off until chosen in the menu, which writes
+        the song-columns setting every song table follows; their cells show each song's
+        genre and year, the rows' names read them, and they sort as the other columns do.
+        In a window too narrow for them they go, and their menu items with them."""
+        from gi.repository import Gtk
+
+        from applemusic.pages.songs import SongsPage
+
+        self.addCleanup(self.app.settings.reset, 'song-columns')
+        play = {'kind': 'album', 'id': 'l.album001'}
+        genres = [('Shoegaze', 2019), ('Ambient', 2007), ('Nu-Jazz', 2021)]
+        album = {'id': 'l.album001', 'kind': 'album', 'title': 'Invented Album',
+                 'subtitle': 'Invented Artist', 'play': play,
+                 'groups': [{'name': '', 'play': play, 'entries': [
+                     dict(track('l.album001', n, title=f'Song {n:04d}'), genre=genre, year=year)
+                     for n, (genre, year) in enumerate(genres)]}]}
+        Path(self.cache, 'library.json').write_text(json.dumps(
+            {'version': 5, 'sections': {'albums': [album]}, 'shelves': []}), encoding='utf-8')
+        await self.library.load()
+        page = await self.show_root(SongsPage(self.library, 'Songs'))
+        self.assertTrue(await self.until(lambda: page._rows.get_n_items() == 3, 2))
+        self.assertFalse(page.genre_column.get_visible())
+        self.assertFalse(page.year_column.get_visible())
+        actions = page._column_actions
+        self.assertTrue(actions['genre'].get_enabled())  # 1000 px: room for them
+        page.activate_action('songs.column-genre', None)
+        self.assertEqual(self.app.settings.get_strv('song-columns'), ['genre'])
+        self.assertTrue(page.genre_column.get_visible())
+        self.assertFalse(page.year_column.get_visible())
+        self.assertTrue(actions['genre'].get_state().get_boolean())
+        # Another table turning Year on (the setting): this one follows.
+        self.app.settings.set_strv('song-columns', ['genre', 'year'])
+        self.assertTrue(page.year_column.get_visible())
+        self.assertTrue(actions['year'].get_state().get_boolean())
+        self.assertTrue(await self.until(lambda: any(
+            row.get_accessible_label() == 'Song 0000, Invented Artist, l.album001, Shoegaze, 2019'
+            for row in page._row_items)))
+        texts = [label.get_text() for label in find_all(page.column_view, Gtk.Inscription)
+                 if label.get_mapped()]
+        self.assertTrue({'Shoegaze', 'Ambient', 'Nu-Jazz', '2019', '2007', '2021'} <= set(texts))
+        page.activate_action('songs.sort-column', _variant('genre'))
+        self.assertEqual([page._rows.get_item(n).genre for n in range(3)],
+                         ['Ambient', 'Nu-Jazz', 'Shoegaze'])
+        page.activate_action('songs.sort-column', _variant('year'))
+        self.assertEqual([page._rows.get_item(n).year for n in range(3)], [2007, 2019, 2021])
+        # Too narrow for them: gone, and their items (hidden while their actions are off).
+        narrow = await self.show_at(SongsPage(self.library, 'Songs'), 700)
+        self.assertTrue(await self.until(lambda: not narrow.year_column.get_visible(), 2))
+        self.assertFalse(narrow.genre_column.get_visible())
+        narrow_actions = narrow._column_actions
+        self.assertFalse(narrow_actions['genre'].get_enabled())
+        self.assertTrue(narrow_actions['genre'].get_state().get_boolean())
+        narrow.get_root().set_default_size(1000, 640)
+        self.assertTrue(await self.until(narrow.year_column.get_visible, 2))
+        self.assertTrue(narrow_actions['year'].get_enabled())
+
     async def test_a_dragged_column_follows_the_pointer_and_expands_again_on_release(self):
         # GTK's drag sets the fixed width to the allocated width, the expanding share
         # included: the share must not be added again, or the divider leaves the pointer.

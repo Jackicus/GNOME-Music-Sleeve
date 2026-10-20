@@ -435,6 +435,8 @@ class RowDepthTest(unittest.TestCase):
             starts = {}
             items = self.widget.get_items()
             for index, row in enumerate(self.controller.rows()):
+                if not row.get_visible():
+                    continue  # a destination its setting leaves out (Genres)
                 icon = next(icon for icon in descendants_all(row, Gtk.Image)
                             if icon.has_css_class('icon') and icon.get_mapped())
                 found, bounds = icon.compute_bounds(row)
@@ -467,6 +469,45 @@ class RowDepthTest(unittest.TestCase):
                     self.assertIsNotNone(starts, 'the rows laid out')
                     self.assertEqual({key: round(starts[key] - starts[ALL_PLAYLISTS])
                                       for key in expected}, expected)
+
+
+@requires_gtk
+class OfferedDestinationTest(unittest.TestCase):
+    """A destination with a setting (Genres, show-genres) is listed while it is on: hidden
+    by default, shown and hidden as it changes, Home in its place when it goes while
+    selected, and never selected while hidden (a restored last-page shows Home)."""
+
+    def setUp(self):
+        from gi.repository import Adw, Gio
+
+        from applemusic.sidebar_view import SidebarController
+        from tests.gtk import SCHEMA_ID
+
+        self.settings = Gio.Settings.new(SCHEMA_ID)
+        self.settings.set_strv('expanded-folders', [])
+        self.addCleanup(self.settings.reset, 'show-genres')
+        self.window = StubWindow()
+        self.widget = Adw.Sidebar()
+        self.controller = SidebarController(self.window, self.widget, StubLibrary(deep_tree()),
+                                            self.settings, item_actions=None)
+        self.addCleanup(self.controller.write_expanded)
+
+    def test_listed_while_its_setting_is_on(self):
+        from applemusic.sections import HOME
+
+        item = self.controller.item_for('genres')
+        self.assertFalse(item.get_visible())
+        self.assertEqual(self.controller.select('genres'), HOME)  # never a hidden item
+        self.assertEqual(self.window.shown, HOME)
+        self.settings.set_boolean('show-genres', True)
+        self.assertTrue(item.get_visible())
+        self.assertEqual(self.controller.select('genres'), 'genres')
+        self.assertEqual(self.window.shown, 'genres')
+        self.settings.set_boolean('show-genres', False)  # gone while selected: Home
+        self.assertFalse(item.get_visible())
+        self.assertEqual(self.controller.selected_key(), HOME)
+        self.assertEqual(self.window.shown, HOME)
+        self.assertTrue(self.controller.item_for('albums').get_visible())  # always listed
 
 
 class SectionHeadersTest(unittest.TestCase):
@@ -709,7 +750,7 @@ class DragDropTest(unittest.TestCase):
         self.addCleanup(window.destroy)
         window.present()
         self.assertTrue(wait_for(lambda: all(row.get_width() > 0 for row in self.controller.rows()
-                                             if row.get_child_visible())))
+                                             if row.get_child_visible() and row.get_visible())))
         return window
 
     def middle_of(self, key):
@@ -829,7 +870,7 @@ class ContextMenuTest(unittest.TestCase):
         self.addCleanup(window.destroy)
         window.present()
         self.assertTrue(wait_for(lambda: all(row.get_width() > 0 for row in self.controller.rows()
-                                             if row.get_child_visible())))
+                                             if row.get_child_visible() and row.get_visible())))
         self.stub_window.get_focus = window.get_focus
         return window
 

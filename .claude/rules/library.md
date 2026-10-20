@@ -34,7 +34,8 @@ them before changing either. What matters most:
   changed, returns their names, and emits `groups-changed` last when the groups changed (the
   next `groups` access makes new Groups and Tracks). Stores change through `apply_diff()`, the
   fewest splices. A kept Item is spliced over itself only when one of `SORT_KEYS` (title,
-  subtitle, year, added) changed, so that sort and filter models place it again.
+  subtitle, year, added, genre: a genre's page filters by it) changed, so that sort and
+  filter models place it again.
 - GTK 4.22 does not rebind a row when a store splices an item over itself, so bound rows keep
   showing old values. A widget or page showing an Item follows that Item's `notify::*` signals
   and `groups-changed`, not the store's `items-changed`.
@@ -62,7 +63,10 @@ them before changing either. What matters most:
 - Lazy parts: an Item's `groups` are wrapped on first access; `songs` stays empty until
   `await library.build_songs()` (the Songs page asks), then `songs-ready`, and from then on
   every load and reload brings it up to date with the fewest splices; `song_count()` counts
-  without building.
+  without building. `genres()` (the Genres page asks) makes its store of genre Items
+  (`genre_items()`: kind 'genre', one a genre the albums have, by name) at its first call,
+  and from then on every load brings it up to date (`apply_diff`, a reload keeping the
+  Items).
 - `SongOrder` sorts the Songs table in Python: each column's keys are computed once per track
   (a text column's as ranks of its collated texts) and kept in integer arrays.
   `await order.prepare(column)` computes them, and every track's `search_key`, in frame-sized
@@ -124,6 +128,7 @@ them before changing either. What matters most:
   Only a full pass writes `LIBRARY_VERSION`: the short passes below keep the version of the
   file they kept the rest from (#437), so an older file stays due. Version 4 has 3's shape;
   it marks a file a full sync wrote, since 1.0.0's short passes could stamp 3 on a 2.
+  Version 5's tracks carry `genre` and `year` (TRACK_FIELDS; the tables' optional columns).
 - Home's Refresh runs a **shelves pass**, `app.start_sync(shelves=True)`: the Home shelves
   alone (recommendations, Heavy Rotation, Recently Added), everything else kept from last
   time's file; a full sync instead while `library_ok()` is false. No last-sync, no toast. A

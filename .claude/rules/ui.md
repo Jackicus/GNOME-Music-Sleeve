@@ -278,6 +278,17 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   Search's Your Library lists Top Results (`search.top_results()`: the artists, albums and
   playlists whose title is or begins with the text, as hero cards), Songs, Artists, Albums,
   then Playlists, as Apple's library search orders them.
+- Genres is a destination its setting lists (`sections.Destination.setting`, show-genres:
+  the controller shows or hides its `Adw.SidebarItem`, never selects it hidden, and shows
+  Home when it goes while selected): a `GridPage` over `Library.genres()`, whose tiles
+  (kind 'genre') open `pages.genre()`, the Albums store through a `Gtk.StringFilter` on
+  `genre`, pushed. The Songs table's and a playlist's table's optional Genre and Year
+  columns (`song_columns.py`, the song-columns setting both follow, while mapped and on
+  map) are check items in their sort menus (`menu_section()`, hidden while their actions
+  are disabled), shown only where the table has room: Songs above its `medium_breakpoint`
+  (760sp) and narrow one, a playlist in its table (TrackRow's `genre_label` among the equal
+  columns, `year_label` beside the time, `TrackTableHeader.set_columns()`). Their sorts are
+  `SongOrder`'s `genre` and `year` and `detail.PLAYLIST_SORTS`'.
 
 ## HIG, style and icons
 

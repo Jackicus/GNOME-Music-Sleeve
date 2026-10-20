@@ -713,6 +713,27 @@ changes, change it here, with the date. The plan they came from is in
   the app asks for (quit, sign-in's restarts, sign-out, the engine's Stop in Preferences)
   has no `lost`, and resets the bar as before: the user ended it. A page that reloads (the
   bridge's `bridgeReset`) still resets: the engine is not lost then.
+- **Genres, and Genre and Year columns** (#363). Apple Music on macOS offers both: a
+  Genres view in its sidebar once chosen, and columns to choose in its song lists. Genres
+  here is a sidebar destination listed while `show-genres` is on (Preferences › Library ›
+  Show Genres, off by default: the sidebar has no editor of its own, and most people browse
+  by album and artist), a grid of the library's genres, each tiled with its first album's
+  cover and counted in albums, opening its albums as the Albums page shows them. A genre is
+  an album's (its first `genreNames`, which the sync has always kept), not its songs': the
+  page lists albums, and an album of mixed genres would otherwise be in several. The index
+  is made from the Albums store when the page first asks (`Library.genres()`, a few
+  milliseconds for 3,000 albums, on no startup path) and kept up to date by every load; a
+  genre's page is a C filter over the Albums store, which follows every sync as the store
+  does (an album whose genre changed is spliced over itself: `genre` is a SORT_KEY). The
+  columns are the songs' own genre and year (each song's first `genreNames` and
+  `releaseDate`, library.json version 5, so an older file is synced again at once): a
+  playlist's songs come from many albums. One setting (`song-columns`) holds them for the
+  Songs table and every playlist's table, chosen from either one's sort menu as check items
+  (Apple's are in its View Options; here the menu that already holds the table's other
+  choices), and they show only where the table has room (Songs from 760sp, a playlist's
+  table from its 720sp breakpoint), their items hidden with them. Composers and
+  Compilations, also in Apple's list, are left out: the API gives no composer to library
+  songs and no compilation flag to library albums.
 - **A list of songs MusicKit cannot all find plays without the missing ones** (#508). Every
   play of song ids (Songs' Play and Shuffle, a library artist's Play, a shelf of songs, a
   selection's Play Next and Play Later, the session restored) goes through the Player's

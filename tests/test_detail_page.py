@@ -478,6 +478,47 @@ class DetailPageTest(PageTestCase):
             self.assertTrue(row.artist_label.get_visible())
             self.assertFalse(row.columns.get_homogeneous())
 
+    async def test_a_tables_genre_and_year_columns(self):
+        # The optional columns (song_columns.py), chosen in Sort By as on Songs (the
+        # song-columns setting both follow): the rows' genre and year, the header's titles,
+        # the rows' names; offered only while the songs are a table.
+        self.addCleanup(self.app.settings.reset, 'song-columns')
+        data = album(1, tracks=3, kind='playlist')
+        for entry, (genre, year) in zip(data['groups'][0]['entries'],
+                                        [('Shoegaze', 2019), ('Ambient', 2007), ('', 0)],
+                                        strict=True):
+            entry.update(genre=genre, year=year)
+        page = await self.push(self.page(data))
+        self.assertTrue(await self.until(lambda: page.table and len(page._bound) == 3))
+        rows = {item.get_item().year: item for item in page._bound}
+        row = rows[2019].get_child().track_row
+        self.assertIsNone(row.genre_label)  # made only when first shown
+        self.assertTrue(page._column_actions['genre'].get_enabled())
+        page.activate_action('tracks.column-genre', None)
+        page.activate_action('tracks.column-year', None)
+        self.assertEqual(self.app.settings.get_strv('song-columns'), ['genre', 'year'])
+        self.assertTrue(row.genre_label.get_visible())
+        self.assertEqual((row.genre_label.get_text(), row.year_label.get_text()),
+                         ('Shoegaze', '2019'))
+        self.assertEqual(rows[0].get_child().track_row.year_label.get_text(), '')  # unknown
+        self.assertTrue(rows[2019].get_accessible_label().endswith(', Shoegaze, 2019'))
+        headers = list(page._table_headers)
+        self.assertTrue(headers)
+        self.assertTrue(all(header.get_child()._genre.get_visible() for header in headers))
+        self.assertTrue(all(header.get_child()._year.get_visible() for header in headers))
+        page.sort('year')
+        tracks = [page._rows.get_item(n) for n in range(page._rows.get_n_items())]
+        self.assertEqual([track.year for track in tracks if hasattr(track, 'year')],
+                         [0, 2007, 2019])
+        # Narrower: the list again, no columns, and the items hidden.
+        page.table = False
+        self.assertFalse(row.genre_label.get_visible())
+        self.assertFalse(row.year_label.get_visible())
+        self.assertFalse(page._column_actions['year'].get_enabled())
+        self.app.settings.set_strv('song-columns', [])  # Songs turned them off
+        page.table = True
+        self.assertFalse(row.genre_label.get_visible())
+
     async def test_an_album_is_never_a_table(self):
         page = await self.push(self.page(album(1, tracks=3)))
         self.assertTrue(await self.until(lambda: page.table and len(page._bound) == 3))

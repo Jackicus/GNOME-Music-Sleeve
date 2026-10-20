@@ -29,11 +29,11 @@ browsed twice, and pages opened and closed leaving at most 5 MB behind):
   counts) to the window mapped, its first frame painted, the library ready, and the
   Albums page's first tile bound and painted (content): Application.mark(), which
   --debug logs too. The Albums page is the one restored (last-page).
-- page switches: every root page of the sidebar, plus the first folder and the first
-  playlist, shown once (the page built) and again (kept), each timed from the
-  selection to the end of the next frame's paint, with --settle ms between them for
-  the artwork to arrive, as it would for someone browsing. For Songs, also the time
-  until the songs are built and its rows painted. Beside each, the longest frame
+- page switches: every root page of the sidebar (Genres listed: show-genres), plus the
+  first folder and the first playlist, shown once (the page built) and again (kept),
+  each timed from the selection to the end of the next frame's paint, with --settle ms
+  between them for the artwork to arrive, as it would for someone browsing. For Songs,
+  also the time until the songs are built and its rows painted. Beside each, the longest frame
   (before-paint to after-paint, on the main thread) in the --watch ms after it
   (default 1000; the next switch waits for it): work a page puts off until after its
   first paint (Home's later shelves, the grid's columns, the Songs prepare) shows
@@ -377,6 +377,7 @@ def child():
 
     def on_activate(_app):
         app.settings.set_string('last-page', 'albums')
+        app.settings.set_boolean('show-genres', True)  # Genres is one of the pages toured
         GLib.timeout_add(20, wait_for_content)
 
     def wait_for_content():

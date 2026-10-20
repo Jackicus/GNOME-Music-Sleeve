@@ -52,6 +52,23 @@ class SectionsTest(unittest.TestCase):
         keys = [d.key for d in all_destinations()]
         self.assertEqual(sorted(keys), sorted(pages.PAGES))
 
+    def test_genres_is_the_librarys_and_offered_by_its_setting(self):
+        """Genres (#363) is in the Library section, after Songs, listed while show-genres
+        is on; every other destination always is. A destination's setting is a boolean key
+        of the schema."""
+        from gi.repository import Gio
+
+        library = next(section for section in sections.sidebar_sections()
+                       if section.id == 'library')
+        keys = [d.key for d in library.destinations]
+        self.assertEqual(keys[keys.index('songs') + 1], 'genres')
+        settings = {d.key: d.setting for d in all_destinations() if d.setting}
+        self.assertEqual(settings, {'genres': 'show-genres'})
+        schema = Gio.Settings.new('io.github.jackicus.MusicSleeve').props.settings_schema
+        key = schema.get_key('show-genres')
+        self.assertEqual(key.get_value_type().dup_string(), 'b')
+        self.assertFalse(key.get_default_value().get_boolean())  # off until chosen
+
     def test_titles_non_empty(self):
         for destination in all_destinations():
             self.assertTrue(destination.title, destination.key)
