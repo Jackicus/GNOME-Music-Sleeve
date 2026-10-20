@@ -16,7 +16,7 @@
                           [--context-menu [KIND] [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
-                                    remove-from-library]
+                                    remove-from-library|credits] [--song N]
                           [--more-options] [--main-menu] [--sidebar-menu KEY [--submenu NAME]]
                           [--drop-target KEY] [--drop-line N] [--scroll PX]
 
@@ -111,7 +111,10 @@ playlists' dialogs (win.item-new-playlist, win.item-new-folder, win.item-rename,
 win.item-delete) for the playlist or folder the page shows, else the library's first playlist
 of the user's (a new playlist or folder: in the folder shown, else at the top level);
 remove-from-library the confirmation of win.item-remove-from-library for the item the page
-shows, else the library's first album. The demo writes nothing: the dialogs only show.
+shows, else the library's first album; credits the View Credits dialog of a song of the album
+the page shows, else of the library's first album: its first, or its Nth with --song N (-1:
+its last; the demo's last album's last song has no credits), the demo's invented answer. The
+demo writes nothing: the dialogs only show.
 --more-options pops up the More Options menu of the page shown (an album's, a playlist's, a
 folder's) as a click on it would; --main-menu the main menu (in the narrow layout, with
 --sidebar, where its button is).
@@ -207,9 +210,11 @@ parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
                     choices=['general', 'engine'],
                     help='open Preferences on PAGE and shoot the dialog')
 parser.add_argument('--dialog', choices=['about', 'shortcuts', 'new-playlist', 'new-folder',
-                                         'rename', 'delete', 'remove-from-library'],
-                    help='open the About, Keyboard Shortcuts, a playlist or the Remove from '
-                         'Library dialog; shoot it')
+                                         'rename', 'delete', 'remove-from-library', 'credits'],
+                    help='open the About, Keyboard Shortcuts, a playlist, the Remove from '
+                         'Library or the View Credits dialog; shoot it')
+parser.add_argument('--song', metavar='N', type=int, default=0,
+                    help="with --dialog credits, the album's Nth song (-1: its last)")
 parser.add_argument('--more-options', action='store_true',
                     help='pop up the More Options menu of the page shown')
 parser.add_argument('--main-menu', action='store_true',
@@ -554,6 +559,21 @@ def open_removal_dialog(window):
                            GLib.Variant('(ss)', (item.kind, item.id)))
 
 
+def open_credits_dialog(window):
+    """--dialog credits: View Credits for a song of the album the page shows, else of the
+    library's first album (--song), as its menu item runs it."""
+    item = window.shown_item()
+    if item is None or item.kind != 'album':
+        item = app.library.albums.get_item(0) if app.library.albums.get_n_items() else None
+    tracks = [track for group in item.groups for position in range(group.entries.get_n_items())
+              for track in [group.entries.get_item(position)]] if item is not None else []
+    if not tracks:
+        sys.exit('screenshot: no song to show the credits of')
+    track = tracks[args.song]
+    window.item_actions.menu_for(track)  # its menu, which the action finds the track by
+    window.activate_action('win.item-view-credits', GLib.Variant('(ss)', ('song', track.id)))
+
+
 def open_more_options(window):
     """--more-options: the page's More Options menu, popped up."""
     page = window.navigation_view.get_visible_page()
@@ -652,6 +672,11 @@ def open_dialog(window):
     elif args.dialog == 'remove-from-library':
         open_removal_dialog(window)
         kind = Adw.AlertDialog
+    elif args.dialog == 'credits':
+        from applemusic.dialogs.credits import CreditsDialog
+
+        open_credits_dialog(window)
+        kind = CreditsDialog
     else:
         kind = {'about': Adw.AboutDialog, 'shortcuts': Adw.ShortcutsDialog}[args.dialog]
         app.activate_action(args.dialog)

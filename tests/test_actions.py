@@ -7,6 +7,8 @@ drop onto a sidebar playlist are checked without Apple. Gio and GObject only, no
 the actions' coroutines run under asyncio."""
 
 import asyncio
+import sys
+import types
 import unittest
 from unittest import mock
 
@@ -22,7 +24,7 @@ from applemusic.actions import (ItemActions, build_menu, can_play, describe,
                                 playlist_song, playlist_track, queue_message, queue_target,
                                 queue_targets, rating_actions, rating_target, removal_target,
                                 removal_words, RATING_ACTIONS,
-                                share_url, station_target, web_url)
+                                credits_target, share_url, station_target, web_url)
 from applemusic.backend import api
 from applemusic import actions as actions_module
 from applemusic.backend.errors import EngineError
@@ -260,6 +262,7 @@ class MenuTest(unittest.TestCase):
             ('win.item-create-station', ('song', 'i.song1')),
             ('win.item-go-to-album', ('song', 'i.song1')),
             ('win.item-go-to-artist', ('song', 'i.song1')),
+            ('win.item-view-credits', ('song', 'i.song1')),
             ('win.item-love', ('song', 'i.song1')),
             ('win.item-unlove', ('song', 'i.song1')),
             ('win.item-suggest-less', ('song', 'i.song1')),
@@ -399,6 +402,33 @@ class MenuTest(unittest.TestCase):
         self.assertEqual(names(build_menu(MADE_UP_ALBUM)), ['win.item-play',
                                                             'win.item-new-playlist'])
         self.assertNotIn('win.item-open-in-browser', names(build_menu(UPLOAD_TRACK)))
+
+    def test_view_credits_for_a_song_with_a_catalog_id(self):
+        # Apple's credits are the catalog's: a song by the catalog id it carries.
+        library_song = Item({'id': 'i.song9', 'kind': 'song', 'title': 'Lantern',
+                             'catalogId': '1000000018'})
+        catalog_only = Track({'id': '1000000019', 'title': 'Undertow'})
+        playing = now_playing_track(NowPlaying({'id': 'i.song1', 'catalogId': '1000000001',
+                                                'title': 'Harbour Lights', 'type': 'song'}))
+        for obj, song_id in ((LIBRARY_TRACK, '1000000001'), (CATALOG_TRACK, '1000000009'),
+                             (CATALOG_SONG, '1000000007'), (library_song, '1000000018'),
+                             (catalog_only, '1000000019'), (playing, '1000000001')):
+            with self.subTest(title=obj.title):
+                self.assertEqual(credits_target(obj), song_id)
+                self.assertIn(('win.item-view-credits', describe(obj)),
+                              actions_of(build_menu(obj, queued=obj is playing)))
+        # After Go to Album and Go to Artist, beside them.
+        menu = names(build_menu(LIBRARY_TRACK))
+        self.assertEqual(menu[menu.index('win.item-go-to-album'):][:3], [
+            'win.item-go-to-album', 'win.item-go-to-artist', 'win.item-view-credits'])
+        # None without a catalog id (an upload, a library song without one), nor for a music
+        # video or anything but a song.
+        library_only = Item({'id': 'i.song10', 'kind': 'song', 'title': 'Demo Take'})
+        for obj in (UPLOAD_TRACK, library_only, VIDEO_TRACK, CATALOG_VIDEO, LIBRARY_ALBUM,
+                    CATALOG_ALBUM, CATALOG_ARTIST, PLAYLIST, STATION, FOLDER):
+            with self.subTest(title=obj.title):
+                self.assertIsNone(credits_target(obj))
+                self.assertNotIn('win.item-view-credits', names(build_menu(obj)) or [])
 
     def test_create_station_from_a_song_or_an_artist(self):
         # The station Apple seeds from a song or an artist is ra.<its catalog id>.
@@ -1098,7 +1128,7 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
             'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
             'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue',
-            'item-move-in-playlist', 'item-undo-reorder']))
+            'item-move-in-playlist', 'item-undo-reorder', 'item-view-credits']))
         self.assertEqual(
             self.window.actions['item-remove-from-queue'].get_parameter_type().dup_string(),
             '(is)')
@@ -1110,6 +1140,29 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.window.actions['item-add-to-playlist'].get_parameter_type().dup_string(),
             '(sss)')
+
+    async def test_view_credits_presents_the_dialog(self):
+        presented = []
+
+        class Dialog:
+            def __init__(self, app, song_id, title):
+                self.args = (app, song_id, title)
+
+            def present(self, parent):
+                presented.append((*self.args, parent))
+
+        module = types.ModuleType('applemusic.dialogs.credits')
+        module.CreditsDialog = Dialog
+        with mock.patch.dict(sys.modules, {'applemusic.dialogs.credits': module}):
+            self.actions.menu_for(LIBRARY_TRACK)  # the menu names the track
+            await self.run_action('item-view-credits', 'song', 'i.song1')
+            # A target no menu named: a catalog song by its id, without a title.
+            await self.run_action('item-view-credits', 'song', '1000000020')
+            # An upload has none.
+            await self.run_action('item-view-credits', 'song', 'i.song2')
+        self.assertEqual(presented, [(self.app, '1000000001', 'Harbour Lights', self.window),
+                                     (self.app, '1000000020', '', self.window)])
+        self.assertEqual(self.app.toasts, ['This song has no credits'])
 
     async def test_remove_from_up_next(self):
         await self.run_action('item-remove-from-queue', 4, 'i.song1')

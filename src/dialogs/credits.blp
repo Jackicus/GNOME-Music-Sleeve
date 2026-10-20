@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-FileCopyrightText: 2026 Jack Tully
+
+using Gtk 4.0;
+using Adw 1;
+
+template $AppleMusicCreditsDialog: Adw.Dialog {
+  title: _("Credits");
+  content-width: 420;
+  content-height: 560;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: Adw.WindowTitle window_title {
+        title: _("Credits");
+      };
+    }
+
+    content: Stack stack {
+      transition-type: crossfade;
+
+      StackPage {
+        name: "loading";
+
+        child: Adw.Spinner {
+          width-request: 32;
+          height-request: 32;
+          halign: center;
+          valign: center;
+        };
+      }
+
+      StackPage {
+        name: "status";
+
+        child: Adw.StatusPage status_page {
+          icon-name: "system-users-symbolic";
+
+          styles [
+            "compact",
+          ]
+
+          child: Button status_button {
+            halign: center;
+            visible: false;
+            use-underline: true;
+
+            styles [
+              "pill",
+              "suggested-action",
+            ]
+          };
+        };
+      }
+
+      // A boxed list for each kind of credit, as Apple orders them: each person's name, and
+      // their roles under it.
+      StackPage {
+        name: "credits";
+
+        child: Adw.PreferencesPage credits_page {};
+      }
+    };
+  };
+}

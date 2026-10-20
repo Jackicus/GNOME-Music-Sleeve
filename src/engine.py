@@ -92,13 +92,15 @@ UI awaits.
                                       previewed=())
                                  # {items}: the songs Apple suggests adding to a library
                                  # playlist, none of `offered`; more=True: a few more, unkept
-    # The last ten are kept under the cache for a day (landing.json, categories/,
+    await engine.credits(catalog_song_id)   # {categories: [{kind, title, people: [{name,
+                                 # roles}]}]}: a song's credits (View Credits), in Apple's order
+    # The last eleven are kept under the cache for a day (landing.json, categories/,
     # browse.json, made-for-you.json, radio.json, charts.json, recent-played.json, artists/,
-    # albums/, suggestions/) and answered from there without the engine; refresh=True asks
-    # again. Each answer carries `cached`, when it was fetched; one older than a day, answered
-    # when Apple cannot be asked, carries `stale: True` too. The suggestions are kept with
-    # `basis`, what the playlist held, and asked again once it holds something else; Radio's
-    # until its live programmes run out (`expires`), whatever its age.
+    # albums/, suggestions/, credits/) and answered from there without the engine;
+    # refresh=True asks again. Each answer carries `cached`, when it was fetched; one older
+    # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
+    # suggestions are kept with `basis`, what the playlist held, and asked again once it holds
+    # something else; Radio's until its live programmes run out (`expires`), whatever its age.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
@@ -2376,6 +2378,33 @@ class Engine(GObject.Object):
         return await self._kept_answer(
             normalize.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
             normalize.playlist_suggestions, basis=basis)
+
+    async def credits(self, song_id, refresh=False):
+        """A catalog song's credits, as View Credits shows them: {categories: [{kind, title,
+        people: [{name, roles}]}]} (normalize.song_credits), the performers, the composition
+        and lyrics, the production and engineering, in Apple's order and titled as Apple
+        titles them. One read (api.SONG_CREDITS_ENDPOINT); Apple's 404, a song it has no
+        credits for, is no categories. From <cache>/credits/<id>.json for a day, else fetched
+        and kept. A library id is EngineError('usage'): a library song is asked by its
+        catalog id."""
+        song_id = str(song_id or '')
+        if not song_id or is_library_id(song_id):
+            raise EngineError('usage', 'credits needs a catalog song id')
+
+        async def fetch(client):
+            storefront = await self._current_storefront()
+            try:
+                return await self._api(
+                    client, api.SONG_CREDITS_ENDPOINT.format(storefront=storefront, id=song_id),
+                    timeout=READ_TIMEOUT)
+            except EngineError as error:
+                if error.status != 404:
+                    raise
+                log.info('no credits for song %s', song_id)
+                return {'data': []}
+        return await self._kept_answer(
+            normalize.credits_cache_path(str(self.cache_dir), song_id), refresh, fetch,
+            normalize.song_credits)
 
     async def catalog_artist(self, name, song_ids):
         """The id of the catalog artist a library artist stands for, or None. The library

@@ -38,6 +38,8 @@ what it acts on (an Item's kind and id, or 'song' and a Track's id):
     item-create-station  the station Apple seeds from a song or an artist, played at once
     item-go-to-album     the page of the album a song is on (related.py finds it)
     item-go-to-artist    the page of the artist a song, video or album is by
+    item-view-credits    a song's credits, in a dialog (dialogs/credits.py), by its catalog
+                         id (credits_target)
     item-open-in-browser its music.apple.com page, in the default browser (Gtk.UriLauncher)
     item-copy-link       that page's address, on the clipboard
 
@@ -78,11 +80,12 @@ once, ahead of Apple's listing) and a quick sync reads it back.
 
 The menus are built in code, per kind (build_menu): Play, Play Next, Play Later, Create
 Station (a song's or an artist's whose catalog id is known: station_target); Go to Album,
-Go to Artist (not where the page shown is that album or artist already); Favourite or
-Remove from Favourites, then Suggest Less or Undo Suggest Less (all four, of which the menu
-shows those whose actions are enabled: rating_actions(), by the item's rating; as on
-Apple's players, a favourite offers no Suggest Less; an artist whose catalog id is known has
-Favourite or Remove from Favourites alone: favourite_items()), Add to Library (not what the
+Go to Artist (not where the page shown is that album or artist already), View Credits (a
+song's whose catalog id is known: credits_target); Favourite or Remove from Favourites, then
+Suggest Less or Undo Suggest Less (all four, of which the menu shows those whose actions are
+enabled: rating_actions(), by the item's rating; as on Apple's players, a favourite offers no
+Suggest Less; an artist whose catalog id is known has Favourite or Remove from Favourites
+alone: favourite_items()), Add to Library (not what the
 library holds already: a catalog album or playlist by Library.holds(), the test its page's
 In Library makes), Add to Playlist (a song's, a video's, an album's or a playlist's: the
 library's playlists that take songs, each folder's in a section headed by its name, a
@@ -217,6 +220,7 @@ def action_labels():
         'item-create-station': _('Create Stat_ion'),
         'item-move-up': _('_Move Up'),
         'item-move-down': _('Move _Down'),
+        'item-view-credits': _('Vi_ew Credits'),
     }
 
 
@@ -386,6 +390,19 @@ def station_items(obj):
     if named is None or station_target(obj) is None:
         return []
     return [menu_item('item-create-station', GLib.Variant('(ss)', named))]
+
+
+def credits_target(obj):
+    """The catalog id of the song whose credits View Credits shows for obj, or None: a Track
+    or a song Item that is a song (not a music video), by the catalog id it carries, or its
+    own id when that is a catalog one. A song without one (an upload) has none: Apple's
+    credits are the catalog's."""
+    if not (isinstance(obj, Track) or (isinstance(obj, Item) and obj.kind == 'song')):
+        return None
+    if obj.kind == 'video':
+        return None
+    catalog_id = obj.catalog_id or (obj.id if obj.id and not is_library_id(obj.id) else None)
+    return str(catalog_id) if catalog_id and not is_library_id(catalog_id) else None
 
 
 def favourite_target(obj):
@@ -870,6 +887,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         go.append_item(menu_item('item-go-to-album', target))
     if related.has_artist(obj) and not related.shows(here, obj, 'artist'):
         go.append_item(menu_item('item-go-to-artist', target))
+    if credits_target(obj) is not None:
+        go.append_item(menu_item('item-view-credits', target))
     if rating_target(obj) is not None:
         for item in rating_items(target):
             keep.append_item(item)
@@ -1001,6 +1020,7 @@ class ItemActions:
             'item-new-folder': self._on_new_folder,
             'item-remove-from-library': self._on_remove_from_library,
             'item-create-station': self._on_create_station,
+            'item-view-credits': self._on_view_credits,
         }
         self.actions = {}
         for name, handler in handlers.items():
@@ -2107,6 +2127,24 @@ class ItemActions:
                 return False
         log.info('Apple still lists the item removed: the library follows its listing')
         return False
+
+    # -- credits -----------------------------------------------------------------------------
+
+    def _on_view_credits(self, _action, parameter):
+        """The song's credits in a dialog over the window, which asks the engine for them (a
+        song without a catalog id, which has none, toasted). The dialog."""
+        from .dialogs.credits import CreditsDialog
+
+        obj, kind, item_id = self._unpack(parameter)
+        if obj is None and kind == 'song':
+            obj = Item({'kind': 'song', 'id': item_id})
+        song_id = credits_target(obj)
+        if song_id is None:
+            self.app.toast(_('This song has no credits'))
+            return None
+        dialog = CreditsDialog(self.app, song_id, getattr(obj, 'title', '') or '')
+        dialog.present(self.window)
+        return dialog
 
     # -- links -------------------------------------------------------------------------------
 

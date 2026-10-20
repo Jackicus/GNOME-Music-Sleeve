@@ -261,6 +261,34 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertNotIn(item['id'], held)
                     self.assertEqual(item['play'], {'kind': 'song', 'id': item['id']})
 
+    def test_song_credits(self):
+        # Each hand-written album's song has the credits Apple would answer for it, as the
+        # engine keeps them (normalize.song_credits' keys): its artist first among the
+        # performers, then writers, producers and engineers; the last song none.
+        real = normalize.song_credits({}, None)
+        songs = [(entry, album) for album in self.data['sections']['albums']
+                 for group in album['groups'] for entry in group['entries']]
+        for number, (entry, album) in enumerate(songs):
+            with self.subTest(id=entry['catalogId']):
+                path = os.path.join(self.out_dir, 'credits', f"{entry['catalogId']}.json")
+                with open(path, encoding='utf-8') as f:
+                    answer = json.load(f)
+                self.assertIs(answer['demo'], True)
+                self.assertEqual(set(answer) - {'demo', 'cached'}, set(real))
+                if number == len(songs) - 1:
+                    self.assertEqual(answer['categories'], [])
+                    continue
+                self.assertEqual([category['kind'] for category in answer['categories']],
+                                 ['performer', 'composer-and-lyrics',
+                                  'production-and-engineering'])
+                self.assertEqual(answer['categories'][0]['people'][0]['name'],
+                                 album['subtitle'])
+                for category in answer['categories']:
+                    self.assertTrue(category['title'])
+                    for person in category['people']:
+                        self.assertEqual(set(person), {'name', 'roles'})
+                        self.assertTrue(person['name'] and person['roles'])
+
     def test_artist_pages(self):
         # Each hand-written artist has the catalog's page of them, as the engine keeps it
         # (normalize.artist_page's keys); every third one an invented banner on disk, 3:1,

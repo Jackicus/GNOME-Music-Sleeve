@@ -165,6 +165,12 @@ class EngineStatusTest(unittest.IsolatedAsyncioTestCase):
             'This page needs Apple Music; the demo library is offline', None))
         status.activate()
         self.assertEqual(self.app.actions, [])
+        # A dialog's own words for it (View Credits'), where "page" would not fit.
+        status = EngineStatus(self.app, self.page.show, self.page.retry,
+                              dict(TEXTS, demo='Credits come from Apple Music'))
+        status.fail(EngineError('engine-down'))
+        self.assertEqual(self.last(), ('demo', 'Not Available in the Demo',
+                                       'Credits come from Apple Music', None))
 
     async def test_signed_out_engine_down_asks_to_sign_in_and_retries_once_authorized(self):
         status = self.make(signed_in=False)

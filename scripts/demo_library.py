@@ -56,7 +56,9 @@ artists, albums, songs, playlists, videos and stations, the Radio page's shows, 
 invented curators with their pages in categories/), and the Charts page's
 (charts.json, normalize.charts_shelves()'s shape: the demo's own songs, albums,
 playlists and videos ranked, and invented Daily Top 100 and City Charts playlists of
-its songs, for invented places). Last it writes .demo-stamp, the
+its songs, for invented places), and each hand-written album's songs' credits (credits/<catalog
+id>.json, normalize.song_credits()'s shape: invented performers, writers, producers and
+engineers; the last album's last song none). Last it writes .demo-stamp, the
 record of what made it (demo_stamp.py), by which the harness and demo.sh know an out-of-date
 build/demo and write it again. The other keys the app's sync adds
 (sections.songs, artUrl) are optional and left out: the demo has no loose
@@ -165,6 +167,20 @@ SUGGESTIONS = 24  # a playlist's suggested songs: twelve shown at most, and spar
 DEMO_LABELS = ['Lowtide Recordings', 'Paper Lantern Records', 'Driftwood Audio',
                'Quiet Harbour Music', 'Northlight Sound']
 DEMO_EDITIONS = ['{title} (Deluxe)', '{title} (Remastered)']
+# The people of the hand-written albums' songs' credits beside their artists (credits/), and
+# the roles they are credited with, by Apple's kinds of credit (normalize.song_credits).
+DEMO_CREDIT_PEOPLE = ['Ada Brightwater', 'Bram Holloway', 'Cleo Ashdown', 'Dario Fenwick',
+                      'Elin Marlowe', 'Felix Dunmore', 'Greta Sallow', 'Hugo Penrith',
+                      'Ines Quarry', 'Jonah Thistle', 'Kira Wendle', 'Lars Okewood',
+                      'Mira Castell', 'Nico Harrowgate', 'Odile Fenn', 'Pavel Lindqvist']
+DEMO_PERFORMER_ROLES = [['Vocals'], ['Guitar'], ['Bass'], ['Drums'], ['Keyboards'],
+                        ['Synthesizer', 'Programming'], ['Strings'], ['Backing Vocals']]
+DEMO_WRITER_ROLES = [['Composer', 'Lyricist'], ['Composer'], ['Lyricist'], ['Songwriter']]
+DEMO_PRODUCTION_ROLES = [['Producer'], ['Producer', 'Recording Engineer'], ['Mixing Engineer'],
+                         ['Mastering Engineer'], ['Assistant Engineer']]
+# Apple's headings for its kinds of credit, as it titles them in English.
+DEMO_CREDIT_TITLES = {'performer': 'Performers', 'composer-and-lyrics': 'Composition & Lyrics',
+                      'production-and-engineering': 'Production & Engineering'}
 # The Radio page's invented live stations (the first is the library's own first station),
 # each with the programme it is shown airing (the demo's answer has no times, so no
 # `events`: the subtitle stands for what is on air), its radio shows (each with its host)
@@ -2384,6 +2400,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     build_charts_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
                       own_videos, draw_cover, thumb_for, cover_size, library['generated'])
     build_recently_played(out_dir, recently_played_items, library['generated'])
+    build_credits(out_dir, albums[:len(ALBUMS_DATA)], library['generated'])
 
     draw_covers(covers, thumb_dir, thumb_size)
 
@@ -2785,6 +2802,40 @@ def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums,
         with open(os.path.join(pages_dir, f"{album['catalogId']}.json"), 'w',
                   encoding='utf-8') as f:
             json.dump(page, f, indent=2)
+
+
+def build_credits(out_dir, albums, generated):
+    """Write credits/<catalog id>.json for each song of the hand-written albums: the credits
+    Apple would answer for it (normalize.song_credits()'s shape, kept as the engine keeps it,
+    stamped `cached` with the library's date): its artist and a session player or two as
+    Performers, its writers, its producers and engineers, all invented. The last album's last
+    song has none (the dialog's No Credits)."""
+    rnd = random.Random(43)
+    out = os.path.join(out_dir, 'credits')
+    os.makedirs(out, exist_ok=True)
+    songs = [(track, album) for album in albums for group in album['groups']
+             for track in group['entries']]
+
+    def people(count, roles):
+        return [{'name': name, 'roles': rnd.choice(roles)}
+                for name in rnd.sample(DEMO_CREDIT_PEOPLE, count)]
+
+    for number, (track, album) in enumerate(songs):
+        categories = []
+        if number < len(songs) - 1:
+            performers = [{'name': album['subtitle'], 'roles': ['Performer']}]
+            performers += people(rnd.randint(1, 3), DEMO_PERFORMER_ROLES)
+            for kind, found in (('performer', performers),
+                                ('composer-and-lyrics', people(rnd.randint(1, 2),
+                                                               DEMO_WRITER_ROLES)),
+                                ('production-and-engineering', people(rnd.randint(2, 4),
+                                                                      DEMO_PRODUCTION_ROLES))):
+                categories.append({'kind': kind, 'title': DEMO_CREDIT_TITLES[kind],
+                                   'people': found})
+        answer = {'categories': categories, 'cached': generated,
+                  'demo': True}  # invented: the demo engine answers only these
+        with open(os.path.join(out, f"{track['catalogId']}.json"), 'w', encoding='utf-8') as f:
+            json.dump(answer, f, indent=2)
 
 
 def build_recently_played(out_dir, items, generated):

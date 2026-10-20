@@ -94,10 +94,10 @@ touches widgets.
   `suggestions.py`), kept for a day while the playlist holds the same songs; a song plays in
   full or as Apple's preview, which the bridge plays outside MusicKit's queue. An album ends
   with its release footer and the catalog's shelves of it (`release.py`, `Engine.album_page`,
-  kept for a day), asked once its tracks have painted. An album's header names
-  its artist, a playlist's its curator and when it was updated (`release.py`), and a
-  catalog one's offers Add,
-  or In Library once the library holds it (`Library.holds()`, from what is loaded).
+  kept for a day), asked once its tracks have painted. A song's View Credits is a dialog
+  (`dialogs/credits.py`, worded by `credits.py`) over `Engine.credits`, kept for a day.
+  An album's header names its artist, a playlist's its curator and when it was updated
+  (`release.py`), and a catalog one's offers Add, or In Library once the library holds it (`Library.holds()`, from what is loaded).
 - **Library** (`library.py`): the model. GObjects in `Gio.ListStore`s, filled from the cache's
   library.json. It has no GTK, so it is tested without a display. A reload after a sync keeps
   every object still in the library and says what changed through property notifications and

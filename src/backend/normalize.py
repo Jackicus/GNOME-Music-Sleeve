@@ -47,6 +47,8 @@ LYRICS_KEEP = 2000
 # The day-long answers in the cache's top folder, beside categories/.
 KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
                 'recent-played.json')
+# The folders of day-long answers, one file an item.
+ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'suggestions', 'credits')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -2385,6 +2387,62 @@ def preview_url(resource):
     return url if isinstance(url, str) and url.startswith('https://') else None
 
 
+def _credit_categories(raw):
+    """The `role-categories` resources of a credits answer: its `data` (the credits read), or
+    the song's `relationships.credits.data` (the song read with include=credits)."""
+    found = []
+    for resource in api.page_data(raw):
+        if resource.get('type') == 'role-categories':
+            found.append(resource)
+            continue
+        credits = (resource.get('relationships') or {}).get('credits')
+        data = credits.get('data') if isinstance(credits, dict) else None
+        found += [entry for entry in data if isinstance(entry, dict)] if isinstance(
+            data, list) else []
+    return found
+
+
+def song_credits(raw, cache_dir=None):
+    """A catalog song's credits (api.SONG_CREDITS_ENDPOINT's answer, or the song read with
+    include=credits) as {categories: [{kind, title, people: [{name, roles}]}]}: Apple's
+    role categories in its order, `kind` Apple's (`performer`, `composer-and-lyrics`,
+    `production-and-engineering`), `title` Apple's heading for it ('' without one: the app
+    names it by kind), each person by name with their `roleNames` as `roles`, in Apple's
+    order. Someone without a name, the same person twice in a category, and a category left
+    with nobody are left out. A credit's id is not an artist's catalog id, so none is kept.
+    `cache_dir` is unused: kept answers are shaped with it."""
+    categories = []
+    for resource in _credit_categories(raw):
+        attributes = resource.get('attributes') if isinstance(resource.get('attributes'),
+                                                              dict) else {}
+        relationship = (resource.get('relationships') or {}).get('credit-artists')
+        entries = relationship.get('data') if isinstance(relationship, dict) else None
+        people, seen = [], set()
+        for entry in entries if isinstance(entries, list) else []:
+            person = entry.get('attributes') if isinstance(entry, dict) else None
+            if not isinstance(person, dict):
+                continue
+            name = ' '.join(str(person.get('name') or '').split())
+            roles = person.get('roleNames')
+            roles = [' '.join(str(role).split()) for role in roles
+                     if isinstance(role, str) and role.strip()] if isinstance(
+                roles, list) else []
+            if not name or (name, tuple(roles)) in seen:
+                continue
+            seen.add((name, tuple(roles)))
+            people.append({'name': name, 'roles': roles})
+        if people:
+            categories.append({'kind': str(attributes.get('kind') or ''),
+                               'title': ' '.join(str(attributes.get('title') or '').split()),
+                               'people': people})
+    return {'categories': categories}
+
+
+def credits_cache_path(cache_dir, song_id):
+    """Where a song's credits (song_credits) are kept for a day, by its catalog id."""
+    return os.path.join(cache_dir, 'credits', f'{_safe_id(song_id)}.json')
+
+
 def suggestions_cache_path(cache_dir, playlist_id):
     """Where a playlist's suggested songs (playlist_suggestions) are kept for a day."""
     return os.path.join(cache_dir, 'suggestions', f'{_safe_id(playlist_id)}.json')
@@ -2552,8 +2610,8 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
     """Trim the caches nothing else trims (in a thread, at startup and after a sync):
     remote-art/ to `remote_bytes` (prune_remote_art), lyrics/ to the
     `lyrics_keep` played last (by mtime: a cache hit touches the file), the kept answers
-    (categories/, artists/, albums/, suggestions/, landing, New, Made for You, Radio,
-    Charts) written longer than `answer_age` ago (by mtime; ANSWER_KEEP_AGE, well past their
+    (categories/, artists/, albums/, suggestions/, credits/, landing, New, Made for You,
+    Radio, Charts) written longer than `answer_age` ago (by mtime; ANSWER_KEEP_AGE, well past their
     day, since a stale one is the answer while Apple cannot be asked), an
     items/ folder older versions kept, and the temporary files of writes a crash cut short
     (store.is_stale_temp) in the cache and its folders. Returns {what: how many went}. art/
@@ -2573,8 +2631,8 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
             return []
 
     for folder in (cache_dir, *(os.path.join(cache_dir, name) for name in
-                                ('art', 'thumb', 'remote-art', 'lyrics', 'categories',
-                                 'artists', 'albums', 'suggestions'))):
+                                ('art', 'thumb', 'remote-art', 'lyrics',
+                                 *ANSWER_FOLDERS))):
         for entry in files(folder):
             if store.is_stale_temp(entry.path, now) and _remove(entry.path):
                 gone['temps'] += 1
@@ -2586,7 +2644,7 @@ def prune_caches(cache_dir, now=None, remote_bytes=REMOTE_ART_BUDGET, lyrics_kee
         if _remove(entry.path):
             gone['lyrics'] += 1
 
-    answers = [entry for folder in ('categories', 'artists', 'albums', 'suggestions')
+    answers = [entry for folder in ANSWER_FOLDERS
                for entry in files(os.path.join(cache_dir, folder))
                if not store.is_temp(entry.name)]
     answers += [entry for entry in files(cache_dir) if entry.name in KEPT_ANSWERS]

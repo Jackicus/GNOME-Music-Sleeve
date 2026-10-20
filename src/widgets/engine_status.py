@@ -58,8 +58,9 @@ def _weak(callback):
 
 class EngineStatus:
     """See the module. `texts` gives the page's words: 'engine-down' (the description under
-    "Engine Not Running"), 'not-signed-in' (a description, or a (title, description) pair) and
-    'failed' (the title over a failure)."""
+    "Engine Not Running"), 'not-signed-in' (a description, or a (title, description) pair),
+    'failed' (the title over a failure) and, when the page's own words fit better than a
+    page's, 'demo' (the description under "Not Available in the Demo")."""
 
     def __init__(self, app, show, retry, texts):
         self._app = app
@@ -167,7 +168,8 @@ class EngineStatus:
             return
         if status == 'demo':
             title = _('Not Available in the Demo')
-            description = _('This page needs Apple Music; the demo library is offline')
+            description = (self._texts.get('demo')
+                           or _('This page needs Apple Music; the demo library is offline'))
             button = None
         elif status == 'not-signed-in':
             text = self._texts.get('not-signed-in')

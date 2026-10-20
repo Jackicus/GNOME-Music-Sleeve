@@ -158,6 +158,9 @@ def classes():
         async def catalog_artist(self, name, song_ids):
             return await self._answer('catalog_artist', name, song_ids)
 
+        async def credits(self, song_id, refresh=False):
+            return await self._answer('credits', song_id)
+
         async def is_favourite_artist(self, artist_id):
             return await self._answer('is_favourite_artist', artist_id)
 

@@ -36,7 +36,9 @@ list and the script together.
    and Return shows the favourite albums alone.
 3. On an album or playlist: Play, Tab to Shuffle and to More Options (the item's menu), Tab to
    the first track (Shift+Tab goes back to More Options), Down, and Enter plays from that
-   track. On an album, Tab from the last track goes past the footer into Apple Music's
+   track. Menu on a track lists View Credits, whose mnemonic (E) opens the song's credits in
+   a dialog: Tab reaches each person, read with their roles, and Escape closes it, the focus
+   back on the track. On an album, Tab from the last track goes past the footer into Apple Music's
    shelves of it (Other Versions, More By…), and Shift+Tab from there goes back to the last
    track. One of Apple Music's the library lacks has Add between Shuffle and More Options;
    once added, the focus goes to More Options and "In Library" is read as text. Alt+Left

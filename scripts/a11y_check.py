@@ -618,6 +618,47 @@ async def moving_songs(window):
     check('Escape closes it', not any(each.get_visible() for each in shown))
 
 
+async def view_credits(window, detail):
+    """Step 3's View Credits, from the focused track's menu: its dialog (the demo's invented
+    answer) with each person a row Tab reaches, Escape closing it, the focus back on the
+    track."""
+    from applemusic.dialogs.credits import CreditsDialog
+
+    print('-- View Credits')
+    row = window.get_focus()
+    await key(window, 'Menu', 0.6)
+    shown = [each for each in harness.popovers(detail.list_view)
+             if isinstance(each, Gtk.PopoverMenu) and each.get_visible()]
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check('Menu on a track lists View Credits', 'Vi_ew Credits' in labels, labels)
+    if keyboard is not None:
+        await key(window, 'e', 1.0)  # its mnemonic
+    else:
+        for each in shown:
+            each.popdown()
+        track = detail.item.groups[0].entries.get_item(1)
+        window.activate_action('win.item-view-credits', GLib.Variant('(ss)', ('song', track.id)))
+    await until(lambda: dialog_shown(window, CreditsDialog) is not None
+                and dialog_shown(window, CreditsDialog).status == 'credits')
+    dialog = dialog_shown(window, CreditsDialog)
+    check('E opens the credits', dialog is not None and dialog.status == 'credits',
+          dialog.status if dialog is not None else None)
+    if dialog is None:
+        return
+    toplevel = dialog.get_root()
+    await key(toplevel, 'Tab', 0.3)
+    await key(toplevel, 'Tab', 0.3)
+    focus = toplevel.get_focus()
+    check('Tab reaches a person in the credits', inside(focus, dialog.credits_page)
+          and isinstance(focus, Adw.ActionRow) and bool(focus.get_title()), describe(focus))
+    await key(toplevel, 'Escape', 0)
+    await until(lambda: dialog_shown(window, CreditsDialog) is None)
+    await until(window.is_active)
+    check('Escape closes it, the focus back on the track',
+          dialog_shown(window, CreditsDialog) is None and window.get_focus() is row,
+          describe(window.get_focus()))
+
+
 async def playing_keys(window):
     """Step 13: Go to Current Song (Ctrl+L) from a page, Now Playing and the full-screen
     player, the focus on the song's row each time; the volume keys (Ctrl+Up, Ctrl+Down) on
@@ -778,6 +819,7 @@ async def walkthrough(window):
     window.play_request = play_request
     second = detail.item.groups[0].entries.get_item(1)
     check('Down, Enter plays the second track', requests == [(1, second.id)], requests)
+    await view_credits(window, detail)
     # The footer and the catalog's shelves after the tracks (the demo's invented answer).
     await until(lambda: detail._shelves_start is not None)
     check("the catalog's shelves follow the tracks", detail._shelves_start is not None)
@@ -1963,6 +2005,18 @@ async def names(window):
                            GLib.Variant('(ss)', ('playlist', first_playlist().id)))
     await asyncio.sleep(1.0)
     total += await unnamed('Rename Playlist')
+    from applemusic.dialogs.playlist import NameDialog
+
+    renamed = dialog_shown(window, NameDialog)
+    if renamed is not None:
+        renamed.force_close()
+        await asyncio.sleep(0.5)
+    album = app.library.albums.get_item(0)
+    song = album.groups[0].entries.get_item(0)
+    window.item_actions.menu_for(song)  # the menu names the song its action finds
+    window.activate_action('win.item-view-credits', GLib.Variant('(ss)', ('song', song.id)))
+    await asyncio.sleep(1.0)
+    total += await unnamed('View Credits')
     print(f'{total} unnamed in all')
 
 

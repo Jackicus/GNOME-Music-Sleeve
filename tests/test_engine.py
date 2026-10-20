@@ -1966,6 +1966,71 @@ class AlbumPageTest(EngineFixture):
             self.assertEqual(raised.exception.code, 'engine-down')
 
 
+class CreditsTest(EngineFixture):
+    """credits: one read of a catalog song's credits, the shaping, the day-long cache, a 404
+    as none, and the demo's own answers."""
+
+    PATH = '/v1/catalog/us/songs/1724049201/credits'
+
+    async def up(self, authorized=True):
+        self.page.authorized = authorized
+        await self.engine.start()
+
+    async def test_one_read_kept_for_a_day(self):
+        await self.up()
+        with open(FIXTURES / 'song_credits.json', encoding='utf-8') as file:
+            self.page.api_answers[self.PATH] = json.load(file)
+        answer = await self.engine.credits('1724049201')
+        self.assertEqual(self.page.api_calls, [self.PATH])
+        self.assertEqual([category['kind'] for category in answer['categories']],
+                         ['performer', 'composer-and-lyrics', 'production-and-engineering'])
+        self.assertIn('cached', answer)
+        self.assertTrue((self.cache / 'credits' / '1724049201.json').is_file())
+        await self.engine.stop()
+        again = await self.engine.credits('1724049201')  # from the file, the engine down
+        self.assertEqual(again['categories'], answer['categories'])
+        self.assertEqual(self.page.api_calls, [self.PATH])
+
+    async def test_a_404_is_no_credits(self):
+        await self.up()  # the fake page answers 404 for a path it was given nothing for
+        answer = await self.engine.credits('1724049201')
+        self.assertEqual(answer['categories'], [])
+        self.assertEqual(self.page.api_calls, [self.PATH])
+
+    async def test_another_failure_is_raised(self):
+        await self.up()
+        self.page.api_answers[self.PATH] = {'errors': [{'status': '403', 'title': 'no'}]}
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.credits('1724049201')
+        self.assertEqual(raised.exception.status, 403)
+        self.assertFalse((self.cache / 'credits').exists())
+
+    async def test_a_catalog_id_only(self):
+        await self.up()
+        for song_id in ('', None, 'i.aW52ZW50ZWQ'):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.credits(song_id)
+            self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.api_calls, [])
+
+    async def test_signed_out(self):
+        await self.up(authorized=False)
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.credits('1724049201')
+        self.assertEqual(raised.exception.code, 'not-signed-in')
+
+    async def test_the_demo_answers_from_its_own_cache(self):
+        demo = engine_module.Engine(demo=True)
+        path = pathlib.Path(normalize.credits_cache_path(str(self.cache), '1724049201'))
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'categories': [], 'demo': True,
+                                    'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
+        self.assertEqual((await demo.credits('1724049201'))['categories'], [])
+        with self.assertRaises(EngineError) as raised:
+            await demo.credits('1724049202')
+        self.assertEqual(raised.exception.code, 'engine-down')
+
+
 class SuggestionsTest(EngineFixture):
     """playlist_suggestions: the bridge's one read, the shaping and the day-long cache."""
 
