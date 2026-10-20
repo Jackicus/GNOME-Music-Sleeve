@@ -43,12 +43,26 @@ def is_playing(track, playing):
     return bool(catalog_id) and track.catalog_id == catalog_id
 
 
-def playing_description():
-    """"Playing": a row's accessible description while its track is the one playing (the
-    play icon it shows is decoration). Looked up once: rows are bound by the thousand."""
+def _word(key):
+    """A row's words, looked up once: rows are bound by the thousand."""
     if not _words:
         _words['playing'] = _('Playing')
-    return _words['playing']
+        # Translators: a track of a pre-release album that is not out yet: its row's
+        # tooltip and description (it cannot be played).
+        _words['unreleased'] = _('Not yet released')
+    return _words[key]
+
+
+def playing_description():
+    """"Playing": a row's accessible description while its track is the one playing (the
+    play icon it shows is decoration)."""
+    return _word('playing')
+
+
+def unreleased_description():
+    """"Not yet released": the tooltip and accessible description of the row of a track
+    not out yet (Track.unreleased), which is dimmed and does not play."""
+    return _word('unreleased')
 
 
 class PlayingMark:
@@ -83,8 +97,12 @@ class PlayingMark:
     @staticmethod
     def description(track, playing):
         """A row's accessible description: "Playing" while its track is the one playing,
-        else the track's duration."""
-        return playing_description() if playing else (track.duration_label or '')
+        "Not yet released" for a track not out yet, else the track's duration."""
+        if playing:
+            return playing_description()
+        if getattr(track, 'unreleased', False):
+            return unreleased_description()
+        return track.duration_label or ''
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/track_row.ui')
@@ -103,6 +121,9 @@ class TrackRow(Gtk.Box):
     In the list's selection mode the row starts with a check box (set_selected(), as the
     page reads the selection: widgets/selection_mode.py), shown only in the mode.
 
+    The row of a track not out yet (Track.unreleased: a pre-release album's) is dimmed and
+    says "Not yet released" in its tooltip; the page plays nothing for it.
+
     The row of the track playing (`playing`, set by bind() or set_playing() as the page
     follows the Player) shows a play icon in the number's slot, or over the thumbnail, and
     its title bold (style.css's `.playing`): nothing that changes its size. A favourite's row
@@ -116,6 +137,7 @@ class TrackRow(Gtk.Box):
     _favourite = False
     _selecting = False
     _selected = False
+    _unreleased = False
 
     number_stack = Gtk.Template.Child()
     number_label = Gtk.Template.Child()
@@ -177,6 +199,20 @@ class TrackRow(Gtk.Box):
         self.duration_label.set_text(track.duration_label)
         self.set_playing(playing)
         self.set_favourite(favourite)
+        self._set_unreleased(getattr(track, 'unreleased', False))
+
+    def _set_unreleased(self, unreleased):
+        """Dim the row of a track not out yet, with its tooltip, or not (only when it
+        changes)."""
+        unreleased = bool(unreleased)
+        if unreleased == self._unreleased:
+            return
+        self._unreleased = unreleased
+        if unreleased:
+            self.add_css_class('dimmed')
+        else:
+            self.remove_css_class('dimmed')
+        self.set_tooltip_text(unreleased_description() if unreleased else None)
 
     def set_selected(self, selecting, selected=False):
         """In the list's selection mode (`selecting`) show the check box, ticked when

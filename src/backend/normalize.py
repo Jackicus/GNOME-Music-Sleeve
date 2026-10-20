@@ -894,12 +894,46 @@ def normalize_track(raw_track, index=0, cache_dir=None, art_urls=None):
     }
 
 
+def is_prerelease(attrs, raw_item=None):
+    """Whether an album is not out yet: its catalog attributes' `isPrerelease` (Apple's), or
+    an Item dict's own `prerelease` (one shaped already)."""
+    if isinstance(attrs, dict) and attrs.get('isPrerelease') is True:
+        return True
+    return isinstance(raw_item, dict) and raw_item.get('prerelease') is True
+
+
+def release_date(attrs, raw_item=None):
+    """An album's `releaseDate` (Apple's 'YYYY-MM-DD', or a year alone) from its attributes
+    or an Item dict, its white space trimmed; None when it has none."""
+    for source in (attrs, raw_item):
+        date = source.get('releaseDate') if isinstance(source, dict) else None
+        if isinstance(date, str) and RELEASE_DATE.fullmatch(date.strip()):
+            return date.strip()
+    return None
+
+
+def track_released(raw_track):
+    """Whether a track of a pre-release album can be played already: Apple gives a track
+    not out yet no `playParams` (a pre-release single has them). An entry shaped already says
+    so by its own `unreleased`; one with no attributes at all counts as released."""
+    if not isinstance(raw_track, dict):
+        return True
+    attrs = raw_track.get('attributes')
+    if not isinstance(attrs, dict):
+        return raw_track.get('unreleased') is not True
+    return bool(attrs.get('playParams'))
+
+
 def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):
     """Turn an Apple Music API album into the Item shape with kind='album'.
 
     `tracks` are the album's songs when the caller fetched them separately;
     otherwise the album's own `tracks` relationship is read. Tracks are
     grouped by disc: groups = [{"name": "Disc 1", "play": {...}, "entries": [...]}].
+
+    A pre-release album (is_prerelease()) has `prerelease: true` and its `releaseDate`, and
+    each of its tracks not out yet (track_released()) `unreleased: true`; other albums and
+    tracks have neither key.
     """
     attrs = raw_album.get('attributes') or {}
     item_id = str(raw_album.get('id') or '')
@@ -941,6 +975,7 @@ def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):
         return (d_int, tr_int)
 
     sorted_tracks = sorted(raw_tracks, key=track_sort_key)
+    prerelease = is_prerelease(attrs, raw_album)
 
     # One group per disc, the entries numbered on from the discs before: every
     # disc's group plays the whole album (setQueue({album, startWith}), which
@@ -963,7 +998,8 @@ def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):
     for d in sorted(raw_discs.keys()):
         disc_label = f'Disc {d if d > 0 else 1}'
         disc_entries = [
-            normalize_track(t, index=len(normalized_tracks) + idx)
+            _with_release(normalize_track(t, index=len(normalized_tracks) + idx), t,
+                          prerelease)
             for idx, t in enumerate(raw_discs[d])
         ]
         normalized_tracks.extend(disc_entries)
@@ -992,7 +1028,7 @@ def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):
         or any(t.get('explicit') for t in normalized_tracks)
     )
 
-    return _with_added({
+    album = {
         'id': item_id,
         'kind': 'album',
         'title': title,
@@ -1010,7 +1046,21 @@ def normalize_album(raw_album, cache_dir=None, tracks=None, art_urls=None):
         'url': url,
         'play': {'kind': 'album', 'id': item_id},
         'groups': groups,
-    }, attrs)
+    }
+    if prerelease:
+        album['prerelease'] = True
+        date = release_date(attrs, raw_album)
+        if date:
+            album['releaseDate'] = date
+    return _with_added(album, attrs)
+
+
+def _with_release(entry, raw_track, prerelease):
+    """A pre-release album's track entry marked `unreleased` when it is not out yet
+    (track_released()); any other entry as it is."""
+    if prerelease and not track_released(raw_track):
+        entry['unreleased'] = True
+    return entry
 
 
 def normalize_artist(raw_artist, cache_dir=None, albums=None, art_urls=None):

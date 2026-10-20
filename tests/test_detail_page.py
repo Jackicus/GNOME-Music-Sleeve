@@ -471,6 +471,59 @@ class DetailPageTest(PageTestCase):
             self.assertFalse(page.add_button.get_visible(), kind)
             self.assertFalse(page.in_library_box.get_visible(), kind)
 
+    def upcoming(self, out=(1,)):
+        """An invented pre-release catalog album of three songs, those at the places `out`
+        released already, the others not out yet (`unreleased`)."""
+        data = self.catalog(album(1, tracks=3))
+        data.update(prerelease=True, releaseDate='2026-12-04', trackCount=3,
+                    durationMs=540000)
+        for number, entry in enumerate(data['groups'][0]['entries']):
+            entry['id'] = entry['catalogId'] = f'17240499{number:02d}'
+            if number not in out:
+                entry['unreleased'] = True
+        return data
+
+    async def test_a_prerelease_album_says_when_and_plays_what_is_out(self):
+        page = await self.push(self.page(self.upcoming()))
+        self.assertEqual(page.caption_label.get_label(),
+                         'Pop · Coming 4 December 2026 · 3 songs, 9 min')
+        self.assertEqual(page.footer_label.get_label().split('\n'),
+                         ['Coming 4 December 2026', '3 songs, 9 minutes'])
+        # Pre-Add, as Apple Music words it.
+        self.assertTrue(page.add_button.get_visible())
+        self.assertEqual(page.add_content.get_label(), 'Pre-Add')
+        self.assertEqual(page.add_button.get_tooltip_text(), 'Pre-Add to Library')
+        # The songs not out yet are dimmed and say so; the single plays.
+        self.assertTrue(await self.until(lambda: len(page._bound) == 3))
+        for track_id, out in (('1724049900', False), ('1724049901', True)):
+            row = self.bound_row(page, track_id)
+            self.assertEqual(row.get_child().track_row.has_css_class('dimmed'), not out)
+            self.assertEqual(row.get_child().track_row.get_tooltip_text(),
+                             None if out else 'Not yet released')
+            self.assertEqual(row.get_accessible_description(),
+                             '3:00' if out else 'Not yet released')
+        self.assertTrue(page.play_button.get_sensitive())
+        page.play_button.emit('clicked')
+        page.shuffle_button.emit('clicked')
+        songs = {'kind': 'songs', 'id': '1724049901'}
+        self.assertEqual(self.window.played, [(songs, None, False), (songs, None, True)])
+        # A row not out yet plays nothing; the single's plays from it.
+        with mock.patch('applemusic.widgets.dnd.modifiers', return_value=0):
+            page._on_activate(page.list_view, 1)
+            page._on_activate(page.list_view, 2)
+        self.assertEqual(self.window.played[2:], [(songs, 0, None)])
+        self.assertEqual(self.window.started_with[2:], ['1724049901'])
+
+    async def test_nothing_out_yet_plays_nothing(self):
+        page = await self.push(self.page(self.upcoming(out=())))
+        self.assertFalse(page.play_button.get_sensitive())
+        self.assertFalse(page.shuffle_button.get_sensitive())
+        # An album out (the same, without the flag) is added and played as any other.
+        page = await self.push(self.page(self.catalog(album(2))))
+        self.assertEqual(page.add_content.get_label(), 'Add')
+        self.assertEqual(page.add_button.get_tooltip_text(), 'Add to Library')
+        self.assertTrue(page.play_button.get_sensitive())
+
     async def test_a_playlists_curator_and_when_it_was_updated(self):
         data = album(1, kind='playlist')
         data.update(subtitle='Invented Curator', genre='Pop', modified='2026-01-01T12:00:00Z',

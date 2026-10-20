@@ -104,6 +104,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   remasters), **Music Videos**, **More By** the artist, **Featured On** (playlists with its
   songs) and **You Might Also Like**, each shown when Apple Music has some. They come a
   moment after the songs and are kept for a day.
+- An album that is not out yet says when it comes ("Coming 4 December 2026") under its
+  title and under its songs. Its songs still to come are dimmed and say **Not yet
+  released**; **Play** and **Shuffle** play the ones out already (its singles), and are
+  greyed out while none is. Its **Add** is **Pre-Add**: the album goes into your library
+  now, and its songs as they come out. An artist's page shows such an album as their
+  latest release, with the date it comes.
 - Under your own playlists, **Suggested Songs** are songs Apple Music suggests adding, based
   on what the playlist holds, six at a time (twelve with Preferences › General › Suggested
   Songs › Show More Suggestions): click one to play it, its **+** button to add it to the

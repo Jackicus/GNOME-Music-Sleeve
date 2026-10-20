@@ -423,6 +423,31 @@ class TestLaziness(unittest.TestCase):
         item.merge(answer)
         self.assertEqual(seen, [])
 
+    def test_a_prerelease_album_out_since_is_out(self):
+        # A shelf's album was to come (a day-old answer); the engine's item() answer, whole
+        # with its groups, says it is out now: the flag and the date go, notified.
+        item = Item({'id': '1724049700', 'kind': 'album', 'title': 'To Come',
+                     'prerelease': True, 'releaseDate': '2026-12-04',
+                     'play': {'kind': 'album', 'id': '1724049700'}})
+        self.assertTrue(item.prerelease)
+        seen = []
+        item.connect('notify', lambda obj, pspec: seen.append(pspec.name))
+        item.merge({'title': 'To Come', 'year': 2026})  # a part: the rest stays
+        self.assertTrue(item.prerelease)
+        answer = album('1724049700', 'To Come', ['1724049701'])
+        item.merge(answer)
+        self.assertFalse(item.prerelease)
+        self.assertNotIn('releaseDate', item.raw)
+        self.assertIn('prerelease', seen)
+        # One still to come keeps them; its songs not out yet say so.
+        answer = album('1724049700', 'To Come', ['1724049701', '1724049702'])
+        answer.update(prerelease=True, releaseDate='2026-12-04')
+        answer['groups'][0]['entries'][1]['unreleased'] = True
+        item.merge(answer)
+        self.assertTrue(item.prerelease)
+        self.assertEqual([track.unreleased for track in item.groups[0].entries],
+                         [False, True])
+
 
 class TestLoading(unittest.TestCase):
     def setUp(self):
@@ -764,6 +789,13 @@ class TestTrack(unittest.TestCase):
                 with self.subTest(type=value):
                     self.assertEqual(Track({'id': 'i.1', 'type': value}).kind, kind)
         self.assertEqual(Track({'id': 'i.1'}).kind, '')  # an entry without a type
+
+    def test_a_track_not_out_yet(self):
+        # A pre-release album's track not out yet, as a dict and as a TrackRecord.
+        raw = dict(track('17240498', 'Song', 0), unreleased=True)
+        self.assertTrue(Track(raw).unreleased)
+        self.assertTrue(Track(TrackRecord(raw)).unreleased)
+        self.assertFalse(Track(track('17240499', 'Song', 1)).unreleased)
 
 
 class TestWords(unittest.TestCase):

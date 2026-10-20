@@ -18,6 +18,7 @@ from ..backend.errors import EngineError
 from ..discography import library_artist
 from ..library import Item, ShelfModel
 from ..related import artist_catalog_id, artist_song_ids
+from ..release import coming_text, is_prerelease
 from ..remote import fetch_cover, fetch_shelf_art, fetch_thumb, remote_item
 from ..widgets import artwork
 from ..widgets.banner import TEXT_TOP, shown_banner
@@ -333,7 +334,9 @@ class ArtistPage(Adw.NavigationPage):
             latest = answer.get('latest') or {}
             self.release_title.set_label(view_title(latest))
             self.release_cover.set_paths(release.thumb, release.art)
-            self.release_date.set_label(release_date(release.raw.get('releaseDate')))
+            date = release_date(release.raw.get('releaseDate'))
+            # A pre-release album says when it comes out ("Coming 4 Dec 2026").
+            self.release_date.set_label(coming_text(date) if is_prerelease(release) else date)
             self.release_date.set_visible(bool(self.release_date.get_label()))
             self.release_name.set_label(release.title)
             self.release_count.set_label(release.count_label)

@@ -76,6 +76,14 @@ VIDEO_TRACK = Track({'id': 'i.vid1', 'catalogId': '1000000011', 'title': 'Harbou
                     play={'kind': 'playlist', 'id': 'p.pl1'})
 
 # The library's artist of LIBRARY_ALBUM, as the library makes artists up from albums.
+# A pre-release album and one of its songs not out yet (no playParams: `unreleased`).
+UPCOMING_ALBUM = Item({'id': '1000000060', 'kind': 'album', 'title': 'Harbour Lights To Come',
+                       'prerelease': True, 'releaseDate': '2026-12-04',
+                       'play': {'kind': 'album', 'id': '1000000060'}})
+UNRELEASED_TRACK = Track({'id': '1000000061', 'catalogId': '1000000061', 'title': 'Soon',
+                          'type': 'songs', 'index': 1, 'unreleased': True},
+                         play={'kind': 'album', 'id': '1000000060'})
+
 BAND = Item({'id': 'l.art_00000000band', 'kind': 'artist', 'title': 'The Invented Band',
              'play': {}})
 
@@ -222,6 +230,26 @@ class MenuTest(unittest.TestCase):
 
     def test_catalog_album_can_be_added(self):
         self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_ALBUM)))
+
+    def test_a_prerelease_album_is_pre_added(self):
+        # Add to Library, under Apple Music's word for an album not out yet.
+        menu = build_menu(UPCOMING_ALBUM)
+        self.assertIn('win.item-add-to-library', names(menu))
+        self.assertIn('Pre-_Add to Library', labels_of(menu))
+        self.assertNotIn('_Add to Library', labels_of(menu))
+        self.assertIn('_Add to Library', labels_of(build_menu(CATALOG_ALBUM)))
+        self.assertTrue(actions_module.pre_adds(UPCOMING_ALBUM))
+        self.assertFalse(actions_module.pre_adds(CATALOG_ALBUM))
+        self.assertFalse(actions_module.pre_adds(UNRELEASED_TRACK))
+
+    def test_a_song_not_out_yet_plays_nothing(self):
+        # Its menu has no Play, Play Next or Play Later, and nothing queues it.
+        self.assertFalse(can_play(UNRELEASED_TRACK))
+        self.assertIsNone(queue_target(UNRELEASED_TRACK))
+        actions = names(build_menu(UNRELEASED_TRACK)) or []
+        for action in ('win.item-play', 'win.item-play-next', 'win.item-play-later'):
+            self.assertNotIn(action, actions)
+        self.assertIsNone(queue_targets(ItemRefs([CATALOG_TRACK, UNRELEASED_TRACK])))
 
     def test_the_rating_items_hide_with_their_action(self):
         menu = build_menu(LIBRARY_ALBUM)
@@ -1353,6 +1381,13 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         await self.run_action('item-add-to-library', 'album', 'l.alb1')
         self.assertEqual(len(self.app.engine.calls), 1)
         self.assertEqual(self.app.toasts[-1], 'This is in your library already')
+
+    async def test_pre_add_says_so(self):
+        task = self.actions.add_to_library(UPCOMING_ALBUM)
+        self.assertTrue(await task)
+        self.assertEqual(self.app.engine.calls, [('add_to_library', 'album', '1000000060')])
+        self.assertEqual(self.app.toasts,
+                         ['Pre-added “Harbour Lights To Come” to your library'])
 
     async def test_add_to_library_shows_what_it_added(self):
         # Apple answers the write with no body, so the item is read back: a quick sync, as

@@ -648,6 +648,9 @@ Item = {
                                                      // as listed when `groups` was last read,
                                                      // kept while it holds (sync.py); left out
                                                      // when a short pass read them (an edit)
+  "prerelease": true,                                // an album not out yet (Apple's
+  "releaseDate": "2026-12-04",                       // isPrerelease) and when it comes: only
+                                                     // then (normalize.is_prerelease())
   "play": {"kind": "album", "id": "l.…"},            // what the bridge's play() takes
   "groups": [{"name": "Disc 1", "play": {…}, "entries": [Track]}]   // an album's discs, a
                                                      // playlist's "Tracks", an artist's albums
@@ -661,10 +664,26 @@ Track = {"id": "i.…", "catalogId": "…" /* or null */, "title": "…", "artis
                                          // (the item playing may carry MusicKit's own
                                          // 'song' or 'musicVideo' instead)
          "artUrl": "…" /* or null */,    // the bridge's: the artwork at 256x256, for MPRIS
+         "unreleased": true,             // a pre-release album's track not out yet: Apple
+                                         // gives it no playParams (only then:
+                                         // normalize.track_released())
          "autoplay": true,               // a queue entry autoplay added (only then)
          "isLive": true}                 // the item playing is a live radio station (only
                                          // then: its type 'radioStation', durationMs 0)
 ```
+
+A pre-release album (`attributes.isPrerelease`, Apple's, with a `releaseDate` to come) is
+shaped by `normalize.normalize_album()` with `prerelease` and its `releaseDate`, wherever it
+comes from (an item() answer, a shelf, a search, an artist's latest release), and each of its
+tracks without `playParams` (`normalize.track_released()`: one not out yet; a pre-release
+single has them) with `unreleased`. An album out has none of the three keys, whatever its
+tracks' playParams (a playlist's entries Apple cannot play are not marked). Apple's
+`isComplete` (false until every track is out) is not read: the tracks say it. The album's
+page plays only the tracks out, by id (`release.released_play()`), never the album, so
+MusicKit is never asked for a track it cannot play. An item() answer of the album once out,
+with its groups, takes `prerelease` and `releaseDate` off the Item it merges into
+(`Item.merge()`). Not checked live: what Apple's answer holds for a pre-added album in the
+library (its library songs, and whether a library album carries the flag).
 
 The dates and favourites come with the listings the sync reads (`sync.SONGS_PARAMS`,
 `PLAYLIST_PARAMS`, `VIDEOS_PARAMS`: `extend=inFavorites`, the songs' included albums by

@@ -11,8 +11,9 @@ from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 from applemusic.library import Item
 from gi.repository import GLib
 
-from applemusic.release import (album_artist, album_shelves, album_target, curator, footer_lines,
-                                hero_caption, length_text, release_date_text, shelf_title,
+from applemusic.release import (album_artist, album_shelves, album_target, coming_text,
+                                curator, footer_lines, hero_caption, is_prerelease,
+                                length_text, release_date_text, released_play, shelf_title,
                                 updated_text)
 
 
@@ -155,6 +156,83 @@ class FooterTest(unittest.TestCase):
                          ['24 September 2026', '2 songs, 6 minutes'])
         self.assertEqual(footer_lines(album(), {}, 2, 360000), ['2 songs, 6 minutes'])
         self.assertEqual(footer_lines(album(), None, 0, 0), [])
+
+
+def upcoming(out=(1, 3), count=4, **extra):
+    """An invented pre-release catalog album of `count` songs, those at the places `out`
+    released already (its singles), the others `unreleased`."""
+    play = {'kind': 'album', 'id': '1724049300'}
+    entries = []
+    for number in range(count):
+        entry = {'id': f'17240493{number:02d}', 'catalogId': f'17240493{number:02d}',
+                 'title': f'Song {number}', 'durationMs': 180000, 'index': number,
+                 'type': 'songs'}
+        if number not in out:
+            entry['unreleased'] = True
+        entries.append(entry)
+    data = {'id': '1724049300', 'kind': 'album', 'title': 'Invented Album To Come',
+            'subtitle': 'Invented Artist', 'genre': 'Pop', 'year': 2026, 'trackCount': count,
+            'durationMs': count * 180000, 'prerelease': True, 'releaseDate': '2026-12-04',
+            'play': play, 'groups': [{'name': '', 'play': play, 'entries': entries}]}
+    data.update(extra)
+    return Item(data)
+
+
+class PrereleaseTest(unittest.TestCase):
+    """An album not out yet: when it comes, and what of it plays."""
+
+    def test_which_albums_are_to_come(self):
+        self.assertTrue(is_prerelease(upcoming()))
+        self.assertFalse(is_prerelease(album()))
+        self.assertFalse(is_prerelease(playlist(prerelease=True)))  # only an album
+        self.assertFalse(is_prerelease(None))
+
+    def test_the_caption_and_the_footer_say_when_it_comes(self):
+        self.assertEqual(coming_text('4 December 2026'), 'Coming 4 December 2026')
+        self.assertEqual(coming_text(''), 'Coming Soon')
+        self.assertEqual(hero_caption(upcoming()),
+                         'Pop · Coming 4 December 2026 · 4 songs, 12 min')
+        self.assertEqual(hero_caption(upcoming(releaseDate=None)),
+                         'Pop · Coming Soon · 4 songs, 12 min')
+        self.assertEqual(footer_lines(upcoming(), None, 4, 720000),
+                         ['Coming 4 December 2026', '4 songs, 12 minutes'])
+        # The catalog's answer's date over the Item's; a date always, a year alone too.
+        answer = {'release': {'releaseDate': '2026-12-11', 'recordLabel': 'Invented Records'}}
+        self.assertEqual(footer_lines(upcoming(), answer, 4, 720000),
+                         ['Coming 11 December 2026', '4 songs, 12 minutes', 'Invented Records'])
+        self.assertEqual(footer_lines(upcoming(releaseDate=None), None, 4, 0),
+                         ['Coming Soon', '4 songs'])
+        # Out now (an answer without the flag): the date as any album's.
+        self.assertEqual(footer_lines(album(releaseDate='2026-12-04'), None, 0, 0),
+                         ['4 December 2026'])
+
+    def test_play_plays_the_released_songs_by_id(self):
+        record = upcoming()
+        songs = {'kind': 'songs', 'id': '1724049301,1724049303'}
+        self.assertEqual(released_play(record), (songs, None, None))
+        tracks = list(record.groups[0].entries)
+        # A released song plays among them, from its place there.
+        self.assertEqual(released_play(record, tracks[3]), (songs, 1, '1724049303'))
+        self.assertEqual(released_play(record, tracks[1]), (songs, 0, '1724049301'))
+        # One not out yet plays nothing.
+        self.assertIsNone(released_play(record, tracks[0]))
+        self.assertTrue(tracks[0].unreleased)
+        self.assertFalse(tracks[1].unreleased)
+
+    def test_none_out_plays_nothing(self):
+        record = upcoming(out=())
+        self.assertIsNone(released_play(record))
+        self.assertIsNone(released_play(record, record.groups[0].entries.get_item(2)))
+
+    def test_anything_else_plays_its_own_target(self):
+        record = album()
+        track = record.groups[0].entries.get_item(1)
+        self.assertEqual(released_play(record), (record.play, None, None))
+        self.assertEqual(released_play(record, track), (track.play, 1, 'i.trk1'))
+        # A pre-release album whose songs are all out (a day-old answer) plays as an album.
+        whole = upcoming(out=range(4))
+        self.assertEqual(released_play(whole), (whole.play, None, None))
+        self.assertIsNone(released_play(None))
 
 
 class ShelvesTest(unittest.TestCase):

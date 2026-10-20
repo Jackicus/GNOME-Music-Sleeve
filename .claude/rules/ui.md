@@ -202,6 +202,14 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   which style.css takes out of the rows' inset. No answer (offline, the engine down, a 404)
   leaves them out, only logged. Tab from a track enters the shelves, Shift+Tab from the first
   goes back to the last track (`_on_list_key_pressed`, as for a playlist's suggestions).
+- A pre-release album (`release.is_prerelease()`: the Item's `prerelease`, Apple's
+  isPrerelease) says "Coming <date>" in its caption and footer, and the artist page's release
+  card too (`release.coming_text()`). Its tracks not out yet (`Track.unreleased`) are dimmed
+  rows described "Not yet released" (TrackRow's tooltip, `PlayingMark.description()`) that
+  play nothing, and no menu plays or queues them (`actions.can_play()`, `queue_target()`);
+  Play, Shuffle and the other rows play the released ones by id (`release.released_play()`),
+  Play and Shuffle insensitive while none is. Its Add, and its menu's Add to Library, are
+  Pre-Add (`actions.pre_adds()`).
 - A song's View Credits (`actions.credits_target()`: a song with a catalog id) is
   `dialogs/credits.py`'s `CreditsDialog` over `Engine.credits`: an `Adw.PreferencesPage` of
   a group per kind of credit (Apple's title, else `credits.heading()`; a group's title is
