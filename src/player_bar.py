@@ -23,6 +23,13 @@ pressed while it is in sight, and Lyrics is off for a song without lyrics; their
 name their keys (shortcuts.NOW_PLAYING_TABS). Below the window's 640sp breakpoint
 (`narrow`) the title needs their room, and the sheet the bar opens has the tabs.
 
+Below 600sp (`compact`) the bar is a phone's, as Apple Music's mini player is: the
+artwork and the titles first, then Play (Stop for a live station) and Next at the end, the
+transport box moved after the item's (in a right-to-left locale the whole row mirrors), and
+no Previous, seek slider, times or right-hand box (the sheet the bar opens has them). A
+live station keeps its LIVE badge under the titles. GTK's Tab order follows where the
+children are laid out, not their order, so Tab goes from the bar to Play, then Next.
+
 A right click, a long press or the Menu key on the bar opens the item playing's menu (its
 `context_item`: context_menu on the bar's button), as the Now Playing sheet's More Options
 button does.
@@ -55,13 +62,6 @@ from .widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for t
 from .widgets.transport import (HeartControl, ModeControl, PlayButton, RemoteCover, SeekControl,
                                 TrackTitles, VolumeControl, track_subtitle)
 
-# The cover's edge in px, and in the compact layout, where the title needs the room: at
-# 360 px, beside a 44 px cover, three transport buttons and the right-hand box's spacing, a
-# title of a dozen letters was cut.
-COVER_SIZE = 44
-COMPACT_COVER_SIZE = 32
-
-
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/player_bar.ui')
 class PlayerBar(Adw.Bin):
     """The transport bar under the content. See the module."""
@@ -71,7 +71,11 @@ class PlayerBar(Adw.Bin):
     # The item playing's menu is a queued one: no Play (context_menu).
     context_queued = True
 
+    transport_box = Gtk.Template.Child()
+    previous_button = Gtk.Template.Child()
     play_button = Gtk.Template.Child()
+    next_button = Gtk.Template.Child()
+    item_box = Gtk.Template.Child()
     cover = Gtk.Template.Child()
     title_label = Gtk.Template.Child()
     explicit_badge = Gtk.Template.Child()
@@ -127,19 +131,21 @@ class PlayerBar(Adw.Bin):
         return self._compact
 
     def _set_compact(self, compact):
-        # The title keeps the room (COMPACT_COVER_SIZE): the right-hand box goes whole, its
-        # spacing with it. Shuffle, repeat and the Lyrics and Up Next tabs stay in the Now
-        # Playing sheet, which the bar opens.
+        # A phone's bar (see the module): Play and Next after the item, the right-hand box
+        # gone whole (its spacing with it), no Previous and no slider. The Now Playing sheet,
+        # which the bar opens, has them all.
         self._compact = compact
-        self.cover.props.size = COMPACT_COVER_SIZE if compact else COVER_SIZE
+        self.previous_button.set_visible(not compact)
+        self.transport_box.get_parent().reorder_child_after(
+            self.transport_box, self.item_box if compact else None)
         self.controls_box.set_visible(not compact)
         self._seek.set_times_shown(not compact)
         self._show_playing_controls()
 
     compact = GObject.Property(type=bool, default=False, getter=_get_compact, setter=_set_compact,
                                nick='Compact',
-                               blurb='A smaller cover, and no volume, heart, shuffle, repeat, '
-                                     'Lyrics, Up Next or times (narrow)')
+                               blurb='The item first, then Play and Next; no Previous, slider, '
+                                     'volume, heart, shuffle, repeat, Lyrics or Up Next (narrow)')
 
     def _get_narrow(self):
         return self._narrow
@@ -270,11 +276,12 @@ class PlayerBar(Adw.Bin):
 
     def _show_playing_controls(self):
         """The seek slider and the heart only with an item (the bar on its way out shows no
-        dead slider); the focus, if it was on a control now hidden or insensitive, moves to
-        the bar itself (the Now Playing button), never off the window. When the bar itself
-        goes with the item, the window moves the focus on into the page."""
+        dead slider), and in the compact bar no slider, only a live station's LIVE badge; the
+        focus, if it was on a control now hidden or insensitive, moves to the bar itself (the
+        Now Playing button), never off the window. When the bar itself goes with the item,
+        the window moves the focus on into the page."""
         playing = self._player is not None and self._player.track is not None
-        self.seek_box.set_visible(playing)
+        self.seek_box.set_visible(playing and (not self._compact or self._player.live))
         self.heart_button.set_visible(playing)
         root = self.get_root()
         focus = root.get_focus() if root is not None else None

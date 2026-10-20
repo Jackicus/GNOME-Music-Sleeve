@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """The player bar as a widget: what it shows with and without an item, the compact
-layout's room for the title (a smaller cover, the right-hand box gone), and its drops. The
+layout (a phone's: the item first, Play and Next at the end, in Tab order too), and its
+drops. The
 bar's reveal is the window's (Window._reveal_player_bar: shown only while something plays), which
 scripts/a11y_check.py walks on the real window."""
 
@@ -62,20 +63,138 @@ class PlayerBarTest(unittest.TestCase):
         self.assertTrue(self.bar.repeat_button.get_active())  # repeat all, as it was
         self.assertFalse(self.bar.shuffle_button.get_active())
 
-    def test_compact_shrinks_the_cover_and_drops_the_right_hand_box(self):
-        from applemusic.player_bar import COMPACT_COVER_SIZE, COVER_SIZE
+    def row(self):
+        """The bar's row of boxes, in order, by the names the bar gives them."""
+        names = {self.bar.transport_box: 'transport', self.bar.item_box: 'item',
+                 self.bar.controls_box: 'controls'}
+        child = self.bar.transport_box.get_parent().get_first_child()
+        order = []
+        while child is not None:
+            order.append(names[child])
+            child = child.get_next_sibling()
+        return order
 
-        self.assertEqual(self.bar.cover.size, COVER_SIZE)
-        self.assertTrue(self.bar.controls_box.get_visible())
+    def test_compact_puts_the_item_first_and_play_and_next_at_the_end(self):
+        """A phone's bar: artwork and titles, then Play and Next; no Previous, slider, times
+        or right-hand box. Back to wide, the bar is as it was."""
+        self.player.apply({'state': 'playing', 'track': TRACK, 'position': 10,
+                           'duration': 214})
+        self.assertEqual(self.row(), ['transport', 'item', 'controls'])
         self.bar.props.compact = True
-        self.assertEqual(self.bar.cover.size, COMPACT_COVER_SIZE)
+        self.assertEqual(self.row(), ['item', 'transport', 'controls'])
+        self.assertFalse(self.bar.previous_button.get_visible())
+        self.assertTrue(self.bar.play_button.get_visible())
+        self.assertTrue(self.bar.next_button.get_visible())
+        self.assertFalse(self.bar.seek_box.get_visible())
         self.assertFalse(self.bar.controls_box.get_visible())
         self.assertFalse(self.bar.elapsed_label.get_visible())
         self.assertFalse(self.bar.remaining_label.get_visible())
+        self.assertEqual(self.bar.cover.size, 44)  # the room Previous and the slider left
+        self.bar.props.compact = True  # set again (each breakpoint's setters): still in order
+        self.assertEqual(self.row(), ['item', 'transport', 'controls'])
         self.bar.props.compact = False
-        self.assertEqual(self.bar.cover.size, COVER_SIZE)
+        self.assertEqual(self.row(), ['transport', 'item', 'controls'])
+        self.assertTrue(self.bar.previous_button.get_visible())
+        self.assertTrue(self.bar.seek_box.get_visible())
         self.assertTrue(self.bar.controls_box.get_visible())
         self.assertTrue(self.bar.elapsed_label.get_visible())
+
+    def test_the_compact_bar_keeps_a_live_stations_badge(self):
+        """No slider, but LIVE under the titles, and Stop for Play."""
+        self.bar.props.compact = True
+        self.player.apply({'state': 'playing', 'track': dict(TRACK, isLive=True),
+                           'position': 10, 'duration': 214})
+        self.assertTrue(self.player.live)
+        self.assertTrue(self.bar.seek_box.get_visible())
+        self.assertIs(self.bar.live_label.get_parent().get_visible_child(), self.bar.live_label)
+        self.assertEqual(self.bar.play_button.get_tooltip_text(), 'Stop')
+        self.player.apply({'state': 'playing', 'track': TRACK, 'position': 10,
+                           'duration': 214})
+        self.assertFalse(self.bar.seek_box.get_visible())
+
+    def lay_out(self, direction):
+        """Present the window in `direction` (the default text direction, as a locale sets
+        it), the transport's app.* actions there, and wait for the bar's layout. The x of
+        the item's box, Play and Next, in the window."""
+        from gi.repository import Gio, Gtk
+
+        from tests.gtk import pump, wait_for
+
+        Gtk.Widget.set_default_direction(direction)
+        self.addCleanup(Gtk.Widget.set_default_direction, Gtk.TextDirection.LTR)
+        group = Gio.SimpleActionGroup()
+        for name in ('previous', 'play-pause', 'next'):
+            group.add_action(Gio.SimpleAction.new(name, None))
+        self.window.insert_action_group('app', group)
+        self.window.set_default_size(360, 200)
+        self.window.present()
+        self.assertTrue(wait_for(lambda: self.bar.next_button.get_width() > 0))
+        pump()
+
+        def x(widget):
+            ok, bounds = widget.compute_bounds(self.window)
+            self.assertTrue(ok)
+            return bounds.get_x()
+        return x(self.bar.item_box), x(self.bar.play_button), x(self.bar.next_button)
+
+    def tab_order(self):
+        """The bar's transport in Tab order from the bar itself (the sheet's button around
+        it, which opens Now Playing)."""
+        from gi.repository import Gtk
+
+        names = {self.bar.get_parent(): 'bar', self.bar.previous_button: 'previous',
+                 self.bar.play_button: 'play', self.bar.next_button: 'next'}
+        self.bar.get_parent().grab_focus()
+        order = []
+        while (focus := self.window.get_focus()) in names and names[focus] not in order:
+            order.append(names[focus])
+            self.window.child_focus(Gtk.DirectionType.TAB_FORWARD)
+        return order
+
+    def test_tab_follows_the_compact_order(self):
+        """Tab from the bar reaches Play, then Next, as they are shown: after the item."""
+        from gi.repository import Gtk
+
+        from tests.gtk import pump, wait_for
+
+        self.player.apply({'state': 'playing', 'track': TRACK, 'position': 10,
+                           'duration': 214})
+        self.bar.props.compact = True
+        item, play, next_ = self.lay_out(Gtk.TextDirection.LTR)
+        self.assertLess(item, play)
+        self.assertLess(play, next_)
+        self.assertEqual(self.tab_order(), ['bar', 'play', 'next'])
+        self.bar.props.compact = False
+        self.assertTrue(wait_for(lambda: self.bar.previous_button.get_width() > 0))
+        pump()
+        self.assertEqual(self.tab_order(), ['bar', 'previous', 'play', 'next'])
+
+    def test_the_compact_bar_mirrors_right_to_left(self):
+        """Right to left, the item at the right, Next at the far left; Tab reaches the two
+        and nothing else of the bar (in GTK's order for a horizontal box, which is left to
+        right in either direction: gtk-notes.md)."""
+        from gi.repository import Gtk
+
+        self.player.apply({'state': 'playing', 'track': TRACK, 'position': 10,
+                           'duration': 214})
+        self.bar.props.compact = True
+        item, play, next_ = self.lay_out(Gtk.TextDirection.RTL)
+        self.assertGreater(item, play)
+        self.assertGreater(play, next_)
+        order = self.tab_order()
+        self.assertEqual(order[0], 'bar')
+        self.assertEqual(sorted(order[1:]), ['next', 'play'])
+
+    def test_focus_on_previous_moves_to_the_bar_as_the_bar_turns_compact(self):
+        from tests.gtk import wait_for
+
+        self.player.apply({'state': 'playing', 'track': TRACK, 'position': 10,
+                           'duration': 214})
+        self.window.present()
+        self.assertTrue(wait_for(self.bar.previous_button.get_mapped))
+        self.bar.previous_button.grab_focus()
+        self.bar.props.compact = True
+        self.assertIs(self.window.get_focus(), self.bar.get_parent())
 
     def test_lyrics_and_up_next_name_themselves_and_their_keys(self):
         """Their tooltips add the shortcut; the accessible name is the plain one. (What they

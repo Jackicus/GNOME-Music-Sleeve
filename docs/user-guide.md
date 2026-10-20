@@ -154,6 +154,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> do the same, from anywhere but a text
   field). Lyrics is greyed out for a song Apple Music has no lyrics for. In a narrow window
   the bar leaves them out to keep the song's title readable: click the bar and pick the tab.
+  In a narrower window still, such as on a phone, the bar shows the artwork and the song
+  first, then **Play** and **Next**; click it for Previous, the position and the rest.
 - Now Playing takes on the colours of the song's artwork, faintly, and changes with each
   song. It stays light enough (or dark enough) for its text to read: with a cover that would
   not allow that, or with high contrast on, it keeps its plain background.

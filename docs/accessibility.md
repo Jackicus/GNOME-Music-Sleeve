@@ -56,7 +56,8 @@ list and the script together.
    Ctrl+3 leaves the focus where it is and a screen reader hears "Not Playing", while
    Ctrl+Shift+N still opens Now Playing (Nothing Queued), and Escape closes it with the focus
    back where it was. An item playing reveals the bar, and Ctrl+3 puts the focus on its play
-   button. Space presses the focused button, switch, check box or boxed-list row, as anywhere
+   button: Shift+Tab goes to Previous; below 600sp, where the bar is the artwork and titles
+   then Play and Next (no Previous), Tab goes to Next. Space presses the focused button, switch, check box or boxed-list row, as anywhere
    in GNOME; on a tile, a list item, the seek slider or nothing, it plays or pauses, but never
    in an entry, in a menu or in a dialog. Ctrl+Right and Ctrl+Left skip. Menu or Shift+F10
    opens the item playing's menu (Go to Album, Go to Artist…); Escape closes it, the focus
