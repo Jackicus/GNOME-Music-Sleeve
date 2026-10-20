@@ -223,6 +223,12 @@ class KeeperTest(unittest.IsolatedAsyncioTestCase):
         self.keeper = session.SessionKeeper(self.app, self.path)
         self.keeper.delay_ms = 0
 
+    async def asyncTearDown(self):
+        # Nothing of the keeper's left to write into the directory as it is removed.
+        self.keeper._cancel_timers()
+        self.keeper._closed = True
+        await self.app.settle()
+
     async def written(self):
         """Let the delay's timeout and the writer run; the file's JSON, or None."""
         for _ in range(3):
