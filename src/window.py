@@ -1031,10 +1031,11 @@ class Window(Adw.ApplicationWindow):
         self.fullscreen_host.release()
         self.set_visible(False)
 
-    def hide_for_background(self):
-        """The window closes while the music plays on (background playback): the dialog on
-        top of it and those shown as windows of their own are closed, its state remembered,
-        and it hides, to be presented again as it was (out of the full-screen player)."""
+    def put_away(self):
+        """The window hides, to be presented again as it was (out of the full-screen
+        player): closed while the music plays on (background playback), or for the mini
+        player (mini_player.py). The dialog on top of it and those shown as windows of their
+        own are closed, and its state remembered."""
         self.fullscreen_host.leave(restore_focus=False)
         self._close_dialogs()
         self._save_window_state()

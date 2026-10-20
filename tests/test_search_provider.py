@@ -144,10 +144,8 @@ class FakeApp:
         self.tasks.append(task)
         return task
 
-    def activate(self):
+    def show_main_window(self):
         self.activated += 1
-
-    def get_active_window(self):
         return None if self.quitting else self.window
 
 

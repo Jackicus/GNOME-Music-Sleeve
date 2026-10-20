@@ -633,6 +633,34 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
   line-height: 1.5;
 }
 
+/* The mini player (widgets/mini_player.blp): the sheet's transport a size smaller, over the
+   same tint (.artwork-backdrop.tint), its dimmed text at the sheet's 70%. */
+.mini-player .play-button {
+  min-width: 48px;
+  min-height: 48px;
+  -gtk-icon-size: 20px;
+}
+
+.mini-player .skip-button {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.mini-player scale {
+  margin: 0;
+  padding: 0;
+}
+
+.mini-player .dimmed {
+  opacity: 0.7;
+}
+
+@media (prefers-contrast: more) {
+  .mini-player .dimmed {
+    opacity: var(--dim-opacity);
+  }
+}
+
 /* The full-screen player (widgets/fullscreen_player.blp): libadwaita's osd (white text,
    controls for an on-screen display) over the view's own backdrop rather than the osd's
    panel colour; the transport larger than the sheet's; the dimmed text at 70%, which the

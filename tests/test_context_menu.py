@@ -127,6 +127,38 @@ class PopoverTest(unittest.TestCase):
                          for button in buttons(stack.get_visible_child())]
                 self.assertEqual(shown, [label for label, _submenu in entries(submenu)])
 
+    def test_a_widgets_own_section_ends_its_menu(self):
+        # The player bar's Mini Player (its `context_extra`), after the item's own menu.
+        from gi.repository import Gtk
+
+        from applemusic.widgets import context_menu
+        from tests.gtk import wait_for
+
+        menu = build_menu(PLAYLIST)
+
+        class Actions:
+            def menu_for(self, obj, **_kwargs):
+                return menu
+
+        class Window(Gtk.Window):
+            item_actions = Actions()
+
+        extra = Gio.Menu()
+        extra.append('_Mini Player', 'app.mini-player')
+        anchor = Gtk.Box(width_request=100, height_request=40)
+        anchor.context_extra = extra
+        window = Window(child=anchor)
+        self.addCleanup(window.destroy)
+        window.present()
+        popover = context_menu.popup(anchor, PLAYLIST)
+        self.addCleanup(popover.popdown)
+        self.assertTrue(wait_for(popover.get_mapped))
+        shown = popover.get_menu_model()
+        last = shown.get_item_link(shown.get_n_items() - 1, Gio.MENU_LINK_SECTION)
+        self.assertEqual(last.get_item_attribute_value(0, 'action', None).unpack(),
+                         'app.mini-player')
+        self.assertEqual(entries(shown)[0], ('Play', None))  # the item's own menu first
+
 
 if __name__ == '__main__':
     unittest.main()

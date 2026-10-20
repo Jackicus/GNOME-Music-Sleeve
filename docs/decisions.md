@@ -523,6 +523,29 @@ changes, change it here, with the date. The plan they came from is in
   transport fade (their room and focus kept) and the pointer hides, as in GNOME Videos;
   with animations off they go at once. Nothing runs or is fetched while it is not shown.
   MPRIS's `Fullscreen` stays false: no client uses it (#313).
+- **A mini player in the main window's place** (2026-10-20, #366). As Apple's MiniPlayer on
+  macOS and Windows, a small window of its own (`widgets/mini_player.py`, about 320 by 500
+  px, down to 280 by 240) shows the song playing: the artwork, the title and the artist,
+  the seek row (LIVE for a live station) and Previous, Play and Next, over the artwork's
+  tint as Now Playing has it; Return to Main Window in its header bar. It takes the main
+  window's place rather than sitting beside it: the main window hides as it shows and
+  comes back, as it was, as it goes (`mini_player.MiniPlayerHost`), so the app has one
+  window in sight and the mini player is not a second view of the same pages to keep
+  apart. It is entered from the main menu, the player bar's menu and Ctrl+Shift+M (Apple's
+  key for it on Windows), which also leaves it; closing it is leaving it, whatever background playback
+  says, since a close there only puts the music back in its window (Ctrl+Q quits from it).
+  One at a time: asked again, the one shown is presented. It is built as it shows and
+  destroyed as it goes, its transport pieces letting go of the Player
+  (`transport.Follower.detach()`), so a closed mini player follows nothing. Its size is
+  remembered (`mini-player-width`, `mini-player-height`); its layout follows it
+  (`mini_player.layout_for()`: the cover as large as the window allows, or small beside the
+  titles in a low window). No lyrics, no Up Next, no heart or volume: what the issue asks
+  for, and nothing in it redraws while a song plays but the seek row. It does not stay on
+  top: GNOME on Wayland gives an app no way to ask (the window menu's Always on Top is the
+  user's), so it promises nothing of the kind. Toasts go to it while it shows, as the
+  window the user sees (`Application.toast()` through `get_active_window()`), and a search
+  result from the Shell brings the main window back for its page
+  (`Application.show_main_window()`).
 - **The lyrics' edges fade, with no scrollbar** (2026-10-20). As Apple's lyrics do, the
   lines fade out at the top and the bottom of their area, in the sheet and the full-screen
   player, and no scrollbar shows (`EXTERNAL`: the wheel, the touchpad, a finger and the

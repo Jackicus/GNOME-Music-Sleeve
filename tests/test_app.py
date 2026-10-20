@@ -236,6 +236,61 @@ class QuitTest(AppTestCase):
         self.assertIsNone(self.app.get_active_window())
 
 
+class MiniPlayerTest(AppTestCase):
+    """What the app does with its mini player (mini_player.py; its own tests are
+    test_mini_player.py's): app.mini-player toggles it, never while quitting; quitting closes
+    it; a search result's window is the main one, the mini player left for it."""
+
+    class Host:
+        def __init__(self):
+            self.calls = []
+            self.shown = False
+
+        def toggle(self):
+            self.calls.append('toggle')
+
+        def leave(self):
+            self.calls.append('leave')
+            self.shown = False
+
+        def quit(self):
+            self.calls.append('quit')
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.app.mini_player = self.Host()
+
+    def test_the_action_toggles_it(self):
+        self.app.lookup_action('mini-player').activate(None)
+        self.assertEqual(self.host.calls, ['toggle'])
+        self.app._quitting = object()
+        self.app.lookup_action('mini-player').activate(None)
+        self.assertEqual(self.host.calls, ['toggle'])
+
+    def test_its_accelerator(self):
+        self.assertEqual(self.app.get_accels_for_action('app.mini-player'),
+                         ['<Shift><Control>m'])
+
+    async def test_quitting_closes_it(self):
+        with mock.patch.object(main.Gio.Application, 'quit', lambda app: None):
+            await self.app._quit()
+        self.assertEqual(self.host.calls, ['quit'])
+
+    def test_the_main_window_shown_leaves_it(self):
+        main_window = object()
+        activated = []
+        self.app.activate = lambda: activated.append(True)
+        self.app.main_window = lambda: main_window
+        self.host.shown = True
+        self.assertIs(self.app.show_main_window(), main_window)
+        self.assertEqual((self.host.calls, activated), (['leave'], [True]))
+        self.assertIs(self.app.show_main_window(), main_window)  # not shown: nothing to leave
+        self.assertEqual(self.host.calls, ['leave'])
+
+    def test_the_main_window_is_never_the_mini_player(self):
+        self.assertIsNone(self.app.main_window())  # no window yet
+
+
 class BackgroundTest(AppTestCase):
     def test_a_closed_window_gets_a_notification_instead_of_a_toast(self):
         app = self.app

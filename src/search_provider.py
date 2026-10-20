@@ -204,7 +204,8 @@ class SearchProvider:
 
     def __init__(self, app):
         """`app` gives `library` (once started), `load_library()`, `hold()`, `release()`,
-        `spawn()`, `activate()` and `get_active_window()`; a test passes a stand-in."""
+        `spawn()` and `show_main_window()` (the main window presented, built when there is
+        none); a test passes a stand-in."""
         self._app = app
         self._node = Gio.DBusNodeInfo.new_for_xml(INTROSPECTION_XML)
         self._connection = None
@@ -387,10 +388,10 @@ class SearchProvider:
             window.search_library(' '.join(term for term in terms if term))
 
     def _present(self):
-        """The window, presented: the app activated (do_activate builds it when there is
-        none, and starts the engine when the settings ask); None while the app quits."""
-        self._app.activate()
-        window = self._app.get_active_window()
+        """The main window, presented: the mini player left for it, the app activated
+        (do_activate builds the window when there is none, and starts the engine when the
+        settings ask); None while the app quits."""
+        window = self._app.show_main_window()
         if window is None:
             log.warning('search provider: no window to show the result in')
         return window

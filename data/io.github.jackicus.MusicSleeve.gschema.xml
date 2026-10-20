@@ -13,6 +13,14 @@
       <default>false</default>
       <summary>Whether the window is maximized</summary>
     </key>
+    <key name="mini-player-width" type="i">
+      <default>320</default>
+      <summary>Mini player width</summary>
+    </key>
+    <key name="mini-player-height" type="i">
+      <default>500</default>
+      <summary>Mini player height</summary>
+    </key>
     <key name="last-page" type="s">
       <default>'home'</default>
       <summary>Last page shown</summary>

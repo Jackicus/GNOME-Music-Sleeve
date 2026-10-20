@@ -14,7 +14,9 @@ A widget offering a menu has a `context_item` attribute: the Item or Track it sh
 (an unbound row), and `context_queued` true when that is an entry of the player's queue (the
 player bar's item, Up Next's rows: a menu without Play, actions.build_menu), and
 `context_queue_entry` its (index, id) there when Up Next may take it out (Remove from Up Next;
-None otherwise), and `context_queue_moves` the steps it can take there (Move Up, Move Down).
+None otherwise), and `context_queue_moves` the steps it can take there (Move Up, Move Down),
+and `context_extra` a Gio.MenuModel section of its own the menu ends with (the player bar's
+Mini Player).
 The controllers
 sit on the view, not on each recycled tile: the right click and the long press in the capture
 phase, so they come before the rows' own click gestures (which would select or activate), the
@@ -38,7 +40,7 @@ and folder rows open theirs through popup() too (sidebar_view.py).
 
 from gettext import ngettext
 
-from gi.repository import Gdk, GLib, Graphene, Gtk
+from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
 from .. import shortcuts
 from ..library import ItemRefs, Track
@@ -125,6 +127,11 @@ def popup(widget, obj, x=None, y=None, queued=None, owner_widget=None):
     moves = getattr(source, 'context_queue_moves', ())
     menu = (actions.menu_for(obj, queued=queued, queue_entry=entry, queue_moves=moves)
             if actions is not None else None)
+    extra = getattr(source, 'context_extra', None)
+    if extra is not None and extra.get_n_items():
+        if menu is None:
+            menu = Gio.Menu()
+        menu.append_section(None, extra)
     if menu is None:
         return None
     popover = Gtk.PopoverMenu.new_from_model(menu)

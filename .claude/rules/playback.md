@@ -7,6 +7,8 @@ paths:
   - "src/player_bar.blp"
   - "src/widgets/transport.py"
   - "src/widgets/now_playing.*"
+  - "src/widgets/mini_player.*"
+  - "src/mini_player.py"
   - "src/widgets/lyrics.py"
   - "src/widgets/queue.py"
   - "tests/test_player.py"
@@ -168,7 +170,9 @@ paths:
 - The bar and the sheet share their transport pieces (`widgets/transport.py`: `PlayButton`,
   `TrackTitles`, `SeekControl` over a GTK-free `SeekGuard`, `ModeControl`, `VolumeControl`
   over a `Coalescer`, `HeartControl`, `RemoteCover`): change them there, and test their
-  decisions in tests/test_transport.py with stand-in buttons. The bar announces each new
+  decisions in tests/test_transport.py with stand-in buttons. Each is a `Follower`: what
+  `attach()` connects on the Player and the engine goes through `follow()`, and `detach()`
+  lets it go, for pieces whose widgets go before the app (the mini player's). The bar announces each new
   item through the window, once per item, and with nothing playing hides its seek slider
   and heart. Its Lyrics and Up Next toggles are `win.show-lyrics` and `win.show-queue`,
   `widgets.now_playing.TabActions` over the sheet's tab seam (`shown-tab`, `show_tab()`):
@@ -242,6 +246,21 @@ paths:
   (widgets/backdrop.py, the sheet's too) over `artwork.field_for()` (the last few covers'
   fields, shared with the sheet) and `scrim_alpha()`. Check it with `scripts/screenshot.py --demo
   --fullscreen-player [lyrics|localized|syllable|none] --size WxH` (and `--idle`).
+- The mini player (`app.mini-player`, Ctrl+Shift+M, the main menu's and the bar's menu's
+  Mini Player) is a window of its own, `widgets/mini_player.MiniPlayer`, in the main
+  window's place: `mini_player.MiniPlayerHost` (`app.mini_player`) builds it as it shows and
+  puts the main window away (`Window.put_away()`, background playback's too), and as it
+  goes (Return to Main Window, the key again, its close) presents the main window and
+  destroys it (`release()`: its view's pieces and handlers detached first, so a closed one
+  follows nothing and is freed: tests/test_page_lifetime.py). One at a time; its size is
+  `mini-player-width` and `-height`, its layout `mini_player.layout_for()` (a small cover
+  beside the titles when low). It has the transport pieces only (no lyrics, Up Next, heart
+  or volume), the playback keys as the window has them, its own toasts while it shows
+  (`get_active_window()` is it), and announces each new item itself (the bar does not
+  announce from a hidden window: `transport.announcement()`). What needs the main window
+  asks `app.main_window()`, and the Shell's search results `app.show_main_window()`, which
+  leaves the mini player. Nothing keeps it on top (Wayland has no way to ask).
+  tests/test_mini_player.py; `scripts/screenshot.py --demo --mini-player` shows it.
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with
   `Gio.DBusConnection.register_object_with_closures2` (the older call is deprecated since GLib

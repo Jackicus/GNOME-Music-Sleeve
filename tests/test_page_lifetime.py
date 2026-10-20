@@ -4,8 +4,8 @@
 """Widget lifetimes: a page pushed and popped, or kept as a root page and dropped (past
 ROOT_LIMIT, at a sign-out), a Shelf removed and a dialog closed are freed, with the rows they
 bound, the context menus and More Options opened on them, a drag begun on them; Up Next's
-rows go as the queue shrinks; the handlers connected weakly still run; and connect_weak()
-itself.
+rows go as the queue shrinks; a mini player closed is freed, its pieces letting go of the
+Player; the handlers connected weakly still run; and connect_weak() itself.
 
 A widget that connects its children's signals to its own bound methods (or declares Blueprint
 `=> $handler()` callbacks) is never freed: the cycle runs through C (widgets/util.py). Each
@@ -37,7 +37,7 @@ from unittest import mock
 from tests.gtk import SCHEMA_ID, pump, requires_gtk
 from tests.page_harness import Player, artist_answer
 
-from gi.repository import Gio, GObject
+from gi.repository import Gio, GLib, GObject
 
 from applemusic.backend.errors import EngineError
 from applemusic.widgets.util import connect_weak, weak_method
@@ -1486,6 +1486,37 @@ class DialogLifetimeTest(WidgetTestCase):
             ref = dialog.weak_ref()
             del dialog
             await self.assert_freed(ref)
+
+
+class MiniPlayerLifetimeTest(WidgetTestCase):
+    async def test_the_mini_player_closed(self):
+        # Its pieces follow the app's Player, which outlives it: released, they let go of
+        # it (transport.Follower.detach()), and the window, its view and its controls go.
+        from applemusic.player import Player
+        from applemusic.widgets.mini_player import MiniPlayer
+        from tests.test_player import TRACK, FakeApp, FakeEngine
+
+        player = Player(FakeApp(FakeEngine()))
+        player.track_grace_ms = 0
+        window = MiniPlayer(application=self.app)
+        window.set_player(player, self.app)
+        window.present()
+        self.assertTrue(await self.until(window.get_mapped))
+        player.apply({'state': 'playing', 'track': dict(TRACK, artUrl=None), 'position': 30,
+                      'duration': 214, 'lyrics': None})
+        await self.turn()
+        view = window.view
+        refs = (window.weak_ref(), view.weak_ref(), view.play_button.weak_ref(),
+                view.seek_scale.weak_ref(), view.cover.weak_ref())
+        del view
+        window.release()
+        del window
+        await self.assert_freed(*refs)
+        # Nothing of it follows the Player any more.
+        for name in ('track', 'state', 'position', 'duration', 'pending', 'can-seek'):
+            self.assertFalse(GObject.signal_has_handler_pending(
+                player, GObject.signal_lookup('notify', Player), GLib.quark_from_string(name),
+                False), name)
 
 
 class HandlerTest(WidgetTestCase):

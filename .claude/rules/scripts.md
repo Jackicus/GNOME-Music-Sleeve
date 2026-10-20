@@ -49,6 +49,8 @@ paths:
   `--banner sign-in|expired` and `--sidebar` (the narrow layout's sidebar) show those states;
   `--fullscreen-player [lyrics|localized|syllable|none]` enters the full-screen player on
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;
+  `--mini-player` puts it on the Player and shoots the mini player's window (at `--size` when
+  given, else at its settings' size; `--restored`, `--live`, `--lost` with it);
   `--filter TEXT` types into the page's filter bar; `--help` lists the rest. It shoots
   once no artwork decode has been in flight for a few polls
   (5 s at most), so a new step that shows artwork needs no delay of its own for it.

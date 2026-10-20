@@ -31,7 +31,9 @@ touches widgets.
 - **Application** (`main.py`): owns the settings, the library, the engine, the player, the
   MPRIS service and the sync (`LibrarySync`, one run at a time); the `app.*` actions and
   accelerators; the dialogs; quitting; demo mode. Signing out and clearing the cache are
-  `account.py`'s, background playback `background.py`'s, the startup marks `timing.py`'s.
+  `account.py`'s, background playback `background.py`'s, the startup marks `timing.py`'s,
+  the mini player (`app.mini-player`: a small window of its own in the main window's place,
+  built as it shows) `mini_player.py`'s and `widgets/mini_player.py`'s.
 - **Window** (`window.py`): an `AdwBottomSheet` whose content is the split view (the
   `AdwSidebar` and an `AdwNavigationView`) and whose bottom bar and sheet are the player bar and
   Now Playing; the banners sit under the visible page's header bar. The bottom sheet is one page
