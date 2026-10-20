@@ -127,7 +127,11 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
 - Context menu controllers go on the view, not the recycled tiles, in the capture phase and
   claimed, so the item's own click gesture never sees them. A popover can be parented to any
   widget with a layout manager; unparent it from an idle after `closed`, because the chosen
-  item's action runs after the popover closes and finds `win.*` through its parent.
+  item's action runs after the popover closes and finds `win.*` through its parent. GTK gives
+  a closing popover's focus back only after the next frame, to the first widget up from its
+  parent that takes it (the parent alone at once, when it is focusable): an idle that
+  unparents it sooner, as a real display's frame pacing lets it, leaves the focus nowhere,
+  so the idle gives it back first (`context_menu.give_focus_back()`).
 - The one drag type is `library.ItemRefs` (one or more library objects, in order), offered
   with `Gdk.ContentProvider.new_for_value(refs)` through `widgets/dnd.py`. Only in-app drags
   are taken: a drop target decides from `dnd.current()`, the ItemRefs its source made at

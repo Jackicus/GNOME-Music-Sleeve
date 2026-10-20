@@ -62,6 +62,7 @@ def main():
                         'bus': os.environ.get('DBUS_SESSION_BUS_ADDRESS')}) + '\n'
     sock.sendall(hello.encode())
     sources = [PIPE_IN, sock]
+    pipe_open = True  # the Engine still reads what this Chrome writes
     while sources:
         try:
             ready, _, _ = select.select(sources, [], [])
@@ -70,18 +71,31 @@ def main():
         if PIPE_IN in ready:
             data = os.read(PIPE_IN, 65536)
             if data:
-                sock.sendall(data)
+                try:
+                    sock.sendall(data)
+                except OSError:
+                    break  # the fake browser hung up: this Chrome is gone
             else:
                 log('eof')
                 sources.remove(PIPE_IN)
                 if not stubborn:
                     break  # the Engine let go of the pipe: Chrome closes
         if sock in ready:
-            data = sock.recv(65536)
-            if data:
-                write_all(PIPE_OUT, data)
-            else:
+            try:
+                data = sock.recv(65536)
+            except OSError:
+                data = b''
+            if not data:
                 break  # the fake browser hung up: this Chrome is gone
+            if pipe_open:
+                try:
+                    write_all(PIPE_OUT, data)
+                except BrokenPipeError:
+                    # An answer after the Engine let go (a Browser.close that came late):
+                    # Chrome drops it, and only a Chrome that is not stubborn closes.
+                    pipe_open = False
+                    if not stubborn:
+                        break
     if stubborn:
         while True:  # wedged: only SIGKILL ends it
             time.sleep(60)
