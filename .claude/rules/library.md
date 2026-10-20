@@ -140,12 +140,15 @@ them before changing either. What matters most:
   minute late, so an album or playlist added is noted first (`Library.note_added()`,
   `item-added`), and `holds()` answers for it until a reload lists it. `holds()` reads the
   Albums and Playlists stores only (never the shelves), by id or catalog id, an album also
-  by title and artist: dictionaries made at its first question.
+  by title and artist: dictionaries made at its first question. `held_item()` is the Item
+  it found (None for one only noted): what a catalog item's Remove from Library takes out.
 - A full pass reads a playlist's tracks again only when its listing's `lastModifiedDate` or
-  `trackCount` differs from what the Item recorded when they were last read (`modified`, and
-  its `trackCount`: `playlist_unchanged()`); kept tracks keep their stamp, so a pass that
-  did not read them cannot make them look current. A playlist listed without a date, or from
-  a file without the key, is read every time. Nothing narrows the songs listing: Apple's API
+  `trackCount` differs from what the Item recorded when they were last read
+  (`tracksModified`, and its `trackCount`: `playlist_unchanged()`); kept tracks keep their
+  stamp, so a pass that did not read them cannot make them look current. A playlist listed
+  without a date, or from a file without the key, is read every time. Its `modified` is
+  always the listing's date, the "Updated" its page shows (`release.hero_caption()`), which
+  a short pass after an edit keeps though it leaves the stamp out. Nothing narrows the songs listing: Apple's API
   has no changes feed, since filter or conditional read the bridge could use (docs/notes.md).
 - A cancelled sync's task ends only after its build thread has (`sync_library()` waits it
   out), so once `await app.library_sync.cancel()` returns nothing more of it is written.

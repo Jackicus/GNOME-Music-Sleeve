@@ -845,9 +845,22 @@ class FakeLibrary:
         self.hidden = []  # ('hide' or 'unhide', the refs), in order
         self.held = {}  # playlist id -> its order held (reorder())
         self.noted = []  # note_added()'s Items
+        self.twins = {}  # (kind, catalog id): the library's album or playlist found for it
 
     def note_added(self, item):
         self.noted.append(item)
+
+    def held_item(self, item):
+        """As Library.held_item: the library's own album or playlist that item is found as
+        (itself, or its twin), None for one only noted."""
+        if item.kind not in ('album', 'playlist'):
+            return None
+        return self.items.get((item.kind, item.id)) or self.twins.get((item.kind, item.id))
+
+    def holds(self, item):
+        """As Library.holds: found, or noted as just added."""
+        return self.held_item(item) is not None or any(
+            (noted.kind, noted.id) == (item.kind, item.id) for noted in self.noted)
 
     def hold(self, change):
         self.changes.append(change)
@@ -2297,6 +2310,12 @@ CATALOG_HELD = Track({'id': '1000000022', 'catalogId': '1000000022', 'title': 'S
                      play={'kind': 'album', 'id': '1000000002'})
 
 
+# A playlist of Apple's catalog: READ_ONLY is the library's copy of it once added.
+CATALOG_PLAYLIST = Item({'id': 'pl.0123456789abcdef', 'kind': 'playlist',
+                         'title': 'Apple Picks',
+                         'play': {'kind': 'playlist', 'id': 'pl.0123456789abcdef'}})
+
+
 def track_of(item, position):
     """The Track at `position` of an Item's first group, as its page shows it."""
     group = item.raw['groups'][0]
@@ -2337,6 +2356,24 @@ class RemovalMenuTest(unittest.TestCase):
         self.assertTrue(is_removable_playlist(READ_ONLY))
         self.assertFalse(is_removable_playlist(KEPT_PLAYLIST))
 
+    def test_a_held_catalog_album_or_playlist_goes_as_the_librarys(self):
+        # Found as the library's own (Library.held_item, the page's In Library test).
+        library = FakeLibrary([HELD_ALBUM, READ_ONLY, PLAYLIST, MADE_UP_ALBUM])
+        library.twins = {('album', CATALOG_ALBUM.id): HELD_ALBUM,
+                         ('playlist', CATALOG_PLAYLIST.id): READ_ONLY}
+        self.assertEqual(removal_target(CATALOG_ALBUM, library), ('album', 'l.alb2'))
+        self.assertEqual(removal_target(CATALOG_PLAYLIST, library), ('playlist', 'p.pl2'))
+        # A twin that is not removable so: the user's own playlist, a made-up album.
+        library.twins = {('album', CATALOG_ALBUM.id): MADE_UP_ALBUM,
+                         ('playlist', CATALOG_PLAYLIST.id): PLAYLIST}
+        self.assertIsNone(removal_target(CATALOG_ALBUM, library))
+        self.assertIsNone(removal_target(CATALOG_PLAYLIST, library))
+        # Noted as just added, not listed yet: nothing to take out.
+        library = FakeLibrary([HELD_ALBUM])
+        library.noted.append(CATALOG_ALBUM)
+        self.assertTrue(library.holds(CATALOG_ALBUM))
+        self.assertIsNone(removal_target(CATALOG_ALBUM, library))
+
     def test_the_menu_offers_it_last_and_no_add_beside_it(self):
         menu = build_menu(LIBRARY_ALBUM, removable=('album', 'l.alb1'))
         self.assertEqual(actions_of(menu)[-1],
@@ -2348,6 +2385,9 @@ class RemovalMenuTest(unittest.TestCase):
                          ('win.item-remove-from-library', ('song', '1000000022')))
         self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_HELD)))
         self.assertNotIn('win.item-remove-from-library', names(build_menu(LIBRARY_ALBUM)))
+        # Held, as the page's In Library says, though there is nothing to remove yet.
+        self.assertNotIn('win.item-add-to-library', names(build_menu(CATALOG_ALBUM, held=True)))
+        self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_ALBUM)))
 
     def test_the_mnemonics_stay_distinct(self):
         labels = labels_of(build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)],
@@ -2453,6 +2493,33 @@ class RemoveFromLibraryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.window.left, [({('playlist', 'p.pl2')}, 'p.fd1')])
         self.assertIn(('folder_children', 'p.fd1'), self.app.engine.calls)
         self.assertEqual(self.app.syncs, ['playlists'])
+
+    async def test_a_held_catalog_albums_menu_agrees_with_its_page(self):
+        """A catalog album or playlist the library holds (Library.holds(), the page's In
+        Library) has no Add to Library, wherever its menu shows, and Remove from Library
+        takes out the library's own."""
+        library = self.app.library
+        self.assertIn('win.item-add-to-library', names(self.actions.menu_for(CATALOG_ALBUM)))
+        library.twins = {('album', CATALOG_ALBUM.id): HELD_ALBUM,
+                         ('playlist', CATALOG_PLAYLIST.id): READ_ONLY}
+        for obj in (CATALOG_ALBUM, CATALOG_PLAYLIST):
+            menu = self.actions.menu_for(obj)
+            self.assertNotIn('win.item-add-to-library', names(menu), obj.kind)
+            self.assertEqual(actions_of(menu)[-1],
+                             ('win.item-remove-from-library', (obj.kind, obj.id)))
+        await self.remove(CATALOG_ALBUM)
+        self.assertIn('“Harbour Suite” and its songs', self.confirms[-1][1])
+        self.assertEqual(library.hidden, [('hide', {('album', 'l.alb2')})])
+        await self.remove(CATALOG_PLAYLIST)
+        self.assertEqual(self.writes(), [('remove_from_library', 'album', 'l.alb2'),
+                                         ('remove_from_library', 'playlist', 'p.pl2')])
+        self.assertEqual(self.window.left[-1], ({('playlist', 'p.pl2')}, 'p.fd1'))
+        # Only noted as just added: held, so no Add, and nothing to remove yet.
+        library.twins = {}
+        library.noted.append(CATALOG_ALBUM)
+        menu = names(self.actions.menu_for(CATALOG_ALBUM))
+        self.assertNotIn('win.item-add-to-library', menu)
+        self.assertNotIn('win.item-remove-from-library', menu)
 
     async def test_a_failure_brings_it_back(self):
         self.app.engine.fail = EngineError('api', 'HTTP 500')
