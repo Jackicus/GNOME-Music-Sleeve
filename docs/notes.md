@@ -305,6 +305,15 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   that wraps a `Track` only for the rows GTK asks for, instead of 40,000 Tracks and three
   stores. It changes the type of `library.songs` and moves Search's library song filter into
   Python; with it, the per-Track `search_key` could go too.
+- Video thumbnails by their shorter edge (2026-10-20, issue 383): a video's thumbnail asked
+  in a 569x320 box rather than 320x320 is 569x320 where it was 320x180. On the skill's
+  library (`--videos 1000`), the demo's 1,000 video thumbnails went from 7.2 KB to 16.1 KB
+  each (thumb/ 74.7 MB to 84.0 MB; Apple's JPEGs differ in size, not in shape). Headless at
+  1x, three benches each: anonymous memory after every page browsed twice 225-230 MB before,
+  226-241 after (medians 228 and 229), since a 1x tile decodes either file to 284x160;
+  Music Videos scrolled at 4,000 px/s, 2.5 ms of work a frame before and 2.0 after (longest
+  23.5 and 9.1 ms), no slower to decode. At 2x a video tile's texture is 569x320 (728 KB)
+  where it was 320x180 (230 KB), within the cache's 32 MB budget at that scale.
 
 ### What a page visit leaves behind (2026-10-20)
 

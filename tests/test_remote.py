@@ -99,6 +99,25 @@ class UrlTest(RemoteTestCase):
                      {'art': None, 'thumb': None}, {}, None):
             self.assertIs(remote.remote_item(data), data)
 
+    def test_a_videos_thumbnail_is_asked_by_its_shorter_edge(self):
+        # #383: a 16:9 frame asked in a square box comes 320x180, drawn upscaled in a 160 px
+        # high tile at a scale of 2. A video's (and a link's to one) is asked 569x320.
+        self.assertEqual(remote.sized_url('https://x.invalid/a/256x256bb.jpg', 569, 320),
+                         'https://x.invalid/a/569x320bb.jpg')
+        self.assertEqual(remote.sized_url('https://x.invalid/a/{w}x{h}bb.jpg', 569, 320),
+                         'https://x.invalid/a/569x320bb.jpg')
+        art = 'https://x.invalid/v/320x320bb.jpg'
+        for data in ({'id': '1', 'kind': 'video', 'title': 'V', 'art': art},
+                     {'id': '2', 'kind': 'link', 'video': True, 'title': 'L', 'art': art}):
+            item = remote.remote_item(data)
+            self.assertEqual(item['thumbUrl'], 'https://x.invalid/v/569x320bb.jpg')
+            self.assertEqual(item['thumb'], remote.remote_art_path(art, 569, 320))
+            self.assertNotEqual(item['thumb'], remote.remote_art_path(art, 320))
+            self.assertEqual(item['artUrl'], 'https://x.invalid/v/640x640bb.jpg')
+        # A link that is not a video (a label's page) keeps the square box.
+        label = remote.remote_item({'id': '3', 'kind': 'link', 'title': 'L', 'art': art})
+        self.assertEqual(label['thumbUrl'], 'https://x.invalid/v/320x320bb.jpg')
+
     def test_needs_thumb_asks_no_disk(self):
         item = Item(remote.remote_item({'id': '1', 'kind': 'album', 'title': 'A',
                                         'art': 'https://x.invalid/a/320x320bb.jpg'}))

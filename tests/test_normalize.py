@@ -26,9 +26,9 @@ except (ImportError, ValueError):  # pragma: no cover - depends on the system
     GdkPixbuf = None
 
 
-def pixbuf_scaler(src_path, dest_path, size):
+def pixbuf_scaler(src_path, dest_path, width, height):
     """A normalize.scale_image, as the app installs one."""
-    scaled = GdkPixbuf.Pixbuf.new_from_file_at_scale(src_path, size, size, True)
+    scaled = GdkPixbuf.Pixbuf.new_from_file_at_scale(src_path, width, height, True)
     scaled.savev(dest_path, 'jpeg', ['quality'], ['90'])
 
 
@@ -864,6 +864,43 @@ class TestArtworkDownload(unittest.TestCase):
         self.assertEqual(self.art_urls[item['thumb']], 'https://x/256x256bb.jpg')
         self.assertEqual(os.path.basename(item['thumb']), os.path.basename(item['art']))
 
+    def video(self, art_url):
+        """A library music video normalised with this test's registry."""
+        return normalize.normalize_item(
+            {'id': 'i.v1', 'type': 'library-music-videos',
+             'attributes': {'name': 'V', 'artistName': 'A', 'artwork': {'url': art_url}}},
+            cache_dir=self.tmp_dir, art_urls=self.art_urls)
+
+    def test_a_videos_thumbnail_is_wide(self):
+        # #383: a music video's thumbnail is asked by its shorter edge, the thumbnail size
+        # high, and kept under a name of its own, so a square-boxed one is fetched again.
+        item = self.video('https://x/{w}x{h}bb.jpg')
+        self.assertEqual(self.art_urls[item['art']], 'https://x/512x512bb.jpg')
+        self.assertEqual(self.art_urls[item['thumb']], 'https://x/455x256bb.jpg')
+        album = self.album('https://x/{w}x{h}bb.jpg')
+        self.assertEqual(item['art'], album['art'])  # the same cover
+        self.assertNotEqual(item['thumb'], album['thumb'])
+        self.assertTrue(item['thumb'].endswith('-wide.jpg'))
+        self.assertTrue(normalize.is_wide_thumb(item['thumb']))
+        self.assertFalse(normalize.is_wide_thumb(album['thumb']))
+        self.assertEqual(normalize.cover_of_thumb(item['thumb'], self.tmp_dir), item['art'])
+        self.assertEqual(normalize.cover_of_thumb(album['thumb'], self.tmp_dir), album['art'])
+        # A video in a playlist's rows keeps the square box: a row draws a square.
+        track = normalize.normalize_track(
+            {'id': 'i.v1', 'type': 'library-music-videos',
+             'attributes': {'name': 'V', 'artwork': {'url': 'https://x/{w}x{h}bb.jpg'}}},
+            cache_dir=self.tmp_dir, art_urls=self.art_urls)
+        self.assertEqual(track['thumb'], album['thumb'])
+
+    def test_thumb_box_and_wide_art(self):
+        self.assertEqual(normalize.thumb_box(320), (320, 320))
+        self.assertEqual(normalize.thumb_box(320, wide=True), (569, 320))
+        self.assertTrue(normalize.wide_art({'kind': 'video'}))
+        self.assertTrue(normalize.wide_art({'kind': 'link', 'video': True}))
+        for item in ({'kind': 'link'}, {'kind': 'album'}, {'kind': 'link', 'video': 'yes'},
+                     None, []):
+            self.assertFalse(normalize.wide_art(item), item)
+
     def test_the_registry_is_the_callers(self):
         self.assertFalse(hasattr(normalize, 'ART_URLS'))  # no state kept between calls
         first, second = {}, {}
@@ -982,6 +1019,27 @@ class TestArtworkDownload(unittest.TestCase):
         thumb = GdkPixbuf.Pixbuf.new_from_file(item['thumb'])
         self.assertEqual((thumb.get_width(), thumb.get_height()),
                          (normalize.ART_SIZES['thumb'], normalize.ART_SIZES['thumb']))
+
+    @unittest.skipIf(GdkPixbuf is None, 'GdkPixbuf not available')
+    def test_a_wide_thumbnail_is_scaled_from_the_cover_by_its_shorter_edge(self):
+        self.addCleanup(setattr, normalize, 'scale_image', normalize.scale_image)
+        normalize.scale_image = pixbuf_scaler
+        item = self.video('https://x/{w}x{h}bb.jpg')
+        os.makedirs(os.path.dirname(item['art']), exist_ok=True)
+        cover = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 512, 288)
+        cover.fill(0x336699ff)
+        cover.savev(item['art'], 'jpeg', ['quality'], ['80'])
+        real = normalize.cache_artwork
+        normalize.cache_artwork = lambda *a, **k: self.fail('fetched a thumbnail it could scale')
+        try:
+            counts = normalize.download_art({item['thumb']: self.art_urls[item['thumb']]},
+                                            self.tmp_dir)
+        finally:
+            normalize.cache_artwork = real
+        self.assertEqual(counts, {'wanted': 1, 'fetched': 1, 'failed': 0})
+        thumb = GdkPixbuf.Pixbuf.new_from_file(item['thumb'])
+        # 256 px high (UPSTREAM_SIZES' thumbnail), not 256 px wide.
+        self.assertEqual((thumb.get_width(), thumb.get_height()), (455, 256))
 
     def test_thumbnail_is_fetched_without_a_scaler(self):
         # The backend imports no gi: with no scale_image installed, a cover on
@@ -1247,6 +1305,11 @@ class TestArtistPage(unittest.TestCase):
         self.assertEqual((link['kind'], link['title'], link['subtitle'], link['url'], link['play']),
                          ('link', 'Paper Parachutes on Ladders of Rain', '11:22',
                           'https://music.apple.com/gb/post/1724049500', {}))
+        # A video: its tile a 16:9 frame (#383), its artwork asked by its shorter edge.
+        self.assertIs(link['video'], True)
+        self.assertTrue(normalize.wide_art(link))
+        width, height = normalize.thumb_box(normalize.ART_SIZES['thumb'], wide=True)
+        self.assertTrue(link['art'].endswith(f'/{width}x{height}bb.jpg'), link['art'])
 
     def test_the_radio_shows_the_artist_hosts(self):
         # #360: the view holds Apple curators of kind Show, once dropped (an empty shelf).

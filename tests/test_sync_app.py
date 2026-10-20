@@ -230,8 +230,13 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(f'{config.COVER_SIZE}x{config.COVER_SIZE}', album['artUrl'])
         self.assertTrue(os.path.exists(album['thumb']))
         self.assertFalse(os.path.exists(album['art']))
-        self.assertTrue(all(f'{config.THUMB_SIZE}x{config.THUMB_SIZE}' in url
+        # A music video's in its 16:9 box, by its shorter edge (#383).
+        wide = 'x'.join(map(str, backend.thumb_box(config.THUMB_SIZE, wide=True)))
+        self.assertTrue(all(f'{config.THUMB_SIZE}x{config.THUMB_SIZE}' in url or wide in url
                             for url in self.fetched))
+        video = sections['videos'][0]
+        self.assertTrue(video['thumb'].endswith('-wide.jpg'))
+        self.assertTrue(os.path.exists(video['thumb']))
         with open(os.path.join(self.cache, 'art', '.sizes'), encoding='utf-8') as file:
             self.assertEqual(json.load(file), {'cover': config.COVER_SIZE,
                                                'thumb': config.THUMB_SIZE})

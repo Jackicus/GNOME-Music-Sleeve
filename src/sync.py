@@ -272,10 +272,11 @@ def last_sync_text(stamp, now=None):
     return ngettext('{count} day ago', '{count} days ago', days).format(count=days)
 
 
-def scale_image(src_path, dest_path, size):
-    """A JPEG at most size x size from the image at src_path: the backend's thumbnail
-    scaler, so a thumbnail whose cover is on disk is scaled rather than fetched."""
-    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(src_path, size, size, True)
+def scale_image(src_path, dest_path, width, height):
+    """A JPEG at most width x height, the image's shape kept, from the image at src_path:
+    the backend's thumbnail scaler, so a thumbnail whose cover is on disk is scaled rather
+    than fetched."""
+    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(src_path, width, height, True)
     pixbuf.savev(dest_path, 'jpeg', ['quality'], ['85'])
 
 
