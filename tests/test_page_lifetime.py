@@ -128,6 +128,10 @@ def _classes():
     class Engine(GObject.Object):
         """What the pages and dialogs ask of app.engine: down, and it says so."""
 
+        __gsignals__ = {
+            'rated': (GObject.SignalFlags.RUN_FIRST, None, (str, str, int)),
+        }
+
         state = GObject.Property(type=str, default='down')
         authorized = GObject.Property(type=bool, default=False)
         headless = GObject.Property(type=bool, default=True)

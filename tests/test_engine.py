@@ -51,7 +51,7 @@ PLAYBACK_METHODS = ('signout', 'play', 'playNext', 'playLater', 'control', 'seek
                     'updatePlaylist', 'deletePlaylist', 'removeFromPlaylist',
                     'replacePlaylistTracks', 'updateFolder', 'deleteFolder', 'createFolder',
                     'moveToFolder', 'preview',
-                    'stopPreview')
+                    'stopPreview', 'favourite', 'apiFresh')
 
 
 class UnixFakeChrome(FakeBrowser):
@@ -1585,7 +1585,7 @@ class ArtistTest(EngineFixture):
         self.assertIn('top-songs', params['views'].split(','))
         self.assertIn('more-to-see', params['views'].split(','))
         self.assertEqual(params['extend'],
-                         'artistBio,bornOrFormed,editorialArtwork,hero,isGroup,origin')
+                         'artistBio,bornOrFormed,editorialArtwork,hero,inFavorites,isGroup,origin')
         self.assertEqual(answer['artist']['title'], 'Paper Parachutes')
         self.assertEqual(answer['latest']['item']['title'], 'Ladders of Rain')
         self.assertIn('cached', answer)
@@ -1715,6 +1715,114 @@ class ArtistTest(EngineFixture):
             with self.assertRaises(EngineError) as raised:
                 await coro
             self.assertEqual(raised.exception.code, 'engine-down')
+
+
+class FavouriteArtistTest(EngineFixture):
+    """An artist's favourite (their star): the favorites write, not a rating; its read past
+    MusicKit's cache; the artist page's `favourite`, kept and overlaid."""
+
+    async def up(self, authorized=True):
+        self.page.authorized = authorized
+        await self.engine.start()
+
+    def fixture(self, favourite=None):
+        with open(FIXTURES / 'catalog_artist.json', encoding='utf-8') as file:
+            raw = json.load(file)
+        if favourite is not None:
+            raw['data'][0]['attributes']['inFavorites'] = favourite
+        return raw
+
+    async def test_the_write_is_the_favourites_not_a_rating(self):
+        await self.up()
+        rated = []
+        self.engine.connect('rated', lambda _e, *args: rated.append(args))
+        await self.engine.favourite_artist('1724049001')
+        await self.engine.unfavourite_artist('1724049001')
+        self.assertEqual(self.page.bridge_calls, [
+            ('favourite', 'artists', '1724049001', True),
+            ('favourite', 'artists', '1724049001', False)])
+        self.assertEqual(rated, [('artist', '1724049001', 1), ('artist', '1724049001', 0)])
+        for artist_id in ('l.art_0123456789ab', 'r.1', ''):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.favourite_artist(artist_id)
+            self.assertEqual(raised.exception.code, 'usage')
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.love('artist', '1724049001')  # no rating for an artist
+        self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(len(self.page.bridge_calls), 2)
+
+    async def test_it_needs_a_sign_in(self):
+        await self.up(authorized=False)
+        for coro in (self.engine.favourite_artist('1724049001'),
+                     self.engine.is_favourite_artist('1724049001')):
+            with self.assertRaises(EngineError) as raised:
+                await coro
+            self.assertEqual(raised.exception.code, 'not-signed-in')
+        self.assertEqual(self.page.bridge_calls, [])
+
+    async def test_the_state_is_read_past_musickits_cache(self):
+        await self.up()
+        rated = []
+        self.engine.connect('rated', lambda _e, *args: rated.append(args))
+        self.page.bridge_answers['apiFresh'] = {
+            'data': [{'id': '1724049001', 'type': 'artists', 'attributes': {'inFavorites': True}}]}
+        self.assertTrue(await self.engine.is_favourite_artist('1724049001'))
+        self.assertEqual(self.page.bridge_calls, [
+            ('apiFresh', '/v1/catalog/us/artists/1724049001', {'extend': 'inFavorites'})])
+        # An answer that does not say is no favourite.
+        self.page.bridge_answers['apiFresh'] = {'data': [{'id': '1724049001', 'attributes': {}}]}
+        self.assertFalse(await self.engine.is_favourite_artist('1724049001'))
+        self.assertEqual(rated, [('artist', '1724049001', 1), ('artist', '1724049001', 0)])
+        self.assertEqual(self.page.api_calls, [])  # never music(), which may be cached
+
+    async def test_the_page_says_and_keeps_what_was_written(self):
+        await self.up()
+        rated = []
+        self.engine.connect('rated', lambda _e, *args: rated.append(args))
+        path = '/v1/catalog/us/artists/1724049001'
+        self.page.api_answers[path] = self.fixture(favourite=False)
+        answer = await self.engine.artist_page('1724049001')
+        self.assertIs(answer['favourite'], False)
+        self.assertEqual(rated, [('artist', '1724049001', 0)])
+        kept = self.cache / 'artists' / '1724049001.json'
+        stamp = json.loads(kept.read_text())['cached']
+        await self.engine.favourite_artist('1724049001')
+        # The kept page says so, as old as it was.
+        written = json.loads(kept.read_text())
+        self.assertIs(written['favourite'], True)
+        self.assertEqual(written['cached'], stamp)
+        self.assertIs((await self.engine.artist_page('1724049001'))['favourite'], True)
+        self.assertEqual(self.page.api_calls, [path])  # the page was read once
+        # What this session read overrides a kept answer's (one kept before a change made
+        # elsewhere).
+        self.page.bridge_answers['apiFresh'] = {'data': [{'attributes': {'inFavorites': False}}]}
+        await self.engine.is_favourite_artist('1724049001')
+        self.assertIs((await self.engine.artist_page('1724049001'))['favourite'], False)
+
+    async def test_an_answer_that_does_not_say(self):
+        await self.up()
+        self.page.api_answers['/v1/catalog/us/artists/1724049001'] = self.fixture()
+        rated = []
+        self.engine.connect('rated', lambda _e, *args: rated.append(args))
+        self.assertIsNone((await self.engine.artist_page('1724049001'))['favourite'])
+        self.assertEqual(rated, [])
+
+    async def test_the_demo_remembers_it_for_the_session(self):
+        demo = engine_module.Engine(demo=True)
+        path = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049001'))
+        path.parent.mkdir(parents=True)
+        page = {'id': '1724049001', 'shelves': [], 'favourite': False, 'demo': True,
+                'cached': '2020-01-01T00:00:00Z'}
+        path.write_text(json.dumps(page), encoding='utf-8')
+        rated = []
+        demo.connect('rated', lambda _e, *args: rated.append(args))
+        await demo.favourite_artist('1724049001')
+        self.assertEqual(rated, [('artist', '1724049001', 1)])
+        self.assertIs((await demo.artist_page('1724049001'))['favourite'], True)
+        self.assertEqual(json.loads(path.read_text()), page)  # the invented file untouched
+        with self.assertRaises(EngineError) as raised:
+            await demo.is_favourite_artist('1724049001')
+        self.assertEqual(raised.exception.code, 'engine-down')
 
 
 class AlbumPageTest(EngineFixture):

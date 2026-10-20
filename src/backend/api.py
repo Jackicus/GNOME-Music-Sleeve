@@ -37,7 +37,8 @@ LIBRARY_PREFIXES = ('l.', 'p.', 'r.', 'i.')
 
 # The Apple Music API's resource type for each kind an Item or a Track has (the singular: the
 # bridge's rating() and addToLibrary() add the "s"), for the ratings and library writes. A
-# library id takes the "library-" type. Artists have no ratings and cannot be added.
+# library id takes the "library-" type. Artists have no ratings (their favourite is not one:
+# FAVOURITE_PARAMS) and cannot be added.
 RESOURCE_TYPES = {
     'song': 'song',
     'album': 'album',
@@ -101,9 +102,15 @@ ARTIST_VIEWS = (
 )
 ARTIST_PARAMS = {
     'views': ','.join(ARTIST_VIEWS),
-    'extend': 'artistBio,bornOrFormed,editorialArtwork,hero,isGroup,origin',
+    'extend': 'artistBio,bornOrFormed,editorialArtwork,hero,inFavorites,isGroup,origin',
     'limit[artists:top-songs]': 24,
 }
+# An artist is made one of the account's favourites by POST /v1/me/favorites?ids[artists]=
+# <catalog id> (202) and no longer by a DELETE of the same (204), the web player's
+# UpdateFavoritesIntent (the bridge's favourite()); not a rating: /v1/me/ratings/artists/<id>
+# is always a 404. Its state is the catalog read's `inFavorites` with these params, there
+# within 200 ms of the POST (src/backend/README.md, checked 2026-10-20).
+FAVOURITE_PARAMS = {'extend': 'inFavorites'}
 # One of an artist's views whole (See All), a page of it at a time.
 ARTIST_VIEW_ENDPOINT = '/v1/catalog/{storefront}/artists/{id}/view/{view}'
 ARTIST_VIEW_LIMIT = 100

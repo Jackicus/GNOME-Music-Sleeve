@@ -10,6 +10,8 @@ actions, the menus that offer them, and what a drop on the sidebar or the player
     actions.go_to(obj, 'album')            # obj's album's page ('artist': its artist's)
     actions.show_artist(obj)               # a link's artist: the library's page of them
     actions.add_to_library(item)           # a catalog album's or playlist's page's Add button
+    actions.favourite_artist(artist, True) # an artist page's star (quiet=True: no toast)
+    actions.known_rating(('artist', id))   # 1, 0, -1 as the engine last said, or None
     actions.fill_sidebar_menu(menu, item)  # a sidebar playlist's or folder's menu
     actions.drop(playlist, refs)           # a library.ItemRefs dropped on a sidebar playlist
     actions.drop_new_playlist(refs)        # songs dropped on All Playlists: a new playlist
@@ -24,7 +26,9 @@ what it acts on (an Item's kind and id, or 'song' and a Track's id):
     item-play            the item, or a track's album or playlist from the track
     item-play-next       queued after the item playing (mk.playNext)
     item-play-later      queued at the end (mk.playLater)
-    item-love            loved: a song goes into Favourite Songs (a Suggest Less replaced)
+    item-love            loved: a song goes into Favourite Songs (a Suggest Less replaced);
+                         an artist made a favourite (their star, which is not a rating:
+                         Engine.favourite_artist)
     item-unlove          the love taken back
     item-suggest-less    Apple's Suggest Less: the rating -1, which replaces a favourite
     item-undo-suggest-less   the Suggest Less taken back
@@ -73,12 +77,13 @@ Station (a song's or an artist's whose catalog id is known: station_target); Go 
 Go to Artist (not where the page shown is that album or artist already); Favourite or
 Remove from Favourites, then Suggest Less or Undo Suggest Less (all four, of which the menu
 shows those whose actions are enabled: rating_actions(), by the item's rating; as on
-Apple's players, a favourite offers no Suggest Less), Add to Library (not what the library holds
-already), Add to Playlist (the library's playlists that take songs, each folder a submenu,
-then New Playlist…), Move to Folder (a playlist's or folder's: Top Level, the folders it can
-go into, a folder holding others a submenu headed by itself, then New Folder…:
-move_targets()), Remove from Playlist and, where it can go, Move Up and Move Down (a track
-shown in a playlist of the user's: `container`); Open in Browser, Copy Link
+Apple's players, a favourite offers no Suggest Less; an artist whose catalog id is known has
+Favourite or Remove from Favourites alone: favourite_items()), Add to Library (not what the
+library holds already), Add to Playlist (the library's playlists that take songs, each
+folder a submenu, then New Playlist…), Move to Folder (a playlist's or folder's: Top
+Level, the folders it can go into, a folder holding others a submenu headed by itself, then
+New Folder…: move_targets()), Remove from Playlist and, where it can go, Move Up and Move
+Down (a track shown in a playlist of the user's: `container`); Open in Browser, Copy Link
 (only an address anyone can open: not the web player's library routes; a library artist's is
 the catalog artist's page, which the engine finds through their songs); Rename… and Delete
 Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs),
@@ -106,7 +111,9 @@ bar, Up Next's) have no Play, which would replace the queue: activating the row 
 An item's rating (loved, Suggest Less or neither): a menu shows what the engine said last
 this session (its `rated` signal), else whether the library holds it as a favourite
 (library.json's favourites, Library.is_favourite), and asks again (engine.rating) as it
-opens.
+opens; an artist's favourite the same way, read by engine.is_favourite_artist. In the demo
+an artist's favourite is the session's own (the demo engine remembers it); every other
+write says it is not available.
 
 Only Gio, GLib and GObject at import time besides Gtk's UriLauncher, used when a page is
 opened: tests build the menus and run the actions with a stand-in window, app and engine.
@@ -325,6 +332,29 @@ def station_items(obj):
     if named is None or station_target(obj) is None:
         return []
     return [menu_item('item-create-station', GLib.Variant('(ss)', named))]
+
+
+def favourite_target(obj):
+    """('artist', catalog id) that an artist's favourite is set and read by
+    (Engine.favourite_artist, is_favourite_artist), or None: an artist Item whose catalog
+    artist is known (related.artist_catalog_id; not one the library made up from its songs'
+    names). An artist's favourite is not a rating (rating_target has none)."""
+    if not isinstance(obj, Item) or obj.kind != 'artist':
+        return None
+    catalog_id = related.artist_catalog_id(obj)
+    if not catalog_id or is_library_id(catalog_id):
+        return None
+    return 'artist', str(catalog_id)
+
+
+def favourite_items(obj):
+    """Favourite and Remove from Favourites for an artist (favourite_target), of which a menu
+    shows the one whose action is enabled, as rating_items() does: an artist has no Suggest
+    Less here (Apple's is a rating, and an artist's rating path is a 404)."""
+    named = describe(obj)
+    if named is None or favourite_target(obj) is None:
+        return []
+    return rating_items(GLib.Variant('(ss)', named), ('item-love', 'item-unlove'))
 
 
 def rating_target(obj):
@@ -578,13 +608,13 @@ def rating_actions(value):
     }
 
 
-def rating_items(target):
-    """The rating's items (RATING_ACTIONS), of which a menu shows those whose actions are
-    enabled (GMenu's hidden-when): ItemActions keeps the actions' state as the item's
-    rating (rating_actions()), so the menu follows an answer without its items being
-    replaced."""
+def rating_items(target, actions=RATING_ACTIONS):
+    """The rating's items (RATING_ACTIONS, or those of `actions`), of which a menu shows
+    those whose actions are enabled (GMenu's hidden-when): ItemActions keeps the actions'
+    state as the item's rating (rating_actions()), so the menu follows an answer without its
+    items being replaced."""
     items = []
-    for action in RATING_ACTIONS:
+    for action in actions:
         item = menu_item(action, target)
         item.set_attribute_value('hidden-when', GLib.Variant('s', 'action-disabled'))
         items.append(item)
@@ -748,6 +778,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if rating_target(obj) is not None:
         for item in rating_items(target):
             keep.append_item(item)
+    for item in favourite_items(obj):
+        keep.append_item(item)
     if library_target(obj) is not None and removable is None:
         keep.append_item(menu_item('item-add-to-library', target))
     if playlist_song(obj):
@@ -955,7 +987,7 @@ class ItemActions:
         if menu is None:
             return None
         self._remember(named, obj)
-        rated = rating_target(obj)
+        rated = rating_target(obj) or favourite_target(obj)
         self._menu_rated = rated
         rating = self._ratings.get(rated) if rated is not None else 0
         if rating is None:  # the engine has not said this session: the library's favourites
@@ -1011,9 +1043,18 @@ class ItemActions:
         for action, enabled in rating_actions(value).items():
             self.actions[action].set_enabled(enabled)
 
+    def known_rating(self, rated):
+        """What the engine last said this session of the rating (or an artist's favourite)
+        `rated` (rating_target, favourite_target): 1, 0 or -1, or None."""
+        return self._ratings.get(tuple(rated)) if rated is not None else None
+
     async def _refine(self, rated):
         try:
-            await self.engine.rating(*rated)  # its `rated` signal brings the answer
+            # Its `rated` signal brings the answer.
+            if rated[0] == 'artist':
+                await self.engine.is_favourite_artist(rated[1])
+            else:
+                await self.engine.rating(*rated)
         except EngineError as error:
             log.debug('rating of %s %s: %s', *rated, error)
 
@@ -1053,15 +1094,16 @@ class ItemActions:
 
     # -- running -----------------------------------------------------------------------------
 
-    def _run(self, method, args, message=None, ensure=True, after=None, playlist=None):
+    def _run(self, method, args, message=None, ensure=True, after=None, playlist=None,
+             demo=False):
         """await method(*args), with the engine up first when `ensure` (started when it is
         down and the account signed in; the Player's own commands do that themselves), then
         toast message and await after(); an EngineError is reported instead (app.report).
         `playlist`: the id of the playlist the write changes, whose order still to be
         written goes first (PlaylistOrder.flush()). The task, whose result says whether the
         method succeeded (False once reported), or None with the demo library (which says
-        so)."""
-        if self.app.refuse_in_demo():
+        so), unless `demo` (the demo engine does it: an artist's favourite)."""
+        if not demo and self.app.refuse_in_demo():
             return None
 
         async def run():
@@ -1130,6 +1172,8 @@ class ItemActions:
 
     def _rate(self, parameter, love):
         obj, kind, item_id = self._unpack(parameter)
+        if kind == 'artist':
+            return self.favourite_artist(obj, love, target=(kind, item_id))
         target = rating_target(obj) if obj is not None else (kind, item_id)
         if target is None:
             self.app.toast(_('This cannot be a favourite'))
@@ -1140,6 +1184,23 @@ class ItemActions:
         if love:
             return self._run(self.engine.love, target, loved, after=after)
         return self._run(self.engine.unlove, target, unloved, after=after)
+
+    def favourite_artist(self, obj, favourite, quiet=False, target=None):
+        """Make the artist Item obj one of the account's favourites (`favourite`), or no
+        longer (favourite_target; failing an obj, the ('artist', catalog id) `target`),
+        confirmed with a toast unless `quiet` (the page's star shows it); a failure is
+        reported. The task, whose result says whether it was done (_run()), or None when
+        there is no catalog artist to favourite. In the demo the demo engine remembers it."""
+        found = favourite_target(obj) if obj is not None else None
+        if found is None and target is not None and not is_library_id(target[1]):
+            found = ('artist', str(target[1]))
+        if found is None or not found[1]:
+            self.app.toast(_('This cannot be a favourite'))
+            return None
+        loved, unloved = love_messages('artist')
+        message = None if quiet else (loved if favourite else unloved)
+        method = self.engine.favourite_artist if favourite else self.engine.unfavourite_artist
+        return self._run(method, (found[1],), message, ensure=not self.app.demo, demo=True)
 
     def _on_love(self, _action, parameter):
         return self._rate(parameter, love=True)

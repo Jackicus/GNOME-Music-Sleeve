@@ -1041,6 +1041,25 @@
             return await apiWrite(path, {}, { method: 'DELETE' });
         },
 
+        // One of the account's favourites made (`on` true: a POST, 202) or taken back (a
+        // DELETE, 204), as the web player's UpdateFavoritesIntent does: `type` the plural
+        // catalog type ('artists'), `id` the catalog id. An artist's favourite is not a
+        // rating (its /v1/me/ratings path is always a 404).
+        favourite: async function (type, id, on) {
+            const query = {};
+            query['ids[' + type + ']'] = id;
+            return await apiWrite('/v1/me/favorites', query, { method: on ? 'POST' : 'DELETE' });
+        },
+
+        // A GET through the request builder, its JSON body: for a read that must see a write
+        // just made (an artist's inFavorites), which music() may answer from its cache.
+        apiFresh: async function (path, params) {
+            const res = await apiRequest(path, params, { method: 'GET' });
+            if (!res.ok) throw new Error(await describeFailure(res));
+            const text = await res.text();
+            return text ? JSON.parse(text) : null;
+        },
+
         addToLibrary: async function (kind, id) {
             const query = {};
             query['ids[' + kind + 's]'] = id;

@@ -70,6 +70,10 @@ def classes():
     from applemusic.recent_searches import RecentSearches
 
     class Engine(GObject.Object):
+        __gsignals__ = {
+            'rated': (GObject.SignalFlags.RUN_FIRST, None, (str, str, int)),
+        }
+
         state = GObject.Property(type=str, default='down')
         authorized = GObject.Property(type=bool, default=False)
         headless = GObject.Property(type=bool, default=True)
@@ -143,6 +147,9 @@ def classes():
 
         async def catalog_artist(self, name, song_ids):
             return await self._answer('catalog_artist', name, song_ids)
+
+        async def is_favourite_artist(self, artist_id):
+            return await self._answer('is_favourite_artist', artist_id)
 
         async def playlist_suggestions(self, playlist_id, refresh=False, limit=16, offered=(),
                                        selected=(), more=False, basis=None, previewed=()):
@@ -231,6 +238,8 @@ def classes():
             self.add_succeeds = True  # what the write's task answers
             self.library_adds = []  # (Item, its task) per add_to_library(): the test ends it
             self.moved = []  # (playlist id, from, to, at_once) per move_in_playlist()
+            self.favourites = []  # (artist Item, favourite, its task) per favourite_artist()
+            self.ratings = {}  # what known_rating() answers, by (kind, id)
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
             self.added.append((playlist_id, song_id, title))
@@ -238,6 +247,14 @@ def classes():
             task = asyncio.get_running_loop().create_future()
             task.set_result(self.add_succeeds)
             return task
+
+        def favourite_artist(self, obj, favourite, quiet=False, target=None):
+            task = asyncio.get_running_loop().create_future()
+            self.favourites.append((obj, favourite, task))
+            return task
+
+        def known_rating(self, rated):
+            return self.ratings.get(tuple(rated))
 
         def add_to_library(self, obj):
             task = asyncio.get_running_loop().create_future()
@@ -281,6 +298,8 @@ def classes():
             self.item_actions.added = []
             self.item_actions.library_adds = []
             self.item_actions.moved = []
+            self.item_actions.favourites = []
+            self.item_actions.ratings = {}
             self.opened = []
             self.artist_pages = []  # open_artist_page()'s, Apple Music's pages of artists
             self.shelves_opened = []
@@ -374,10 +393,11 @@ def artist(albums, artist_id='l.artist001'):
             'thumb': None, 'groups': groups, 'play': {}}
 
 
-def artist_answer(artist_id='42', songs=4, group=False, banner=None):
+def artist_answer(artist_id='42', songs=4, group=False, banner=None, favourite=False):
     """An invented catalog artist's page, as Engine.artist_page answers (normalize.artist_page):
     a latest release, `songs` top songs, Essential Albums, Albums (with more to fetch) and
-    Similar Artists; `banner` its banner dict (normalize.artist_banner's), None by default."""
+    Similar Artists; `banner` its banner dict (normalize.artist_banner's), None by default;
+    `favourite` whether the account has the artist as one (None: the answer does not say)."""
     def entry(kind, number, **extra):
         data = {'id': f'{kind}{number}', 'kind': kind, 'title': f'Invented {kind} {number}',
                 'subtitle': '2026', 'year': 2026, 'art': None, 'thumb': None,
@@ -392,6 +412,7 @@ def artist_answer(artist_id='42', songs=4, group=False, banner=None):
                         origin='Invented Town, Nowhere', bornOrFormed='1 May 2001',
                         isGroup=group, play={'kind': 'artist', 'id': artist_id}),
         'banner': banner,
+        'favourite': favourite,
         'latest': {'key': 'latest-release', 'title': 'Latest Release',
                    'item': entry('album', 99, releaseDate='2026-09-24', trackCount=12)},
         'topSongs': {'key': 'top-songs', 'title': 'Top Songs', 'more': False,

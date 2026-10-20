@@ -687,6 +687,17 @@ def favourite_ids(resources, songs=False):
     return list(ids), seen
 
 
+def in_favourites(raw):
+    """Whether the first resource of a catalog read with `extend=inFavorites` (an artist's
+    page, api.FAVOURITE_PARAMS' read) is one of the account's favourites: its
+    `attributes.inFavorites`, or None when the answer does not say."""
+    data = raw.get('data') if isinstance(raw, dict) else None
+    resource = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else {}
+    attrs = resource.get('attributes')
+    value = attrs.get('inFavorites') if isinstance(attrs, dict) else None
+    return value if isinstance(value, bool) else None
+
+
 def included_albums(songs):
     """The library albums the songs listing (`include=albums`) carries, each once: what the
     albums' favourites are read from."""
@@ -2078,6 +2089,8 @@ def artist_page(raw, cache_dir):
     - `shelves`: [{key, title, items, more}] in ARTIST_SHELVES's order, `more` True when
       Apple has more than it sent (artist_view() has the rest); a view with nothing the app
       can show is left out, and so is one with the same title as an earlier one.
+    - `favourite`: whether the account has the artist as a favourite (`inFavorites`,
+      in_favourites()), or None when Apple did not say.
 
     Items are shaped as a search's are (artist_view_items)."""
     data = raw.get('data') if isinstance(raw, dict) else None
@@ -2123,6 +2136,7 @@ def artist_page(raw, cache_dir):
         'latest': release,
         'topSongs': top if top and top['items'] else None,
         'shelves': shelves,
+        'favourite': in_favourites(raw),
     }
 
 
@@ -2555,6 +2569,27 @@ def write_answer(path, answer, cache_dir, generation=None):
     except (OSError, ValueError) as error:
         log.warning('could not keep %s: %s', path, error)
     return answer
+
+
+def patch_answer(path, changes, cache_dir, generation=None):
+    """Set `changes` (a dict) in the answer kept at `path`, keeping its `cached` stamp (the
+    answer is no fresher for it): a write of the account's that the kept answer has to show
+    until it is read again (an artist's page after a favourite). Nothing when there is no
+    answer there, or the cache's generation has moved from `generation`; best effort, as
+    write_answer."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            answer = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(answer, dict):
+        return
+    answer.update(changes)
+    try:
+        store.atomic_write(path, lambda f: json.dump(answer, f, separators=(',', ':')),
+                           root=cache_dir, text=True, generation=generation)
+    except (OSError, ValueError) as error:
+        log.warning('could not update %s: %s', path, error)
 
 
 def read_answer(path, max_age_seconds):

@@ -99,8 +99,16 @@ paths:
   (`app.start-engine`), except while it quits or signs in or out. `bridgeReset`
   is re-emitted on `event`, and the engine reads `status()` again.
 - Under `--demo` the Engine has `demo=True`: start and stop do nothing and every command raises
-  `engine-down`, but for the kept answers the demo library wrote (marked `demo`) and a search
-  or its suggestions, which `demo_search()` answers from the invented `demo-search.json`.
+  `engine-down`, but for the kept answers the demo library wrote (marked `demo`), a search
+  or its suggestions, which `demo_search()` answers from the invented `demo-search.json`, and
+  an artist's favourite (`favourite_artist()`), which the session only remembers, so the
+  demo's star works.
+- An artist's favourite is not a rating: `favourite_artist()`/`unfavourite_artist()` write the
+  web player's `/v1/me/favorites` (the bridge's `favourite`), `is_favourite_artist()` reads
+  `inFavorites` through the bridge's `apiFresh` (the request builder: past `music()`'s cache),
+  and `artist_page()` carries it as `favourite` (`extend=inFavorites` in its own read), what
+  this session wrote or read over a kept answer's; a write patches the kept page
+  (`normalize.patch_answer`, the stamp kept). Each emits `rated('artist', id, 1 or 0)`.
 - Paths (`backend/config.py`): `Application.__init__` calls `config.set_build_profile()`. The
   release build uses `$XDG_DATA_HOME/apple-music/chrome` and `$XDG_CACHE_HOME/apple-music`; the
   .Devel build `chrome-devel` and `apple-music-devel`. `APPLE_MUSIC_PROFILE` and

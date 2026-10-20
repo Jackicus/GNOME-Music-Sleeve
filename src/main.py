@@ -620,11 +620,13 @@ class Application(Adw.Application):
             return
         self.toast(_('The playback engine stopped'), _('Restart'), 'app.start-engine')
 
-    def _on_rated(self, _engine, _kind, item_id, value):
+    def _on_rated(self, _engine, kind, item_id, value):
         """A favourite made or taken back here (love, unlove), or a rating read: the library
         shows it at once (its hearts, the Favourites Only views), until a sync reads Apple's
-        state again."""
-        self.library.set_favourite(item_id, value == 1)
+        state again. Not an artist's favourite, which the library does not hold (their star
+        is the artist page's)."""
+        if kind != 'artist':
+            self.library.set_favourite(item_id, value == 1)
 
     def _on_engine_widevine(self, engine, _pspec):
         """The browser's page said it cannot decrypt Widevine: a toast as the engine comes

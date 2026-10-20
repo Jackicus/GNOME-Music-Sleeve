@@ -1063,6 +1063,74 @@ class ArtistPageTest(PageTestCase):
                              page.hero.get_height() - 24 + 0.5)
         self.assertGreaterEqual(page.banner.get_height(), 240)
 
+    def star(self, page):
+        """(shown, pressed, icon, tooltip) of the page's star."""
+        button = page.favourite_button
+        return (button.get_visible(), button.get_active(), button.get_icon_name(),
+                button.get_tooltip_text())
+
+    async def test_the_star_says_what_the_answer_says(self):
+        page = await self.artist_page(dict(artist([]), catalogId='42'), artist_answer())
+        self.assertEqual(self.star(page), (True, False, 'non-starred-symbolic', 'Favourite'))
+        self.assertEqual(self.app.engine.calls, ['artist_page'])  # no request more
+        page = await self.artist_page(dict(artist([]), catalogId='42'),
+                                      artist_answer(favourite=True))
+        self.assertEqual(self.star(page),
+                         (True, True, 'starred-symbolic', 'Remove from Favourites'))
+        self.assertFalse(page.favourite_button.has_css_class('osd'))  # the plain header
+
+    async def test_an_answer_that_does_not_say_is_read(self):
+        self.app.engine.answers['is_favourite_artist'] = True
+        page = await self.artist_page(dict(artist([]), catalogId='42'),
+                                      artist_answer(favourite=None))
+        self.assertTrue(await self.until(lambda: page.favourite_button.get_visible()))
+        self.assertEqual(self.app.engine.calls, ['artist_page', 'is_favourite_artist'])
+        self.assertTrue(page.favourite_button.get_active())
+
+    async def test_no_star_without_an_answer(self):
+        # The engine down: the page shows the library's albums, and no star.
+        page = await self.artist_page(dict(artist([album(1)]), catalogId='42'))
+        self.assertFalse(page.favourite_button.get_visible())
+
+    async def test_a_press_shows_at_once_and_a_failure_puts_it_back(self):
+        page = await self.artist_page(dict(artist([]), catalogId='42'), artist_answer())
+        page.favourite_button.set_active(True)
+        self.assertEqual(self.star(page),
+                         (True, True, 'starred-symbolic', 'Remove from Favourites'))
+        [(obj, favourite, task)] = self.window.item_actions.favourites
+        self.assertEqual((obj.kind, obj.id, favourite), ('artist', '42', True))
+        task.set_result(False)  # the write failed (the item actions reported it)
+        self.assertTrue(await self.until(lambda: not page.favourite_button.get_active()))
+        self.assertEqual(self.star(page), (True, False, 'non-starred-symbolic', 'Favourite'))
+        # Done: it stays.
+        page.favourite_button.set_active(True)
+        self.window.item_actions.favourites[-1][2].set_result(True)
+        await self.settle()
+        self.assertTrue(page.favourite_button.get_active())
+        self.assertEqual(len(self.window.item_actions.favourites), 2)
+
+    async def test_the_star_follows_the_engine(self):
+        page = await self.artist_page(dict(artist([]), catalogId='42'), artist_answer())
+        self.app.engine.emit('rated', 'artist', '42', 1)  # a menu's Favourite
+        self.assertTrue(page.favourite_button.get_active())
+        self.app.engine.emit('rated', 'artist', '43', 0)  # another artist's
+        self.assertTrue(page.favourite_button.get_active())
+        self.assertEqual(self.window.item_actions.favourites, [])  # nothing written for it
+        # Hidden meanwhile: shown again, it says what the item actions last heard.
+        self.window.navigation_view.pop()
+        self.assertTrue(await self.until(lambda: not page.get_mapped()))
+        self.window.item_actions.ratings[('artist', '42')] = 0
+        await self.push(page)
+        self.assertFalse(page.favourite_button.get_active())
+
+    async def test_the_star_over_a_banner(self):
+        banner = {'url': None, 'art': '/invented/banner.jpg', 'crop': 'vf', 'width': 1920,
+                  'height': 640, 'color': '#102030'}
+        page = await self.artist_page(dict(artist([]), catalogId='42'),
+                                      artist_answer(banner=banner, favourite=True))
+        self.assertTrue(page.favourite_button.has_css_class('osd'))
+        self.assertTrue(page.favourite_button.get_active())
+
     async def test_a_group_was_formed(self):
         page = await self.artist_page(dict(artist([]), catalogId='42'),
                                       artist_answer(group=True))

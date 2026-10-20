@@ -260,6 +260,9 @@ class RatedTest(AppTestCase):
         for value in (1, 0, -1):
             self.app._on_rated(None, 'song', '9001', value)
         self.assertEqual(calls, [('9001', True), ('9001', False), ('9001', False)])
+        # An artist's favourite (their star) is none of the library's.
+        self.app._on_rated(None, 'artist', '9002', 1)
+        self.assertEqual(len(calls), 3)
 
 
 class DemoTest(unittest.TestCase):
