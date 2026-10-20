@@ -102,6 +102,21 @@ gridview.tile-grid.under-heading {
   border-radius: 8px;
 }
 
+/* A music video's play symbol (widgets/tile.py): a round on-screen-display wash (`osd`,
+   which reads on any artwork) over the frame, shown under the pointer and while the tile's
+   grid cell or shelf row has the keyboard focus. */
+.tile-play {
+  padding: 14px;
+  border-radius: 9999px;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.tile:hover .tile-play,
+:focus-visible > .tile .tile-play {
+  opacity: 1;
+}
+
 /* The Songs table (pages/songs.blp): its outer cells and headers line up with the page title's
    24px margins (a cell has 6px of its own). */
 columnview.songs-table > header > button:first-child,

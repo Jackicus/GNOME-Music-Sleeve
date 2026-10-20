@@ -36,6 +36,41 @@ class GridTest(PageTestCase):
         self.assertEqual(columns_for(1920), 11)
         self.assertEqual(columns_for(200), 2)  # never fewer
 
+    def test_video_columns_fit_their_tile(self):
+        from applemusic.pages.grid import COLUMN_WIDTH, VIDEO_COLUMN_WIDTH, columns_for
+        from applemusic.widgets.tile import ART_SIZE, VIDEO_WIDTH
+
+        # A tile and the 3 px a side Adwaita pads a grid view's child with.
+        self.assertEqual(COLUMN_WIDTH, ART_SIZE + 6)
+        self.assertEqual(VIDEO_COLUMN_WIDTH, VIDEO_WIDTH + 6)
+        self.assertEqual(columns_for(1100, VIDEO_COLUMN_WIDTH), 3)
+        self.assertEqual(columns_for(360, VIDEO_COLUMN_WIDTH), 2)  # never fewer
+
+    async def test_a_grid_of_videos_shows_16_9_tiles(self):
+        from gi.repository import Gio
+
+        from applemusic.library import Item
+        from applemusic.pages.grid import GridPage
+        from applemusic.widgets.tile import VIDEO_WIDTH, Tile
+        from tests.page_harness import find_all
+
+        store = Gio.ListStore(item_type=Item)
+        store.splice(0, 0, [Item({'id': f'i.mv{n}', 'kind': 'video', 'title': f'Video {n}',
+                                  'subtitle': 'Invented Artist'}) for n in range(6)])
+        page = await self.show_root(GridPage(self.library, 'Invented Videos', store,
+                                             video=True))
+
+        def tiles():
+            return [tile for tile in find_all(page.grid_view, Tile)
+                    if tile.context_item is not None]
+
+        self.assertTrue(await self.until(lambda: tiles() and tiles()[0].cover.get_width()))
+        self.assertTrue(all(tile.shape == 'video' for tile in tiles()))
+        self.assertEqual(page.grid_view.get_min_columns(), 1)  # one fits a 360 px window
+        self.assertEqual(tiles()[0].cover.get_width(), VIDEO_WIDTH)
+        # 958 px inside the margins: three columns of 290.
+        self.assertTrue(await self.until(lambda: page.grid_view.get_max_columns() == 3))
+
     async def test_the_title_and_the_first_cover_sit_on_the_margin(self):
         from gi.repository import Gio
 

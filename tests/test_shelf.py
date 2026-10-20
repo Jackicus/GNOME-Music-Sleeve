@@ -38,6 +38,25 @@ class ShelfTest(PageTestCase):
         await self.turn()
         return shelf
 
+    async def test_a_mixed_row_shapes_each_tile_by_its_kind(self):
+        from applemusic.library import Item, ShelfModel
+        from applemusic.widgets.tile import ART_SIZE, VIDEO_WIDTH, Tile
+        from tests.page_harness import find_all
+
+        items = [Item(album(0)),
+                 Item({'id': 'i.mv1', 'kind': 'video', 'title': 'Invented Video',
+                       'subtitle': 'Invented Artist'}),
+                 Item({'id': 'r1', 'kind': 'artist', 'title': 'Invented Artist'})]
+        shelf = await self.shown(ShelfModel('mixed', 'Invented Mix', items))
+        tiles = {tile.context_item.kind: tile for tile in find_all(shelf.list_view, Tile)
+                 if tile.context_item is not None}
+        self.assertEqual({kind: tile.shape for kind, tile in tiles.items()},
+                         {'album': 'cover', 'video': 'video', 'artist': 'artist'})
+        self.assertTrue(await self.until(lambda: tiles['video'].cover.get_width() > 0))
+        self.assertEqual(tiles['video'].cover.get_width(), VIDEO_WIDTH)
+        self.assertEqual(tiles['video'].cover.get_height(), ART_SIZE)
+        self.assertEqual(tiles['album'].cover.get_height(), ART_SIZE)
+
     async def test_a_short_row_offers_no_see_all_nor_arrows(self):
         shelf = await self.shown(model('short', 1))
         self.assertFalse(shelf.see_all_button.get_visible())

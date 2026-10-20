@@ -53,6 +53,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   **Go to Artist** in a menu, opens their page on Apple Music, whose **In Your Library**
   leads back with **See All**. In a narrow window the list comes first, and choosing an
   artist shows their albums, with a back button.
+- A title too long for its tile ends in "…": rest the pointer on the tile to read all of it.
+  Music videos are wide tiles, with a play symbol under the pointer.
 - Right-click a song, an album or a playlist (or press and hold it, or press
   <kbd>Menu</kbd>) for its menu: play it next or later, add it to a playlist or your
   favourites, open it on music.apple.com, and, for a song, **Go to Album** and **Go to

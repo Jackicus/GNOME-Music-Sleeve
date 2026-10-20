@@ -3,34 +3,10 @@
 
 """AppleMusicTile: an Item as a grid tile, its artwork, title and subtitle."""
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gtk
 
 from . import artwork
 from .util import connect_weak
-
-# The subtitle's look inside the tile's markup: about the caption size, at libadwaita's
-# .dimmed opacity (its --dim-opacity: 55%, and 90% with the system's high-contrast setting,
-# which markup cannot follow by itself; subtitle_markup() does, for tiles bound after a change).
-SUBTITLE = '<span size="smaller" alpha="{alpha}%">{{}}</span>'
-DIM_OPACITY = 55
-DIM_OPACITY_HIGH_CONTRAST = 90
-_subtitle = None
-
-
-def subtitle_markup():
-    """The subtitle's markup format for the contrast setting now."""
-    global _subtitle
-    if _subtitle is None:
-        manager = Adw.StyleManager.get_default()
-        manager.connect('notify::high-contrast', _on_high_contrast)
-        _on_high_contrast(manager)
-    return _subtitle
-
-
-def _on_high_contrast(manager, *_args):
-    global _subtitle
-    alpha = DIM_OPACITY_HIGH_CONTRAST if manager.get_high_contrast() else DIM_OPACITY
-    _subtitle = SUBTITLE.format(alpha=alpha)
 
 # The placeholder's icon and size: a music note until the cover arrives, and a playlist
 # folder's big folder icon, which no cover replaces.
@@ -38,15 +14,41 @@ PLACEHOLDER = ('music-note-symbolic', 48)
 FOLDER = ('folder-symbolic', 72)
 
 # The cover's edge in logical pixels (tile.blp): the texture asked for is this times the
-# scale factor.
+# scale factor. A music video's frame is as tall and 16:9 wide, so a shelf that mixes videos
+# with albums keeps one height (and its artwork, decoded by its shorter edge, the same size).
 ART_SIZE = 160
+VIDEO_WIDTH = 284
+
+# The tile's shapes: a square cover, an artist's round portrait, a music video's 16:9 frame.
+COVER = 'cover'
+ARTIST = 'artist'
+VIDEO = 'video'
+
+
+def shape_for(item):
+    """The shape a tile shows `item` in: its kind's, a square cover for most."""
+    kind = item.kind
+    return kind if kind in (ARTIST, VIDEO) else COVER
+
+
+def cut_short(inscription):
+    """Whether a Gtk.Inscription's text is wider than the inscription (so ellipsized): its
+    text laid out on one line, in the inscription's own font."""
+    text = inscription.get_text()
+    if not text:
+        return False
+    width = inscription.create_pango_layout(text).get_pixel_size()[0]
+    return width > inscription.get_width()
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/tile.ui')
 class Tile(Gtk.Box):
-    """A 160 px square cover over a title and a dim subtitle; with artist=True, a round portrait
-    over a centred name, on two lines when it needs them. With year=True the line under the
-    title is the year (an artist's own albums, where the artist goes without saying).
+    """A 160 px square cover over a title and a dim subtitle, one line each; in the ARTIST
+    shape, a round portrait over a centred name; in the VIDEO shape, a 284×160 frame, a play
+    symbol over it under the pointer or the keyboard focus. With year=True the line under the
+    title is the year (an artist's own albums, where the artist goes without saying). A line
+    too long for the tile ends in an ellipsis, and the tooltip shows the whole of both; the
+    list item's accessible label has them too (labels.bind_label()).
 
     A playlist folder (an Item of kind 'folder') has no cover: its tile shows a folder icon.
     bind(item) and unbind() are called by a list factory as tiles are recycled; the Item bound
@@ -58,37 +60,48 @@ class Tile(Gtk.Box):
     ones on screen plus the Artwork cache; in an idle after the frame, not as the tile is
     mapped or bound (a grid creates and maps over a hundred tiles at once and unmaps all but
     the visible dozen in its first layout, and a tile scrolling past is rebound many times a
-    second); and decoded at the size drawn (ART_SIZE times the scale factor).
+    second); and decoded at the size drawn (ART_SIZE times the scale factor, the shorter edge).
     """
 
     __gtype_name__ = 'AppleMusicTile'
 
     cover = Gtk.Template.Child()
+    art_box = Gtk.Template.Child()
     placeholder_icon = Gtk.Template.Child()
     picture = Gtk.Template.Child()
-    label = Gtk.Template.Child()
+    title_label = Gtk.Template.Child()
+    subtitle_label = Gtk.Template.Child()
 
-    def __init__(self, artist=False, year=False, **kwargs):
+    def __init__(self, shape=COVER, year=False, **kwargs):
         super().__init__(**kwargs)
         self._year = year
-        self._artist = False
+        self._shape = COVER
         self._folder = False
-        self._marked = False  # the label holds markup's attributes (a subtitle's)
         self._item = None
         self._handler = None  # the bound Item's notify handler
-        self.avatar = None  # the artist variant's portrait, made when first wanted
+        self.avatar = None  # the artist shape's portrait, made when first wanted
+        self.play_symbol = None  # the video shape's play symbol, made when first wanted
         self._slot = artwork.ArtworkSlot(self._set_art, ART_SIZE)
         self._slot.follow_scale(self)
-        self.set_artist(artist)
+        # A handler on the tile itself, which holds no reference back through C.
+        self.connect('query-tooltip', self._on_query_tooltip)
+        self.set_shape(shape)
 
-    def set_artist(self, artist):
-        """Switch between the square cover and the artist's round portrait. A grid page's tiles
-        are one or the other; a shelf, which can mix artists with albums, switches a tile as it
-        binds it (before bind())."""
-        if artist == self._artist:
+    @property
+    def shape(self):
+        return self._shape
+
+    def set_shape(self, shape):
+        """Show a square cover (COVER), an artist's round portrait (ARTIST) or a music video's
+        frame (VIDEO). A grid page's tiles are all one; a shelf, which can mix them, switches
+        a tile as it binds it (before bind(): shape_for(item)). Only a change lays the tile
+        out again."""
+        if shape == self._shape:
             return
         self._slot.set_paths()  # the one showing lets go of its texture
-        self._artist = artist
+        self._shape = shape
+        artist = shape == ARTIST
+        video = shape == VIDEO
         if artist and self.avatar is None:
             # A silhouette until the picture arrives. Not initials: they are a label that
             # would be laid out again at every rebind. Made only for artist tiles: an
@@ -97,12 +110,26 @@ class Tile(Gtk.Box):
             self.avatar = Adw.Avatar(size=ART_SIZE,
                                      accessible_role=Gtk.AccessibleRole.PRESENTATION)
             self.insert_child_after(self.avatar, self.cover)
+        if video and self.play_symbol is None:
+            # Shown under the pointer and with the focus (style.css), never laid out again:
+            # its opacity changes, not its visibility.
+            self.play_symbol = Gtk.Box(
+                halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, can_target=False,
+                accessible_role=Gtk.AccessibleRole.PRESENTATION,
+                css_classes=['osd', 'tile-play'])
+            self.play_symbol.append(Gtk.Image(
+                icon_name='transport-play-symbolic', pixel_size=24,
+                accessible_role=Gtk.AccessibleRole.PRESENTATION))
+            self.cover.add_overlay(self.play_symbol)
         self.cover.set_visible(not artist)
         if self.avatar is not None:
             self.avatar.set_visible(artist)
-        self.label.set_xalign(0.5 if artist else 0)
-        # A name wraps to a second line, as an album's title does; no subtitle follows it.
-        self.label.set_min_lines(2 if artist else 3)
+        if self.play_symbol is not None:
+            self.play_symbol.set_visible(video)
+        self.art_box.set_size_request(VIDEO_WIDTH if video else ART_SIZE, ART_SIZE)
+        # An artist's name, centred under the portrait, has no line under it.
+        self.title_label.set_xalign(0.5 if artist else 0)
+        self.subtitle_label.set_visible(not artist)
 
     @property
     def context_item(self):
@@ -125,19 +152,12 @@ class Tile(Gtk.Box):
         self._slot.set_paths(item.thumb or item.art)
 
     def _show_label(self, item):
-        subtitle = (str(item.year) if item.year else '') if self._year else item.subtitle
-        if self._artist or not subtitle:
-            if self._marked:
-                # set_text() keeps the attributes set_markup() gave the subtitle's bytes: the
-                # new title would be drawn small and dim from where the old one ended.
-                self.label.set_attributes(None)
-                self._marked = False
-            self.label.set_text(item.title)
+        self.title_label.set_text(item.title)
+        if self._year:
+            subtitle = str(item.year) if item.year else ''
         else:
-            self.label.set_markup(GLib.markup_escape_text(item.title) + '\n'
-                                  + subtitle_markup().format(
-                                      GLib.markup_escape_text(subtitle)))
-            self._marked = True
+            subtitle = item.subtitle or ''
+        self.subtitle_label.set_text(subtitle)
 
     def unbind(self):
         if self._handler is not None:
@@ -155,6 +175,18 @@ class Tile(Gtk.Box):
         elif name in ('thumb', 'art') and not self._slot.set_paths(item.thumb or item.art):
             self._slot.refresh()
 
+    def _on_query_tooltip(self, _tile, _x, _y, _keyboard, tooltip):
+        """The whole title and subtitle, when either line is cut short; nothing otherwise.
+        Worked out as the pointer rests on the tile, so bind costs nothing for it."""
+        if self._item is None:
+            return False
+        labels = [label for label in (self.title_label, self.subtitle_label)
+                  if label.get_visible() and label.get_text()]
+        if not any(cut_short(label) for label in labels):
+            return False
+        tooltip.set_text('\n'.join(label.get_text() for label in labels))
+        return True
+
     def do_map(self):
         Gtk.Box.do_map(self)
         self._slot.map(self.get_scale_factor())
@@ -164,7 +196,7 @@ class Tile(Gtk.Box):
         Gtk.Box.do_unmap(self)
 
     def _set_art(self, paintable, found):
-        if self._artist:
+        if self._shape == ARTIST:
             self.avatar.set_custom_image(paintable if found else None)
         else:
             # Never None, and the icon faded rather than hidden: either would lay the grid

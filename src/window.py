@@ -467,10 +467,11 @@ class Window(Adw.ApplicationWindow):
             model = shelf.items
         from .pages.grid import GridPage
 
-        # A shelf of artists (a search's, a category's) gets the round portraits.
-        artist = (shelf.items.get_n_items() > 0
-                  and all(item.kind == 'artist' for item in shelf.items))
-        page = GridPage(self._library, shelf.title, model, root=False, artist=artist,
+        # A shelf of artists (a search's, a category's) gets the round portraits, one of
+        # music videos their 16:9 frames.
+        kinds = {item.kind for item in shelf.items}
+        page = GridPage(self._library, shelf.title, model, root=False,
+                        artist=kinds == {'artist'}, video=kinds == {'video'},
                         icon_name='view-grid-symbolic', empty_title=_('Nothing Here'),
                         empty_description=_('This shelf is empty now'))
         page.shelf = shelf
