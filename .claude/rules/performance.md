@@ -15,8 +15,8 @@ paths:
 Targets, on a 3,000-album, 40,000-song invented library: content within about a second of
 launch, page switches under 100 ms, no dropped frames while scrolling Albums and Songs,
 anonymous memory under 250 MB after every page has been browsed twice, and pages opened and
-closed (20 albums, 5 artists, 5 artist pages, 5 See All, after a warm-up round) leaving at
-most 5 MB behind.
+closed (20 albums, 5 artists, 5 artist pages, 5 See All, 2 Charts and 2 of a search's See All
+a round, three rounds after a warm-up round) leaving at most 5 MB behind.
 bench.py checks all but scrolling. The numbers behind these rules are in docs/notes.md.
 
 ## Measure

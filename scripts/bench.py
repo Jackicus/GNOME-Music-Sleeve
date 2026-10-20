@@ -5,7 +5,7 @@
 """Measure the app's startup, page switches and memory on a big demo library.
 
     scripts/bench.py [--cache DIR] [--size WxH] [--settle MS] [--watch MS] [--runs N]
-                     [--profile KEY]
+                     [--rounds N] [--profile KEY]
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) as
 scroll_test.py does (scripts/harness.py), on the library in DIR (default
@@ -41,18 +41,19 @@ page has been browsed twice, and pages opened and closed leaving at most 5 MB be
   after the window is mapped, the library is loaded, and every page has been browsed
   twice, and the peak (VmHWM).
 - pages: 20 albums, 5 artists, 5 of Apple Music's artist pages (the demo's invented
-  ones: window.open_artist_page, as Go to Artist does) and 5 See All grids opened
-  (window.open_item and open_shelf, as a tile or See All does) and popped one after
-  the other, --settle ms
-  each, twice: a first round that warms the caches (the artwork's LRU fills once, the
-  page modules load), then the measured one: the RSS and anonymous RSS it left behind,
-  after gc.collect() and malloc_trim(0), and how many of the pages pushed in either
-  round are still alive (GObject weak
-  references: a Python weakref dies with the wrapper, which PyGObject lets go whether or
-  not the widget lives; see widgets/util.py), by class. A page that is freed once popped
-  leaves 0 alive. Each kind's median time in the measured round, from the open to the end
-  of its first paint, is a page's first build (an album's tracks and footer, before the
-  catalog's shelves come).
+  ones: window.open_artist_page, as Go to Artist does), 5 See All grids, the Charts page
+  twice and 2 of a search's See All pages (the demo's search for "e": its Songs and
+  Albums) opened (window.open_item and open_shelf, as a tile or See All does) and popped
+  one after the other, --settle ms each: a first round that warms the caches (the
+  artwork's LRU fills once, the page modules load), then --rounds measured ones (default
+  3), so that what each visit leaves behind adds up where one round would hide it: the
+  RSS and anonymous RSS they left behind, after gc.collect() and malloc_trim(0), with the
+  anonymous RSS after each round, and how many of the pages pushed are still alive
+  (GObject weak references: a Python weakref dies with the wrapper, which PyGObject lets
+  go whether or not the widget lives; see widgets/util.py), by class. A page that is
+  freed once popped leaves 0 alive. Each kind's median time in the measured rounds, from
+  the open to the end of its first paint, is a page's first build (an album's tracks and
+  footer, before the catalog's shelves come).
 
 A frame that does not come (the compositor sends none to a window it does not show:
 run the bench through scripts/headless.sh, whose virtual monitor shows it, and compare
@@ -63,6 +64,7 @@ for. Scrolling is measured by scripts/scroll_test.py.
 import argparse
 import asyncio
 import ctypes
+import functools
 import gc
 import json
 import logging
@@ -81,10 +83,13 @@ SWITCH_TARGET = 100  # ms
 # MB of anonymous memory (RssAnon: the app's own, where RSS adds the files the libraries and
 # the GL driver map, which the app cannot shrink) after every page has been browsed twice.
 ANON_TARGET = 250
-PAGES_TARGET = 5  # MB the pages step's measured round may leave behind
+PAGES_TARGET = 5  # MB the pages step's measured rounds may leave behind
 FRAME_TIMEOUT = 3000  # ms to wait for a frame before calling it missing
-# What the pages step opens and pops: 'artist-page' is Apple Music's page of an artist.
-PAGES = (('album', 20), ('artist', 5), ('artist-page', 5), ('shelf', 5))
+# What the pages step opens and pops, each round: 'artist-page' is Apple Music's page of an
+# artist, 'search-all' a search's See All page of one kind.
+PAGES = (('album', 20), ('artist', 5), ('artist-page', 5), ('shelf', 5), ('charts', 2),
+         ('search-all', 2))
+SEARCH_TERM = 'e'  # what the pages step searches the demo's invented catalog for
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cache', default=os.environ.get('APPLE_MUSIC_CACHE')
@@ -97,6 +102,8 @@ parser.add_argument('--watch', type=int, default=1000,
                     help='milliseconds after a switch whose longest frame is reported '
                          '(default 1000)')
 parser.add_argument('--runs', type=int, default=3, help='how many runs (default 3)')
+parser.add_argument('--rounds', type=int, default=3,
+                    help="the pages step's measured rounds, after its warm-up (default 3)")
 parser.add_argument('--profile', metavar='KEY',
                     help="print a cProfile of the Python run during this page's first switch")
 parser.add_argument('--child', action='store_true', help=argparse.SUPPRESS)
@@ -135,6 +142,7 @@ def run_child(*extra):
     """This script as a process of its own; its result line, parsed."""
     command = [sys.executable, os.path.abspath(__file__), '--cache', args.cache,
                '--size', args.size, '--settle', str(args.settle), '--watch', str(args.watch),
+               '--rounds', str(args.rounds),
                *extra]
     try:
         completed = subprocess.run(command, capture_output=True, text=True, timeout=300)
@@ -239,13 +247,16 @@ def parent():
         alive = ', '.join(f'{name} {alive} of {pushed}'
                           for name, (alive, pushed) in pages[0]['alive'].items())
         grown = median(page['rss'] for page in pages)
-        print(f'  pages ({opened} opened and popped, after a warm-up round): RSS '
-              f'{grown:+.1f} MB (anon '
-              f'{median(page["anon"] for page in pages):+.1f} MB) after gc.collect() and '
-              f'malloc_trim(0), {verdict(grown, PAGES_TARGET)} the {PAGES_TARGET} MB '
-              f'target; still alive (run 1): {alive}')
+        rounds = len(pages[0]['anon_rounds'])
+        by_round = ', '.join(f'{median(page["anon_rounds"][i] for page in pages):+.1f}'
+                             for i in range(rounds))
+        print(f'  pages ({opened} opened and popped a round, {rounds} round(s) after a '
+              f'warm-up): RSS {grown:+.1f} MB (anon '
+              f'{median(page["anon"] for page in pages):+.1f} MB; after each round {by_round}) '
+              f'after gc.collect() and malloc_trim(0), {verdict(grown, PAGES_TARGET)} the '
+              f'{PAGES_TARGET} MB target; still alive (run 1): {alive}')
         names = {'album': 'an album', 'artist': 'an artist', 'artist-page': 'an artist page',
-                 'shelf': 'See All'}
+                 'shelf': 'See All', 'charts': 'Charts', 'search-all': "a search's See All"}
         timings = ', '.join(
             f'{names[kind]} {fmt(median(page["open_ms"].get(kind) for page in pages), "ms")}'
             for kind, _count in PAGES if any(kind in page.get('open_ms', {}) for page in pages))
@@ -322,6 +333,10 @@ def child():
     from gi.repository import GLib
 
     from applemusic import main, sections
+    from applemusic.backend import api
+    from applemusic.pages.charts import charts_item
+    from applemusic.pages.search_all import see_all_page
+    from applemusic.remote import remote_shelves
     from applemusic.sidebar import folder_key, playlist_key
 
     rss = {}
@@ -569,6 +584,16 @@ def child():
         finally:
             clock.disconnect(handler)
 
+    async def search_shelves(term):
+        """The demo search's shelves of one kind, each with its See All page, as the Search
+        page makes them (pages/search.py)."""
+        answer = await app.engine.search(term)
+        found = [shelf for shelf in remote_shelves(answer.get('shelves') or [])
+                 if shelf.key in api.SEARCH_KIND_TYPES]
+        for shelf in found:
+            shelf.make_page = functools.partial(see_all_page, term)
+        return found
+
     def memory():
         gc.collect()
         malloc_trim()
@@ -586,7 +611,12 @@ def child():
         stores = {'album': library.albums, 'artist': library.artists}
         plan = []
         for kind, count in PAGES:
-            if kind == 'shelf':
+            if kind == 'charts':
+                plan += [(kind, charts_item())] * count
+            elif kind == 'search-all':
+                found = await search_shelves(SEARCH_TERM)
+                plan += [(kind, found[i % len(found)]) for i in range(count if found else 0)]
+            elif kind == 'shelf':
                 plan += [(kind, shelves[i % len(shelves)]) for i in range(count if shelves else 0)]
             elif kind == 'artist-page':  # the artists the demo invented a catalog page for
                 pages_dir = os.path.join(os.environ['APPLE_MUSIC_CACHE'], 'artists')
@@ -604,7 +634,7 @@ def child():
         async def tour(timed=False):
             for kind, target in plan:
                 started = time.perf_counter()
-                if kind == 'shelf':
+                if kind in ('shelf', 'search-all'):
                     window.open_shelf(target)
                 elif kind == 'artist-page':
                     window.open_artist_page(target)
@@ -623,24 +653,30 @@ def child():
 
         await tour()  # the warm-up: what the first visits fill once (the artwork's LRU)
         rss_before, anon_before = memory()
-        await tour(timed=True)
-        rss_after, anon_after = memory()
+        rss_after, anon_after = rss_before, anon_before
+        anon_rounds = []
+        for _round in range(args.rounds):
+            await tour(timed=True)
+            rss_after, anon_after = memory()
+            anon_rounds.append(round(anon_after - anon_before, 1))
         opened = {}
         for kind, _target in plan:
             name = {'album': 'albums', 'artist': 'artists', 'artist-page': 'artist pages',
-                    'shelf': 'See All'}[kind]
+                    'shelf': 'See All', 'charts': 'Charts',
+                    'search-all': 'search See All'}[kind]
             opened[name] = opened.get(name, 0) + 1
         return {
             'opened': opened,
             'rss': round(rss_after - rss_before, 1),
             'anon': round(anon_after - anon_before, 1),
+            'anon_rounds': anon_rounds,
             'alive': {name: [sum(ref() is not None for ref in refs), len(refs)]
                       for name, refs in pushed.items()},
             'open_ms': {kind: round(median(times), 1) for kind, times in opens.items()},
         }
 
     app.connect('activate', on_activate)
-    GLib.timeout_add_seconds(180, app.quit)  # whatever happens
+    GLib.timeout_add_seconds(300, app.quit)  # whatever happens
     harness.run_app(app, '--debug')
 
 

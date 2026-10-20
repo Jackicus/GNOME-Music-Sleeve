@@ -228,6 +228,45 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   stores. It changes the type of `library.songs` and moves Search's library song filter into
   Python; with it, the per-Track `search_key` could go too.
 
+### What a page visit leaves behind (2026-10-20)
+
+Pages opened and popped over and over, headless on build/demo-big at 1100x760, half a second
+each, anonymous memory read after `gc.collect()` and `malloc_trim(0)` after each round, with
+glibc's `mallinfo2()` beside it (bytes malloc hands out, and what its arenas hold), and live
+GObjects counted by type (an `LD_PRELOAD` shim over `g_object_new*` with a weak reference on
+each: GLib's own instance counts need a debug build). Before, on 1.0.1: 145 artist pages +16.6
+MB, 78 Charts +8.8 MB, 116 of a search's See All +13.6 MB, every page freed, and malloc's
+bytes in use flat (+0.8 MB for the artist pages, nothing for the others) while its arenas grew
+by as much as the process did.
+
+- **Most of it was the malloc arenas of the decoding threads.** asyncio's default pool has as
+  many threads as the CPUs and four more (20 here), glibc gives each thread that allocates an
+  arena of its own (16 of them by the end, holding 30 MB free), and a texture's pixels,
+  allocated in a decoding thread and freed on the main thread, go back to that thread's arena,
+  where free pages stay scattered among live ones that `malloc_trim` cannot hand back. With
+  `MALLOC_ARENA_MAX=1` the same 145 artist pages added 2.0 MB. The decodes now run in a pool
+  of their own, `artwork.DECODE_WORKERS` (4) threads: 195 artist pages +6.7 MB, +2.4 MB of it
+  after the first 25; 118 Charts +1.6 MB, 156 See All +0.4 MB, after a first round each.
+  Capping asyncio's default pool as well (4 threads) changed nothing more; a fixed
+  `M_MMAP_THRESHOLD` of 128 KB (`mallopt`, so each texture's pixels are mapped and unmapped
+  on their own) lowered the level by 5 to 9 MB but not the slope, so the process's allocator
+  is left alone.
+- **`Adw.TimedAnimation.new()` leaked each animation and its target** (its new reference is
+  annotated `(transfer none)`, so PyGObject takes another): the artist banner's fade, one an
+  artist page with a banner, and a shelf's paging glide, one a click. Both are made with the
+  constructor now, as the lyrics and the backdrop were (`.claude/rules/gtk-notes.md`).
+- **Every `Adw.Breakpoint` stays behind**, 3 an artist page or album page: libadwaita 1.9.0 to
+  1.9.4's `Adw.BreakpointBin` takes them but never lets go (a `GPtrArray` without a free
+  function since its port to one, b4b4226c), reproduced in C; fixed upstream on main
+  (f2e30ed1, 2026-10-20). About 1 KB each, the 1.4 MB that 490 artist pages left in malloc's
+  use. Nothing to do here: unreffing them ourselves would free them twice once the fix ships.
+- What is left on the artist page, about 14 KB a visit, is that and the arenas' fragmentation;
+  Charts and See All level off within a few dozen visits. `scripts/bench.py` opens Charts and
+  a search's See All too, three measured rounds after its warm-up (`--rounds`): before, +6.9
+  MB of anonymous memory over the three (+4.1, +4.6, +6.9 after each), over the 5 MB target;
+  after, +1.6 (+0.3, +0.9, +1.6), every page freed, and startup, the switches, the pages'
+  first paints and Albums' scrolling as they were.
+
 ## Chrome and the page
 
 - A headless start takes about 10 s until the bridge answers: Chrome about 4 s, the page the

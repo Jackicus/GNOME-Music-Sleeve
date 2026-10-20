@@ -289,6 +289,35 @@ class TestArtwork(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertIsNotNone(results[0])
 
+    def test_decodes_run_in_a_few_threads_of_their_own(self):
+        # Not asyncio's default pool, as many threads as the CPUs and four more: each thread
+        # that allocates gets a malloc arena of its own, and the textures' pixels freed on the
+        # main thread left each of them its share of free pages (docs/notes.md, Memory).
+        loader = artwork.Artwork()
+        threads, running, most = set(), [0], [0]
+        never = threading.Event()
+        load = artwork._load
+
+        def watched(path, size=None):
+            threads.add(threading.current_thread().name)
+            running[0] += 1
+            most[0] = max(most[0], running[0])
+            never.wait(0.02)  # long enough for the others to start beside it
+            running[0] -= 1
+            return load(path, size)
+
+        async def go():
+            with mock.patch.object(artwork, '_load', watched):
+                for n in range(3 * artwork.DECODE_WORKERS):
+                    loader.request(self.paths[n % 3], lambda _texture: None, size=n + 1)
+                await settle()
+
+        run(go())
+        self.assertTrue(threads)
+        self.assertTrue(all(name.startswith('artwork') for name in threads), threads)
+        self.assertLessEqual(len(threads), artwork.DECODE_WORKERS)
+        self.assertLessEqual(most[0], artwork.DECODE_WORKERS)
+
     async def _load(self, loader, path):
         loader.request(path, lambda _texture: None)
         await settle()

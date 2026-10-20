@@ -106,6 +106,31 @@ class ShelfTest(PageTestCase):
         shelf.see_all_button.emit('clicked')
         self.assertEqual(len(self.window.shelves_opened), 1)
 
+    async def test_a_pages_glide_is_freed_once_done(self):
+        # Adw.TimedAnimation.new() returns a reference PyGObject never drops: the shelf
+        # makes its glide with the constructor, which a stand-in here records.
+        import gc
+        from unittest import mock
+
+        from gi.repository import Adw
+
+        made = []
+        constructor = Adw.TimedAnimation
+
+        def recorded(**properties):
+            animation = constructor(**properties)
+            made.append(animation.weak_ref())
+            return animation
+
+        shelf = await self.shown(model('long', 40))
+        adjustment = shelf.scrolled_window.get_hadjustment()
+        with mock.patch.object(Adw, 'TimedAnimation', recorded):
+            shelf.next_button.emit('clicked')  # animations are off: done at once
+        self.assertTrue(await self.until(lambda: adjustment.get_value() > 0))
+        self.assertEqual(len(made), 1)
+        self.assertTrue(await self.until(lambda: gc.collect() is not None
+                                         and made[0]() is None))
+
     async def test_a_narrow_row_leaves_the_arrows_out_for_its_title(self):
         from gi.repository import Gtk
 

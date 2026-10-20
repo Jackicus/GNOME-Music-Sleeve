@@ -77,10 +77,12 @@ class PagedRow:
                      adjustment.get_upper() - page)
         if self._animation is not None:
             self._animation.skip()
-        animation = Adw.TimedAnimation.new(
-            self.scrolled_window, adjustment.get_value(), target, PAGE_DURATION,
-            Adw.PropertyAnimationTarget.new(adjustment, 'value'))
-        animation.set_easing(Adw.Easing.EASE_OUT_CUBIC)
+        # Not Adw.TimedAnimation.new(): its new reference is annotated (transfer none),
+        # so PyGObject takes one more and the animation is never freed.
+        animation = Adw.TimedAnimation(
+            widget=self.scrolled_window, value_from=adjustment.get_value(), value_to=target,
+            duration=PAGE_DURATION, easing=Adw.Easing.EASE_OUT_CUBIC,
+            target=Adw.PropertyAnimationTarget.new(adjustment, 'value'))
         connect_weak(animation, 'done', self._on_paged)
         self._animation = animation
         animation.play()

@@ -146,9 +146,12 @@ class BannerTest(WidgetTestCase):
         self.assertTrue(wait_for(lambda: self.loader.requests))
         self.loader.answer(self.loader.requests[0][0], texture())
         self.assertTrue(wait_for(lambda shown=widget: shown.picture.get_opacity() == 1))
+        # Its fade too: Adw.TimedAnimation.new() would leave it alive.
+        fade = widget._fade.weak_ref()
         ref = self.drop(widget)
         del widget
         self.assert_freed(ref)
+        self.assert_freed(fade)
 
     def test_the_size_asked_follows_remote(self):
         self.assertEqual(remote.banner_size(WIDE, 600)[0], 2 * remote.BANNER_STEP)

@@ -172,9 +172,12 @@ class ArtistBanner(Gtk.Widget):
             self.picture.set_opacity(1)
             return
         if self._fade is None:
-            self._fade = Adw.TimedAnimation.new(
-                self, 0, 1, FADE_MS, Adw.PropertyAnimationTarget.new(self.picture, 'opacity'))
-            self._fade.set_easing(Adw.Easing.EASE_OUT_CUBIC)
+            # Not Adw.TimedAnimation.new(): its new reference is annotated (transfer none),
+            # so PyGObject takes one more and the animation is never freed.
+            self._fade = Adw.TimedAnimation(
+                widget=self, value_from=0, value_to=1, duration=FADE_MS,
+                easing=Adw.Easing.EASE_OUT_CUBIC,
+                target=Adw.PropertyAnimationTarget.new(self.picture, 'opacity'))
             connect_weak(self._fade, 'done', self._on_faded)
         self._fade.play()
 
