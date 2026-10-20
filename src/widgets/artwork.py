@@ -5,8 +5,9 @@
 
 One loader serves the whole process (get_default()). A widget first asks get(path), which
 answers from the cache at once; on a miss it calls request(path, callback), which decodes the
-file in a thread and calls back on the main loop with the texture, or with None when the path is
-not on disk or not an image (a missing file is no artwork, as the backend README says). Requests
+file in a thread (one of DECODE_WORKERS of its own) and calls back on the main loop with the
+texture, or with None when the path is not on disk or not an image (a missing file is no
+artwork, as the backend README says). Requests
 for a path already being decoded share one decode. request() returns a token; a widget that is
 recycled or scrolled away passes it to cancel(), after which its callback never runs, so a tile
 never shows the cover of the item it showed before. A decode nothing waits for any more is
@@ -29,6 +30,7 @@ engine.
 """
 
 import asyncio
+import concurrent.futures
 import functools
 import itertools
 import logging
@@ -53,6 +55,28 @@ log = logging.getLogger(__name__)
 # seen.
 CACHE_BYTES = 8 * 1024 * 1024
 MAX_BYTES = 32 * 1024 * 1024
+# The threads that decode: a pool of its own, not asyncio's default (as many threads as the
+# CPUs, and four more). glibc gives each thread that allocates a malloc arena of its own, and
+# a texture's pixels, allocated in a decoding thread's arena and freed on the main thread, go
+# back to that arena: with twenty, each kept its share of free, scattered pages, and every
+# page visit left the process a little bigger (docs/notes.md, Memory).
+DECODE_WORKERS = 4
+
+_decoder = None
+
+
+def _decode_executor():
+    global _decoder
+    if _decoder is None:
+        _decoder = concurrent.futures.ThreadPoolExecutor(
+            max_workers=DECODE_WORKERS, thread_name_prefix='artwork')
+    return _decoder
+
+
+async def in_decoder(function, *args):
+    """function(*args) in a decoding thread (DECODE_WORKERS of them), awaited."""
+    return await asyncio.get_running_loop().run_in_executor(
+        _decode_executor(), functools.partial(function, *args))
 
 
 def budget_for(scale):
@@ -163,7 +187,7 @@ class Artwork:
     async def _decode(self, key):
         path, size = key
         try:
-            texture = await asyncio.to_thread(_load, path, size)
+            texture = await in_decoder(_load, path, size)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -667,7 +691,7 @@ async def field_for(path, tint=None):
     else:
         task = _field_loads.get(path)
         if task is None:
-            task = asyncio.get_running_loop().create_task(asyncio.to_thread(load_field, path))
+            task = asyncio.get_running_loop().create_task(in_decoder(load_field, path))
             _field_loads[path] = task
             task.add_done_callback(lambda done: _field_loads.pop(path, None)
                                    if _field_loads.get(path) is done else None)
@@ -679,7 +703,7 @@ async def field_for(path, tint=None):
         while len(_fields) > FIELD_CACHE:
             _fields.popitem(last=False)
     if tint is not None and not field.has_tint(*tint):
-        await asyncio.to_thread(field.tint_for, *tint)
+        await in_decoder(field.tint_for, *tint)
     return field
 
 

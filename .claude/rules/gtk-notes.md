@@ -151,3 +151,12 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   `Gio.Application.run` marks the GLib loop as asyncio's running loop only with that policy set.
 - Gio's `*_async` methods (`Gio.Subprocess.wait_async`, `Gio.InputStream.read_bytes_async`,
   `Gio.File.load_contents_async`) are awaitable on this loop.
+- `Adw.TimedAnimation.new()` and `Adw.SpringAnimation.new()` return a new reference annotated
+  `(transfer none)`: PyGObject takes one more, and the animation (its target too) is never
+  freed. Make one with the constructor's properties, `Adw.TimedAnimation(widget=…,
+  value_from=…, value_to=…, duration=…, target=…)`, as the banner, a shelf's paging, the
+  lyrics and the backdrop do. Targets' own `new()` are fine.
+- libadwaita 1.9.0 to 1.9.4 never frees an `Adw.Breakpoint` added to an `Adw.BreakpointBin`
+  (its array has no free function; fixed upstream on main, f2e30ed1, in no release yet): each
+  page built from a template with breakpoints leaves them behind (docs/notes.md, Memory). Never
+  unref one to make up for it: once the fix ships that frees it twice.

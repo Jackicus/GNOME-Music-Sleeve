@@ -16,7 +16,8 @@ Target: $ARGUMENTS
    which a hidden one needs to get frames; compare only headless runs):
    - `scripts/headless.sh scripts/bench.py --runs 5`: startup marks, page switches with their
      longest frame, RSS and its anonymous part (the 250 MB target), and the pages step (pages
-     opened and closed after a warm-up round: the 5 MB target, and how many stay alive);
+     opened and closed, three rounds after a warm-up round: the 5 MB target, and how many
+     stay alive);
      `--profile KEY` for a cProfile of one page's first switch;
    - `APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py --page KEY`
      (`--page songs --distance 40000`, `--page music-videos`, `--open playlist:l.pllong`
