@@ -66,6 +66,32 @@ class PlayerBarTest(unittest.TestCase):
         self.assertTrue(self.bar.controls_box.get_visible())
         self.assertTrue(self.bar.elapsed_label.get_visible())
 
+    def test_lyrics_and_up_next_name_themselves_and_their_keys(self):
+        """Their tooltips add the shortcut; the accessible name is the plain one. (What they
+        do is test_now_playing.py's.)"""
+        from gi.repository import Gtk
+
+        from applemusic.player_bar import tooltip_with_keys
+
+        self.assertEqual(self.bar.lyrics_button.get_tooltip_text(), 'Lyrics (Shift+Ctrl+L)')
+        self.assertEqual(self.bar.queue_button.get_tooltip_text(), 'Up Next (Shift+Ctrl+U)')
+        self.assertEqual(self.bar.lyrics_button.get_action_name(), 'win.show-lyrics')
+        self.assertEqual(self.bar.queue_button.get_action_name(), 'win.show-queue')
+        self.assertIsInstance(self.bar.queue_button, Gtk.ToggleButton)
+        self.assertEqual(tooltip_with_keys('Lyrics', 'not a key'), 'Lyrics')
+        # In the right-hand box, which the compact bar drops whole; the narrow bar drops
+        # them alone.
+        self.assertTrue(self.bar.lyrics_button.is_ancestor(self.bar.controls_box))
+        self.assertTrue(self.bar.queue_button.is_ancestor(self.bar.controls_box))
+        self.assertTrue(self.bar.queue_button.get_visible())
+        self.bar.props.narrow = True
+        self.assertFalse(self.bar.lyrics_button.get_visible())
+        self.assertFalse(self.bar.queue_button.get_visible())
+        self.assertTrue(self.bar.controls_box.get_visible())
+        self.bar.props.narrow = False
+        self.assertTrue(self.bar.lyrics_button.get_visible())
+        self.assertTrue(self.bar.queue_button.get_visible())
+
 
 if __name__ == '__main__':
     unittest.main()

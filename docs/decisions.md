@@ -63,6 +63,14 @@ changes, change it here, with the date. The plan they came from is in
   list row, as everywhere in GTK; it plays or pauses only on a tile, a list item, the seek
   slider or nothing. Now Playing is Ctrl+Shift+N, leaving Ctrl+N to the HIG's "New". Bare keys
   and editing chords are never application accelerators (`src/keyboard.py` decides them).
+- **Lyrics and Up Next in the bar** (2026-10-20). Two toggle buttons at the bar's right, as
+  Apple's players have them, open Now Playing on that tab and close it when it shows that
+  tab; pressed while their tab is in sight, Lyrics off for a song without lyrics. Their keys
+  are Ctrl+Shift+L and Ctrl+Shift+U (L for Lyrics, U for Up Next), the window's own
+  (`shortcuts.NOW_PLAYING_TABS`), not accelerators: Ctrl+Shift+U is GTK's Unicode entry in a
+  text field, which an accelerator would take from the Search entry. Below 640sp the bar
+  drops them first (the title keeps its room), and below 600sp the whole right-hand box;
+  the sheet the bar opens has the tabs.
 - **Music videos play as audio** (2026-09-28). The engine is headless, so a video tile plays
   the video's sound, as the context menu's Play does, rather than refusing or opening a
   browser. Easy to change to a toast with Open in Browser.

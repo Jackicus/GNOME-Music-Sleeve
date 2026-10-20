@@ -46,6 +46,7 @@ from .library import ROOT_FOLDER, Item
 from .player import playback_error_text
 from .player_bar import PlayerBar  # noqa: F401  registers $AppleMusicPlayerBar for the template
 from .widgets.now_playing import NowPlayingSheet  # noqa: F401  registers the sheet's type
+from .widgets.now_playing import TabActions
 from .sections import ALL_PLAYLISTS, HOME
 from .sidebar import parse_key, restore_target, stale_roots
 from .sidebar_view import SidebarController
@@ -169,6 +170,12 @@ class Window(Adw.ApplicationWindow):
             action.connect('activate', callback)
             self.add_action(action)
             self._actions[name] = action
+        # win.show-lyrics and win.show-queue (the player bar's Lyrics and Up Next, Ctrl+Shift+L
+        # and Ctrl+Shift+U, keyboard.TAB_KEYS): the sheet on that tab, or closed.
+        self.tab_actions = TabActions(self.now_playing, self.bottom_sheet, app.player,
+                                      self.fullscreen_host)
+        for action in self.tab_actions.actions.values():
+            self.add_action(action)
         self.navigation_view.connect('notify::visible-page', self._update_actions)
         self.split_view.connect('notify::collapsed', self._update_actions)
         self.split_view.connect('notify::show-content', self._update_actions)
@@ -185,8 +192,10 @@ class Window(Adw.ApplicationWindow):
 
     def on_key_pressed(self, _controller, keyval, _keycode, state):
         """The playback keys (keyboard.PLAYBACK_KEYS) run the playback actions while
-        something plays, unless the keys belong to the focus (keyboard.playback_action). A
-        key nothing handles goes on to the focus widget. F10 opens the primary menu when
+        something plays, unless the keys belong to the focus (keyboard.playback_action), and
+        the Now Playing tab keys (keyboard.TAB_KEYS) win.show-lyrics and win.show-queue on
+        the same terms (keyboard.tab_action). A key nothing handles goes on to the focus
+        widget. F10 opens the primary menu when
         the sidebar holding it is hidden (GTK's own F10 needs it shown)."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
         if self.fullscreen_host.shown:
@@ -200,13 +209,19 @@ class Window(Adw.ApplicationWindow):
             action = app.lookup_action(name)
             return action is not None and action.get_enabled()
 
-        name = keyboard.playback_action(keyval, mods, type(focus),
-                                        self.get_visible_dialog() is not None,
-                                        has_ancestor(focus, Gtk.Popover), enabled)
-        if name is None:
-            return False
-        app.activate_action(name)
-        return True
+        dialog_open = self.get_visible_dialog() is not None
+        in_popover = has_ancestor(focus, Gtk.Popover)
+        name = keyboard.playback_action(keyval, mods, type(focus), dialog_open, in_popover,
+                                        enabled)
+        if name is not None:
+            app.activate_action(name)
+            return True
+        name = keyboard.tab_action(keyval, mods, type(focus), dialog_open, in_popover,
+                                   lambda name: self.lookup_action(name).get_enabled())
+        if name is not None:
+            self.activate_action('win.' + name, None)
+            return True
+        return False
 
     def _show_primary_menu(self):
         """F10 while the primary menu's button is not shown (the collapsed layout showing a
@@ -764,7 +779,8 @@ class Window(Adw.ApplicationWindow):
         """The window's actions are off while a dialog is open over it (their keys go to the
         dialog, not to the pages behind it); back also while the Now Playing sheet or the
         full-screen player is open (Escape closes those) or there is nowhere to go back to;
-        the full-screen player only while something plays (or to leave it)."""
+        the full-screen player only while something plays (or to leave it); the Now Playing
+        tabs' while their tab has something to show (TabActions)."""
         free = self.get_visible_dialog() is None
         for action in self._actions.values():
             action.set_enabled(free)
@@ -774,6 +790,7 @@ class Window(Adw.ApplicationWindow):
         self._actions['fullscreen-player'].set_enabled(
             free and (self.fullscreen_host.shown
                       or self.get_application().player.track is not None))
+        self.tab_actions.set_free(free)
 
     # Ctrl+1, 2, 3: the focus into the sidebar, the page, the player bar.
 

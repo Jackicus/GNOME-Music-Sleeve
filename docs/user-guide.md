@@ -58,6 +58,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   favourites, open it on music.apple.com, and, for a song, **Go to Album** and **Go to
   Artist**. The song playing has the same menu: right-click the player bar, or use **More
   Options** in Now Playing; Up Next's songs have theirs too.
+- The **Lyrics** and **Up Next** buttons at the right of the player bar open Now Playing on
+  that tab, and close it again when it shows that tab (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>
+  and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> do the same, from anywhere but a text
+  field). Lyrics is greyed out for a song Apple Music has no lyrics for. In a narrow window
+  the bar leaves them out to keep the song's title readable: click the bar and pick the tab.
 - Now Playing's **Lyrics** follow the song when Apple Music has them timed: click a line to
   go to it. When Apple Music times them word by word, each word of the line being sung
   fills in as it is sung (with animation effects turned off in Settings, each word lights

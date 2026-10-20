@@ -26,6 +26,8 @@ class ShortcutsTest(unittest.TestCase):
             self.assertIn(action, keys, action)
         for action in shortcuts.PLAYBACK:
             self.assertIn(action, keys, action)
+        for action in shortcuts.NOW_PLAYING_TABS:
+            self.assertIn(action, keys, action)
         for key in (shortcuts.MAIN_MENU, shortcuts.CONTEXT_MENU, shortcuts.CLOSE,
                     shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE):
             self.assertIn(key, keys, key)
@@ -42,13 +44,15 @@ class ShortcutsTest(unittest.TestCase):
         for key in listed():
             for accel in shortcuts.accelerator(key).split():
                 self.assertTrue(Gtk.accelerator_parse(accel)[0], accel)
-        for accels in list(shortcuts.ACCELS.values()) + list(shortcuts.PLAYBACK.values()):
+        for accels in (list(shortcuts.ACCELS.values()) + list(shortcuts.PLAYBACK.values())
+                       + list(shortcuts.NOW_PLAYING_TABS.values())):
             for accel in accels:
                 self.assertTrue(Gtk.accelerator_parse(accel)[0], accel)
 
     def test_no_key_does_two_things(self):
         seen = {}
-        table = list(shortcuts.ACCELS.items()) + list(shortcuts.PLAYBACK.items())
+        table = (list(shortcuts.ACCELS.items()) + list(shortcuts.PLAYBACK.items())
+                 + list(shortcuts.NOW_PLAYING_TABS.items()))
         for action, accels in table:
             for accel in accels:
                 parsed = Gtk.accelerator_parse(accel)[1:]
@@ -66,6 +70,16 @@ class ShortcutsTest(unittest.TestCase):
         for accel in ('<primary>n', '<primary>o', '<primary>s', '<primary>p', '<primary>z'):
             self.assertNotIn(Gtk.accelerator_parse(accel)[1:], taken, accel)
         self.assertEqual(shortcuts.ACCELS['app.now-playing'], ('<primary><shift>n',))
+
+    def test_the_now_playing_tab_keys_are_not_accelerators(self):
+        """Ctrl+Shift+U is GTK's Unicode entry in a text field: as an application
+        accelerator, run before the focus widget, it would take that from the Search entry.
+        The tab keys are the window's (keyboard.tab_action), Ctrl+Shift+L with them."""
+        self.assertEqual(shortcuts.NOW_PLAYING_TABS, {
+            'show-lyrics': ('<primary><shift>l',), 'show-queue': ('<primary><shift>u',)})
+        taken = {Gtk.accelerator_parse(accel)[1:]
+                 for accels in shortcuts.ACCELS.values() for accel in accels}
+        self.assertNotIn(Gtk.accelerator_parse('<primary><shift>u')[1:], taken)
 
     def test_f11_is_the_full_screen_players(self):
         """The HIG's Fullscreen key, the one accelerator without a modifier (a function key,

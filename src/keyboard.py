@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The window's own keys: which playback action a key press runs, given where the focus is.
+"""The window's own keys: which playback or Now Playing action a key press runs, given where
+the focus is.
 
 The playback keys (shortcuts.PLAYBACK: Space, Ctrl+Right, Ctrl+Left) are not application
 accelerators: GTK 4 runs those in the window's capture phase, before the focus widget, so a
@@ -9,9 +10,12 @@ bare Space would fire while typing in the Songs filter and Ctrl+Left would skip 
 instead of a word. The window's capture-phase key controller asks playback_action() instead,
 which leaves the keys to the widgets whose keys they are, and the window activates the
 action it names. The decision takes plain values (the focus widget's class, not the widget),
-so tests/test_keyboard.py checks it without a display.
+so tests/test_keyboard.py checks it without a display. The keys that open Now Playing on
+a tab (shortcuts.NOW_PLAYING_TABS: Ctrl+Shift+L, Ctrl+Shift+U, Unicode entry in a text
+field) are the window's own for the same reason, and tab_action() decides them alike.
 
     name = playback_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
+    name = tab_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
 """
 
 from gi.repository import Gdk, Gtk
@@ -33,6 +37,9 @@ def parse_keys(table):
 # The playback keys, by (keyval, modifiers) -> app action.
 PLAYBACK_KEYS = parse_keys(shortcuts.PLAYBACK)
 
+# The keys that open Now Playing on a tab, by (keyval, modifiers) -> window action.
+TAB_KEYS = parse_keys(shortcuts.NOW_PLAYING_TABS)
+
 # The primary menu's key (F10), which the window handles itself when the button is hidden.
 MAIN_MENU_KEY = Gtk.accelerator_parse(shortcuts.MAIN_MENU)[1:]
 
@@ -53,7 +60,21 @@ def playback_action(keyval, mods, focus_type, dialog_open, in_popover, enabled):
     or type(None) with no focus) when it is typed into (TYPING), or for Space when it owns
     Space (SPACE_OWNERS); a dialog open over the window; a popover (a menu) the focus is
     in; the action itself when it is not enabled (`enabled(name)`: nothing plays)."""
-    name = PLAYBACK_KEYS.get((keyval, int(mods)))
+    return _key_action(PLAYBACK_KEYS, keyval, mods, focus_type, dialog_open, in_popover,
+                       enabled)
+
+
+def tab_action(keyval, mods, focus_type, dialog_open, in_popover, enabled):
+    """The window action (without "win.") that a key press runs to show a Now Playing tab
+    (TAB_KEYS), or None, on playback_action()'s terms: not while typing, in a dialog or a
+    popover, or with the action disabled."""
+    return _key_action(TAB_KEYS, keyval, mods, focus_type, dialog_open, in_popover, enabled)
+
+
+def _key_action(keys, keyval, mods, focus_type, dialog_open, in_popover, enabled):
+    # A press with Shift held reports the capital (Ctrl+Shift+L is L); the tables hold
+    # what Gtk.accelerator_parse makes of '<shift>l', the small letter.
+    name = keys.get((Gdk.keyval_to_lower(keyval), int(mods)))
     if name is None:
         return None
     if dialog_open or in_popover:

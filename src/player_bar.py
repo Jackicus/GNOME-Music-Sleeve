@@ -15,7 +15,11 @@ play and next buttons run the app's actions (app.previous, app.play-pause, app.n
 while something plays); the toggles and the sliders call the Player's coroutines, and a
 failure is toasted by the app. The play button, the seek slider, the toggles, the volume,
 the heart and the artwork are the pieces widgets/transport.py holds, shared with the Now
-Playing sheet.
+Playing sheet. Lyrics and Up Next are toggle buttons over the window's win.show-lyrics and
+win.show-queue (widgets/now_playing.py's TabActions): they open the sheet on that tab, show
+pressed while it is in sight, and Lyrics is off for a song without lyrics; their tooltips
+name their keys (shortcuts.NOW_PLAYING_TABS). Below the window's 640sp breakpoint
+(`narrow`) the title needs their room, and the sheet the bar opens has the tabs.
 
 A right click, a long press or the Menu key on the bar opens the item playing's menu (its
 `context_item`: context_menu on the bar's button), as the Now Playing sheet's More Options
@@ -33,6 +37,7 @@ from gettext import gettext as _
 
 from gi.repository import Adw, GObject, Gtk
 
+from . import shortcuts
 from .actions import now_playing_track
 from .widgets import context_menu
 from .widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
@@ -71,12 +76,15 @@ class PlayerBar(Adw.Bin):
     repeat_button = Gtk.Template.Child()
     volume_button = Gtk.Template.Child()
     volume_adjustment = Gtk.Template.Child()
+    lyrics_button = Gtk.Template.Child()
+    queue_button = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._player = None
         self._app = None
         self._compact = False
+        self._narrow = False
         self._announced = None      # the id of the item last announced
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
@@ -88,14 +96,18 @@ class PlayerBar(Adw.Bin):
         self._heart = HeartControl(self.heart_button)
         self._art = RemoteCover(self.cover)
         self._volume = VolumeControl(self.volume_button, self.volume_adjustment)
+        for button, action in ((self.lyrics_button, 'show-lyrics'),
+                               (self.queue_button, 'show-queue')):
+            button.set_tooltip_text(tooltip_with_keys(button.get_tooltip_text(),
+                                                      shortcuts.NOW_PLAYING_TABS[action][0]))
 
     def _get_compact(self):
         return self._compact
 
     def _set_compact(self, compact):
         # The title keeps the room (COMPACT_COVER_SIZE): the right-hand box goes whole, its
-        # spacing with it. Shuffle and repeat stay in the Now Playing sheet, which the bar
-        # opens.
+        # spacing with it. Shuffle, repeat and the Lyrics and Up Next tabs stay in the Now
+        # Playing sheet, which the bar opens.
         self._compact = compact
         self.cover.props.size = COMPACT_COVER_SIZE if compact else COVER_SIZE
         for widget in (self.controls_box, self.elapsed_label, self.remaining_label):
@@ -104,8 +116,23 @@ class PlayerBar(Adw.Bin):
 
     compact = GObject.Property(type=bool, default=False, getter=_get_compact, setter=_set_compact,
                                nick='Compact',
-                               blurb='A smaller cover, and no volume, heart, shuffle, repeat or '
-                                     'times (narrow)')
+                               blurb='A smaller cover, and no volume, heart, shuffle, repeat, '
+                                     'Lyrics, Up Next or times (narrow)')
+
+    def _get_narrow(self):
+        return self._narrow
+
+    def _set_narrow(self, narrow):
+        # Below the window's 640sp breakpoint, Lyrics and Up Next would cut the title short:
+        # they go first, before the rest of the right-hand box goes at 600sp (compact).
+        self._narrow = narrow
+        for button in (self.lyrics_button, self.queue_button):
+            button.set_visible(not narrow)
+        self._show_playing_controls()
+
+    narrow = GObject.Property(type=bool, default=False, getter=_get_narrow, setter=_set_narrow,
+                              nick='Narrow', blurb='No Lyrics or Up Next buttons (the title '
+                                                   'needs their room)')
 
     def set_player(self, player, app):
         """Follow `player`; `app` spawns the commands and reports their failures."""
@@ -195,3 +222,15 @@ class PlayerBar(Adw.Bin):
         else:
             message = self._strings['announce-title'].format(title=title)
         (self.get_root() or self).announce(message, Gtk.AccessibleAnnouncementPriority.MEDIUM)
+
+
+def tooltip_with_keys(tooltip, accel):
+    """A button's tooltip followed by its shortcut: "Lyrics (Shift+Ctrl+L)" for "Lyrics" and
+    '<primary><shift>l' (the key as GTK names it, as in its menus)."""
+    ok, key, mods = Gtk.accelerator_parse(accel)
+    if not ok:
+        return tooltip
+    # Translators: a button's tooltip with its shortcut: {tooltip} is what it does
+    # ("Lyrics"), {keys} its key ("Shift+Ctrl+L").
+    return _('{tooltip} ({keys})').format(tooltip=tooltip,
+                                          keys=Gtk.accelerator_get_label(key, mods))

@@ -55,7 +55,13 @@ list and the script together.
    switches) and into the list (arrows move, Enter seeks to a line or plays an entry, Menu
    opens an entry's menu), then the close button and the header bar's buttons, More Options
    among them (the item playing's menu). Escape closes a menu, then the sheet, and the focus
-   goes back to where it was.
+   goes back to where it was. Ctrl+Shift+U opens Now Playing on Up Next and Ctrl+Shift+L on
+   Lyrics (the bar's toggle for the tab shown reads as pressed); the other key switches the
+   tab, the same key again closes the sheet. Space on the bar's Up Next button (wide windows:
+   the narrow bar leaves the two to the sheet) opens it on Up Next, and Escape brings the
+   focus back to the button. In the full-screen player, Ctrl+Shift+U goes back to Now
+   Playing on Up Next. In an entry, the keys are the entry's (Ctrl+Shift+U is GTK's Unicode
+   entry).
 6. Ctrl+F shows Search with the cursor in the entry, over any page opened from its results;
    Tab reaches the Apple Music / Your Library toggle; Escape in the entry clears it. On the
    Songs page, Ctrl+F shows the page's own filter bar instead, with the cursor in its entry;
@@ -64,8 +70,8 @@ list and the script together.
 7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
    it). Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
    buttons, Escape closes it. Ctrl+? lists every shortcut.
-8. With a dialog open over the window, Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N and Space
-   leave the page behind it alone.
+8. With a dialog open over the window, Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N,
+   Ctrl+Shift+L, Ctrl+Shift+U and Space leave the page behind it alone.
 9. A playlist's Rename… (and New Playlist…) opens its dialog with the cursor in the name;
    Tab reaches the description and the buttons, Enter renames (or creates), and Escape
    closes it with nothing changed. Delete Playlist… asks first, with Cancel the default.
