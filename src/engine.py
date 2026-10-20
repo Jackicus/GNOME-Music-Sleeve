@@ -73,18 +73,21 @@ UI awaits.
     await engine.related('song', id)  # {album, artists}: a catalog song's (or music video's)
                                       # album and artists, or an album's artists
 
-Properties `state` ('down', 'starting', 'up', 'signing-in'), `authorized`, `headless`; the
-`event(name, data)` signal re-emits the bridge's MusicKit events (name without the 'am:'
-prefix), and `rated(kind, id, value)` follows love(), unlove() and rating() (the kind and id
-as they were asked, value 1 loved, 0 not), so a heart shows what a menu did, and
-`lost(reason)` says the engine went down on its own (Chrome crashed or was killed, the page
-crashed, closed or stopped answering), never for a stop, a restart or quitting. Every failure
-is an EngineError; nothing here blocks the loop: Chrome is a Gio.Subprocess (awaitable
-wait_async), the connection is the asynchronous CDPClient over Chrome's DevTools pipe (its
-descriptors 3 and 4: no port is open), and the JSON shaping and artwork HTTP of item() run in
-a thread. In demo mode (`demo=True`) start() and stop() do nothing and every command raises
-EngineError('engine-down') at once, but for a kept answer the demo library invented
-(scripts/demo_library.py writes its artists' pages, marked `demo`), answered from its cache.
+Properties `state` ('down', 'starting', 'up', 'signing-in'), `authorized`, `headless` and
+`widevine`, which goes False when the page of the browser just started says it cannot decrypt
+Widevine (asked once per start, beside it: play() and queue_jump() then raise 'no-widevine', as
+no song would play; previews still do); the `event(name, data)` signal re-emits the bridge's
+MusicKit events (name without the 'am:' prefix), and `rated(kind, id, value)` follows love(),
+unlove() and rating() (the kind and id as they were asked, value 1 loved, 0 not), so a heart
+shows what a menu did, and `lost(reason)` says the engine went down on its own (Chrome crashed
+or was killed, the page crashed, closed or stopped answering), never for a stop, a restart or
+quitting. Every failure is an EngineError; nothing here blocks the loop: Chrome is a
+Gio.Subprocess (awaitable wait_async), the connection is the asynchronous CDPClient over
+Chrome's DevTools pipe (its descriptors 3 and 4: no port is open), and the JSON shaping and
+artwork HTTP of item() run in a thread. In demo mode (`demo=True`) start() and stop() do
+nothing and every command raises EngineError('engine-down') at once, but for a kept answer the
+demo library invented (scripts/demo_library.py writes its artists' pages, marked `demo`),
+answered from its cache.
 
 The browser command (`browser_command`) and the preferred mode (`prefer_headless`) are read
 when Chrome is spawned, so a change applies at the next start and a running Chrome is left
@@ -129,6 +132,7 @@ PROBE_TIMEOUT = 5.0       # after a call timed out: a page silent this long is w
 CLOSE_WAIT = 2.0          # Chrome closing on Browser.close, before SIGTERM
 STOP_GRACE = 5.0          # after SIGTERM, before SIGKILL
 KEYRING_WAIT = 5.0        # the keyring answering on Chrome's bus, or starting when asked
+DRM_TIMEOUT = 5.0         # the page saying whether the browser can decrypt Widevine
 SIGNIN_TIMEOUT = 600.0    # ten minutes to sign in
 SIGNIN_POLL = 2.0         # isAuthorized is polled this often while signing in
 API_RETRIES = 3           # tries of an API read that may pass another time (api.is_final)
@@ -387,6 +391,8 @@ class Engine(GObject.Object):
     state = GObject.Property(type=str, default='down')
     authorized = GObject.Property(type=bool, default=False)
     headless = GObject.Property(type=bool, default=True)
+    # False once the page has said the browser cannot decrypt Widevine: songs cannot play.
+    widevine = GObject.Property(type=bool, default=True)
 
     def __init__(self, profile_dir=None, browser_command=None, demo=False):
         super().__init__()
@@ -415,6 +421,7 @@ class Engine(GObject.Object):
         self._tasks = set()    # small tasks of the engine's own, held until they end
         self._probe = None     # the task asking a page that timed out whether it answers
         self._storefront = None  # the account's, as the last status read had it
+        self._drm = None       # the task asking the page about Widevine, once per start
         # The language lyrics are translated into and the script of their pronunciations:
         # the user's (GLib's first language name: LANGUAGE, LC_ALL, LC_MESSAGES, LANG).
         self.lyrics_languages = api.lyrics_languages(GLib.get_language_names()[0])
@@ -516,9 +523,8 @@ class Engine(GObject.Object):
         binary = await asyncio.to_thread(chrome.find_chrome, self.browser_command)
         if binary is None:
             raise EngineError(
-                'no-browser', 'Google Chrome was not found (google-chrome-stable, '
-                'google-chrome or /opt/google/chrome/chrome; the browser-command setting '
-                'names another)')
+                'no-browser', 'a Chromium-based browser was not found (Google Chrome, '
+                'Edge, Brave, Vivaldi or Chromium; the browser-command setting names another)')
         try:
             await asyncio.to_thread(self.profile_dir.mkdir, parents=True, exist_ok=True)
         except OSError as e:
@@ -552,9 +558,41 @@ class Engine(GObject.Object):
         status = await client.bridge('status')
         self.authorized = bool(isinstance(status, dict) and status.get('authorized'))
         self._storefront = status.get('storefront') if isinstance(status, dict) else None
+        if not self.widevine:
+            self.widevine = True  # another browser, perhaps: its page says
+        self._drm = self._in_background(self._check_widevine(client))
         self.state = 'up'
         self._watch = asyncio.create_task(self._watch_connection(client), name='engine-watch')
         log.info('engine up: %s', 'authorized' if self.authorized else 'not signed in')
+
+    async def _check_widevine(self, client):
+        """Whether the browser just started can decrypt Widevine, as its page says (the
+        bridge's drm()), once per start, beside it rather than in its way: `widevine` goes
+        False, with a warning, when the page says no. A page that cannot say (an error, no
+        answer in DRM_TIMEOUT) leaves it True: a play would find out."""
+        try:
+            answer = await client.bridge('drm', timeout=DRM_TIMEOUT)
+        except EngineError as e:
+            log.debug('the Widevine check: %s', e)
+            return
+        if client is not self._client or not isinstance(answer, dict):
+            return
+        if answer.get('widevine') is False:
+            log.warning('the browser cannot decrypt Widevine (%s): songs will not play in it; '
+                        'Google Chrome can play them', answer.get('error') or 'refused')
+            self.widevine = False
+        else:
+            log.debug('the browser can decrypt Widevine')
+
+    async def _require_widevine(self):
+        """Before a play: EngineError('no-widevine') when the page said the browser cannot
+        decrypt Widevine; a check still under way is waited for (DRM_TIMEOUT at most)."""
+        probe = self._drm
+        if probe is not None and not probe.done():
+            await asyncio.wait({probe})
+        if not self.widevine:
+            raise EngineError('no-widevine', 'the browser cannot decrypt Widevine, which the '
+                              'songs are protected with')
 
     async def _check_keyring(self, host_bus):
         """Before Chrome is spawned: nothing for a profile whose Local State does not record
@@ -1236,6 +1274,7 @@ class Engine(GObject.Object):
         client = await self._require_signed_in('play')
         if not kind or item_id in (None, ''):
             raise EngineError('usage', 'play needs a kind and an id')
+        await self._require_widevine()
         options = {'startWith': int(start_with or 0),
                    'shuffle': None if shuffle is None else bool(shuffle)}
         if start_id:
@@ -1345,6 +1384,7 @@ class Engine(GObject.Object):
         if isinstance(index, bool) or not isinstance(index, int) or index < 0:
             raise EngineError('usage', f'not a queue index: {index!r}')
         client = await self._ready()
+        await self._require_widevine()
         await client.bridge('queueJump', index, timeout=PLAY_TIMEOUT)
 
     def lyrics_path(self, catalog_song_id):

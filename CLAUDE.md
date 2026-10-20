@@ -16,13 +16,13 @@ rules in `.claude/rules/`, measurements and lab notes in `docs/notes.md`, histor
 
 Apple Music streams are Widevine-protected. WebKitGTK cannot play them and Apple offers no public
 streaming API, so the app cannot embed music.apple.com in a WebView. The playback engine is Google
-Chrome (the real build, which ships Widevine; Chromium does not), started by the app with a private
-profile, showing music.apple.com. The app drives Apple's own MusicKit JS in that page over the
-Chrome DevTools Protocol (CDP) on a pipe (no port), through an injected `src/backend/bridge.js`,
-and hears MusicKit's events through a CDP binding. Chrome is visible once, for sign-in, and
-headless after that (unless `engine-headless` is off); the sound comes out of Chrome. One
-long-running process, one persistent, asynchronous CDP connection. `src/backend/` is a fork,
-owned here, of the backend of the owner's GNOME Shell extension.
+Chrome (which ships Widevine) or another Chromium-based browser with it (the bridge's `drm()`
+asks), started by the app with a private profile, showing music.apple.com. The app drives Apple's
+own MusicKit JS in that page over the Chrome DevTools Protocol (CDP) on a pipe (no port), through
+an injected `src/backend/bridge.js`, and hears MusicKit's events through a CDP binding. Chrome is
+visible once, for sign-in, and headless after that (unless `engine-headless` is off); the sound
+comes out of Chrome. One long-running process, one persistent, asynchronous CDP connection.
+`src/backend/` is a fork, owned here, of the backend of the owner's GNOME Shell extension.
 
 ## Architecture
 

@@ -24,8 +24,8 @@ sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3
     python3-cairo meson gettext appstream desktop-file-utils ruff gjs
 ```
 
-Google Chrome is only needed to play music: the demo library and the tests work without it,
-and without an Apple Account.
+Google Chrome (or another Chromium-based browser with Widevine) is only needed to play
+music: the demo library and the tests work without it, and without an Apple Account.
 
 ## Build, run and test
 

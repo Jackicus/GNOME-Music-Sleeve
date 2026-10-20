@@ -15,11 +15,11 @@ Not affiliated with Apple. Apple Music is a trademark of Apple Inc.
 The screenshots show an invented demo library.
 
 > [!IMPORTANT]
-> The app plays music through **Google Chrome**, and it must be Google's own build:
-> Chromium will not work. Apple Music's streams are protected with Widevine DRM, which
-> Chrome ships and Chromium does not, and Apple offers no public streaming API. The app
-> starts Chrome on a private profile, shows music.apple.com in it and drives Apple's own
-> player there. Chrome opens a window once, for you to sign in, and runs hidden after
+> The app plays music through **Google Chrome**, or another Chromium-based browser that
+> has Widevine. Apple Music's streams are protected with Widevine DRM, which Google's own
+> Chrome ships and Chromium does not (without its distribution's Widevine package), and
+> Apple offers no public streaming API. The app starts Chrome on a private profile, shows
+> music.apple.com in it and drives Apple's own player there. Chrome opens a window once, for you to sign in, and runs hidden after
 > that; the sound comes out of Chrome, so your system's per-app volume lists it as Chrome.
 
 ## What it does
@@ -43,8 +43,10 @@ music videos with a picture (they play as audio); creating, renaming or reorderi
 
 - An Apple Music subscription.
 - Google Chrome, found as `google-chrome-stable`, `google-chrome` or
-  `/opt/google/chrome/chrome`; Preferences › Engine › Browser program can name another
-  command.
+  `/opt/google/chrome/chrome`. Without it, the app tries Microsoft Edge, Brave, Vivaldi and
+  Chromium (not their snaps), and Preferences › Engine › Browser program can name another
+  command. Any of them plays only with Widevine, which the app checks when the engine
+  starts; only Google Chrome is tested.
 - GTK 4.20, libadwaita 1.9, GLib 2.84, Python 3.12 and PyGObject 3.50, or newer: the
   libraries of GNOME 50. Any distribution that ships them will do. Fedora 44, Ubuntu 26.04,
   Arch Linux and openSUSE Tumbleweed do; Debian 13 and Ubuntu 24.04 are too old.

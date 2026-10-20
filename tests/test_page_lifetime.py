@@ -131,6 +131,7 @@ def _classes():
         state = GObject.Property(type=str, default='down')
         authorized = GObject.Property(type=bool, default=False)
         headless = GObject.Property(type=bool, default=True)
+        widevine = GObject.Property(type=bool, default=True)
 
         def __init__(self):
             super().__init__()
@@ -849,6 +850,16 @@ class HandlerTest(WidgetTestCase):
                 self.assertEqual(dialog.last_refreshed_row.get_subtitle(), 'Refreshing…')
                 self.app.library_sync.props.running = False
                 self.assertEqual(dialog.last_refreshed_row.get_subtitle(), 'Just now')
+                # The engine row says when the browser cannot play songs.
+                engine = self.app.engine
+                engine.props.state = 'up'
+                engine.props.authorized = True
+                self.assertEqual(dialog.engine_row.get_subtitle(), 'Running hidden')
+                engine.props.widevine = False
+                self.assertEqual(dialog.engine_row.get_subtitle(),
+                                 'Running, but this browser cannot play songs')
+                engine.props.widevine = True
+                engine.props.state = 'down'
                 dialog.refresh_button.emit('clicked')  # app.sync
                 dialog.engine_button.emit('clicked')
                 dialog.sign_out_row.emit('activated')

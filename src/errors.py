@@ -19,7 +19,12 @@ def error_message(code):
     """(the toast's title, its button's label or None, the action the button runs or None)
     for an EngineError code; a code this does not know gets the generic sentence."""
     if code == errors.NO_BROWSER:
-        return (_('Google Chrome is needed to play Apple Music'), _('Preferences'),
+        # No browser at all: the one to install is Chrome, though others may do (Preferences).
+        return (_('Install Google Chrome to play Apple Music'), _('Preferences'),
+                'app.show-engine-preferences')
+    if code == errors.NO_WIDEVINE:
+        # The browser runs (browsing and previews work) but cannot decrypt the songs.
+        return (_('This browser cannot play songs; Google Chrome can'), _('Preferences'),
                 'app.show-engine-preferences')
     if code == errors.ENGINE_DOWN:
         return _('The playback engine is not running'), _('Start'), 'app.start-engine'

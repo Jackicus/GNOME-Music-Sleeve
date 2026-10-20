@@ -108,8 +108,8 @@ class UnixFakeChrome(FakeBrowser):
 
 
 class EnginePage(FakePage):
-    """The fake page: the bridge's status(), signin(), api() and apiAll(), and the account
-    name lookup, on top of FakePage's probe/inject/subscribe."""
+    """The fake page: the bridge's status(), drm(), signin(), api() and apiAll(), and the
+    account name lookup, on top of FakePage's probe/inject/subscribe."""
 
     def __init__(self):
         super().__init__()
@@ -123,10 +123,18 @@ class EnginePage(FakePage):
         self.bridge_calls = []  # (method, args) of the playback commands
         self.bridge_answers = {}  # method -> what it answers (None: {ok: True})
         self.status_reads = 0   # the bridge's status() calls
+        self.widevine = True    # drm()'s answer; None: it throws
+        self.drm_reads = 0
 
     def __call__(self, message):
         expression = message['params']['expression']
         match = re.match(r'window\.__appleMusicLibrary\.(\w+)\((.*)\)$', expression, re.S)
+        if expression == 'window.__appleMusicLibrary.drm()':
+            self.drm_reads += 1
+            if self.widevine is None:
+                return thrown('TypeError: navigator is undefined')
+            return value({'widevine': True} if self.widevine else {
+                'widevine': False, 'error': 'Unsupported keySystem or supportedConfigurations.'})
         if match and match.group(1) in PLAYBACK_METHODS:
             args = json.loads('[' + match.group(2) + ']') if match.group(2) else []
             self.bridge_calls.append((match.group(1), *args))
@@ -1185,6 +1193,51 @@ class PlaybackTest(EngineFixture):
             with self.assertRaises(EngineError) as raised:
                 await self.engine.play(kind, item_id)
             self.assertEqual(raised.exception.code, 'usage')
+
+    async def test_a_browser_without_widevine_plays_no_song(self):
+        self.page.widevine = False
+        with self.assertLogs('applemusic.engine', 'WARNING') as logged:
+            await self.up()
+            await until(lambda: not self.engine.widevine)
+        self.assertIn('cannot decrypt Widevine (Unsupported keySystem', logged.output[0])
+        self.assertEqual(self.engine.state, 'up')  # the library, browsing and previews need none
+        for play in (self.engine.play('album', 'l.alb1'), self.engine.queue_jump(2)):
+            with self.assertRaises(EngineError) as raised:
+                await play
+            self.assertEqual(raised.exception.code, 'no-widevine')
+        await self.engine.preview('1724049301', 'https://example.invalid/tin-roof.m4a')
+        self.assertEqual([call[0] for call in self.page.bridge_calls], ['preview'])
+
+    async def test_a_play_waits_for_the_widevine_check(self):
+        self.page.widevine = False
+        with self.assertLogs('applemusic.engine', 'WARNING'):
+            await self.up()
+            # At once, before the check has answered: the play waits for it, then refuses.
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.play('album', 'l.alb1')
+        self.assertEqual(raised.exception.code, 'no-widevine')
+        self.assertEqual(self.page.bridge_calls, [])
+
+    async def test_widevine_is_asked_once_per_start(self):
+        self.page.widevine = False
+        with self.assertLogs('applemusic.engine', 'WARNING'):
+            await self.up()
+            await until(lambda: not self.engine.widevine)
+        self.page.widevine = True   # another browser, named in Preferences
+        await self.engine.restart()
+        await self.engine.play('album', 'l.alb1')
+        self.assertTrue(self.engine.widevine)
+        self.assertEqual(self.page.drm_reads, 2)
+        await self.engine.status()
+        self.assertEqual(self.page.drm_reads, 2)
+
+    async def test_a_check_that_cannot_answer_lets_songs_play(self):
+        self.page.widevine = None
+        await self.up()
+        await self.engine.play('album', 'l.alb1')
+        self.assertTrue(self.engine.widevine)
+        self.assertEqual(self.page.drm_reads, 1)
+        self.assertEqual(self.page.bridge_calls[0][0], 'play')
 
     async def test_play_next_and_later(self):
         await self.up()

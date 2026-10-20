@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""Finding and describing the Chrome the engine runs in.
+"""Finding and describing the Chrome the engine runs in: Google Chrome, or another
+Chromium-based browser (CANDIDATES). Any of them speaks the same DevTools protocol and keeps
+the same profile; what the streams need is Widevine, which Google Chrome ships and the others
+may lack, so whether the one found can play is the page's to say (the bridge's drm()), not
+its name.
 
 Nothing here starts a process: the Engine spawns Chrome with Gio.Subprocess from the command
 line chrome_args() builds, which has Chrome speak the DevTools protocol over a pipe on its file
@@ -39,8 +43,16 @@ from .errors import EngineError
 
 log = logging.getLogger(__name__)
 
-# The real Google Chrome only: it ships Widevine, which the streams need; Chromium does not.
-CANDIDATES = ('google-chrome-stable', 'google-chrome', '/opt/google/chrome/chrome')
+# The browsers tried, in order: Google Chrome first, which ships Widevine; then the
+# Chromium-based browsers that can fetch a Widevine module of their own (Edge, Brave and
+# Vivaldi); Chromium last, which plays only with its distribution's Widevine package.
+CANDIDATES = ('google-chrome-stable', 'google-chrome', '/opt/google/chrome/chrome',
+              'microsoft-edge-stable', 'brave-browser', 'brave', 'vivaldi-stable', 'vivaldi',
+              'chromium', 'chromium-browser')
+# A snap's commands live under /snap/ (Ubuntu's chromium-browser is a script that runs one):
+# a snap cannot use a profile under a hidden directory such as ~/.local/share, and the snap
+# Chromium has no Widevine, so a snap is never one of the candidates found.
+SNAP_ROOT = '/snap/'
 START_URL = 'https://music.apple.com/'
 DEVTOOLS_HOST = '127.0.0.1'
 
@@ -67,11 +79,12 @@ def in_flatpak():
 
 
 def find_chrome(command=None, path=None, host=None):
-    """The executable for `command` (the configured browser), else the first of CANDIDATES
-    on `path` (default $PATH); None when there is no Chrome. A configured command that is not
-    found is logged before the candidates are tried. With `host` (by default when
-    in_flatpak()) the names are resolved on the host instead (find_host_chrome). Blocking in
-    the sandbox: call it in a thread."""
+    """The executable for `command` (the configured browser, whatever it is), else the first
+    of CANDIDATES on `path` (default $PATH) that is not a snap (is_snap); None when there is
+    none. A configured command that is not found is logged before the candidates are tried,
+    unless it is one of them (the setting's default). With `host` (by default when
+    in_flatpak()) the names are resolved on the host instead (find_host_chrome), snaps and
+    all. Blocking (a file read, and in the sandbox a process): call it in a thread."""
     if host is None:
         host = in_flatpak()
     if host:
@@ -80,13 +93,29 @@ def find_chrome(command=None, path=None, host=None):
         found = shutil.which(command, path=path)
         if found:
             return found
-        log.warning("the browser command %r was not found; trying Google Chrome's usual names",
-                    command)
+        if command not in CANDIDATES:
+            log.warning('the browser command %r was not found; trying the usual browsers',
+                        command)
     for name in CANDIDATES:
         found = shutil.which(name, path=path)
-        if found:
+        if found and not is_snap(found):
             return found
+        if found:
+            log.debug('%s is a snap, which cannot run the engine; skipped', found)
     return None
+
+
+def is_snap(executable):
+    """Whether `executable` runs a snap: it resolves to a path under /snap/, or it is a
+    script that names one (Ubuntu's /usr/bin/chromium-browser). Blocking (a file read)."""
+    if os.path.realpath(executable).startswith(SNAP_ROOT):
+        return True
+    try:
+        with open(executable, 'rb') as file:
+            head = file.read(4096)
+    except OSError:
+        return False
+    return head.startswith(b'#!') and SNAP_ROOT.encode() in head
 
 
 def find_host_chrome(names, run=subprocess.run):

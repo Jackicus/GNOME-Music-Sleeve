@@ -27,7 +27,8 @@ app reaches Chrome only through the Engine; other modules may import the pure pa
 | Code | Meaning |
 |---|---|
 | `engine-down` | Chrome is not running, exited, or the connection closed (also every command in demo mode) |
-| `no-browser` | no Google Chrome to run, or it could not be started |
+| `no-browser` | no Chromium-based browser to run, or it could not be started |
+| `no-widevine` | the browser runs but cannot decrypt Widevine (its page's `drm()` said so): `play()` and `queueJump()` refuse, since no song would play |
 | `no-keyring` | the keyring that encrypts the profile's sign-in is not reachable on Chrome's session bus: Chrome was not started, as it would delete the sign-in |
 | `not-signed-in` | MusicKit is not authorized |
 | `api` | Apple, MusicKit or the page said no (`status`: Apple's HTTP status; `musickit_code`: MusicKit's code for a refused play) |
@@ -43,6 +44,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | Call | Answer |
 |---|---|
 | `status()` | `{ready, engine, authorized, storefront, bitrate}` |
+| `drm()` | `{widevine: true}`, or `{widevine: false, error}` when the browser refuses Widevine (`navigator.requestMediaKeySystemAccess`, AAC in MP4) or has no Encrypted Media Extensions; never a throw |
 | `accountName()` | the account's name as the page shows it (`.account-menu .user__name`), or null; null while a sign-in control is on the page |
 | `signin()` | `mk.authorize()`, then `{authorized}` |
 | `signout()` | `mk.unauthorize()`, which revokes the session at Apple's end: `{ok: true}` or `{error}`, never a throw |

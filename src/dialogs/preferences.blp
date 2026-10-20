@@ -92,7 +92,7 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
     icon-name: "web-browser-symbolic";
 
     Adw.PreferencesGroup {
-      description: _("Apple Music plays in Google Chrome, which the app starts and controls in the background.");
+      description: _("Apple Music plays in Google Chrome, which the app starts and controls in the background. Another Chromium-based browser with Widevine can be used instead.");
 
       Adw.ActionRow engine_row {
         title: _("Engine");
@@ -109,7 +109,7 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
 
     Adw.PreferencesGroup {
       title: _("Browser");
-      description: _("The browser program is a program name or path, without arguments. Changes here apply the next time the engine starts.");
+      description: _("The browser program is a program name or path, without arguments, such as google-chrome-stable or brave-browser. Changes here apply the next time the engine starts; another browser may need you to sign in again.");
 
       Adw.EntryRow browser_row {
         title: _("Browser program");
@@ -118,12 +118,12 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
 
       Adw.SwitchRow headless_row {
         title: _("Run Browser Hidden");
-        subtitle: _("Turn off to show the Chrome window, for debugging");
+        subtitle: _("Turn off to show the browser window, for debugging");
       }
 
       Adw.SwitchRow autostart_row {
         title: _("Start Engine on Launch");
-        subtitle: _("Starts Chrome when the app opens, once you have signed in");
+        subtitle: _("Starts the browser when the app opens, once you have signed in");
       }
     }
 

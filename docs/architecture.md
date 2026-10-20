@@ -6,7 +6,10 @@ docstring has the detail; this page is the map and the flows between the parts.
 ## Why there is a browser inside
 
 Apple Music's streams are Widevine-protected, WebKitGTK cannot play them, and Apple publishes
-no streaming API. Google Chrome can play them. So the app starts its own Chrome, with a
+no streaming API. Google Chrome can play them, and so can another Chromium-based browser that
+has Widevine (Chromium itself does only with its distribution's Widevine package): which one
+runs is `chrome.find_chrome()`'s choice, and whether it can play is its page's answer to the
+bridge's `drm()`, asked once per start. So the app starts its own Chrome, with a
 private profile, on music.apple.com, and drives Apple's MusicKit JS in that page over the
 Chrome DevTools Protocol. The protocol runs over a pipe between the app and its Chrome
 (`--remote-debugging-pipe`, Chrome's file descriptors 3 and 4), so no port is open for other

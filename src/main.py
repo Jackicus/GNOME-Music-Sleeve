@@ -256,6 +256,7 @@ class Application(Adw.Application):
         name on the bus."""
         self.engine = self._make_engine()
         self.engine.connect('lost', self._on_engine_lost)
+        self.engine.connect('notify::widevine', self._on_engine_widevine)
         self.player = Player(self)
         self.player.connect('notify::track', self._on_track_changed)
         self.player.connect('error', self._on_playback_error)
@@ -585,6 +586,14 @@ class Application(Adw.Application):
         if self._quitting is not None or self.signing_in or self.signing_out:
             return
         self.toast(_('The playback engine stopped'), _('Restart'), 'app.start-engine')
+
+    def _on_engine_widevine(self, engine, _pspec):
+        """The browser's page said it cannot decrypt Widevine: a toast as the engine comes
+        up, rather than at the first play (which says the same). Not while the account
+        changes: the restart after it says so."""
+        if engine.widevine or self._quitting is not None or self.signing_in or self.signing_out:
+            return
+        self.toast(*error_message('no-widevine'))
 
     # -- background playback and quitting ------------------------------------------------
 
