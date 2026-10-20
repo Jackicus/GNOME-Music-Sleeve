@@ -12,16 +12,18 @@
     session = read(path)     # the file's session, checked (parse()), or None
 
 <cache>/session.json holds the queue (the bridge's Track shape for each entry, the keys of
-TRACK_KEYS, at most QUEUE_LIMIT of them around the item; `autoplay` marks one autoplay added,
-which a restored session shows under Autoplay and queues again as an ordinary song), the
-item's index in it, `offset` (where that slice begins in the queue MusicKit had), the
-position and duration, the repeat mode, and `source`: the album, playlist or station the
-queue came from, only while the queue was still that (Player.source), so it is queued again
-as itself. A station keeps only its
-item and no position (it plays live; a live radio station's item keeps its `isLive`, so it
-shows LIVE again). Shuffle is not kept: the queue comes back in its order,
-shuffle off. An item that is neither a song nor a video (a station's segment, without the
-station) is not kept, and nothing (the engine gone, a request pending) never replaces what is.
+TRACK_KEYS, at most QUEUE_LIMIT of them around the item), the item's index in it, `offset`
+(where that slice begins in the queue MusicKit had), the position and duration, the repeat
+mode, and `source`: the album, playlist or station the queue came from, only while the
+queue was still that (Player.source), so it is queued again as itself. The queue kept is
+the user's (user_queue()): what autoplay added after the item is left out, for MusicKit's
+autoplay to add again after it once it plays (when the setting is on), since a song
+restored by id comes back as one the user queued; an entry up to the item keeps its
+`autoplay` mark. A station keeps only its item and no position (it plays live; a live radio
+station's item keeps its `isLive`, so it shows LIVE again). Shuffle is not kept: the queue
+comes back in its order, shuffle off. An item that is neither a song nor a video (a
+station's segment, without the station) is not kept, and nothing (the engine gone, a
+request pending) never replaces what is.
 The file is the account's: library ids and titles, in the cache (0600), which Clear Cache and
 sign-out empty (cache.CACHE_ENTRIES); never in the settings, never logged.
 
@@ -69,6 +71,13 @@ def _keep(raw):
     return {key: raw[key] for key in TRACK_KEYS if raw.get(key) is not None}
 
 
+def user_queue(entries, index):
+    """The entries up to the one at `index` (the item) and, after it, only those autoplay
+    did not add (no `autoplay` mark): the queue the user made. The item's index stays."""
+    return entries[:index + 1] + [entry for entry in entries[index + 1:]
+                                  if not entry.get('autoplay')]
+
+
 def snapshot(player, now=None):
     """What the file keeps of the Player now, or None: nothing playing or paused, a play
     request pending (the old queue and the new meet), or an item that cannot be queued again
@@ -91,6 +100,7 @@ def snapshot(player, now=None):
     offset = player.queue_offset
     if not 0 <= index < len(entries):
         entries, index, offset, source = [_keep(track.raw)], 0, 0, None
+    entries = user_queue(entries, index)
     start = max(0, min(index - QUEUE_BEFORE, len(entries) - QUEUE_LIMIT))
     return dict(data, source=source, queue=entries[start:start + QUEUE_LIMIT],
                 index=index - start, offset=offset + start,
@@ -129,7 +139,8 @@ def _entry(raw):
 
 def parse(data):
     """The session a file's JSON holds, checked, or None: another version, no queue, an
-    entry or an index that is not one. A position past the item's end is its end."""
+    entry or an index that is not one. A position past the item's end is its end; the
+    entries autoplay added after the item are left out (user_queue)."""
     if not isinstance(data, dict) or data.get('version') != VERSION:
         return None
     queue = data.get('queue')
@@ -141,6 +152,7 @@ def parse(data):
     index = data.get('index')
     if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(entries):
         return None
+    entries = user_queue(entries, index)  # a file an earlier version wrote kept autoplay's
     offset = data.get('offset')
     offset = offset if isinstance(offset, int) and not isinstance(offset, bool) else 0
     duration = _number(data.get('duration')) or 0.0

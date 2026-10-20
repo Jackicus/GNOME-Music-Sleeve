@@ -2329,6 +2329,32 @@ class LibraryWriteTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'api')
         self.assertIn('403', raised.exception.message)
 
+    async def test_songs_found_reads_the_library_and_the_catalog_by_id(self):
+        self.page.storefront = 'gb'
+        await self.up()
+        self.page.api_answers['/v1/me/library/songs'] = {'data': [
+            {'id': 'i.song1', 'type': 'library-songs'}]}
+        self.page.api_answers['/v1/catalog/gb/songs'] = {'data': [
+            {'id': '1000000001', 'type': 'songs'}]}
+        found = await self.engine.songs_found(['i.song1', 'i.song2', '1000000001',
+                                               '1000000002', 'i.song1'])
+        self.assertEqual(found, {'i.song1', '1000000001'})
+        reads = dict(zip(self.page.api_calls, self.page.api_params, strict=True))
+        self.assertEqual(reads['/v1/me/library/songs'], {'ids': 'i.song1,i.song2'})
+        self.assertEqual(reads['/v1/catalog/gb/songs'], {'ids': '1000000001,1000000002'})
+
+    async def test_songs_found_none_and_many(self):
+        await self.up()
+        # No answer for the library's read: Apple's 404, none of them is there.
+        self.assertEqual(await self.engine.songs_found(['i.gone1']), set())
+        self.page.api_calls.clear()
+        self.page.api_params.clear()
+        self.page.api_answers['/v1/catalog/us/songs'] = {'data': []}
+        ids = [str(1000000000 + n) for n in range(engine_module.SONG_IDS_PER_READ + 1)]
+        self.assertEqual(await self.engine.songs_found(ids), set())
+        self.assertEqual([len(params['ids'].split(',')) for params in self.page.api_params],
+                         [engine_module.SONG_IDS_PER_READ, 1])
+
     async def test_catalog_url_of_a_library_album(self):
         await self.up()
         self.page.api_answers['/v1/me/library/albums/l.alb1/catalog'] = {'data': [

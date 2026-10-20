@@ -56,15 +56,36 @@ class SnapshotTest(unittest.TestCase):
         self.assertNotIn('shuffle', data)  # comes back off, the queue in its order
         self.assertEqual(session.parse(json.loads(json.dumps(data)))['queue'], data['queue'])
 
-    def test_an_autoplay_entry_keeps_its_mark(self):
+    def test_the_entries_autoplay_added_after_the_item_are_not_kept(self):
+        """The user's queue is kept: what autoplay added after the item is left for
+        MusicKit's autoplay to add again once it plays (restored by id, it would come back
+        as songs the user queued, and autoplay would add more after them)."""
         player, engine, app = make_player()
         playing(player, engine)
+        auto = dict(TRACK, catalogId='1000000071', title='Suggested', autoplay=True)
         items = [dict(item) for item in QUEUE['items']] + [
-            dict(TRACK, id='i.auto1', catalogId='1000000071', title='Suggested', autoplay=True)]
+            dict(auto, id='i.auto1'), dict(TRACK, id='i.later1', title='Queued Later'),
+            dict(auto, id='i.auto2')]
         engine.event('queueItemsDidChange', {'index': 2, 'items': items})
         data = session.snapshot(player, now=NOW)
+        self.assertEqual([entry['id'] for entry in data['queue']],
+                         ['i.demo0003', 'i.demo0002', 'i.demo0001', 'i.later1'])
+        self.assertFalse(any('autoplay' in entry for entry in data['queue']))
+        self.assertEqual(session.parse(json.loads(json.dumps(data)))['queue'], data['queue'])
+
+    def test_an_autoplay_item_keeps_its_mark(self):
+        player, engine, app = make_player()
+        auto = dict(TRACK, catalogId='1000000071', title='Suggested', autoplay=True)
+        items = [dict(item) for item in QUEUE['items']] + [
+            dict(auto, id='i.auto1', index=3), dict(auto, id='i.auto2', index=4)]
+        engine.event('queueItemsDidChange', {'index': 3, 'items': items})
+        engine.event('nowPlayingItemDidChange', {'track': items[3], 'index': 3})
+        engine.event('playbackStateDidChange', {'state': 'paused'})
+        data = session.snapshot(player, now=NOW)
+        self.assertEqual([entry['id'] for entry in data['queue']],
+                         ['i.demo0003', 'i.demo0002', 'i.demo0001', 'i.auto1'])
+        self.assertEqual(data['index'], 3)
         self.assertIs(data['queue'][3]['autoplay'], True)
-        self.assertNotIn('autoplay', data['queue'][2])
         parsed = session.parse(json.loads(json.dumps(data)))
         self.assertEqual(parsed['queue'], data['queue'])
         # A mark that is not a boolean is no entry: the file is not one.
@@ -196,6 +217,18 @@ class ParseTest(unittest.TestCase):
         self.assertIsNone(entry)  # artwork that is not https: not this app's file
         queue = [dict(SESSION['queue'][0], extra='not kept')]
         self.assertNotIn('extra', session.parse(self.valid(queue=queue, index=0))['queue'][0])
+
+    def test_a_file_with_autoplays_entries_after_the_item_comes_back_without_them(self):
+        """A file an earlier version wrote kept them, marked: they are left out as read."""
+        auto = dict(SESSION['queue'][0], autoplay=True)
+        queue = [SESSION['queue'][0], dict(auto, id='i.auto0'), SESSION['queue'][2],
+                 dict(auto, id='i.auto1'), dict(SESSION['queue'][1], id='i.later1'),
+                 dict(auto, id='i.auto2')]
+        parsed = session.parse(self.valid(queue=queue, index=2))
+        self.assertEqual([entry['id'] for entry in parsed['queue']],
+                         ['i.demo0003', 'i.auto0', 'i.demo0001', 'i.later1'])
+        self.assertEqual(parsed['index'], 2)
+        self.assertIs(parsed['queue'][1]['autoplay'], True)  # before the item: History
 
     def test_a_queue_longer_than_the_limit_is_cut(self):
         queue = [dict(SESSION['queue'][0], id=f'i.demo{n:04d}')

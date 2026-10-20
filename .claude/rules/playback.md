@@ -71,10 +71,13 @@ paths:
 - The last session (`src/session.py`'s `SessionKeeper`, `app.session`, not in demo mode):
   `<cache>/session.json`, written 2 s after a change and every 30 s while playing, at quit
   (the snapshot taken before the engine's stop empties the Player), never with nothing over
-  a good file. At launch, after the library's load, `Player.restore()` shows it as the
-  Player's own state with `restored` True: MusicKit holding nothing (its empty refresh()
-  answer, null items, states, times, bridgeReset, the engine going down) changes nothing
-  meanwhile (a bridgeReset still sets autoplay, and autoplayEnabledDidChange is taken);
+  a good file. It keeps the user's queue (`session.user_queue()`): what autoplay added after
+  the item is left out, written or read, and MusicKit's autoplay adds again after it once it
+  plays (restored by id, autoplay's songs would come back as songs the user queued, and
+  autoplay would add more after them). At launch, after the library's load,
+  `Player.restore()` shows it as the Player's own state with `restored` True: MusicKit
+  holding nothing (its empty refresh() answer, null items, states, times, bridgeReset, the
+  engine going down) changes nothing meanwhile (a bridgeReset still sets autoplay, and autoplayEnabledDidChange is taken);
   MusicKit holding an item or a queue of its own ends it. Seek, next, previous, stop,
   shuffle, repeat (and the volume with the engine down) are local and paused; Play and an Up
   Next row hand it to MusicKit as one play request (`restore_session()`: `source`, the
@@ -86,7 +89,12 @@ paths:
   once it is answered (`_restoring`), so play_next's item goes after it. The request takes
   the session (`_take_restored`, which makes a refresh() answer under way stale) and gives
   it back on a failure, unless MusicKit refused it (`api` with a code:
-  dropped, `session-dropped` deletes the file, `error` toasts why). A refresh() answer while
+  dropped, `session-dropped` deletes the file, `error` toasts why). MusicKit refuses a whole
+  queue by ids when one song cannot be found (`NOT_FOUND`): `_without_missing()` sends it
+  once more without the songs MusicKit's message names and those `engine.songs_found()`
+  (one read by id of the library's and the catalog's) does not answer, the item and its
+  position kept; only the item itself gone (or none found missing, or a second refusal)
+  drops it. A refresh() answer while
   a play request is pending sets only the modes. Discord publishes nothing while restored.
   tests/test_session.py and test_player.py's RestoreTest; `scripts/screenshot.py --demo
   --restored` shows it.

@@ -85,6 +85,7 @@ class FakeEngine(GObject.Object):
         self.gates = {}
         self.fail = None  # an EngineError every command raises
         self.play_options = []  # each play's start_id, and start_time and paused when given
+        self.play_failures = []  # EngineErrors the next plays raise, one each, in turn
 
     def event(self, name, data):
         self.emit('event', name, data)
@@ -116,7 +117,14 @@ class FakeEngine(GObject.Object):
     async def play(self, kind, item_id, start_with=None, shuffle=None, start_id=None,
                    **options):
         self.play_options.append(dict(options, start_id=start_id))  # start_time, paused
-        return await self._command('play', kind, item_id, start_with, shuffle)
+        answer = await self._command('play', kind, item_id, start_with, shuffle)
+        if self.play_failures:
+            raise self.play_failures.pop(0)
+        return answer
+
+    async def songs_found(self, song_ids):
+        found = await self._command('songs_found', list(song_ids))
+        return set(song_ids) if found is None else set(found)
 
     async def play_next(self, kind, item_id):
         return await self._command('play_next', kind, item_id)
@@ -1592,6 +1600,113 @@ class RestoreTest(unittest.TestCase):
             self.assertEqual(player.queue.get_n_items(), 0)
             self.assertEqual(dropped, [True])
             self.assertEqual(errors, [playback_error_text('CONTENT_UNAVAILABLE')])
+        asyncio.run(go())
+
+    def not_found(self, *ids):
+        """MusicKit refusing a queue by ids as it does when one cannot be resolved."""
+        return EngineError('api', 'play songs: [mk-007] NOT_FOUND; One or more items could '
+                                  f'not be resolved: {", ".join(ids)}',
+                           musickit_code='NOT_FOUND')
+
+    def plays(self, engine):
+        return [call for call in engine.calls if call[0] == 'play']
+
+    def test_a_song_musickit_cannot_find_is_left_out_and_the_rest_plays(self):
+        async def go():
+            player, engine, app = self.restored(state='up', source=None)
+            dropped = []
+            player.connect('session-dropped', lambda _p: dropped.append(True))
+            engine.play_failures = [self.not_found('i.demo0002')]
+            engine.answers['songs_found'] = ['i.demo0003', 'i.demo0001']
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.toggle()
+            self.assertEqual(self.plays(engine), [
+                ('play', 'songs', 'i.demo0003,i.demo0002,i.demo0001', 2, False),
+                ('play', 'songs', 'i.demo0003,i.demo0001', 1, False)])
+            self.assertIn(('songs_found', ['i.demo0003', 'i.demo0002', 'i.demo0001']),
+                          engine.calls)
+            # The same item, where it was.
+            self.assertEqual(engine.play_options[-1],
+                             {'start_id': 'i.demo0001', 'start_time': 83.0})
+            self.assertEqual(dropped, [])
+            self.assertFalse(player.restored)  # MusicKit has it
+        asyncio.run(go())
+
+    def test_the_songs_missing_are_found_by_a_read_when_musickit_names_none(self):
+        async def go():
+            player, engine, app = self.restored(state='up', source=None, index=0)
+            engine.play_failures = [self.not_found()]
+            engine.answers['songs_found'] = ['i.demo0003', 'i.demo0001']
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.toggle()
+            self.assertEqual(engine.calls[-1], ('play', 'songs', 'i.demo0003,i.demo0001', 0,
+                                                False))
+        asyncio.run(go())
+
+    def test_the_songs_musickit_names_are_left_out_when_the_read_fails(self):
+        async def go():
+            player, engine, app = self.restored(state='up', source=None)
+            engine.play_failures = [self.not_found('i.demo0003')]
+            original = engine.songs_found
+
+            async def failing(song_ids):
+                await original(song_ids)
+                raise EngineError('timeout', 'no answer')
+            engine.songs_found = failing
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.restore_session(paused=True)
+            self.assertEqual(engine.calls[-1], ('play', 'songs', 'i.demo0002,i.demo0001', 1,
+                                                False))
+            self.assertTrue(engine.play_options[-1]['paused'])
+        asyncio.run(go())
+
+    def test_the_item_itself_gone_drops_the_session(self):
+        async def go():
+            player, engine, app = self.restored(state='up', source=None)
+            dropped = []
+            player.connect('session-dropped', lambda _p: dropped.append(True))
+            engine.play_failures = [self.not_found('i.demo0001')]
+            engine.answers['songs_found'] = ['i.demo0003', 'i.demo0002']
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.toggle()
+            self.assertEqual(len(self.plays(engine)), 1)
+            self.assertEqual(dropped, [True])
+            self.assertIsNone(player.track)
+        asyncio.run(go())
+
+    def test_a_second_refusal_drops_the_session(self):
+        async def go():
+            player, engine, app = self.restored(state='up', source=None)
+            dropped = []
+            player.connect('session-dropped', lambda _p: dropped.append(True))
+            engine.play_failures = [self.not_found('i.demo0002'), self.not_found('i.demo0003')]
+            engine.answers['songs_found'] = ['i.demo0003', 'i.demo0001']
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.toggle()
+            self.assertEqual(len(self.plays(engine)), 2)
+            self.assertEqual(dropped, [True])
+        asyncio.run(go())
+
+    def test_nothing_missing_found_drops_the_session_at_once(self):
+        async def go():
+            player, engine, app = self.restored(state='up', source=None)
+            dropped = []
+            player.connect('session-dropped', lambda _p: dropped.append(True))
+            engine.play_failures = [self.not_found()]  # names none, and the read finds all
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.toggle()
+            self.assertEqual(len(self.plays(engine)), 1)
+            self.assertEqual(dropped, [True])
+        asyncio.run(go())
+
+    def test_a_source_refused_is_not_tried_by_ids(self):
+        async def go():
+            player, engine, app = self.restored(state='up')
+            engine.play_failures = [self.not_found('l.alb1')]
+            with self.assertLogs('applemusic.player', 'WARNING'):
+                await player.toggle()
+            self.assertNotIn('songs_found', [call[0] for call in engine.calls])
+            self.assertEqual(len(self.plays(engine)), 1)
         asyncio.run(go())
 
     def test_an_item_of_musickits_during_a_failed_request_is_kept(self):

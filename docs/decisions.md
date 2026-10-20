@@ -515,6 +515,14 @@ changes, change it here, with the date. The plan they came from is in
   first queues it paused (the start waits for the first play in the bridge). No Preferences switch: Apple's apps, GNOME Music and the HIG's "fewer
   preferences" agree, and a paused bar gets in the way of nothing. Signing out and Clear
   Cache forget it; MusicKit refusing it drops it. Discord shows nothing until it plays.
+  Since 2026-10-20 (#464, #465), two answers from the live check: MusicKit refuses a whole
+  queue by ids when one song cannot be resolved (`NOT_FOUND`, a song since removed from the
+  library), so that refusal is tried once more without the songs MusicKit names and those a
+  read by id does not find, and only the item itself gone drops the session; and the
+  session keeps the user's queue only, without what autoplay added after the item, since
+  autoplay's songs restored by id came back as songs the user queued, with ten more of
+  autoplay's after them. MusicKit's autoplay (when on) adds its own again after the queue
+  once it plays.
 
 ## Engine
 

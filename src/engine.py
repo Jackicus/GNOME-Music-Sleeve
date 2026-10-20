@@ -56,6 +56,7 @@ UI awaits.
     await engine.remove_from_library('song', library_id)   # the library id removed (a catalog
                                                            # id is read for its twin first)
     await engine.in_library('album', library_id)   # False once Apple's library read is a 404
+    await engine.songs_found(['i.abc', '1000000001'])   # the ids of those Apple still has
     await engine.catalog_url('album', library_id)   # its music.apple.com page, or None
     await engine.add_to_playlist(playlist_id, song_id)   # kind='video' for a music video
     await engine.add_tracks_to_playlist(playlist_id, [(kind, id)…])   # how many, in batches
@@ -177,6 +178,7 @@ READ_TIMEOUT = 15.0       # one read a person waits on: an item's page, a rating
 RELATIONSHIP_PAGES = 50   # pages of an item's relationship followed past the first, at most
 CATALOG_ARTIST_TRIES = 3  # a library artist's songs asked for their artists, at most
 ALBUM_BATCH = 25          # an artist's albums asked of the page at once
+SONG_IDS_PER_READ = 100   # songs looked up by id in one read (songs_found)
 PAGE_CONCURRENCY = 3      # pages of one endpoint fetched at once, when its total is known
 PLAY_TIMEOUT = 60.0       # setQueue fetches the queue's items from Apple before playing
 LYRICS_TIMEOUT = 30.0     # one catalog read, parsed in the page
@@ -1722,6 +1724,38 @@ class Engine(GObject.Object):
         client = await self._require_signed_in('read your library')
         answer = await client.bridge('libraryHas', route, library_id, timeout=READ_TIMEOUT)
         return not (isinstance(answer, dict) and answer.get('has') is False)
+
+    async def songs_found(self, song_ids):
+        """Which of `song_ids` (library "i." ids and catalog ids) Apple still has: read by id,
+        SONG_IDS_PER_READ at a time, under /v1/me/library/songs and the storefront's
+        /v1/catalog/<storefront>/songs, which answer only the songs that exist (a 404 when
+        none does). The set of the ids answered; EngineError when a read fails otherwise."""
+        client = await self._require_signed_in('look songs up')
+        song_ids = list(dict.fromkeys(str(song_id) for song_id in song_ids if song_id))
+        library = [song_id for song_id in song_ids if is_library_id(song_id)]
+        catalog = [song_id for song_id in song_ids if not is_library_id(song_id)]
+        paths = []
+        if library:
+            paths.append(('/v1/me/library/songs', library))
+        if catalog:
+            storefront = await self._current_storefront()
+            paths.append((f'/v1/catalog/{storefront}/songs', catalog))
+
+        async def read(path, ids):
+            try:
+                answer = await self._api(client, path, {'ids': ','.join(ids)},
+                                         timeout=READ_TIMEOUT)
+            except EngineError as e:
+                if e.code == 'api' and e.status == 404:
+                    return set()
+                raise
+            return {entry.get('id') for entry in api.page_data(answer)}
+
+        answers = await asyncio.gather(*(
+            read(path, ids[start:start + SONG_IDS_PER_READ])
+            for path, ids in paths for start in range(0, len(ids), SONG_IDS_PER_READ)))
+        found = set().union(*answers)
+        return {song_id for song_id in song_ids if song_id in found}
 
     async def catalog_url(self, kind, item_id):
         """The music.apple.com page of a library item's catalog equivalent (its
