@@ -16,6 +16,7 @@ import json
 import os
 import pathlib
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -3321,42 +3322,36 @@ class PdeathsigTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which('setpriv') and os.path.isdir('/proc'),
                          'needs setpriv (util-linux) and /proc')
     def test_the_child_goes_when_its_parent_is_killed(self):
-        # The "app" spawns the "Chrome" through setpriv, says its pid, then is SIGKILLed.
+        # The "app" spawns the "Chrome" through setpriv and is SIGKILLed once the "Chrome" runs.
+        # setpriv asks for the signal (prctl) just before it execs the program, and killing the
+        # parent before then sends nothing. So the program says its pid itself, once it is
+        # running: /proc's command line cannot tell, since it reads as the app's, or empty,
+        # while the child is still exec'ing setpriv.
         read, write = os.pipe()
+        grandchild = (f'import os, time; os.write({write}, str(os.getpid()).encode());'
+                      ' time.sleep(30)')
         app = subprocess.Popen([sys.executable, '-S', '-c', (
-            'import os, subprocess, sys, time\n'
-            'child = subprocess.Popen(["setpriv", "--pdeathsig", "TERM", "--", sys.executable,'
-            ' "-S", "-c", "import time; time.sleep(30)"])\n'
-            f'os.write({write}, str(child.pid).encode())\n'
+            'import subprocess, sys, time\n'
+            'subprocess.Popen(["setpriv", "--pdeathsig", "TERM", "--", sys.executable,'
+            f' "-S", "-c", {grandchild!r}], pass_fds=({write},))\n'
             'time.sleep(30)\n')], pass_fds=(write,))
         os.close(write)
+        self.addCleanup(app.wait)
+        self.addCleanup(app.kill)
         try:
+            ready, _, _ = select.select([read], [], [], SLOW_MACHINE)
+            self.assertTrue(ready, 'setpriv never ran the program')
             child = int(os.read(read, 32))
         finally:
             os.close(read)
         self.assertFalse(gone_within(child, 0))
-        # setpriv asks for the signal (prctl) just before it execs the program. Killing the
-        # parent before then sends nothing, so wait until the child is no longer setpriv.
-        self.assertTrue(execed_within(child, 'setpriv', 5.0), 'setpriv never ran the program')
         app.kill()
         app.wait()
-        self.assertTrue(gone_within(child, 1.0), 'the grandchild outlived its parent')
+        self.assertTrue(gone_within(child, SLOW_MACHINE), 'the grandchild outlived its parent')
 
 
-def execed_within(pid, launcher, timeout):
-    """Whether process `pid` has replaced the program `launcher` by another within `timeout`
-    seconds (its argv[0] no longer names the launcher)."""
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            argv0 = pathlib.Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0', 1)[0]
-        except OSError:
-            return False
-        if os.path.basename(argv0).decode(errors='replace') != launcher:
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(0.01)
+# A deadline for what a loaded machine may take seconds to do; the waits end as soon as it is done.
+SLOW_MACHINE = 10.0
 
 
 def gone_within(pid, timeout):
