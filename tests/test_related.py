@@ -11,7 +11,8 @@ from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
 from applemusic.library import Item, Track
 from applemusic.related import (artist_named, catalog_target, from_answer, has_album,
-                                has_artist, library_album, library_artist, same_page, shows)
+                                has_artist, library_album, library_artist, playing_from,
+                                same_page, shows)
 
 
 def album(album_id, title, artist, tracks=(), catalog_id=None):
@@ -213,6 +214,28 @@ class AnswerTest(unittest.TestCase):
         found = from_answer(self.library, answer, 'artist')
         self.assertEqual((found.id, found.title), ('1000000170', 'Mara Lind'))
         self.assertIsNone(from_answer(self.library, {'artists': [{}]}, 'artist'))
+
+
+class PlayingFromTest(unittest.TestCase):
+    """Where Go to Current Song goes first: the library's album or playlist the queue came
+    from (Player.source)."""
+
+    def test_the_source_the_library_holds(self):
+        library = FakeLibrary()
+        self.assertIs(playing_from(library, {'kind': 'album', 'id': 'l.alb1'}), TIDEWATER)
+        playlist = Item({'id': 'p.pl1', 'kind': 'playlist', 'title': 'Evening Walks',
+                         'play': {'kind': 'playlist', 'id': 'p.pl1'}})
+        library.by_id = lambda kind, item_id: playlist if (kind, item_id) == (
+            'playlist', 'p.pl1') else None
+        self.assertIs(playing_from(library, {'kind': 'playlist', 'id': 'p.pl1'}), playlist)
+
+    def test_none_where_the_song_s_album_is_the_place(self):
+        library = FakeLibrary()
+        self.assertIsNone(playing_from(library, None))  # a queue of its own
+        self.assertIsNone(playing_from(library, {'kind': 'station', 'id': 'ra.1000000200'}))
+        self.assertIsNone(playing_from(library, {'kind': 'album', 'id': '1000000300'}))
+        self.assertIsNone(playing_from(library, {'kind': 'album', 'id': ''}))
+        self.assertIsNone(playing_from(library, {'kind': 'album'}))
 
 
 if __name__ == '__main__':

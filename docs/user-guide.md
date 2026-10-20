@@ -170,7 +170,7 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   asking. A song's menu on one of your playlists has **Remove from Playlist**, which takes out
   that one entry (the same song elsewhere in the playlist stays). **New Playlist…** is at the
   end of **Add to Playlist** (a new playlist holding that song), in a folder's menu, in the
-  main menu, and is the **+** button of All Playlists and of a folder's page. A folder's menu
+  main menu (<kbd>Ctrl</kbd>+<kbd>N</kbd>), and is the **+** button of All Playlists and of a folder's page. A folder's menu
   also has **Rename…** and **Delete Folder…**, which deletes the playlists in it too.
   Favourite Songs and Apple's playlists in your library cannot be renamed or deleted;
   Apple's playlists can be removed from your library instead (below). A change takes a few
@@ -214,6 +214,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   the results opens the app's Search page with what you typed. A search while the app is not running starts it in the background,
   without a window or Chrome, until you choose a result. Settings › Search lists Music
   Sleeve among the providers: turn it off there to keep your library out of the overview.
+- <kbd>Ctrl</kbd>+<kbd>L</kbd> (Go to Current Song) shows the album or playlist the song
+  playing is played from (else the song's album), the focus on the song, from Now Playing
+  and the full-screen player too. <kbd>Ctrl</kbd>+<kbd>↑</kbd> and
+  <kbd>Ctrl</kbd>+<kbd>↓</kbd> turn the volume up and down while something plays (not while
+  you type, or on the sidebar or a slider, where those keys are theirs).
 - <kbd>Ctrl</kbd>+<kbd>?</kbd> lists every keyboard shortcut.
 - Because the sound comes from Chrome, the system's per-app volume controls list it as Chrome.
 

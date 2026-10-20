@@ -17,9 +17,12 @@ field) are the window's own for the same reason, and tab_action() decides them a
     name = playback_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
     name = tab_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
     step = move_step(keyval, mods, type(focus), dialog_open, in_popover)   # -1, 1 or None
+    step = volume_step(keyval, mods, type(focus), dialog_open, in_popover)  # -1, 1 or None
 
 move_step() is a playlist page's (pages/detail.py): Alt+Up or Alt+Down (shortcuts.MOVE_UP,
-MOVE_DOWN) moves the focused song one place, on the same terms.
+MOVE_DOWN) moves the focused song one place, on the same terms. volume_step() is the
+window's: Ctrl+Up or Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN) steps the volume, except
+where those keys are the focused widget's own (VOLUME_OWNERS).
 """
 
 from gi.repository import Gdk, Gtk
@@ -49,6 +52,10 @@ TAB_KEYS = parse_keys(shortcuts.NOW_PLAYING_TABS)
 MOVE_KEYS = parse_keys({-1: (shortcuts.MOVE_UP, '<alt>KP_Up'),
                         1: (shortcuts.MOVE_DOWN, '<alt>KP_Down')})
 
+# The volume keys, by (keyval, modifiers) -> the step (the keypad's arrows too).
+VOLUME_KEYS = parse_keys({-1: (shortcuts.VOLUME_DOWN, '<primary>KP_Down'),
+                          1: (shortcuts.VOLUME_UP, '<primary>KP_Up')})
+
 # The primary menu's key (F10), which the window handles itself when the button is hidden.
 MAIN_MENU_KEY = Gtk.accelerator_parse(shortcuts.MAIN_MENU)[1:]
 
@@ -61,6 +68,12 @@ TYPING = (Gtk.Editable, Gtk.TextView)
 # item, the seek slider, or no focus at all.
 SPACE_OWNERS = (Gtk.Button, Gtk.Switch, Gtk.CheckButton, Gtk.ListBoxRow)
 SPACE_KEYS = (Gdk.KEY_space, Gdk.KEY_KP_Space)
+# Where Ctrl+Up and Ctrl+Down are the widget's own, beside TYPING (a text view's paragraph
+# keys): a slider's (the seek slider's page step) and a boxed list's row's (the sidebar's,
+# where they move the focus without selecting, so without showing the page). The grids and
+# lists select nothing (Gtk.NoSelection), so there they only move the focus as Up and Down
+# do, and the volume keys take them.
+VOLUME_OWNERS = (Gtk.Range, Gtk.ListBoxRow)
 
 
 def playback_action(keyval, mods, focus_type, dialog_open, in_popover, enabled):
@@ -103,6 +116,18 @@ def move_step(keyval, mods, focus_type, dialog_open, in_popover):
     a popover, as for the playback keys."""
     step = MOVE_KEYS.get((keyval, int(mods)))
     if step is None or dialog_open or in_popover or issubclass(focus_type, TYPING):
+        return None
+    return step
+
+
+def volume_step(keyval, mods, focus_type, dialog_open, in_popover):
+    """Which way a key press steps the volume: 1 (Ctrl+Up), -1 (Ctrl+Down), or None for any
+    other key, and while the focus is typed into (TYPING) or owns the keys (VOLUME_OWNERS), a
+    dialog is open or the focus is in a popover (the volume's own slider is in one)."""
+    step = VOLUME_KEYS.get((keyval, int(mods)))
+    if step is None or dialog_open or in_popover:
+        return None
+    if issubclass(focus_type, TYPING) or issubclass(focus_type, VOLUME_OWNERS):
         return None
     return step
 

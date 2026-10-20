@@ -43,6 +43,7 @@ What to shoot: $ARGUMENTS
      `--page playlist:l.pl002 --scroll 1600`); `--focus` focuses the page's first tile or
      row with its focus ring (a music video's play symbol); `--setting KEY=VALUE` sets a setting first
      (`--setting more-suggestions=true` shows twelve suggestions);
+   - the main menu: `--main-menu` (with `--sidebar` at a narrow `--size`);
    - the playlists' menus and dialogs: `--more-options` (the page's More Options menu),
      `--sidebar-menu playlist:first|folder:first|all-playlists`, and
      `--dialog new-playlist|rename|delete` for the playlist or folder the page shows;

@@ -52,7 +52,7 @@ list and the script together.
    in an entry, in a menu or in a dialog. Ctrl+Right and Ctrl+Left skip. Menu or Shift+F10
    opens the item playing's menu (Go to Album, Go to Artist…); Escape closes it, the focus
    back on the button. When the music stops and the bar goes, a focus it held moves into the
-   page.
+   page. The walkthrough does step 13 here.
 5. Ctrl+Shift+N opens Now Playing with the focus on its play button; Tab goes through the controls,
    the Lyrics and Up Next toggle (Left and Right move between the two, Space or Enter
    switches), on Up Next its History toggle, Autoplay toggle and Clear, and into the list
@@ -71,16 +71,20 @@ list and the script together.
    Playing on Up Next. In an entry, the keys are the entry's (Ctrl+Shift+U is GTK's Unicode
    entry).
 6. Ctrl+F shows Search with the cursor in the entry, over any page opened from its results;
-   Tab reaches the Apple Music / Your Library toggle; Escape in the entry clears it. On the
+   Ctrl+Up there leaves the volume alone; Tab reaches the Apple Music / Your Library toggle;
+   Escape in the entry clears it. On the
    Songs page, Ctrl+F shows the page's own filter bar instead, with the cursor in its entry;
    typing on the page (in the table, or on the header bar's buttons) shows it too, with what
    was typed; Escape closes it, clears the filter and puts the focus back in the table.
 7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
-   it); it starts with New Playlist… and New Folder…. Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
+   it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
+   Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
    buttons, Escape closes it. Ctrl+? lists every shortcut.
 8. With a dialog open over the window, Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N,
-   Ctrl+Shift+L, Ctrl+Shift+U and Space leave the page behind it alone.
-9. A playlist's Rename… (and New Playlist…) opens its dialog with the cursor in the name;
+   Ctrl+Shift+L, Ctrl+Shift+U, Space, Ctrl+N, Ctrl+L and Ctrl+Up leave the page behind it
+   alone (and open no other dialog).
+9. A playlist's Rename… (and New Playlist…, Ctrl+N) opens its dialog with the cursor in the
+   name;
    Tab reaches the description and the buttons, Enter renames (or creates), and Escape
    closes it with nothing changed. Delete Playlist… and Remove from Library… ask first, with
    Cancel the default (Escape closes the question, nothing removed).
@@ -104,6 +108,12 @@ list and the script together.
     moved to position 3 of 12"). Menu on a song lists Move Up and Move Down (Move Up not on
     the first song). Dragging a song within the list does the same by pointer. The demo
     shows the moves and keeps none.
+13. With an item playing, Ctrl+L (Go to Current Song) opens the album or playlist it plays
+    from (else its album) with the focus on its row, scrolled into view; from Now Playing
+    and the full-screen player too, which close for it. Ctrl+Up and Ctrl+Down turn the
+    volume a step up or down (a tenth) on a row, a tile or a button, and a screen reader
+    hears the level ("Volume 80%"); on a sidebar row they are the row's (the focus moves,
+    nothing is selected), on the seek slider the slider's, and in an entry the entry's.
 
 ## The tools
 

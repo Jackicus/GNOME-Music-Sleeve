@@ -506,9 +506,9 @@ class MenuTest(unittest.TestCase):
             self.assertEqual(move_targets(tree, tree.folder('p.fd3').item)[0], True)
 
     def test_main_menu_starts_with_new_playlist_and_folder(self):
+        # New Playlist… is the window's win.new-playlist, whose key (Ctrl+N) the menu shows.
         self.assertEqual(actions_of(main_menu_section()), [
-            ('win.item-new-playlist', ('folder', 'root')),
-            ('win.item-new-folder', ('folder', 'root'))])
+            ('win.new-playlist', None), ('win.item-new-folder', ('folder', 'root'))])
 
     def test_targets(self):
         self.assertEqual(queue_target(LIBRARY_TRACK), ('song', '1000000001'))

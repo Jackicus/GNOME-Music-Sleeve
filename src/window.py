@@ -40,7 +40,7 @@ from gettext import gettext as _
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 
 from . import keyboard, pages, related
-from .actions import ItemActions, main_menu_section
+from .actions import ItemActions, main_menu_section, now_playing_track
 from .backend.errors import EngineError
 from .fullscreen import FullscreenHost
 from .library import ROOT_FOLDER, Item
@@ -48,6 +48,7 @@ from .player import playback_error_text
 from .player_bar import PlayerBar  # noqa: F401  registers $AppleMusicPlayerBar for the template
 from .widgets.now_playing import NowPlayingSheet  # noqa: F401  registers the sheet's type
 from .widgets.now_playing import TabActions
+from .widgets.transport import volume_text
 from .sections import ALL_PLAYLISTS, HOME
 from .sidebar import parse_key, restore_target, stale_roots
 from .sidebar_view import SidebarController
@@ -164,12 +165,17 @@ class Window(Adw.ApplicationWindow):
         # back is off when there is nowhere to go or the Now Playing sheet is open, so the
         # keys reach the focus.
         # F11 (win.fullscreen-player): the full-screen player, while something plays.
+        # Ctrl+N (win.new-playlist, the main menu's New Playlist…): a new playlist at the top
+        # level, named in its dialog. Ctrl+L (win.go-to-current-song): the page the song
+        # playing is played from, the focus on its row, while something plays.
         self._actions = {}
         for name, callback in (('back', self._on_back), ('search', self._on_search),
                                ('focus-sidebar', self._on_focus_sidebar),
                                ('focus-content', self._on_focus_content),
                                ('focus-player', self._on_focus_player),
-                               ('fullscreen-player', self._on_fullscreen_player)):
+                               ('fullscreen-player', self._on_fullscreen_player),
+                               ('new-playlist', self._on_new_playlist),
+                               ('go-to-current-song', self._on_go_to_current_song)):
             action = Gio.SimpleAction.new(name, None)
             action.connect('activate', callback)
             self.add_action(action)
@@ -186,6 +192,8 @@ class Window(Adw.ApplicationWindow):
         self.bottom_sheet.connect('notify::open', self._update_actions)
         self.connect('notify::visible-dialog', self._update_actions)
         self.fullscreen_host.connect_changed(self._update_actions)
+        self._app_handlers.append(
+            (app.player, app.player.connect('notify::track', self._update_actions)))
         self._update_actions()
 
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
@@ -198,8 +206,9 @@ class Window(Adw.ApplicationWindow):
         """The playback keys (keyboard.PLAYBACK_KEYS) run the playback actions while
         something plays, unless the keys belong to the focus (keyboard.playback_action), and
         the Now Playing tab keys (keyboard.TAB_KEYS) win.show-lyrics and win.show-queue on
-        the same terms (keyboard.tab_action). A key nothing handles goes on to the focus
-        widget. F10 opens the primary menu when
+        the same terms (keyboard.tab_action), and the volume keys (keyboard.VOLUME_KEYS) step
+        the volume while something plays (keyboard.volume_step). A key nothing handles goes
+        on to the focus widget. F10 opens the primary menu when
         the sidebar holding it is hidden (GTK's own F10 needs it shown)."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
         if self.fullscreen_host.shown:
@@ -225,7 +234,18 @@ class Window(Adw.ApplicationWindow):
         if name is not None:
             self.activate_action('win.' + name, None)
             return True
+        step = keyboard.volume_step(keyval, mods, type(focus), dialog_open, in_popover)
+        if step is not None and app.player.track is not None:
+            self._step_volume(step)
+            return True
         return False
+
+    def _step_volume(self, step):
+        """Ctrl+Up (1) or Ctrl+Down (-1): the volume a step up or down, through the player
+        bar's volume button (which shows the level; the sheet's and the full-screen player's
+        follow the Player), and the level announced: the button is not where the focus is."""
+        level = self.player_bar.step_volume(step)
+        self.announce(volume_text(level), Gtk.AccessibleAnnouncementPriority.MEDIUM)
 
     def _show_primary_menu(self):
         """F10 while the primary menu's button is not shown (the collapsed layout showing a
@@ -805,10 +825,40 @@ class Window(Adw.ApplicationWindow):
         self._actions['back'].set_enabled(
             free and not self.bottom_sheet.get_open() and not self.fullscreen_host.shown
             and self._can_go_back())
+        playing = self.get_application().player.track is not None
         self._actions['fullscreen-player'].set_enabled(
-            free and (self.fullscreen_host.shown
-                      or self.get_application().player.track is not None))
+            free and (self.fullscreen_host.shown or playing))
+        self._actions['go-to-current-song'].set_enabled(free and playing)
         self.tab_actions.set_free(free)
+
+    def _on_new_playlist(self, *_args):
+        """win.new-playlist (Ctrl+N, the main menu's New Playlist…): the New Playlist
+        dialog, the playlist made at the top level."""
+        self.activate_action('win.item-new-playlist',
+                             GLib.Variant('(ss)', ('folder', ROOT_FOLDER)))
+
+    def _on_go_to_current_song(self, *_args):
+        """win.go-to-current-song (Ctrl+L): the album or playlist of the library's the
+        queue was played from (related.playing_from), else the song's album, as Go to Album
+        finds it (item_actions.go_to), the sheet or the full-screen player left for it; then
+        the focus on the song's row there (reveal_playing)."""
+        player = self.get_application().player
+        item = related.playing_from(self._library, player.source)
+        if item is not None:
+            self.open_item(item)
+            self._reveal_playing()
+            return
+        self.item_actions.go_to(now_playing_track(player.track), 'album',
+                                then=self._reveal_playing)
+
+    def _reveal_playing(self):
+        """The page shown scrolls to the row of the song playing and puts the focus on it,
+        when it is an album's or a playlist's (DetailPage.reveal_playing)."""
+        self._close_sheet()
+        self.split_view.set_show_content(True)
+        reveal = getattr(self.navigation_view.get_visible_page(), 'reveal_playing', None)
+        if reveal is not None:
+            reveal()
 
     # Ctrl+1, 2, 3: the focus into the sidebar, the page, the player bar.
 

@@ -17,7 +17,7 @@
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
                                     remove-from-library]
-                          [--more-options] [--sidebar-menu KEY [--submenu NAME]]
+                          [--more-options] [--main-menu] [--sidebar-menu KEY [--submenu NAME]]
                           [--drop-target KEY] [--drop-line N] [--scroll PX]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
@@ -108,7 +108,8 @@ of the user's (a new playlist or folder: in the folder shown, else at the top le
 remove-from-library the confirmation of win.item-remove-from-library for the item the page
 shows, else the library's first album. The demo writes nothing: the dialogs only show.
 --more-options pops up the More Options menu of the page shown (an album's, a playlist's, a
-folder's) as a click on it would.
+folder's) as a click on it would; --main-menu the main menu (in the narrow layout, with
+--sidebar, where its button is).
 --sidebar-menu KEY pops up the sidebar's context menu for KEY (playlist:ID, folder:ID,
 all-playlists; playlist:first and folder:first are the library's first of each), drawn from
 the menu the sidebar fills for it, beside its row (--expand the folder holding it); with
@@ -201,6 +202,8 @@ parser.add_argument('--dialog', choices=['about', 'shortcuts', 'new-playlist', '
                          'Library dialog; shoot it')
 parser.add_argument('--more-options', action='store_true',
                     help='pop up the More Options menu of the page shown')
+parser.add_argument('--main-menu', action='store_true',
+                    help="pop up the main menu (the sidebar's header bar's)")
 parser.add_argument('--sidebar-menu', metavar='KEY',
                     help="pop up the sidebar's context menu for KEY")
 parser.add_argument('--drop-target', metavar='KEY',
@@ -748,6 +751,13 @@ def _shoot():
     if args.more_options and not menu_opened:
         menu_opened = True
         open_more_options(window)
+        GLib.timeout_add(800, shoot)  # the popover shown and placed
+        return GLib.SOURCE_REMOVE
+    if args.main_menu and not menu_opened:
+        menu_opened = True
+        if not window.primary_menu_button.get_mapped():
+            sys.exit('screenshot: the main menu button is not shown (narrow: add --sidebar)')
+        window.primary_menu_button.popup()
         GLib.timeout_add(800, shoot)  # the popover shown and placed
         return GLib.SOURCE_REMOVE
     if args.sidebar_menu and not menu_opened:

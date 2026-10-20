@@ -75,6 +75,45 @@ class DetailPageTest(PageTestCase):
         self.assertTrue(await self.until(page.get_mapped))
         self.assertEqual(self.marked(page), ['l.album001.t1.0'])
 
+    def test_the_playing_song_s_place(self):
+        from applemusic.library import Track
+        from applemusic.pages.detail import playing_ordinal
+
+        tracks = [Track(track('l.album001', number)) for number in range(4)]
+        tracks[3] = Track(dict(track('l.album001', 1)))  # the same song again, fourth
+        self.assertEqual(playing_ordinal(tracks, ('l.album001.t1.2', ''), 2), 2)
+        # The same song twice: the one at the queue's index, else the first.
+        self.assertEqual(playing_ordinal(tracks, ('l.album001.t1.1', ''), 3), 3)
+        self.assertEqual(playing_ordinal(tracks, ('l.album001.t1.1', ''), 0), 1)
+        self.assertIsNone(playing_ordinal(tracks, ('l.other.t1.0', ''), 0))
+        self.assertIsNone(playing_ordinal(tracks, None, 0))
+        self.assertIsNone(playing_ordinal([], ('l.album001.t1.0', ''), 0))
+
+    async def test_go_to_current_song_focuses_its_row(self):
+        page = await self.push(self.page(album(1, tracks=60)))
+        self.assertTrue(await self.until(lambda: len(page._bound) > 3))
+        self.app.player.track = playing(track('l.album001', 50))  # far below the fold
+        page.reveal_playing()
+        self.assertTrue(await self.until(
+            lambda: (self.window.get_focus() is not None
+                     and self.window.get_focus().is_ancestor(page.list_view)
+                     and page._has_focus_at(51)), timeout=2))
+        self.assertTrue(await self.until(lambda: not page._reveal_wanted))
+        # A song the page does not hold: nothing moves, nothing is left waiting.
+        self.app.player.track = playing(track('l.album009', 0))
+        page.reveal_playing()
+        await self.turn()
+        self.assertFalse(page._reveal_wanted)
+        self.assertTrue(page._has_focus_at(51))
+
+    async def test_go_to_current_song_waits_for_the_tracks(self):
+        tracks = album(1, tracks=5)
+        self.app.engine.answers['item'] = tracks
+        self.app.player.track = playing(track('l.album001', 3))
+        page = await self.push(self.page(album(1, tracks=0)))
+        page.reveal_playing()
+        self.assertTrue(await self.until(lambda: page._has_focus_at(4), timeout=2))
+
     def test_should_fetch(self):
         from applemusic.library import Item
         from applemusic.pages.detail import should_fetch

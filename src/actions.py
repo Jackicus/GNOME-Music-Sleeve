@@ -729,10 +729,12 @@ def new_items(folder_id):
 
 
 def main_menu_section():
-    """The main menu's first section: New Playlist… and New Folder…, at the top level."""
+    """The main menu's first section: New Playlist… (win.new-playlist, which the menu shows
+    with its key, Ctrl+N) and New Folder…, both at the top level."""
     section = Gio.Menu()
-    for item in new_items(ROOT_FOLDER):
-        section.append_item(item)
+    section.append_item(Gio.MenuItem.new(action_labels()['item-new-playlist'],
+                                         'win.new-playlist'))
+    section.append_item(new_items(ROOT_FOLDER)[1])
     return section
 
 
@@ -1261,35 +1263,37 @@ class ItemActions:
     def _on_go_to_artist(self, _action, parameter):
         return self.go_to(self._unpack(parameter)[0], 'artist')
 
-    def go_to(self, obj, kind):
+    def go_to(self, obj, kind, then=None):
         """Open the page of the album obj is on (`kind` 'album') or of the artist it is by
         ('artist'). An artist's is Apple Music's while the engine is up and obj has a catalog
         id (the engine names the artist exactly; their page shows the library's albums of
         theirs too); else, and for an album, the library's (related.library_album,
         library_artist) at once, else the catalog's, which the engine looks up (started first
         if need be, as for the other actions). Nothing is opened when that page is the one
-        shown. A toast says when there is none. The engine's task, or None."""
+        shown. A toast says when there is none. `then()` runs once the page is shown, opened
+        or there already (Go to Current Song's: the focus onto the song). The engine's task,
+        or None."""
         if obj is None:
             self.app.toast(not_found_message(kind))
             return None
         target = related.catalog_target(obj)
         if kind == 'artist' and target is not None and self._engine_ready():
-            return self.app.spawn(self._go_to_catalog(obj, kind, target))
-        if self._go_to_library(obj, kind):
+            return self.app.spawn(self._go_to_catalog(obj, kind, target, then))
+        if self._go_to_library(obj, kind, then):
             return None
         if target is None or (kind == 'album' and target[0] == 'album'):
             self.app.toast(not_found_message(kind))
             return None
         if self.app.refuse_in_demo():
             return None
-        return self.app.spawn(self._go_to_catalog(obj, kind, target))
+        return self.app.spawn(self._go_to_catalog(obj, kind, target, then))
 
-    async def _go_to_catalog(self, obj, kind, target):
+    async def _go_to_catalog(self, obj, kind, target, then=None):
         try:
             await self.app.player.ensure_engine()
             answer = await self.engine.related(*target)
         except EngineError as error:
-            if self._go_to_library(obj, kind):
+            if self._go_to_library(obj, kind, then):
                 pass  # the library's page, rather than nothing
             elif error.status == 404:  # gone from the storefront's catalog: nowhere to go
                 self.app.toast(not_found_message(kind))
@@ -1298,27 +1302,28 @@ class ItemActions:
             return
         found = related.from_answer(self.library, answer, kind, related.artist_name(obj))
         if found is not None:
-            self._show_page(found)
-        elif not self._go_to_library(obj, kind):
+            self._show_page(found, then)
+        elif not self._go_to_library(obj, kind, then):
             self.app.toast(not_found_message(kind))
 
-    def _go_to_library(self, obj, kind):
+    def _go_to_library(self, obj, kind, then=None):
         """Show the library's album or artist of obj's: True when it has one."""
         found = (related.library_album(self.library, obj) if kind == 'album'
                  else related.library_artist(self.library, obj))
         if found is not None:
-            self._show_page(found)
+            self._show_page(found, then)
         return found is not None
 
-    def _show_page(self, item):
+    def _show_page(self, item, then=None):
         """Show item's page, unless it is the page shown already: an artist's is Apple
-        Music's (window.open_artist_page), for an artist of the library's too."""
-        if related.same_page(self._shown(), item):
-            return
-        if item.kind == 'artist':
-            self.window.open_artist_page(item)
-        else:
-            self.window.open_item(item)
+        Music's (window.open_artist_page), for an artist of the library's too. Then then()."""
+        if not related.same_page(self._shown(), item):
+            if item.kind == 'artist':
+                self.window.open_artist_page(item)
+            else:
+                self.window.open_item(item)
+        if then is not None:
+            then()
 
     def show_artist(self, obj):
         """A link's artist (a row's, an album page's): what the library holds of the artist

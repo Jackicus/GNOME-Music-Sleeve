@@ -47,9 +47,9 @@ LINK_RE = re.compile(r'\]\(([^)\s#]+)(?:#[^)]*)?\)')
 ID_RE = re.compile(r'\b(?:C\d{3}|WP\d{2}|P\d{2}-\d+|X\d-\d+|D\d{1,2})\b')
 PHASE_RE = re.compile(r'\bphase \d+|\bphases? \d+ to \d+', re.IGNORECASE)
 
-# Keys the docs may name that are not the app's own: GTK's and libadwaita's navigation, the
-# HIG's standard keys the app leaves alone, and a terminal's interrupt.
-OTHER_KEYS = {'Shift+Tab', 'Ctrl+N', 'Ctrl+C'}
+# Keys the docs may name that are not the app's own: GTK's and libadwaita's navigation and a
+# terminal's interrupt.
+OTHER_KEYS = {'Shift+Tab', 'Ctrl+C'}
 KEY_RE = re.compile(r'\b((?:(?:Ctrl|Alt|Shift|Super)\+)+(?:[A-Za-z0-9]+\b|[?,.]))')
 
 
@@ -90,7 +90,7 @@ def app_keys():
         found.update(accelerator_names(accelerator) for accelerator in accelerators)
     for accelerator in (shortcuts.MAIN_MENU, *shortcuts.CONTEXT_MENU.split(), shortcuts.CLOSE,
                         shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.MOVE_UP,
-                        shortcuts.MOVE_DOWN):
+                        shortcuts.MOVE_DOWN, shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN):
         found.add(accelerator_names(accelerator))
     return found
 

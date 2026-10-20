@@ -14,7 +14,8 @@ from tests import ROOT, SRC  # noqa: F401  ROOT registers src/ as applemusic
 from tests.test_player import TRACK, make_player
 
 from applemusic.backend.errors import EngineError
-from applemusic.widgets.transport import Coalescer, SeekGuard
+from applemusic.widgets.transport import (Coalescer, SeekGuard, VolumeControl, volume_step,
+                                          volume_text)
 
 
 class SeekGuardTest(unittest.TestCase):
@@ -343,6 +344,93 @@ class ModeControlTest(unittest.TestCase):
             self.assertEqual(repeat.icon, 'media-playlist-repeat-song-symbolic')  # back to one
             self.assertTrue(repeat.active)
             self.assertEqual(len(app.toasts), 1)
+        asyncio.run(go())
+
+
+class Adjustment:
+    """A Gtk.Adjustment's surface the volume button uses (0 to 1)."""
+
+    def __init__(self, value=1.0):
+        self.value = value
+        self._handlers = []
+
+    def connect(self, _signal, handler):
+        self._handlers.append(handler)
+
+    def get_value(self):
+        return self.value
+
+    def set_value(self, value):
+        value = min(1.0, max(0.0, value))
+        if value != self.value:
+            self.value = value
+            for handler in self._handlers:
+                handler(self)
+
+
+class ScaleButton:
+    """A Gtk.ScaleButton's surface over its Adjustment: value-changed as the level moves."""
+
+    def __init__(self, adjustment):
+        self.adjustment = adjustment
+        self._handlers = []
+        adjustment.connect('value-changed', self._changed)
+
+    def connect(self, _signal, handler):
+        self._handlers.append(handler)
+
+    def _changed(self, adjustment):
+        for handler in self._handlers:
+            handler(self, adjustment.get_value())
+
+    def set_value(self, value):
+        self.adjustment.set_value(value)
+
+    def update_property(self, _properties, _values):
+        pass
+
+    def get_popup(self):
+        return None
+
+
+class VolumeStepTest(unittest.TestCase):
+    """Ctrl+Up and Ctrl+Down: the volume a step (VOLUME_STEP) up or down."""
+
+    def test_the_steps(self):
+        self.assertEqual(volume_step(0.7, 1), 0.8)
+        self.assertEqual(volume_step(0.7, -1), 0.6)
+        self.assertEqual(volume_step(0.73, 1), 0.8)  # to the next step that way
+        self.assertEqual(volume_step(0.73, -1), 0.7)
+        self.assertEqual(volume_step(0.7000001, 1), 0.8)  # a level that is a step, near enough
+        self.assertEqual(volume_step(0.6999999, -1), 0.6)
+        self.assertEqual(volume_step(0.3, 1), 0.4)  # 0.3 / 0.1 is 2.9999…
+        self.assertEqual(volume_step(1.0, 1), 1.0)  # within 0 and 1
+        self.assertEqual(volume_step(0.95, 1), 1.0)
+        self.assertEqual(volume_step(0.0, -1), 0.0)
+        self.assertEqual(volume_step(0.04, -1), 0.0)
+        level = 0.0
+        for _ in range(10):
+            level = volume_step(level, 1)
+        self.assertEqual(level, 1.0)
+
+    def test_the_announcement(self):
+        self.assertEqual(volume_text(0.8), 'Volume 80%')
+        self.assertEqual(volume_text(0.0), 'Volume 0%')
+
+    def test_a_run_of_presses_adds_up_and_is_sent(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await app.settle()
+            adjustment = Adjustment(player.volume)
+            control = VolumeControl(ScaleButton(adjustment), adjustment)
+            control.attach(player, app)
+            self.assertEqual(control.step(-1), 0.9)
+            self.assertEqual(control.step(-1), 0.8)  # from the level shown, not MusicKit's yet
+            self.assertEqual(adjustment.value, 0.8)
+            await app.settle()
+            self.assertEqual([call for call in engine.calls if call[0] == 'volume'],
+                             [('volume', 0.9), ('volume', 0.8)])
+            self.assertEqual(control.step(1), 0.9)
         asyncio.run(go())
 
 

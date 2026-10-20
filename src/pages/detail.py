@@ -79,7 +79,7 @@ from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for 
 from ..widgets.engine_status import EngineStatus
 from ..widgets.labels import track_label
 from ..widgets.suggested_songs import SuggestedSongs
-from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader
+from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader, is_playing
 from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, next_frame, weak_method
 from . import SignInOffer, app, show_notes
 
@@ -87,6 +87,23 @@ log = logging.getLogger(__name__)
 
 # The kinds whose tracks the engine's item() fetches when an Item came without them.
 FETCHED_KINDS = ('album', 'playlist')
+# Frames Go to Current Song waits, at most, for the row of the song playing to take the focus
+# (the list lays the row out a frame after scroll_to()).
+REVEAL_FRAMES = 10
+
+
+def playing_ordinal(tracks, ids, index):
+    """Where the song playing is among a page's tracks (in the page's order): the place of
+    the track playing_ids() `ids` names, the one at the queue's `index` when that one is it
+    (the same song twice in a playlist), else the first; None when none is."""
+    found = None
+    for ordinal, track in enumerate(tracks):
+        if is_playing(track, ids):
+            if ordinal == index:
+                return ordinal
+            if found is None:
+                found = ordinal
+    return found
 
 
 def resolve_artist(library, item):
@@ -373,6 +390,9 @@ class DetailPage(Adw.NavigationPage):
         self._artist = None  # the library's artist Item the subtitle names, if any
         self._painted = None  # (frame clock, handler): the notes' More follows each paint
         self._focused = False  # the page has put the focus on Play once, as it was pushed
+        self._visible = False  # between do_shown and do_hidden: the navigation view's page
+        self._reveal_wanted = False  # Go to Current Song asked for the playing song's row
+        self._reveal_task = None
         self._adding = None  # the Item whose add to the library is under way (Add)
         # The songs Apple suggests (wants_suggestions): the Item they were asked for, what
         # is shown of them (a Suggestions), the requests under way, and the section that
@@ -513,6 +533,9 @@ class DetailPage(Adw.NavigationPage):
             if focus is not None and (focus is self.artist_button
                                       or focus.is_ancestor(self.artist_button)):
                 self.play_button.grab_focus()
+        self._visible = True
+        if self._reveal_wanted:
+            self._start_reveal()  # again, past the push's own move of the focus
         Adw.NavigationPage.do_shown(self)
 
     def do_hidden(self):
@@ -532,6 +555,10 @@ class DetailPage(Adw.NavigationPage):
         if self._album_answer is None:
             self._album_asked_for = None  # the same
         self._stop_preview()
+        self._visible = False
+        self._reveal_wanted = False
+        if self._reveal_task is not None and not self._reveal_task.done():
+            self._reveal_task.cancel()
         Adw.NavigationPage.do_hidden(self)
 
     def _follow(self, *_args):
@@ -633,6 +660,8 @@ class DetailPage(Adw.NavigationPage):
             self._want_more()
         if groups:
             self._ask_album()
+            if self._reveal_wanted:
+                self._start_reveal()  # the tracks Go to Current Song waited for
 
     # What the catalog shows under an album's tracks: the footer and the shelves.
 
@@ -1212,6 +1241,68 @@ class DetailPage(Adw.NavigationPage):
             last.grab_focus()
             return True
         return False
+
+    # Go to Current Song.
+
+    def reveal_playing(self):
+        """Go to Current Song (the window's Ctrl+L): scroll to the row of the song playing
+        and put the focus on it, once the page shows and its tracks are there (fetched, for
+        an album or playlist that came without them). Nothing when the page lacks the song."""
+        self._reveal_wanted = True
+        self._start_reveal()
+
+    def _start_reveal(self):
+        if self._reveal_task is None or self._reveal_task.done():
+            self._reveal_task = app().spawn(self._reveal())
+
+    def _playing_position(self):
+        """The list position of the row of the song playing, or None."""
+        player = self._playing.player
+        if player is None or player.track is None or not self._starts:
+            return None
+        self._playing.update()
+        tracks = (self._rows.get_item(position)
+                  for position in range(self._starts[0], self._track_end()))
+        ordinal = playing_ordinal(tracks, self._playing.ids, player.track.index)
+        return None if ordinal is None else self._starts[0] + ordinal
+
+    def _track_end(self):
+        """The list position after the last track (the tracks' sections are one run after
+        the hero)."""
+        if self.item is None or not self._starts:
+            return 0
+        return self._starts[0] + sum(group.entries.get_n_items() for group in self.item.groups)
+
+    async def _reveal(self):
+        """reveal_playing()'s work: scroll_to() the row with the focus, a frame or more
+        apart until the row has it (REVEAL_FRAMES at most), the wish kept until the page has
+        been shown (a push moves the focus into the page itself) and while the tracks may
+        still come."""
+        for _attempt in range(REVEAL_FRAMES):
+            if not self._reveal_wanted:
+                return
+            position = self._playing_position()
+            if position is None:
+                if self._starts:  # the tracks are there, and the song is not among them
+                    self._reveal_wanted = False
+                return
+            if self.list_view.get_mapped():
+                # scroll_to() moves the focus itself only while the list holds it; else it
+                # moves the list's focus item, and the list's grab_focus() focuses that.
+                self.list_view.scroll_to(position, Gtk.ListScrollFlags.FOCUS, None)
+                if not self._has_focus_at(position):
+                    self.list_view.grab_focus()
+            await next_frame(self.list_view)
+            if self._has_focus_at(position):
+                if self._visible:
+                    self._reveal_wanted = False
+                return
+
+    def _has_focus_at(self, position):
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        row = _row_of(focus) if focus is not None and focus.is_ancestor(self.list_view) else None
+        return row is not None and row.track_row.context_item is self._rows.get_item(position)
 
     # Moving a playlist's songs.
 

@@ -35,7 +35,8 @@ For assistive technology: the bar announces each new item (Gtk.Accessible.announ
 playing …"); the button Adw.BottomSheet puts around the bar (a click on the bar opens the
 sheet) is named "Now Playing" and described by the item playing, where it would otherwise be
 named after everything in the bar; the volume button and its slider are named "Volume" and
-read their level as a percentage (VolumeControl); the seek slider reads "1:05 of 3:40"
+read their level as a percentage (VolumeControl), which the window's volume keys step
+(step_volume(): Ctrl+Up, Ctrl+Down, keyboard.volume_step); the seek slider reads "1:05 of 3:40"
 (SeekControl).
 """
 
@@ -187,6 +188,11 @@ class PlayerBar(Adw.Bin):
         or None."""
         parent = self.get_parent()
         return parent if isinstance(parent, Gtk.Button) else None
+
+    def step_volume(self, step):
+        """A volume key (the window's Ctrl+Up or Ctrl+Down): the volume a step up (1) or down
+        (-1), sent as the volume button's slider sends it. The new level, 0 to 1."""
+        return self._volume.step(step)
 
     def grab_bar_focus(self):
         """Put the focus on the bar itself (it opens Now Playing): win.focus-player when the
