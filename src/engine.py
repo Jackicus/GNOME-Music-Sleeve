@@ -37,6 +37,8 @@ UI awaits.
     await engine.queue_clear()   # everything after the item playing (queue.clearAfterCurrent)
     await engine.queue_undo_clear()   # Clear's entries back after the item, while it plays
     await engine.set_autoplay(True)   # mk.autoplayEnabled (None: read): {autoplay, canAutoplay}
+    await engine.set_bitrate(64)      # mk.bitrate, kept as preferred_bitrate for every start:
+                                      # the bitrate MusicKit has after it (0: it says none)
     await engine.preview(song_id, url)   # Apple's 30-second clip of a song, outside the queue
                                          # (MusicKit pauses); previewDidChange events follow it
     await engine.stop_preview()  # the clip playing stopped: True if one was
@@ -111,10 +113,12 @@ UI awaits.
     await engine.related('song', id)  # {album, artists}: a catalog song's (or music video's)
                                       # album and artists, or an album's artists
 
-Properties `state` ('down', 'starting', 'up', 'signing-in'), `authorized`, `headless` and
+Properties `state` ('down', 'starting', 'up', 'signing-in'), `authorized`, `headless`,
 `widevine`, which goes False when the page of the browser just started says it cannot decrypt
 Widevine (asked once per start, beside it: play() and queue_jump() then raise 'no-widevine', as
-no song would play; previews still do); the `event(name, data)` signal re-emits the bridge's
+no song would play; previews still do), and `bitrate`, the kbps MusicKit streams at (256 or
+64; 0 while down or unknown), from the status reads, set_bitrate() and MusicKit's
+playbackBitrateDidChange; the `event(name, data)` signal re-emits the bridge's
 MusicKit events (name without the 'am:' prefix), and `rated(kind, id, value)` follows love(),
 unlove(), suggest_less() and rating() (the kind and id as they were asked, value 1 loved, -1
 Suggest Less, 0 neither), so a heart shows what a menu did, and ('artist', catalog id, 1 or
@@ -133,7 +137,10 @@ favourite, which the session only remembers.
 
 The browser command (`browser_command`) and the preferred mode (`prefer_headless`) are read
 when Chrome is spawned, so a change applies at the next start and a running Chrome is left
-alone. APPLE_MUSIC_DEBUG_PORT, when set, also opens DevTools on that port of 127.0.0.1 for a
+alone. The streaming bitrate (`preferred_bitrate`, the streaming-quality setting's:
+quality_bitrate()) is set on MusicKit beside every start and after every bridgeReset (the page
+starts with MusicKit's own), when MusicKit has another; set_bitrate() changes it at once.
+APPLE_MUSIC_DEBUG_PORT, when set, also opens DevTools on that port of 127.0.0.1 for a
 developer's debug CLI to attach to, with a warning at every start. What the cache holds and
 how it is cleared is src/cache.py's.
 
@@ -195,8 +202,27 @@ SUGGESTIONS_LIMIT = 16    # a playlist's first suggested songs: the most shown (
 ACCOUNT_NAME_POLL = 0.5   # the account name is looked for this often while waiting for it
 UNAUTHORIZE_TIMEOUT = 5.0  # MusicKit revoking the session, at sign-out
 
+# The streaming-quality setting's values and the bitrates (kbps) MusicKit streams them at
+# (MusicKit.PlaybackBitrate HIGH and STANDARD), in the order Preferences lists them.
+QUALITIES = (('high', 256), ('standard', 64))
+
 # A catalog song id as it appears in a lyrics cache file name: digits, mostly; never a path.
 CATALOG_ID_RE = re.compile(r'[A-Za-z0-9._-]{1,64}')
+
+
+
+def quality_bitrate(quality):
+    """The bitrate (kbps) of a streaming-quality value: 64 for 'standard' (High
+    Efficiency), else 256 (High Quality)."""
+    return dict(QUALITIES).get(quality, QUALITIES[0][1])
+
+
+def _kbps(value):
+    """A bitrate as the page gives it (a positive number), else 0: none known."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return 0
+    return int(value)
+
 
 # What control(), shuffle() and repeat() take: the bridge's commands of the same names.
 CONTROL_ACTIONS = ('play', 'pause', 'toggle', 'next', 'previous', 'stop')
@@ -494,6 +520,8 @@ class Engine(GObject.Object):
     headless = GObject.Property(type=bool, default=True)
     # False once the page has said the browser cannot decrypt Widevine: songs cannot play.
     widevine = GObject.Property(type=bool, default=True)
+    # The kbps MusicKit streams at (256, 64), as the page last said; 0 while down or unknown.
+    bitrate = GObject.Property(type=int, default=0)
 
     def __init__(self, profile_dir=None, browser_command=None, demo=False):
         super().__init__()
@@ -503,6 +531,8 @@ class Engine(GObject.Object):
         # Whether start() without a mode runs Chrome headless (the engine-headless setting);
         # sign-in asks for a window whatever this says.
         self.prefer_headless = True
+        # The kbps set on MusicKit beside every start and page load (streaming-quality).
+        self.preferred_bitrate = QUALITIES[0][1]
         self.stop_grace = STOP_GRACE
         self.close_wait = CLOSE_WAIT
         self.probe_timeout = PROBE_TIMEOUT
@@ -662,9 +692,11 @@ class Engine(GObject.Object):
         status = await client.bridge('status')
         self.authorized = bool(isinstance(status, dict) and status.get('authorized'))
         self._storefront = status.get('storefront') if isinstance(status, dict) else None
+        self._set_bitrate(status.get('bitrate') if isinstance(status, dict) else None)
         if not self.widevine:
             self.widevine = True  # another browser, perhaps: its page says
         self._drm = self._in_background(self._check_widevine(client))
+        self._in_background(self._apply_bitrate(client))
         self.state = 'up'
         self._watch = asyncio.create_task(self._watch_connection(client), name='engine-watch')
         log.info('engine up: %s', 'authorized' if self.authorized else 'not signed in')
@@ -920,6 +952,7 @@ class Engine(GObject.Object):
         self._storefront = None
         self._related = {}  # the next account's storefront may differ
         self._favourite_artists = {}  # and its favourites
+        self._set_bitrate(None)
         self.state = 'down'
 
     async def _close_browser(self, client, process):
@@ -1014,6 +1047,7 @@ class Engine(GObject.Object):
             self._signal(process, signal.SIGKILL)
         self.state = 'down'
         self.authorized = False
+        self._set_bitrate(None)
 
     async def restart(self, visible=None):
         """stop(), then start(visible): without a mode, the preferred one (prefer_headless),
@@ -1057,15 +1091,22 @@ class Engine(GObject.Object):
             self._favourite_artists = {}
         elif name == 'bridgeReset':
             # The page loaded a new document, and the bridge is back in it: what MusicKit
-            # held (the sign-in, the queue) may have changed with it. The Player hears it too.
+            # held (the sign-in, the queue, the bitrate) may have changed with it. The Player
+            # hears it too.
             self._in_background(self._reread_status())
+        elif name == 'playbackBitrateDidChange' and isinstance(data, dict):
+            self._set_bitrate(data.get('bitrate'))  # MusicKit's own choice, or ours
         self.emit('event', name, data)
 
     async def _reread_status(self):
         try:
-            await self.status()  # keeps `authorized` current
+            await self.status()  # keeps `authorized` and `bitrate` current
         except EngineError as e:
             log.debug('status after the bridge came back: %s', e)
+            return
+        client = self._client
+        if client is not None:
+            await self._apply_bitrate(client)  # the new page has MusicKit's own
 
     def _in_background(self, coro):
         task = asyncio.ensure_future(coro)
@@ -1102,6 +1143,30 @@ class Engine(GObject.Object):
         if authorized != self.authorized:
             self.authorized = authorized
         self._storefront = str(status.get('storefront') or '') or None
+        self._set_bitrate(status.get('bitrate'))
+
+    def _set_bitrate(self, value):
+        kbps = _kbps(value)
+        if kbps != self.bitrate:
+            self.bitrate = kbps
+
+    async def _apply_bitrate(self, client):
+        """`preferred_bitrate` set on the page's MusicKit, when it has another (a start, a
+        page loaded again); a failure is logged, never raised."""
+        if self.bitrate == self.preferred_bitrate:
+            return
+        try:
+            await self._send_bitrate(client)
+        except EngineError as e:
+            log.debug('bitrate: %s', e)
+
+    async def _send_bitrate(self, client):
+        answer = await client.bridge('bitrate', self.preferred_bitrate)
+        if client is self._client:
+            self._set_bitrate(answer.get('bitrate') if isinstance(answer, dict) else None)
+        if self.bitrate and self.bitrate != self.preferred_bitrate:
+            log.info('bitrate: MusicKit kept %d kbps', self.bitrate)
+        return self.bitrate
 
     async def _current_storefront(self):
         """The account's storefront ('gb'): as the last status read had it (the start's, or
@@ -1545,6 +1610,15 @@ class Engine(GObject.Object):
             return {'autoplay': bool(on), 'canAutoplay': True}
         return {'autoplay': bool(answer.get('autoplay')),
                 'canAutoplay': answer.get('canAutoplay') is not False}
+
+    async def set_bitrate(self, kbps):
+        """The streaming bitrate (256 or 64 kbps: quality_bitrate()) set on MusicKit
+        (mk.bitrate) now, and kept as `preferred_bitrate` for every start and page load to
+        come, even when this raises (EngineError('engine-down') with the engine down). Answers
+        the bitrate MusicKit has after the set, as `bitrate` (0: the page says none)."""
+        self.preferred_bitrate = kbps
+        client = await self._ready()
+        return await self._send_bitrate(client)
 
     def lyrics_path(self, catalog_song_id):
         """Where a song's lyrics are kept: <cache>/lyrics/<catalog id>.json."""

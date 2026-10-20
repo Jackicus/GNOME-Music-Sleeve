@@ -129,6 +129,8 @@ class EnginePage(FakePage):
         self.status_reads = 0   # the bridge's status() calls
         self.widevine = True    # drm()'s answer; None: it throws
         self.drm_reads = 0
+        self.bitrate = 256      # mk.bitrate, as status() and bitrate() answer it
+        self.bitrate_calls = []  # what each bitrate() call asked
 
     def __call__(self, message):
         expression = message['params']['expression']
@@ -143,6 +145,12 @@ class EnginePage(FakePage):
             args = json.loads('[' + match.group(2) + ']') if match.group(2) else []
             self.bridge_calls.append((match.group(1), *args))
             return value(self.bridge_answers.get(match.group(1), {'ok': True}))
+        if match and match.group(1) == 'bitrate':
+            asked = json.loads(match.group(2))
+            self.bitrate_calls.append(asked)
+            if asked is not None:
+                self.bitrate = 64 if asked == 64 else 256  # bridge.js's PlaybackBitrate
+            return value({'bitrate': self.bitrate})
         if expression == 'window.__appleMusicLibrary.status()':
             self.status_reads += 1
             return value(self.status())
@@ -168,7 +176,7 @@ class EnginePage(FakePage):
 
     def status(self):
         return {'ready': self.ready, 'engine': True, 'authorized': self.authorized,
-                'storefront': self.storefront, 'bitrate': 256}
+                'storefront': self.storefront, 'bitrate': self.bitrate}
 
 
 class TestEngine(Engine):
@@ -1357,6 +1365,56 @@ class PlaybackTest(EngineFixture):
         await self.engine.set_autoplay(None)
         self.assertEqual(self.page.bridge_calls, [('autoplay', True), ('autoplay', False),
                                                   ('autoplay', None)])
+
+    async def test_the_bitrate_is_kept_and_followed(self):
+        self.assertEqual(engine_module.quality_bitrate('high'), 256)
+        self.assertEqual(engine_module.quality_bitrate('standard'), 64)
+        self.assertEqual(engine_module.quality_bitrate('lossless'), 256)
+        await self.up()
+        await until(lambda: not self.engine._tasks)  # what runs beside the start is done
+        self.assertEqual(self.engine.bitrate, 256)  # the start's status read
+        self.assertEqual(self.page.bitrate_calls, [])  # MusicKit has it already
+        self.assertEqual(await self.engine.set_bitrate(64), 64)
+        self.assertEqual((self.page.bitrate_calls, self.engine.bitrate), ([64], 64))
+        self.assertEqual(self.engine.preferred_bitrate, 64)
+        # MusicKit's own choice (a slow connection), as its event says.
+        await self.chrome.send_binding('playbackBitrateDidChange', {'bitrate': 256})
+        await until(lambda: self.engine.bitrate == 256)
+        await self.engine.stop()
+        self.assertEqual(self.engine.bitrate, 0)
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.set_bitrate(256)
+        self.assertEqual(raised.exception.code, 'engine-down')
+        self.assertEqual(self.engine.preferred_bitrate, 256)  # kept for the next start
+
+    async def test_the_preferred_bitrate_is_set_at_each_start_and_page_load(self):
+        self.engine.preferred_bitrate = 64
+        await self.up()
+        await until(lambda: self.engine.bitrate == 64)
+        self.assertEqual(self.page.bitrate_calls, [64])
+        # A new document: MusicKit there starts at its own, and is set again.
+        seen = []
+        self.engine.connect('event', lambda e, name, data: seen.append(name))
+        self.page.bitrate = 256
+        self.page.bridge = None
+        await self.chrome.send_event(*context_created(9))
+        await until(lambda: 'bridgeReset' in seen, timeout=3)
+        await until(lambda: self.page.bitrate_calls == [64, 64])
+        await until(lambda: self.engine.bitrate == 64)
+        # A page that refuses (MusicKit gone) leaves the engine up, the bitrate as it was.
+        self.page.bitrate_calls.clear()
+        self.page.bitrate = 256
+        self.page.bridge = None
+        self.page.ready = False
+        self.engine._client.reinject_timeout = 0.05
+        seen.clear()
+        with self.assertLogs(client_module.log, 'WARNING'):
+            await self.chrome.send_event(*context_created(10))
+            await asyncio.sleep(0.1)
+            self.page.ready = True
+            await until(lambda: 'bridgeReset' in seen, timeout=3)
+        await until(lambda: self.page.bitrate_calls == [64])
+        self.assertEqual(self.engine.state, 'up')
 
     LANGUAGES = {'lyrics': 'en-GB', 'script': 'en-Latn'}
 

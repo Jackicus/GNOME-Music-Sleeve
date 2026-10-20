@@ -36,7 +36,7 @@ EVENTS = ('authorizationStatusDidChange', 'playbackStateDidChange', 'nowPlayingI
           'playbackTimeDidChange', 'playbackDurationDidChange', 'queueItemsDidChange',
           'queuePositionDidChange', 'shuffleModeDidChange', 'repeatModeDidChange',
           'playbackVolumeDidChange', 'mediaPlaybackError', 'autoplayEnabledDidChange',
-          'capabilitiesChanged')
+          'capabilitiesChanged', 'playbackBitrateDidChange')
 
 # What a state or item event says MusicKit allows when the instance has no capabilities.
 ALLOWED = {'canSeek': True, 'canPause': True, 'canSkipToNextItem': True,
@@ -217,7 +217,7 @@ class BridgeTest(unittest.TestCase):
                                               'storefront': 'gb', 'bitrate': 256})
         self.assertTrue(value['signedIn']['authorized'])
         self.assertEqual(value['missing'], {'ready': False, 'engine': True, 'authorized': False,
-                                            'storefront': 'us', 'bitrate': 256})
+                                            'storefront': 'us', 'bitrate': None})
 
     @scenario("""
         const granted = await bridge.drm();
@@ -839,6 +839,55 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(value['station'], {'autoplay': False, 'canAutoplay': False})
         self.assertEqual(value['events'], [{'autoplay': True}, {'autoplay': False},
                                            {'autoplay': False}])
+
+    @scenario("""
+        bridge.subscribe();
+        const out = {read: bridge.bitrate(null)};
+        out.standard = bridge.bitrate(64);              // MusicKit posts the event itself
+        out.property = mk.bitrate;
+        out.same = bridge.bitrate(64);                  // already 64: not set, no event
+        out.high = bridge.bitrate(256);
+        out.other = bridge.bitrate(320);                // anything but 64 is High Quality
+        mk._bitrate = 64;                               // MusicKit's own choice, unposted
+        mk.fire('playbackBitrateDidChange', {});        // no bitrate: the instance's
+        out.status = bridge.status().bitrate;
+        mk._bitrate = undefined;
+        out.none = bridge.bitrate(null);
+        out.events = posted.filter(event => event.name === 'playbackBitrateDidChange')
+            .map(event => event.data);
+        delete window.MusicKit;
+        try {
+            bridge.bitrate(64);
+        } catch (error) {
+            out.missing = String(error.message);
+        }
+        return out;
+    """)
+    def test_bitrate_is_set_and_followed(self, value):
+        self.assertEqual(value['read'], {'bitrate': 256})
+        self.assertEqual(value['standard'], {'bitrate': 64})
+        self.assertEqual(value['property'], 64)
+        self.assertEqual(value['same'], {'bitrate': 64})
+        self.assertEqual(value['high'], {'bitrate': 256})
+        self.assertEqual(value['other'], {'bitrate': 256})
+        self.assertEqual(value['status'], 64)
+        self.assertEqual(value['none'], {'bitrate': None})
+        self.assertEqual(value['events'], [{'bitrate': 64}, {'bitrate': 256}, {'bitrate': 64}])
+        self.assertEqual(value['missing'], 'MusicKit not initialized')
+
+    @scenario("""
+        mk.addEventListener = function (name, handler) {
+            if (name === 'playbackBitrateDidChange') throw new Error('unknown event');
+            (this.listeners[name] = this.listeners[name] || []).push(handler);
+        };
+        const subscribed = bridge.subscribe();
+        mk.fire('autoplayEnabledDidChange', true);
+        return {events: subscribed.events, posted: posted.map(event => event.name)};
+    """)
+    def test_subscribe_skips_an_event_musickit_refuses(self, value):
+        self.assertEqual(sorted(value['events']),
+                         sorted(set(EVENTS) - {'playbackBitrateDidChange'}))
+        self.assertEqual(value['posted'], ['autoplayEnabledDidChange'])
 
     # -- autoplay across queues (MusicKit's serial controller, as the harness fakes it) -----
 

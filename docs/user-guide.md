@@ -28,6 +28,10 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   interval chosen in Preferences › General › Library › Refresh Library (every hour, every
   6 hours, the default, every day, or manually). Last Refreshed beneath says when it last was;
   its Refresh button, or <kbd>Ctrl</kbd>+<kbd>R</kbd>, refreshes it at any time.
+- Preferences › Engine › Streaming Quality chooses how Apple Music streams: High Quality
+  (256 kbps, the default) or High Efficiency (64 kbps), which uses less data on a metered or
+  slow connection. While the engine runs, the row says the bitrate it streams at now: Apple's
+  player may choose 64 kbps itself when the connection is slow.
 - Closing the window quits the app and stops Chrome. To keep the music playing with the window
   closed, turn on Background Playback in Preferences (<kbd>Ctrl</kbd>+<kbd>,</kbd>); the
   system's media controls bring the window back.
@@ -288,7 +292,8 @@ Apple Music's streams are protected with Widevine, and a browser that has it is 
 way to play them on Linux. So what the web player cannot do, the app cannot do either:
 
 - No Lossless, Hi-Res Lossless or Dolby Atmos (Spatial Audio): the web player streams AAC
-  at up to 256 kbps, in stereo, and that is what you hear. For the same reason, albums carry
+  at up to 256 kbps, in stereo, and that is what you hear (Preferences › Engine › Streaming
+  Quality chooses 256 or 64 kbps). For the same reason, albums carry
   no Lossless or Dolby Atmos badges.
 - No equaliser, crossfade, AutoMix or Sound Check: the web player has none of them. An
   equaliser for the whole system, such as EasyEffects, can work on the sound instead (the

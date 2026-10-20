@@ -48,7 +48,7 @@ from gi.repository import Adw, Gio, GLib, GObject  # noqa: E402
 from .backend import config, normalize  # noqa: E402
 from .backend.errors import EngineError  # noqa: E402
 from .background import BackgroundPlayback  # noqa: E402
-from .engine import Engine  # noqa: E402
+from .engine import Engine, quality_bitrate  # noqa: E402
 from .discord import Presence  # noqa: E402
 from .errors import error_message  # noqa: E402
 from .library import Library  # noqa: E402
@@ -322,12 +322,18 @@ class Application(Adw.Application):
 
     def _make_engine(self):
         """The Engine on this build's Chrome profile (config.profile_dir()), with the browser
-        command and the preferred mode from the settings, then and whenever they change
-        (Preferences): both apply when Chrome next starts."""
+        command, the preferred mode and the streaming quality from the settings, then and
+        whenever they change (Preferences): the first two apply when Chrome next starts, the
+        quality at once (_set_bitrate) as well."""
         if self.demo:
             return Engine(demo=True)
         engine = Engine(browser_command=self.settings.get_string('browser-command'))
         engine.prefer_headless = self.settings.get_boolean('engine-headless')
+        engine.preferred_bitrate = quality_bitrate(self.settings.get_string('streaming-quality'))
+        # The streaming quality goes to MusicKit at once, and at every start from then on.
+        self.settings.connect(
+            'changed::streaming-quality',
+            lambda settings, key: self.spawn(self._set_bitrate(settings.get_string(key))))
         self.settings.connect(
             'changed::browser-command',
             lambda settings, key: setattr(engine, 'browser_command', settings.get_string(key)))
@@ -335,6 +341,14 @@ class Application(Adw.Application):
             'changed::engine-headless',
             lambda settings, key: setattr(engine, 'prefer_headless', settings.get_boolean(key)))
         return engine
+
+    async def _set_bitrate(self, quality):
+        """The streaming-quality setting's bitrate set on MusicKit (Engine.set_bitrate),
+        kept for the next start when the engine is down."""
+        try:
+            await self.engine.set_bitrate(quality_bitrate(quality))
+        except EngineError as error:
+            log.debug('bitrate: %s', error)
 
     def _on_signal(self, signum):
         log.info('signal %d: quitting', signum)

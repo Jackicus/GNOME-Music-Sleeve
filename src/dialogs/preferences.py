@@ -8,18 +8,20 @@ how often the library refreshes (sync-interval); Last Refreshed, saying when it 
 (last-sync, as sync.last_sync_text() words it) or "Refreshing…" while it does, with Refresh
 (app.sync, off while it cannot run); the cache's size, measured in a thread and again after
 each sync, with Clear (asked first: Application.clear_cache()). Engine: the engine's state
-with Start and Stop; the browser program (browser-command, kept when it is applied and
-found); whether Chrome runs hidden (engine-headless) and starts with the app
-(engine-autostart); Sign In while signed out (insensitive in the demo), Sign Out while
-signed in (app.sign-out).
+with Start and Stop; the streaming quality (streaming-quality: High Quality or High
+Efficiency, which the Application sets on MusicKit), saying the bitrate MusicKit streams at
+while the engine runs (Engine.bitrate, read again as the dialog opens); the browser program
+(browser-command, kept when it is applied and found); whether Chrome runs hidden
+(engine-headless) and starts with the app (engine-autostart); Sign In while signed out
+(insensitive in the demo), Sign Out while signed in (app.sign-out).
 
 The switches are bound to their settings with Gio.Settings.bind, the browser program one way
-(the setting into the row: the row's text is kept only on apply), the refresh interval by
-hand (a choice of four values). What the engine reads applies when it next starts
-(Application._make_engine). A button whose work is under way (Start, Stop, Clear) stays
-sensitive, so the focus stays on it, and says it is busy to assistive technologies; a click
-meanwhile does nothing. Everything the dialog connects to outside itself is let go when it
-closes.
+(the setting into the row: the row's text is kept only on apply), the refresh interval and
+the streaming quality by hand (a choice of four values, of two). What the engine reads
+applies when it next starts (Application._make_engine), but for the quality, set at once
+too. A button whose work is under way (Start, Stop, Clear) stays sensitive, so the focus
+stays on it, and says it is busy to assistive technologies; a click meanwhile does nothing.
+Everything the dialog connects to outside itself is let go when it closes.
 """
 
 import asyncio
@@ -31,6 +33,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 from ..backend import config
 from ..backend.errors import EngineError
 from ..cache import cache_size
+from ..engine import QUALITIES
 from ..sync import INTERVALS, interval_index, last_sync_text
 from ..widgets.labels import named_list_factory
 from ..widgets.util import connect_weak
@@ -67,6 +70,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     clear_button = Gtk.Template.Child()
     engine_row = Gtk.Template.Child()
     engine_button = Gtk.Template.Child()
+    quality_row = Gtk.Template.Child()
     browser_row = Gtk.Template.Child()
     headless_row = Gtk.Template.Child()
     autostart_row = Gtk.Template.Child()
@@ -81,7 +85,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._key = account_key = app.account_key  # this build's key for an account's setting
         self._engine = engine = app.engine
         self._closed = False
-        self._quiet = False  # the interval row is being set from the setting
+        self._quiet = False  # the interval or quality row is being set from the setting
         self._engine_busy = False  # a Start or Stop from here is under way
         self._clearing = False
         # The rows and toasts that run app.* actions: a dialog shown as a window of its own
@@ -100,6 +104,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
 
         self._handlers = [
             (settings, settings.connect('changed::sync-interval', self._update_interval)),
+            (settings, settings.connect('changed::streaming-quality', self._update_quality)),
             (settings, settings.connect('changed::' + account_key('last-sync'),
                                         self._update_last_refreshed)),
             (settings, settings.connect('changed::' + account_key('signed-in'),
@@ -113,12 +118,17 @@ class PreferencesDialog(Adw.PreferencesDialog):
             (engine, engine.connect('notify::authorized', self._update_engine)),
             (engine, engine.connect('notify::headless', self._update_engine)),
             (engine, engine.connect('notify::widevine', self._update_engine)),
+            (engine, engine.connect('notify::bitrate', self._update_bitrate)),
+            (engine, engine.connect('notify::state', self._update_bitrate)),
         ]
         # The dialog's own rows and buttons are connected weakly (widgets/util.py): a bound
         # method would keep every closed dialog alive.
         self.interval_row.set_factory(named_list_factory(self.interval_row, popup=False))
         self.interval_row.set_list_factory(named_list_factory(self.interval_row, popup=True))
         connect_weak(self.interval_row, 'notify::selected', self._on_interval_selected)
+        self.quality_row.set_factory(named_list_factory(self.quality_row, popup=False))
+        self.quality_row.set_list_factory(named_list_factory(self.quality_row, popup=True))
+        connect_weak(self.quality_row, 'notify::selected', self._on_quality_selected)
         connect_weak(self.clear_button, 'clicked', self._on_clear_clicked)
         connect_weak(self.engine_button, 'clicked', self._on_engine_clicked)
         connect_weak(self.browser_row, 'apply', self._on_browser_apply)
@@ -130,8 +140,12 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self._update_interval()
         self._update_last_refreshed()
         self._update_engine()
+        self._update_quality()
+        self._update_bitrate()
         self._update_account()
         self._measure()
+        if engine.state == 'up' and not app.demo:
+            app.spawn(self._read_bitrate())  # MusicKit may have chosen another meanwhile
         # Last Refreshed's "5 minutes ago" moves on while the dialog is open.
         self._tick = GLib.timeout_add_seconds(60, self._on_tick)
 
@@ -309,6 +323,43 @@ class PreferencesDialog(Adw.PreferencesDialog):
         self.browser_row.remove_css_class('error')
         settings.set_string('browser-command', text)
         self.browser_row.set_text(text)  # stripped, as kept
+
+    # -- the streaming quality -------------------------------------------------------------
+
+    def _update_quality(self, *_args):
+        names = [name for name, _kbps in QUALITIES]
+        quality = self._settings.get_string('streaming-quality')
+        self._quiet = True
+        self.quality_row.set_selected(names.index(quality) if quality in names else 0)
+        self._quiet = False
+
+    def _on_quality_selected(self, row, _pspec):
+        if self._quiet:
+            return
+        index = row.get_selected()
+        if 0 <= index < len(QUALITIES):
+            quality = QUALITIES[index][0]
+            if quality != self._settings.get_string('streaming-quality'):
+                self._settings.set_string('streaming-quality', quality)
+
+    def _update_bitrate(self, *_args):
+        """The quality row's subtitle: what MusicKit streams at while the engine runs and
+        says, else what the choices mean."""
+        engine = self._engine
+        bitrate = engine.bitrate if engine.state == 'up' and not self._app.demo else 0
+        if bitrate:
+            # Translators: {bitrate} is a number of kilobits a second, 256 or 64.
+            subtitle = _('Streaming at {bitrate} kbps now').format(bitrate=bitrate)
+        else:
+            subtitle = _('High Efficiency uses less data')
+        self.quality_row.set_subtitle(subtitle)
+
+    async def _read_bitrate(self):
+        """The engine's status read once more, for its bitrate (notify::bitrate follows)."""
+        try:
+            await self._engine.status()
+        except EngineError as error:
+            log.debug('status for the bitrate: %s', error)
 
     # -- the account -----------------------------------------------------------------------
 

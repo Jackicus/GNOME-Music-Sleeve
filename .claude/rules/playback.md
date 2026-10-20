@@ -68,7 +68,11 @@ paths:
   station's queue); while restored they change the session alone and drop its `source`.
   `apply_autoplay()` sets the `autoplay` setting on MusicKit as the engine comes up, after a
   `bridgeReset`, and when the setting changes (main.py); `autoplay` and `can_autoplay` are
-  MusicKit's, and `NowPlaying.autoplay` marks an entry autoplay added. `undo_clear()` orders
+  MusicKit's, and `NowPlaying.autoplay` marks an entry autoplay added. The streaming quality
+  is the engine's, not the Player's: `Engine.preferred_bitrate` (the `streaming-quality`
+  setting, `engine.quality_bitrate()`) set beside each start and after a `bridgeReset` when
+  MusicKit has another, `set_bitrate()` when the setting changes (main.py), `Engine.bitrate`
+  what MusicKit streams at. `undo_clear()` orders
   the store as the bridge orders MusicKit's queue (`undone_tail()`: autoplay's refill after
   a Clear dropped when Clear took autoplay entries, so one Autoplay batch). tests/test_player.py's
   QueueDiffTest, QueueEditTest and AutoplayTest.

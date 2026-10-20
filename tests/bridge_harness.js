@@ -270,7 +270,7 @@ class FakeInstance {
         this.writeBody = '';    // and the body it answers with (a 201's new resource)
         this.isAuthorized = false;
         this.storefrontId = 'gb';
-        this.bitrate = 256;
+        this._bitrate = 256;
         this.playbackState = 0;
         this.isPlaying = false;
         this.currentPlaybackTime = 0;
@@ -318,6 +318,20 @@ class FakeInstance {
             return;
         this._autoplayEnabled = on;
         this.fire('autoplayEnabledDidChange', on);
+    }
+
+    // MusicKit's streaming bitrate (kbps, a PlaybackBitrate), a property: set to another
+    // value, it posts playbackBitrateDidChange with {bitrate}, as MusicKit's bitrate
+    // calculator does (src/backend/README.md, "Streaming quality").
+    get bitrate() {
+        return this._bitrate;
+    }
+
+    set bitrate(kbps) {
+        if (kbps === this._bitrate)
+            return;
+        this._bitrate = kbps;
+        this.fire('playbackBitrateDidChange', { bitrate: kbps });
     }
 
     addEventListener(name, handler) {
@@ -437,6 +451,7 @@ function fakeMusicKit(instance) {
     return {
         PlaybackStates: bothWays(PLAYBACK_STATES),
         PlayerShuffleMode: bothWays({ off: 0, songs: 1 }),
+        PlaybackBitrate: { HIGH: 256, STANDARD: 64 },
         getInstance() { return instance; },
     };
 }
