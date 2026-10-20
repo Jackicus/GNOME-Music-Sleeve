@@ -2194,6 +2194,7 @@ class Engine(GObject.Object):
         except EngineError as e:
             if e.status != 404:
                 raise
+            log.debug('playlist folder %s answered 404', apple_id)
             return []
         found = []
         for child in children:

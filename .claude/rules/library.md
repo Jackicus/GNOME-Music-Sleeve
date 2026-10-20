@@ -118,6 +118,11 @@ them before changing either. What matters most:
   listing, or gets `groups: []` for its page to fetch), read from library.json only then; a
   404 for a playlist's tracks or a folder's children means none; a failed songs or playlists
   listing, or a lost engine, fails the sync. It writes no words (shelf titles included).
+  Folder reads never take out a playlist the listing still has: right after a deletion Apple
+  can answer a folder with nothing (#529), so `kept_places()` puts a listed playlist no read
+  named back where last time's file had it, and a folder answering nothing has the folders
+  it held read too (kept when not empty). A deletion's `wait_listed()` takes an empty answer
+  only for a folder that held nothing else.
 - When to sync: `LibrarySync.schedule()` (not in demo mode) starts one when `due()` (the
   last sync older than `sync-interval`, or `library_ok()` false: library.json missing,
   unreadable or older than `LIBRARY_VERSION`, whatever the interval) and it can run without

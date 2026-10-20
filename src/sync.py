@@ -25,8 +25,11 @@ the Library reload() itself in place. `progress(section, done, total)` is called
 must be fetched; anything else that fails keeps last time's entry (a playlist's tracks
 included: its listing is still the fresh one), read from library.json only then, as are the
 tracks of a playlist the listing says are unchanged (below). Apple's 404
-for a playlist's tracks or a folder's children means there are none. A failure is an
-EngineError; a sync cancelled, or whose cache was wiped under it, raises store.Cancelled.
+for a playlist's tracks or a folder's children means there are none, but a playlist the
+listing has stays where last time's file had it when no folder's read names it
+(_fetch_folders, kept_places: Apple can answer a folder with nothing right after a
+deletion in it). A failure is an EngineError; a sync cancelled, or whose cache was wiped
+under it, raises store.Cancelled.
 The listings are read with `unique` (api_pages): an item met twice while the library changed
 under the read is kept once.
 
@@ -339,7 +342,7 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
         raw['tracks'] = await _fetch_tracks_of(engine, raw['playlists'], tracks_of, report)
         raw['unstamped'] = set(tracks_of)
         try:
-            raw['folders'] = await _fetch_folders(engine, report)
+            raw['folders'] = await _fetch_folders(engine, report, raw['playlists'], previous)
         except EngineError as error:
             _keep_going(error)
             raw['folders'] = None
@@ -375,7 +378,7 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
         raw['shelves'] = await _fetch_shelves(engine, report)
         return await _build(cache_dir, storefront, raw, library, report, generation, previous)
     try:
-        raw['folders'] = await _fetch_folders(engine, report)
+        raw['folders'] = await _fetch_folders(engine, report, raw['playlists'], previous)
     except EngineError as error:
         _keep_going(error)
         raw['folders'] = None
@@ -544,15 +547,25 @@ def playlist_unchanged(raw, stamp):
     return not isinstance(listed_count, bool) and listed_count == count
 
 
-async def _fetch_folders(engine, report):
+async def _fetch_folders(engine, report, raw_playlists=None, previous=None):
     """library.json's `folders` from Apple's playlist folders: the root's children, then each
     folder's, breadth first, in Apple's order. Apple's root is called ROOT_FOLDER here. A
     folder answering 404 has nothing in it; one listed again (in a folder of its own) is left
     out the second time, so the tree stays a tree; a playlist or folder the account deleted
-    that Apple still lists (api.is_deleted) is left out."""
+    that Apple still lists (api.is_deleted) is left out.
+
+    Right after a playlist is deleted from a folder, Apple can answer for that folder with
+    nothing (a 404, an empty list, or only nameless entries) while its other playlists are
+    still listed. So, given the playlist listing (`raw_playlists`) and last time's file
+    (`previous`, read only when needed), a read never takes a playlist out of the tree that
+    the listing still has: kept_places() puts it back where last time's file had it. A
+    folder that answers with nothing live has the folders it held last time read too, kept
+    only when something ends up in them."""
     folders = []
     seen = {APPLE_ROOT_FOLDER}
     queue = [(APPLE_ROOT_FOLDER, None, '')]
+    before = None  # last time's folders by id, read when first needed
+    unread = set()  # folders kept from last time's file, not from Apple's listing
     report('folders', 0, None)
     while queue:
         apple_id, parent, title = queue.pop(0)
@@ -562,9 +575,10 @@ async def _fetch_folders(engine, report):
         except EngineError as error:
             if error.status != 404:
                 raise
-            children = []
+            log.debug('sync: playlist folder %s answered 404', apple_id)
+            children = None
         entry = {'id': _folder_id(apple_id), 'title': title, 'parent': parent, 'children': []}
-        for child in children:
+        for child in children or ():
             child_id = str(child.get('id') or '')
             if not child_id or api.is_deleted(child):
                 continue
@@ -579,9 +593,76 @@ async def _fetch_folders(engine, report):
                 queue.append((child_id, entry['id'], str(name)))
             elif child.get('type') == PLAYLIST_TYPE:
                 entry['children'].append({'kind': 'playlist', 'id': child_id})
+        if not entry['children'] and children is not None:
+            log.debug('sync: playlist folder %s answered %d children, none of them live',
+                      apple_id, len(children))
+        if not entry['children'] and previous is not None:
+            if before is None:
+                before = _by_id(await asyncio.to_thread(previous.folders))
+            for child in _dicts((before.get(entry['id']) or {}).get('children')):
+                child_id = str(child.get('id') or '')
+                if child.get('kind') != 'folder' or child_id in seen or child_id not in before:
+                    continue
+                seen.add(child_id)
+                unread.add(child_id)
+                entry['children'].append({'kind': 'folder', 'id': child_id})
+                queue.append((child_id, entry['id'], str(before[child_id].get('title') or '')))
         folders.append(entry)
         report('folders', len(folders), len(folders) + len(queue))
+    if raw_playlists is None or previous is None:
+        return folders
+    listed = [str(raw.get('id')) for raw in raw_playlists if raw.get('id')]
+    placed = {child.get('id') for entry in folders for child in entry['children']
+              if child.get('kind') == 'playlist'}
+    if before is None and any(playlist_id not in placed for playlist_id in listed):
+        before = _by_id(await asyncio.to_thread(previous.folders))
+    return kept_places(folders, list((before or {}).values()), listed, unread)
+
+
+def kept_places(folders, previous_folders, listed, unread=()):
+    """`folders` as Apple's reads gave them, with each playlist of the listing (`listed`,
+    ids) that no folder read named put back in the folder last time's `previous_folders`
+    had it in, when that folder is still there; then the folders in `unread` (kept from
+    last time's file, not from Apple's listing) that hold nothing are left out, and out of
+    their parents' children. A new list of new dicts; the counts of what was put back are
+    logged."""
+    folders = [dict(entry, children=list(entry['children'])) for entry in folders]
+    by_id = {entry['id']: entry for entry in folders}
+    placed = {child.get('id') for entry in folders for child in entry['children']
+              if child.get('kind') == 'playlist'}
+    missing = {playlist_id for playlist_id in listed if playlist_id not in placed}
+    kept = 0
+    for previous in previous_folders:
+        entry = by_id.get(previous.get('id'))
+        if entry is None or not missing:
+            continue
+        for child in _dicts(previous.get('children')):
+            child_id = child.get('id')
+            if child.get('kind') == 'playlist' and child_id in missing:
+                missing.discard(child_id)
+                entry['children'].append({'kind': 'playlist', 'id': child_id})
+                kept += 1
+    for entry in reversed(folders):  # the innermost first: a parent may empty in turn
+        if entry['id'] in unread and not entry['children']:
+            for other in folders:
+                other['children'] = [child for child in other['children']
+                                     if (child.get('kind'), child.get('id'))
+                                     != ('folder', entry['id'])]
+    folders = [entry for entry in folders
+               if entry['id'] not in unread or entry['children']]
+    kept_folders = sum(1 for entry in folders if entry['id'] in unread)
+    if kept or kept_folders:
+        log.info('sync: %d playlists and %d folders the folder reads left out are kept '
+                 'where the last file had them', kept, kept_folders)
     return folders
+
+
+def _by_id(entries):
+    return {entry.get('id'): entry for entry in entries if isinstance(entry, dict)}
+
+
+def _dicts(value):
+    return [entry for entry in value if isinstance(entry, dict)] if isinstance(value, list) else []
 
 
 def _folder_id(apple_id):

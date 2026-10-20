@@ -2540,7 +2540,15 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         engine.listings = [[], listed]
         self.assertTrue(await self.actions.wait_listed('root', 'p.pl1', 'Road Trip'))
         engine.listings = [listed, []]
-        self.assertTrue(await self.actions.wait_listed('root', 'p.pl1', None))
+        self.assertTrue(await self.actions.wait_listed('p.fd1', 'p.pl1', None))
+        # Gone from a folder that holds more: not while Apple answers it with nothing.
+        other = [{'kind': 'playlist', 'id': 'p.pl2', 'name': 'Commute'}]
+        folder = [{'kind': 'folder', 'id': 'p.fd1', 'name': 'Evenings'}, *other]
+        engine.listings = [folder, [], other]
+        self.assertTrue(await self.actions.wait_listed('root', 'p.fd1', None))
+        self.assertEqual(engine.listings, [])
+        engine.listings = [[], [], []]
+        self.assertFalse(await self.actions.wait_listed('root', 'p.fd1', None))
         engine.listings = [listed] * 3
         self.assertFalse(await self.actions.wait_listed('root', 'p.pl1', 'Night Drive'))
         engine.listings = [EngineError('engine-down')]
