@@ -839,6 +839,24 @@ def share_url(obj, storefront=None):
     return url if is_shareable(url) else None
 
 
+def drag_link(obj, storefront=None):
+    """The address a drag of obj offers other applications, or None: share_url(), or for a
+    library album without one its catalog page by the album's catalog id (Copy Link asks the
+    engine instead, which a drag, answered at once, cannot wait for). A library-only item (an
+    upload, a playlist of the user's, a folder) has none."""
+    url = share_url(obj, storefront)
+    if url is None and needs_catalog_url(obj) and str(obj.catalog_id or '').isdigit():
+        url = f'{WEB}/{storefront or "us"}/{WEB_PATHS["album"]}/{obj.catalog_id}'
+    return url
+
+
+def drag_links(objects, storefront=None):
+    """The addresses a drag of `objects` (Tracks and Items, in order) offers other
+    applications: each one's drag_link(), in order, once each, those without one left out."""
+    return list(dict.fromkeys(url for url in (drag_link(obj, storefront) for obj in objects)
+                              if url))
+
+
 def needs_catalog_url(obj):
     """Whether obj's link is better asked of the engine: a library album (real, not made up)
     has a catalog page others can open, where its library route opens only for the owner."""

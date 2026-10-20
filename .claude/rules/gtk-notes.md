@@ -136,7 +136,13 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   unparents it sooner, as a real display's frame pacing lets it, leaves the focus nowhere,
   so the idle gives it back first (`context_menu.give_focus_back()`).
 - The one drag type is `library.ItemRefs` (one or more library objects, in order), offered
-  with `Gdk.ContentProvider.new_for_value(refs)` through `widgets/dnd.py`. Only in-app drags
+  with `Gdk.ContentProvider.new_for_value(refs)` through `widgets/dnd.py`: in-app drags plus
+  links outward. `dnd.provider()` puts it first in a `Gdk.ContentProvider.new_union()` with
+  the objects' music.apple.com links (`actions.drag_links()`) as `new_for_bytes()` of
+  `text/uri-list` (CRLF after each) and `text/plain` (with and without `;charset=utf-8`),
+  only when there are links. A value provider's own `write_mime_type_async()` serializes
+  nothing (GDK's drag does that), so the text formats are bytes, which a test reads back;
+  `Gdk.ContentProvider.get_value()` takes no GValue from Python. Only in-app drags
   are taken: a drop target decides from `dnd.current()`, the ItemRefs its source made at
   `drag-begin`, since GTK loads a drop's value only asynchronously and AdwSidebar's
   `drop-enter` gets nothing but the item's index. Every drag source goes through

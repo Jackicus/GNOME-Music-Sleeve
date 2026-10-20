@@ -483,7 +483,7 @@ class ItemRefs(GObject.Object):
     Ref, a playlist's or folder's (a sidebar row, a tile) one of that kind.
 
         refs = ItemRefs.for_objects([track], origin=('playlist', 'p.1'))   # or None
-        provider = widgets.dnd.provider(refs)   # Gdk.ContentProvider.new_for_value(refs)
+        provider = widgets.dnd.provider(refs)   # the ItemRefs, and its links outward
         refs.refs          # (Ref, …), never empty
         refs.origin        # (kind, id) of the list dragged from, or None
         refs.objects       # the Tracks and Items the refs were made of, in their order
