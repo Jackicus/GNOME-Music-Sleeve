@@ -7,11 +7,13 @@ using Adw 1;
 // The transport bar at the bottom of the window (player_bar.py): the AdwBottomSheet's bottom
 // bar, which the window reveals only while something plays (window.py). Transport on the
 // left; the item playing (artwork, title with its explicit badge, artist) with the seek
-// slider under it in the middle; the heart, shuffle, repeat and the volume on the right.
-// With nothing playing (the bar on its way out) the seek slider and the heart are hidden
-// and "Not Playing" centres beside the cover. The window's breakpoint sets `compact` below
-// 600sp, which hides the right-hand box (the Now Playing sheet has shuffle and repeat) and
-// the times around the slider, and shrinks the cover, so the title has the room at 360 px.
+// slider under it in the middle; the heart, shuffle, repeat, the volume, Lyrics and Up Next
+// on the right. With nothing playing (the bar on its way out) the seek slider and the heart
+// are hidden and "Not Playing" centres beside the cover. The window's breakpoints set
+// `narrow` below 640sp, which hides Lyrics and Up Next, and `compact` below 600sp, which
+// hides the whole right-hand box (the Now Playing sheet the bar opens has shuffle, repeat
+// and the two tabs) and the times around the slider, and shrinks the cover, so the title
+// has the room at 360 px.
 template $AppleMusicPlayerBar: Adw.Bin {
   child: Box {
     spacing: 12;
@@ -241,6 +243,39 @@ template $AppleMusicPlayerBar: Adw.Bin {
         tooltip-text: _("Volume");
         sensitive: false;
         valign: center;
+
+        styles [
+          "flat",
+        ]
+      }
+
+      // Now Playing on its Lyrics or its Up Next tab, or closed when it shows that tab
+      // (widgets/now_playing.py's TabActions): pressed while the tab is in sight, off for
+      // a song without lyrics. Their tooltips add the shortcut (player_bar.py).
+      ToggleButton lyrics_button {
+        icon-name: "media-view-subtitles-symbolic";
+        tooltip-text: _("Lyrics");
+        action-name: "win.show-lyrics";
+        valign: center;
+
+        accessibility {
+          label: _("Lyrics");
+        }
+
+        styles [
+          "flat",
+        ]
+      }
+
+      ToggleButton queue_button {
+        icon-name: "view-list-ordered-symbolic";
+        tooltip-text: _("Up Next");
+        action-name: "win.show-queue";
+        valign: center;
+
+        accessibility {
+          label: _("Up Next");
+        }
 
         styles [
           "flat",

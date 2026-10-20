@@ -19,6 +19,12 @@ full-screen player, fullscreen.py), which borrows the LyricsView out of the Lyri
 button sets the bottom sheet's `open` false; Escape and a swipe down are the bottom sheet's
 own; Go to Album and Go to Artist close the sheet too (window.open_item).
 
+The tabs from outside: `shown-tab` is the tab in sight ('lyrics' or 'queue': the sheet open
+and not covered, '' otherwise) and show_tab() switches to one. TabActions, the window's
+win.show-lyrics and win.show-queue (the player bar's Lyrics and Up Next toggle buttons,
+Ctrl+Shift+L and Ctrl+Shift+U), opens the sheet on a tab through them, closes it when it
+shows that tab already, and keeps each action's state on whether its tab is in sight.
+
 Sizing: an AdwBottomSheet gives its sheet its natural height (clamped to the window less a
 margin), so this widget asks for a tall one (SHEET_NATURAL_HEIGHT) and the tabs' lists take
 what is left under the controls. It measures and allocates its child itself: an Adw.Bin's
@@ -45,6 +51,9 @@ SHEET_NATURAL_HEIGHT = 10000   # as tall as the window allows
 COVER_SIZE = 320
 COVER_SIZE_COMPACT = 240
 COVER_SIZE_SHORT = 96          # beside the titles, in a short window
+
+# The window actions that show a tab (shortcuts.NOW_PLAYING_TABS), by the tab's name.
+TAB_ACTIONS = {'lyrics': 'show-lyrics', 'queue': 'show-queue'}
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/now_playing.ui')
@@ -88,6 +97,7 @@ class NowPlayingSheet(Adw.Bin):
         self._compact = False
         self._short = False
         self._covered = False   # the full-screen player shows over the window
+        self._shown_tab = ''
         self.lyrics_view = LyricsView()
         self.queue_view = QueueView()
         # The Lyrics tab holds the LyricsView in a slot, out of which the full-screen
@@ -184,6 +194,20 @@ class NowPlayingSheet(Adw.Bin):
         if child is not None:
             child.allocate(width, height, baseline, None)
 
+    # -- the tabs ----------------------------------------------------------------------------
+
+    def _get_shown_tab(self):
+        return self._shown_tab
+
+    shown_tab = GObject.Property(type=str, default='', getter=_get_shown_tab,
+                                 flags=GObject.ParamFlags.READABLE, nick='Shown tab',
+                                 blurb="The tab in sight ('lyrics' or 'queue'), or '' while "
+                                       'the sheet is closed or covered')
+
+    def show_tab(self, tab):
+        """Switch to `tab` ('lyrics' or 'queue'), open or not."""
+        self.tab_stack.set_visible_child_name(tab)
+
     # -- the Player --------------------------------------------------------------------------
 
     def set_player(self, player, app, bottom_sheet):
@@ -253,6 +277,10 @@ class NowPlayingSheet(Adw.Bin):
         if self.lyrics_view.get_parent() is self.lyrics_slot:  # else the full screen's
             self.lyrics_view.set_active(seen and shown == 'lyrics')
         self.queue_view.set_active(seen and shown == 'queue')
+        shown_tab = (shown or '') if seen else ''
+        if shown_tab != self._shown_tab:
+            self._shown_tab = shown_tab
+            self.notify('shown-tab')
         if is_open and not self._open:
             # The bottom sheet puts the focus on the sheet's first focusable widget (the seek
             # slider); the play button is where the keyboard wants to start. After the
@@ -280,6 +308,67 @@ class NowPlayingSheet(Adw.Bin):
     def on_close_clicked(self, _button):
         if self._bottom_sheet is not None:
             self._bottom_sheet.set_open(False)
+
+
+class TabActions:
+    """The window's win.show-lyrics and win.show-queue (TAB_ACTIONS): each opens the sheet on
+    its tab, or closes it when it shows that tab already; from the full-screen player, back
+    to the sheet, open on the tab. Stateful: an action's state is whether its tab is in sight
+    (the sheet's `shown-tab`), which the player bar's toggle buttons show. Enabled while
+    there is something to show there (can_show_tab()), and while the window lets its
+    actions run (set_free(): no dialog over it). It lives as long as the window."""
+
+    def __init__(self, sheet, bottom_sheet, player, fullscreen_host):
+        self._sheet = sheet
+        self._bottom_sheet = bottom_sheet
+        self._player = player
+        self._host = fullscreen_host
+        self._free = True
+        self.actions = {}
+        for tab, name in TAB_ACTIONS.items():
+            action = Gio.SimpleAction.new_stateful(name, None, GLib.Variant.new_boolean(False))
+            action.connect('activate', lambda _action, _parameter, tab=tab: self.toggle(tab))
+            self.actions[tab] = action
+        sheet.connect('notify::shown-tab', lambda *_: self.update())
+        for name in ('track', 'lyrics', 'lyrics-loading'):
+            player.connect('notify::' + name, lambda *_: self.update())
+        self.update()
+
+    def toggle(self, tab):
+        """The sheet open on `tab`, or closed when it shows that tab already."""
+        if self._host.shown:
+            self._host.leave(restore_focus=False)
+        elif self._sheet.shown_tab == tab:
+            self._bottom_sheet.set_open(False)
+            return
+        self._sheet.show_tab(tab)  # before it opens: it slides in on the tab
+        self._bottom_sheet.set_open(True)
+
+    def set_free(self, free):
+        """Whether the window lets its actions run (False while a dialog is over it)."""
+        self._free = free
+        self.update()
+
+    def update(self):
+        shown = self._sheet.shown_tab
+        player = self._player
+        for tab, action in self.actions.items():
+            state = shown == tab
+            if action.get_state().get_boolean() != state:
+                action.set_state(GLib.Variant.new_boolean(state))
+            action.set_enabled(self._free and can_show_tab(
+                tab, shown, player.track, player.lyrics, player.lyrics_loading))
+
+
+def can_show_tab(tab, shown_tab, track, lyrics, lyrics_loading):
+    """Whether the sheet has something to show on `tab`: Up Next while an item plays, the
+    lyrics while it has some or they are being read (a song without them: no); or `tab` is
+    the one shown, so that it can be closed again."""
+    if tab == shown_tab:
+        return True
+    if track is None:
+        return False
+    return tab != 'lyrics' or lyrics is not None or lyrics_loading
 
 
 def lyrics_menu(lyrics):

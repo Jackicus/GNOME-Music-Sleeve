@@ -76,6 +76,44 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(route('<primary>Right', disabled=('play-pause',)), 'next')
 
 
+def tab_route(accel, focus_type=NO_FOCUS, dialog_open=False, in_popover=False, disabled=(),
+              capital=False):
+    _ok, keyval, mods = Gtk.accelerator_parse(accel)
+    if capital:  # a real press with Shift held reports the capital letter
+        keyval = Gdk.keyval_to_upper(keyval)
+    return keyboard.tab_action(keyval, mods, focus_type, dialog_open, in_popover,
+                               lambda name: name not in disabled)
+
+
+class TabRoutingTest(unittest.TestCase):
+    """Ctrl+Shift+L and Ctrl+Shift+U: Now Playing on its Lyrics or Up Next tab, except where
+    the keys are a text field's (Ctrl+Shift+U is GTK's Unicode entry)."""
+
+    def test_the_tab_keys(self):
+        self.assertEqual(tab_route('<primary><shift>l'), 'show-lyrics')
+        self.assertEqual(tab_route('<primary><shift>u'), 'show-queue')
+        self.assertEqual(tab_route('<primary><shift>l', capital=True), 'show-lyrics')
+        self.assertEqual(tab_route('<primary><shift>u', Gtk.ToggleButton, capital=True),
+                         'show-queue')
+        for accel in ('<primary>l', '<primary>u', 'l', '<shift>u', 'space'):
+            with self.subTest(accel=accel):
+                self.assertIsNone(tab_route(accel))
+        self.assertIsNone(route('<primary><shift>u'))  # not a playback key
+
+    def test_typing_a_dialog_or_a_menu_keeps_them(self):
+        for focus_type in (Gtk.Text, Gtk.SearchEntry, Gtk.TextView):
+            with self.subTest(focus=focus_type.__name__):
+                self.assertIsNone(tab_route('<primary><shift>u', focus_type, capital=True))
+                self.assertIsNone(tab_route('<primary><shift>l', focus_type, capital=True))
+        self.assertIsNone(tab_route('<primary><shift>l', dialog_open=True))
+        self.assertIsNone(tab_route('<primary><shift>u', in_popover=True))
+
+    def test_a_disabled_action_does_not_run(self):
+        self.assertIsNone(tab_route('<primary><shift>l', disabled=('show-lyrics',)))
+        self.assertEqual(tab_route('<primary><shift>u', disabled=('show-lyrics',)),
+                         'show-queue')
+
+
 class KeysTest(unittest.TestCase):
     def test_the_playback_keys_are_the_shortcuts_tables(self):
         names = set(keyboard.PLAYBACK_KEYS.values())
@@ -84,6 +122,13 @@ class KeysTest(unittest.TestCase):
             for accel in accels:
                 _ok, keyval, mods = Gtk.accelerator_parse(accel)
                 self.assertEqual(keyboard.PLAYBACK_KEYS[(keyval, int(mods))], action)
+
+    def test_the_tab_keys_are_the_shortcuts_tables(self):
+        self.assertEqual(set(keyboard.TAB_KEYS.values()), set(shortcuts.NOW_PLAYING_TABS))
+        for action, accels in shortcuts.NOW_PLAYING_TABS.items():
+            for accel in accels:
+                _ok, keyval, mods = Gtk.accelerator_parse(accel)
+                self.assertEqual(keyboard.TAB_KEYS[(keyval, int(mods))], action)
 
     def test_the_main_menu_key(self):
         self.assertTrue(keyboard.is_main_menu(Gdk.KEY_F10, 0))

@@ -85,7 +85,8 @@ def accelerator_names(accelerator):
 def app_keys():
     """Every key the app binds, as the docs write it."""
     found = set()
-    for accelerators in list(shortcuts.ACCELS.values()) + list(shortcuts.PLAYBACK.values()):
+    for accelerators in (list(shortcuts.ACCELS.values()) + list(shortcuts.PLAYBACK.values())
+                         + list(shortcuts.NOW_PLAYING_TABS.values())):
         found.update(accelerator_names(accelerator) for accelerator in accelerators)
     for accelerator in (shortcuts.MAIN_MENU, *shortcuts.CONTEXT_MENU.split(), shortcuts.CLOSE,
                         shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE):

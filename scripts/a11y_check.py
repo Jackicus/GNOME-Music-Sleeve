@@ -643,6 +643,7 @@ async def walkthrough(window):
     check('Down, Enter plays the next entry', jumps == [1], jumps)
     await key(window, 'Escape', 0.8)
     check('Escape closes the sheet', not window.bottom_sheet.get_open())
+    await now_playing_tabs(window)
     await fullscreen_player(window)
     print('-- back')
     await key(window, '<alt>Left', 0.8)
@@ -655,6 +656,10 @@ async def walkthrough(window):
     await type_into(search.search_entry, 'tide')
     check('typing into the entry reaches it', search.search_entry.get_text() == 'tide',
           search.search_entry.get_text())
+    await key(window, '<primary><shift>u', 0.4)
+    check("Ctrl+Shift+U in the entry is the entry's (Unicode entry), not Up Next",
+          window.lookup_action('show-queue').get_enabled() and not window.bottom_sheet.get_open()
+          and inside(window.get_focus(), search.search_entry), describe(window.get_focus()))
     await key(window, 'Tab')
     await key(window, 'Right')
     await key(window, 'space', 0.8)
@@ -890,18 +895,20 @@ async def walkthrough(window):
           dialog is not None and window.get_visible_dialog() is dialog)
     if dialog is not None:
         on = [name for name in ('back', 'search', 'focus-sidebar', 'focus-content',
-                                'focus-player') if window.lookup_action(name).get_enabled()]
+                                'focus-player', 'show-lyrics', 'show-queue')
+              if window.lookup_action(name).get_enabled()]
         check("the window's keyed actions are off", not on, on)
         before = (window.shown, window.navigation_view.get_visible_page())
         actions = []
         handler = app.lookup_action('play-pause').connect(
             'activate', lambda action, _parameter: actions.append(action.get_name()))
         for accel in ('<alt>Left', '<primary>f', '<primary>1', '<primary>2', '<primary>3',
-                      '<primary><shift>n', 'space'):
+                      '<primary><shift>n', '<primary><shift>l', '<primary><shift>u', 'space'):
             await key(window, accel, 0.3)
         app.lookup_action('play-pause').disconnect(handler)
         after = (window.shown, window.navigation_view.get_visible_page())
-        check('Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N and Space leave the page alone',
+        check('Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N, L and U and Space leave the page '
+              'alone',
               after == before and not window.bottom_sheet.get_open() and not actions
               and inside(window.get_focus(), dialog),
               (after[0], window.bottom_sheet.get_open(), actions, describe(window.get_focus())))
@@ -915,6 +922,59 @@ async def walkthrough(window):
 
 
 # -- names ---------------------------------------------------------------------------------
+
+async def now_playing_tabs(window):
+    """Lyrics and Up Next: Ctrl+Shift+U and Ctrl+Shift+L open Now Playing on that tab, switch
+    it while it is open and close it on the tab it shows, the bar's toggles pressed for the
+    tab in sight; the bar's Up Next button (where the bar has room for it) opens it too, and
+    the focus comes back to it; from the full-screen player, back to the sheet on the tab."""
+    print('-- Lyrics and Up Next')
+    sheet = window.now_playing
+    bar = window.player_bar
+    await key(window, '<primary><shift>u', 0.8)
+    await until(lambda: window.bottom_sheet.get_open())
+    check("Ctrl+Shift+U opens Now Playing on Up Next, the bar's Up Next pressed",
+          window.bottom_sheet.get_open() and sheet.shown_tab == 'queue'
+          and bar.queue_button.get_active() and not bar.lyrics_button.get_active(),
+          sheet.shown_tab)
+    await key(window, '<primary><shift>l', 0.4)
+    check('Ctrl+Shift+L switches it to Lyrics',
+          window.bottom_sheet.get_open() and sheet.shown_tab == 'lyrics'
+          and bar.lyrics_button.get_active() and not bar.queue_button.get_active(),
+          sheet.shown_tab)
+    await key(window, '<primary><shift>l', 0.8)
+    await until(lambda: not window.bottom_sheet.get_open())
+    check('Ctrl+Shift+L on Lyrics closes it, neither toggle pressed',
+          not window.bottom_sheet.get_open() and not bar.lyrics_button.get_active()
+          and window.get_focus() is not None and window.get_focus().get_mapped(),
+          describe(window.get_focus()))
+    if bar.queue_button.get_mapped():
+        bar.queue_button.grab_focus()
+        await key(window, 'space', 0.8)
+        await until(lambda: window.bottom_sheet.get_open())
+        check("Space on the bar's Up Next opens Now Playing on Up Next",
+              window.bottom_sheet.get_open() and sheet.shown_tab == 'queue', sheet.shown_tab)
+        await key(window, 'Escape', 0.8)
+        await until(lambda: not window.bottom_sheet.get_open()
+                    and window.get_focus() is bar.queue_button)
+        check('Escape closes it, the focus back on Up Next',
+              not window.bottom_sheet.get_open() and window.get_focus() is bar.queue_button,
+              describe(window.get_focus()))
+    else:
+        check('the narrow bar leaves Lyrics and Up Next to the sheet (the title keeps the room)',
+              not bar.lyrics_button.get_mapped() and bar.props.narrow)
+    host = window.fullscreen_host
+    await key(window, 'F11', 0.8)
+    await until(lambda: host.shown)
+    await key(window, '<primary><shift>u', 0.8)
+    await until(lambda: not host.shown and window.bottom_sheet.get_open())
+    check('Ctrl+Shift+U in the full-screen player: back to Now Playing, on Up Next',
+          not host.shown and window.bottom_sheet.get_open() and sheet.shown_tab == 'queue',
+          (host.shown, sheet.shown_tab))
+    await key(window, 'Escape', 0.8)
+    await until(lambda: not window.bottom_sheet.get_open())
+    sheet.show_tab('lyrics')  # as the steps after these found it
+
 
 async def fullscreen_player(window):
     """The full-screen player: F11 in, the focus on its play button, Tab through it and
