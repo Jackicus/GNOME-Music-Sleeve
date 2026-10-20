@@ -235,6 +235,19 @@ changes, change it here, with the date. The plan they came from is in
   transport fade (their room and focus kept) and the pointer hides, as in GNOME Videos;
   with animations off they go at once. Nothing runs or is fetched while it is not shown.
   MPRIS's `Fullscreen` stays false: no client uses it (#313).
+- **The lyrics' edges fade, with no scrollbar** (2026-10-20). As Apple's lyrics do, the
+  lines fade out at the top and the bottom of their area, in the sheet and the full-screen
+  player, and no scrollbar shows (`EXTERNAL`: the wheel, the touchpad, a finger and the
+  arrow keys still scroll them; a screen reader reads the lines as before). The fade is an
+  alpha mask the view draws its page through, not a gradient of the background colour laid
+  over the text: the full-screen player's background is the artwork's own colours, which no
+  one colour matches, and a mask fades the text, not what is behind it. Each edge fades only
+  as far as the text goes on past it, up to its 64 px band (a fifth of a short view), so the
+  first line is whole at the top of the lyrics and the last at their end, as without a fade.
+  In high contrast the edges stay hard, with libadwaita's line at a scrolled edge, as its
+  own scrolled views turn their soft shadows into a line there; elsewhere that line is not
+  drawn, the fade saying the same. The mask is drawn again with every frame the view draws,
+  a word's sweep included: within the runs' spread (docs/notes.md) (#356).
 - **Not possible through the web player** (2026-10-20, #358). The music plays in Apple's web
   player, through MusicKit JS, so what MusicKit JS and music.apple.com cannot do is out of
   reach, and a later audit need not suggest it again. Sound: MusicKit JS streams AAC at 64 or

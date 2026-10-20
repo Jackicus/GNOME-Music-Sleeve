@@ -106,6 +106,25 @@ its "Performance pass" section.
   ms, anonymous memory after browsing 196 / 195 MB, pages +1.4 / +1.1 MB; Albums 4.0 / 4.1 ms
   a frame (longest 7.4 / 7.2), Songs 2.9 / 3.0-3.2 ms (longest 5.3 / 7.0-8.7), no frame over
   16.7 ms: the same, within the runs' spread (the lyrics view is not on those paths).
+- The lyrics' faded edges (issue 356), headless, 2026-10-20: `scripts/lyrics_test.py` as
+  above (the syllable fixture from 12 s for 36 s, 1100x760), three runs each, in the sheet
+  and with `--fullscreen-player`, before and after the view drew its page through the
+  edges' alpha mask (a mask node over the whole view, made again at each frame the view
+  draws, the sweep's included). The machine was shared, so the runs spread widely.
+
+  | | work a frame (mean) | CPU (one core) | list allocations |
+  |---|---|---|---|
+  | sheet, before | 1.17-1.52 ms (median 1.43) | 7.7-9.6 % | 81 |
+  | sheet, after | 1.57-1.79 ms (median 1.58) | 9.4-9.6 % | 81-99 |
+  | full screen, before | 1.29-1.82 ms (median 1.35) | 8.6-11.7 % | 81-99 |
+  | full screen, after | 1.52-1.72 ms (median 1.54) | 9.0-10.8 % | 81-105 |
+
+  About 0.15-0.2 ms a frame more, the CPU within the runs' spread; one frame in a run went
+  over 16.7 ms before and after alike (the shared machine). The allocations are the
+  centring's glides and vary from run to run either way. Masking only the two 64 px bands
+  (the middle drawn plainly under a clip) would render less offscreen, but two clips that
+  meet off the pixel grid at a fractional scale leave a faint seam, and the whole-view
+  mask costs too little to need it.
 - Hidden root pages keep their list and grid widgets (the window keeps each fixed
   destination's root page once visited, and the last eight playlist and folder pages).
   Letting the six hidden views' item widgets go while they are hidden, and rebuilding them on a

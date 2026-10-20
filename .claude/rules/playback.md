@@ -96,23 +96,27 @@ paths:
   libadwaita's "exceeds … height" warning. Up Next is a `Gtk.SliceListModel` of the queue
   from the entry playing on, its size set again with each offset (`queue.slice_size()`,
   gtk-notes.md; tests/test_queue.py); the lyrics list is the user's while they scroll it
-  (wheel, touch, scrollbar) or have the focus on a line. A lyrics row's side in a duet
-  (its labels' alignment, its box's horizontal margins, its break's dots) is set only
-  through `widgets.lyrics.set_side()`, at bind and when the list's width changes, from the
-  line's `side` (`lyrics.side()`). An instrumental break (`lyrics.instrumental_breaks()`,
-  Apple's 9 s rule) belongs to the line after it (`LyricLine.instrumental`), its dots in
-  that line's row, never an item of its own (a list item that cannot take the focus stops
-  GTK's arrow keys). What the synced view shows is `Lyrics.moment_at()` (the row current,
-  in its break or not, and its step: the dots lit, or a word-timed line's pieces begun),
-  and it steps on one GLib timeout armed for `Lyrics.next_change()`, never a per-frame
-  tick: a new kind of step goes into those two. The one per-frame tick is a sweep's
-  drawing: while a piece of a shown part of the current word-timed line is being sung (the
-  tab shown, the music playing, animations on), the list's tick callback redraws that row's
-  `LyricLabel`s (at most about 60 times a second) and nothing else, and stops itself in
-  the gaps. The labels light the pieces sung (`lyrics.sung()`) through an alpha mask in
-  their own snapshot (`piece_segments()`, by Pango's UTF-8 byte indices: `lyrics.byte_spans()`),
-  never through Pango attributes, which would lay the row and the list out at every word.
-  The lyrics hold rather than go back by less than `HOLD_BACK` (a pause's whole second).
+  (wheel, touchpad, touch: it shows no scrollbar) or have the focus on a line. Its top and
+  bottom edges fade out through an alpha mask in `LyricsView.do_snapshot` (`edge_fades()`:
+  as far as the text goes on past each edge; none in high contrast), never a gradient laid
+  over the text in a background colour, which the full-screen backdrop would show. A lyrics
+  row's side in a duet (its labels' alignment, its box's horizontal margins, its break's
+  dots) is set only through `widgets.lyrics.set_side()`, at bind and when the list's width
+  changes, from the line's `side` (`lyrics.side()`). An instrumental break
+  (`lyrics.instrumental_breaks()`, Apple's 9 s rule) belongs to the line after it
+  (`LyricLine.instrumental`), its dots in that line's row, never an item of its own (a list
+  item that cannot take the focus stops GTK's arrow keys). What the synced view shows is
+  `Lyrics.moment_at()` (the row current, in its break or not, and its step: the dots lit, or
+  a word-timed line's pieces begun), and it steps on one GLib timeout armed for
+  `Lyrics.next_change()`, never a per-frame tick: a new kind of step goes into those two. The
+  one per-frame tick is a sweep's drawing: while a piece of a shown part of the current
+  word-timed line is being sung (the tab shown, the music playing, animations on), the list's
+  tick callback redraws that row's `LyricLabel`s (at most about 60 times a second) and
+  nothing else, and stops itself in the gaps. The labels light the pieces sung
+  (`lyrics.sung()`) through an alpha mask in their own snapshot (`piece_segments()`, by
+  Pango's UTF-8 byte indices: `lyrics.byte_spans()`), never through Pango attributes, which
+  would lay the row and the list out at every word. The lyrics hold rather than go back by
+  less than `HOLD_BACK` (a pause's whole second).
 - The full-screen player (`widgets/fullscreen_player.py`, shown by `fullscreen.FullscreenHost`,
   `win.fullscreen-player`, F11) shares the transport pieces too, and borrows the sheet's one
   LyricsView: `lend_lyrics()`/`return_lyrics()` move it between the sheet's `lyrics_slot`
