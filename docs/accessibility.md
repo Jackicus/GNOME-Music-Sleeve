@@ -152,6 +152,17 @@ list and the script together.
     Songs as a numbered grid of songs, then numbered tiles: Ctrl+2 and Tab reach the first
     song, Enter plays the chart from it, and Escape goes back. The script walks this before
     step 14.
+16. On a playlist's song (Songs and an album's songs alike), Ctrl+A selects every song: the
+    selection mode, its count in the header bar ("12 Selected", announced) with Cancel, and a
+    bar of actions under the list (Play Next, Play Later, Add to Playlist, Remove from
+    Playlist, Remove from Library…, each named; in a narrow window some in its More menu).
+    Ctrl+Shift+A selects none; Space selects or unselects the focused song and Shift+Space
+    selects from the last one to it, each change announced, and the row's description starts
+    "Selected" or "Not Selected". Space on a button stays the button's. Escape leaves the
+    mode with the focus on the song, and Space plays or pauses again. Enter (and a click) on
+    a song in the mode selects it rather than playing it; outside the mode they play, as
+    before. The script walks this after step 12, and `--names` looks at Songs while
+    selecting.
 
 ## The tools
 

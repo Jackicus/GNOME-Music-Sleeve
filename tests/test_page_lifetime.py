@@ -603,6 +603,26 @@ class PageLifetimeTest(WidgetTestCase):
             DetailPage(self.library, Item(_album(1, tracks=12))), TrackRow)
         await self.assert_freed(*refs)
 
+    async def test_playlist_page_popped_while_selecting(self):
+        # The selection mode on: its bar shown, Add to Playlist's menu made, the count in the
+        # header bar; popped as it is (do_hidden leaves the mode).
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.widgets.track_row import TrackRow
+
+        async def during(page):
+            mode = page.selection_mode
+            mode.key('select-all')
+            mode._add.popup()
+            await self.settle()
+            mode._add.popdown()
+            return [mode.weak_ref(), mode.bar.weak_ref(), mode.selection.weak_ref()]
+
+        item = Item(dict(_album(1, tracks=12), kind='playlist'))
+        refs = await self.pushed_and_popped(DetailPage(self.library, item), TrackRow,
+                                            during=during)
+        await self.assert_freed(*refs)
+
     async def test_album_page_with_the_catalogs_shelves(self):
         # The footer and the shelves under an album's tracks, bound a frame apart.
         from applemusic.library import Item

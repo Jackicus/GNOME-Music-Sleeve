@@ -659,6 +659,53 @@ async def view_credits(window, detail):
           describe(window.get_focus()))
 
 
+async def selecting_songs(window):
+    """Step 16: a playlist's selection mode from the keyboard: Ctrl+A on a song selects them
+    all (the mode on), Ctrl+Shift+A none, Space selects the focused song and Shift+Space up
+    to the next, each count announced and said by the row; Escape leaves the mode, the focus
+    staying on the song, and Space is the playback key's again."""
+    page = window.navigation_view.get_visible_page()
+    mode = getattr(page, 'selection_mode', None)
+    check("the playlist's page has a selection mode", mode is not None)
+    if mode is None:
+        return
+    found = context_menu.find(page.list_view, window.get_focus())
+    song = found[1] if found is not None else None
+    check('the focus is on a song', song is not None, describe(window.get_focus()))
+    if song is None:
+        return
+    said = []
+    window.announce = lambda text, _priority: said.append(text)
+    count = len(page.item.track_ids())
+    await key(window, '<primary>a', 0.4)
+    check('Ctrl+A on a song selects every song, the mode on',
+          mode.active and mode.selection.count == count, mode.selection.count)
+    check('the bar of actions shows, Cancel in the header bar',
+          mode.bar.get_revealed() and mode.cancel_button.get_visible())
+    check('and the count is said', said[-1:] == [f'{count} Selected'], said)
+    await key(window, '<primary><shift>a', 0.4)
+    check('Ctrl+Shift+A selects none', mode.active and mode.selection.count == 0,
+          mode.selection.count)
+    await key(window, 'space', 0.4)
+    check('Space selects the focused song', mode.selection.has(song)
+          and mode.selection.count == 1, mode.selection.count)
+    row = next((item for item in page._bound if item.get_item() is song), None)
+    check('its row says so', row is not None
+          and row.get_accessible_description().startswith('Selected'),
+          row.get_accessible_description() if row is not None else None)
+    await key(window, 'Down', 0.3)
+    await key(window, '<shift>space', 0.4)
+    check('Shift+Space selects from it to the next', mode.selection.count == 2,
+          mode.selection.count)
+    check('and says how many', said[-1:] == ['2 Selected'], said)
+    await key(window, 'Escape', 0.4)
+    focus = window.get_focus()
+    check('Escape leaves the mode, the focus on the song',
+          not mode.active and inside(focus, page.list_view), describe(focus))
+    check('the bar goes', not mode.bar.get_revealed())
+    del window.announce
+
+
 async def playing_keys(window):
     """Step 13: Go to Current Song (Ctrl+L) from a page, Now Playing and the full-screen
     player, the focus on the song's row each time; the volume keys (Ctrl+Up, Ctrl+Down) on
@@ -1541,6 +1588,8 @@ async def walkthrough(window):
     check('Escape closes it', not any(each.get_visible() for each in shown))
     print("-- a playlist's songs moved")
     await moving_songs(window)
+    print("-- a playlist's songs selected")
+    await selecting_songs(window)
     print('-- Preferences')
     await key(window, '<primary>comma', 1.0)
     dialog = app._preferences
@@ -1961,6 +2010,13 @@ async def names(window):
         window.open_item(store.get_item(0))  # an artist: the library's page of them
         await asyncio.sleep(1.0)
         total += await unnamed(kind)
+    window.select_page('songs')
+    await asyncio.sleep(1.0)
+    mode = window.navigation_view.get_visible_page().selection_mode
+    mode.key('select-all')  # the header bar's count and Cancel, and the bar's actions
+    await asyncio.sleep(0.6)
+    total += await unnamed('songs, selecting')
+    mode.leave()
     window.open_artist_page(app.library.artists.get_item(0))
     await asyncio.sleep(1.5)
     total += await unnamed("artist's page")

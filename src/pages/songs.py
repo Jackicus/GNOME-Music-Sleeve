@@ -5,7 +5,7 @@
 as you type.
 
 The chain is library.songs → the songs in the chosen column's order (library.SongOrder) → those
-matching the filter → a Gio.ListStore of the rows shown → Gtk.SingleSelection →
+matching the filter → a Gio.ListStore of the rows shown → Gtk.NoSelection →
 Gtk.ColumnView. Ordering and filtering happen in Python rather than in a Gtk.SortListModel and
 Gtk.FilterListModel because GTK's are slow over Python objects; measured on 30,000 songs
 (scripts/demo_library.py --albums 2500):
@@ -39,7 +39,10 @@ long press or the Menu key opens its context menu, and a row drags onto a sideba
 (widgets/track_links.py); in a narrow window, the album's column hidden and the artist's
 too, the artist is a dimmed line under the title (SongTitle.set_stacked()), so that the title
 keeps its room. The table keeps no selection (a Gtk.NoSelection): GTK selects the
-hovered row of a single-click list, which would have followed the pointer around.
+hovered row of a single-click list, which would have followed the pointer around. Songs are
+selected in the table's selection mode instead (widgets/selection_mode.py: Select in the
+header bar, a Ctrl+click or Shift+click, Ctrl+A), whose bar acts on them all; its check box is
+in the title cell (SongTitle), and a row's description says whether it is selected.
 
 The row of the song playing is marked (SongTitle's play icon and bold title, "Playing" as
 the row's accessible description): the page follows the Player's `notify::track` while it is
@@ -55,11 +58,13 @@ from gi.repository import Adw, Gio, GLib, Gtk
 from ..library import SongOrder, Track, apply_diff
 from ..widgets import context_menu, track_links
 from ..widgets.filter_bar import FilterBar
+from ..widgets.selection_mode import SelectionMode, row_description
 from ..widgets.labels import track_label
 from ..widgets.song_title import SongTitle
 from ..widgets.track_links import TrackLink
 from ..widgets.track_row import PlayingMark
-from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, focus_position
+from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
+                            weak_method)
 from . import SignInOffer, app, mark_bound
 
 # The columns' names in the Sort By menu's targets and SongOrder's keys.
@@ -152,9 +157,20 @@ class SongsPage(Adw.NavigationPage):
         self._header_title = HeaderTitle(self.header_bar, self.title_label)  # while loading
         # The filter bar, under the header bar; a key typed anywhere on the page (a row, a
         # header button) shows it and lands in its entry.
+        # The table's selection mode (widgets/selection_mode.py): Select beside Sort and
+        # Filter, the batch actions in a bar under the table.
+        self.selection_mode = SelectionMode(self, self.header_bar, self.toolbar,
+                                            self.column_view, self._selectable,
+                                            self._focus_table)
+        self.selection_mode.set_header_title(self._header_title)
+        self.selection_mode.set_context(None, library=True)
+        self.header_bar.pack_end(self.selection_mode.select_button)
+        self.header_bar.pack_end(self.selection_mode.cancel_button)
+        connect_weak(self.selection_mode.selection, 'changed', self._on_selection_changed)
         self.filter_bar = FilterBar(_('Filter Songs'))
         self.toolbar.add_top_bar(self.filter_bar)
         self.header_bar.pack_end(self.filter_bar.button)
+        self.selection_mode.set_filter_bar(self.filter_bar)
         connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
         self.filter_bar.set_focus_return(self._focus_table)
         self.empty_page.set_icon_name(icon_name)
@@ -215,6 +231,8 @@ class SongsPage(Adw.NavigationPage):
         self.column_view.set_model(Gtk.NoSelection(model=self._rows))
         # Every cell of a row finds the row's Track in its title cell (SongTitle.context_item).
         context_menu.attach(self.column_view, drag=True)
+        context_menu.set_drag_objects(self.column_view,
+                                      weak_method(self.selection_mode.drag_objects))
         track_links.attach(self.column_view)
 
         # The Sort By menu's actions (songs.sort-column, songs.sort-order), following the
@@ -275,6 +293,10 @@ class SongsPage(Adw.NavigationPage):
         self._update_state()
         self._update_playing()  # the item playing now, changed or not while hidden
         self._on_favourites_changed()  # and the favourites, changed or not while hidden
+
+    def do_hidden(self):
+        self.selection_mode.leave()  # the mode is the page's while it shows
+        Adw.NavigationPage.do_hidden(self)
 
     # Order and filter.
 
@@ -383,6 +405,7 @@ class SongsPage(Adw.NavigationPage):
         if self._matches or not self._ordered:
             self._show(self._matches)
         self._update_state()
+        self.selection_mode.prune()  # what the filter hides is no longer selected
 
     def _show(self, tracks):
         """Make the table's rows tracks: where they were, after a sync changed the songs
@@ -416,7 +439,8 @@ class SongsPage(Adw.NavigationPage):
                            library.songs.get_n_items(), library.syncing)
         self.stack.set_visible_child_name(name)
         self.filter_bar.set_available(name == 'items', self)
-        self.sort_button.set_visible(name == 'items')
+        self.sort_button.set_visible(name == 'items' and not self.selection_mode.active)
+        self.selection_mode.set_available(name == 'items')
         if name == 'empty':
             # No songs to filter any more (a sign-out): the bar goes with its button. Not
             # while loading, which a filter set before the songs are built (set_filter)
@@ -477,8 +501,10 @@ class SongsPage(Adw.NavigationPage):
 
     @Gtk.Template.Callback()
     def on_activate(self, _column_view, position):
+        """A row activated (a click, Enter): played, or in the selection mode (a Ctrl+click
+        or Shift+click enters it) toggled or extended to."""
         track = self._rows.get_item(position)
-        if track is not None:
+        if track is not None and not self.selection_mode.activated(track):
             self.get_root().play_request(track.play, start_with=track.index,
                                          start_id=track.id)
 
@@ -527,8 +553,10 @@ class SongsPage(Adw.NavigationPage):
         track = row.get_item()
         self._row_items.add(row)
         row.set_accessible_label(track_label(track, favourite=self._library.is_favourite(track)))
-        row.set_accessible_description(
-            self._playing.description(track, self._playing.matches(track)))
+        selection = self.selection_mode.selection
+        row.set_accessible_description(row_description(
+            selection.active, selection.has(track),
+            self._playing.description(track, self._playing.matches(track))))
 
     def _unbind_row(self, _factory, row):
         self._row_items.discard(row)
@@ -539,8 +567,11 @@ class SongsPage(Adw.NavigationPage):
     def _bind_title(self, _factory, cell):
         track = cell.get_item()
         self._title_cells.add(cell)
-        cell.get_child().bind(track, self._playing.matches(track),
-                              self._library.is_favourite(track), self._stacked)
+        selection = self.selection_mode.selection
+        title = cell.get_child()
+        title.bind(track, self._playing.matches(track), self._library.is_favourite(track),
+                   self._stacked)
+        title.set_selected(selection.active, selection.has(track))
         if not self._bound:
             self._bound = True
             mark_bound(self)
@@ -555,6 +586,7 @@ class SongsPage(Adw.NavigationPage):
         self._stacked = stacked
         for cell in self._title_cells:
             cell.get_child().set_stacked(stacked)
+        self.selection_mode.set_narrow(stacked)  # the selection bar's narrow layout too
 
     # Favourites.
 
@@ -597,7 +629,33 @@ class SongsPage(Adw.NavigationPage):
             return
         for cell in self._title_cells:
             cell.get_child().set_playing(self._playing.matches(cell.get_item()))
+        self._describe_rows()
+
+    def _describe_rows(self):
+        selection = self.selection_mode.selection
         for row in self._row_items:
             track = row.get_item()
-            row.set_accessible_description(
-                self._playing.description(track, self._playing.matches(track)))
+            row.set_accessible_description(row_description(
+                selection.active, selection.has(track),
+                self._playing.description(track, self._playing.matches(track))))
+
+    # The selection mode.
+
+    def _selectable(self):
+        """The songs the table shows, in order: what the selection mode selects among."""
+        return self._matches if self.stack.get_visible_child_name() == 'items' else []
+
+    def _on_selection_changed(self, selection):
+        """The bound rows' check boxes and descriptions; Sort and Filter left out of the
+        header bar in the mode, for Cancel."""
+        self.sort_button.set_visible(self.stack.get_visible_child_name() == 'items'
+                                     and not selection.active)
+        for cell in self._title_cells:
+            cell.get_child().set_selected(selection.active, selection.has(cell.get_item()))
+        self._describe_rows()
+
+    def focused_track(self, focus):
+        """The Track of the row with the focus `focus` in the table, or None (the window's
+        selection keys: keyboard.selection_key())."""
+        track = context_menu.focused(self.column_view, focus)
+        return track if isinstance(track, Track) else None

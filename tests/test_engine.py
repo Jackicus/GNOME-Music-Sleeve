@@ -2607,6 +2607,46 @@ class PlaylistWriteTest(EngineFixture):
             self.assertEqual(raised.exception.code, 'usage')
         self.assertEqual(self.page.bridge_calls, [])
 
+    async def test_several_entries_go_in_one_write(self):
+        # A selection's Remove from Playlist: the list put back without the entries chosen,
+        # of a song held twice only the one chosen; the list before answered, for Undo.
+        await self.up()
+        self.tracks('p.1', 'i.a', 'i.b', 'i.a', 'i.c')
+        before = await self.engine.remove_playlist_entries('p.1', ['i.a', 'i.b', 'i.a', 'i.c'],
+                                                           [1, 2])
+        entry = {'type': 'library-songs'}
+        self.assertEqual(before, [dict(entry, id=track_id)
+                                  for track_id in ('i.a', 'i.b', 'i.a', 'i.c')])
+        self.assertEqual(self.page.bridge_calls, [
+            ('replacePlaylistTracks', 'p.1', [dict(entry, id='i.a'), dict(entry, id='i.c')])])
+        # Undo: the entries as they were, once Apple lists what was kept.
+        self.page.bridge_calls.clear()
+        self.tracks('p.1', 'i.a', 'i.c')
+        await self.engine.put_back_playlist_entries('p.1', ['i.a', 'i.c'], before)
+        self.assertEqual(self.page.bridge_calls, [('replacePlaylistTracks', 'p.1', before)])
+
+    async def test_every_entry_removed_goes_as_the_web_player_removes_them(self):
+        # Never an empty PUT: each song's DELETE (mode=all), once a song.
+        await self.up()
+        self.tracks('p.1', 'i.a', 'i.b', 'i.a')
+        await self.engine.remove_playlist_entries('p.1', ['i.a', 'i.b', 'i.a'], [0, 1, 2])
+        self.assertEqual(self.page.bridge_calls, [
+            ('removeFromPlaylist', 'p.1', 'library-songs', 'i.a'),
+            ('removeFromPlaylist', 'p.1', 'library-songs', 'i.b')])
+
+    async def test_a_removal_or_its_undo_over_a_changed_list_writes_nothing(self):
+        await self.up()
+        self.tracks('p.1', 'i.a', 'i.c', 'i.b')  # changed on another device
+        for coro in (self.engine.remove_playlist_entries('p.1', ['i.a', 'i.b', 'i.c'], [0]),
+                     self.engine.put_back_playlist_entries('p.1', ['i.a', 'i.b'], [])):
+            with self.assertRaises(EngineError) as raised:
+                await coro
+            self.assertEqual(raised.exception.code, 'conflict')
+        with self.assertRaises(EngineError) as raised:
+            await self.engine.remove_playlist_entries('pl.u-catalog', ['i.a'], [0])
+        self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.bridge_calls, [])
+
     async def test_folder_children_leave_out_what_was_deleted(self):
         await self.up()
         self.page.api_answers[('/v1/me/library/playlist-folders/p.playlistsroot/children',

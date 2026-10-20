@@ -811,6 +811,15 @@ class FakeEngine(GObject.Object):
     async def reorder_playlist(self, playlist_id, shown, order):
         await self._record('reorder_playlist', playlist_id, tuple(shown), tuple(order))
 
+    async def remove_playlist_entries(self, playlist_id, shown, positions):
+        await self._record('remove_playlist_entries', playlist_id, tuple(shown),
+                           tuple(positions))
+        return [{'id': track_id, 'type': 'library-songs'} for track_id in shown]
+
+    async def put_back_playlist_entries(self, playlist_id, kept, entries):
+        await self._record('put_back_playlist_entries', playlist_id, tuple(kept),
+                           tuple(entry['id'] for entry in entries))
+
     async def playlist_track_ids(self, playlist_id):
         self.calls.append(('playlist_track_ids', playlist_id))
         return []
@@ -1128,7 +1137,8 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
             'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
             'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue',
-            'item-move-in-playlist', 'item-undo-reorder', 'item-view-credits']))
+            'item-move-in-playlist', 'item-undo-reorder', 'item-view-credits',
+            'item-undo-remove']))
         self.assertEqual(
             self.window.actions['item-remove-from-queue'].get_parameter_type().dup_string(),
             '(is)')
@@ -2600,6 +2610,215 @@ class RemoveFromLibraryTest(unittest.IsolatedAsyncioTestCase):
         await self.remove(HELD_ALBUM)
         self.assertEqual((self.writes(), self.app.library.hidden), ([], []))
         self.assertEqual(self.app.toasts, ['Not available with the demo library'])
+
+
+# A playlist of the user's holding a song twice (its tracks in hand: Track.index is the
+# place), as a selection's Remove from Playlist sees it.
+MIX = Item({'id': 'p.pl5', 'kind': 'playlist', 'title': 'Mix',
+            'play': {'kind': 'playlist', 'id': 'p.pl5'},
+            'groups': [{'name': 'Tracks', 'play': {'kind': 'playlist', 'id': 'p.pl5'},
+                        'entries': [{'id': track_id, 'title': title, 'index': index,
+                                     'type': 'library-songs'}
+                                    for index, (track_id, title) in enumerate((
+                                        ('i.m1', 'First'), ('i.m2', 'Second'),
+                                        ('i.m1', 'First'), ('i.m3', 'Third')))]}]})
+
+
+class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
+    """A selection's batch actions (widgets/selection_mode.py's bar): Play Next and Play
+    Later of runs of songs, Remove from Playlist in one write with Undo, Remove from Library
+    with one confirmation. The engine's writes recorded."""
+
+    async def asyncSetUp(self):
+        self.app = FakeApp()
+        self.mix = Item(dict(MIX.raw))
+        self.app.library = FakeLibrary([HELD_ALBUM, LONE_ALBUM, HOLDING, self.mix,
+                                        self.app.playlist])
+        self.window = FakeWindow()
+        self.actions = ItemActions(self.window, self.app)
+        self.confirms = []
+        self.asked = []
+        self.actions.ask_confirm = lambda *args: self.confirms.append(args)
+        self.actions.ask_name = lambda *args: self.asked.append(args)
+        for name, value in (('SETTLE_DELAYS', (0, 0, 0)), ('REMOVAL_DELAYS', (0, 0, 0)),
+                            ('LISTING_LAG', 0)):
+            self.addCleanup(setattr, actions_module, name, getattr(actions_module, name))
+            setattr(actions_module, name, value)
+
+    async def settle(self):
+        while self.app.tasks:
+            tasks = list(self.app.tasks)
+            self.app.tasks.clear()
+            await asyncio.gather(*tasks)
+
+    def calls(self, *names):
+        return [call for call in self.app.engine.calls if call[0] in names]
+
+    def mix_tracks(self):
+        entries = self.mix.groups[0].entries
+        return [entries.get_item(position) for position in range(entries.get_n_items())]
+
+    def test_runs_of_songs_are_one_command(self):
+        commands = actions_module.queue_commands([
+            ('song', '1'), ('song', '2'), ('musicVideo', 'v1'), ('song', '3'),
+            ('album', 'a1'), ('song', '4'), ('song', '5'), ('song', '6')])
+        self.assertEqual(commands, [('songs', '1,2'), ('musicVideo', 'v1'), ('song', '3'),
+                                    ('album', 'a1'), ('songs', '4,5,6')])
+        self.assertEqual(actions_module.queued_count(commands), 8)
+        with mock.patch.object(actions_module, 'QUEUE_BATCH', 2):
+            self.assertEqual(actions_module.queue_commands([('song', str(n)) for n in range(5)]),
+                             [('songs', '0,1'), ('songs', '2,3'), ('song', '4')])
+        self.assertEqual(actions_module.queue_commands([]), [])
+
+    async def test_play_next_and_later_of_a_selection(self):
+        chosen = [LIBRARY_TRACK, CATALOG_TRACK, VIDEO_TRACK, UPLOAD_TRACK]
+        self.actions.queue_objects(chosen)
+        await self.settle()
+        # After the item playing in the order shown: the last command first.
+        self.assertEqual(self.calls('play_next'), [
+            ('play_next', 'song', 'i.song2'), ('play_next', 'musicVideo', '1000000011'),
+            ('play_next', 'songs', '1000000001,1000000009')])
+        self.assertEqual(self.app.toasts, ['4 items will play next'])
+        self.actions.queue_objects(chosen[:2], later=True)
+        await self.settle()
+        self.assertEqual(self.calls('play_later'),
+                         [('play_later', 'songs', '1000000001,1000000009')])
+        self.assertEqual(self.app.toasts[-1], '2 items will play later')
+        self.actions.queue_objects([CATALOG_TRACK], later=True)
+        await self.settle()
+        self.assertEqual(self.app.toasts[-1], '“Shoreline” will play later')
+
+    async def test_a_list_musickit_refuses_goes_one_song_at_a_time(self):
+        player = self.app.player
+        queued = []
+
+        async def play_next(kind, item_id):
+            if kind == 'songs':
+                raise EngineError('api', 'MusicKit: unsupported queue')
+            queued.append((kind, item_id))
+
+        player.play_next = play_next
+        self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK, VIDEO_TRACK])
+        await self.settle()
+        # Still in the order shown, the video first only because Play Next goes backwards.
+        self.assertEqual(queued, [('musicVideo', '1000000011'), ('song', '1000000009'),
+                                  ('song', '1000000001')])
+        self.assertEqual((self.app.reported, self.app.toasts), ([], ['3 items will play next']))
+
+        async def refused(kind, item_id):
+            raise EngineError('engine-down', 'Chrome is not running')
+
+        player.play_next = refused
+        self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK])
+        await self.settle()
+        self.assertEqual(self.app.reported, ['engine-down'])  # not tried song by song
+
+    async def test_a_drop_on_the_player_bar_queues_runs_too(self):
+        refs = ItemRefs.for_objects([LIBRARY_TRACK, CATALOG_TRACK])
+        self.assertTrue(self.actions.queue_drop(refs))
+        await self.settle()
+        self.assertEqual(self.calls('play_later'),
+                         [('play_later', 'songs', '1000000001,1000000009')])
+
+    async def test_remove_from_playlist_is_one_write_with_undo(self):
+        tracks = self.mix_tracks()
+        self.actions.remove_entries(self.mix, [tracks[2], tracks[1]])
+        await self.settle()
+        shown = ('i.m1', 'i.m2', 'i.m1', 'i.m3')
+        self.assertEqual(self.calls('remove_playlist_entries'),
+                         [('remove_playlist_entries', 'p.pl5', shown, (1, 2))])
+        self.assertEqual(self.app.toasts, ['Removed 2 songs from “Mix”'])
+        self.assertEqual(self.app.buttons, [('Undo', 'win.item-undo-remove', 'p.pl5')])
+        self.window.actions['item-undo-remove'].activate(GLib.Variant('s', 'p.pl5'))
+        await self.settle()
+        self.assertEqual(self.calls('put_back_playlist_entries'),
+                         [('put_back_playlist_entries', 'p.pl5', ('i.m1', 'i.m3'), shown)])
+        self.assertEqual(self.app.toasts[-1], 'Put back 2 songs in “Mix”')
+        # Once: a second Undo has nothing to put back.
+        self.window.actions['item-undo-remove'].activate(GLib.Variant('s', 'p.pl5'))
+        await self.settle()
+        self.assertEqual(len(self.calls('put_back_playlist_entries')), 1)
+
+    async def test_remove_from_playlist_only_from_the_users_and_not_in_the_demo(self):
+        self.assertIsNone(self.actions.remove_entries(READ_ONLY, self.mix_tracks()))
+        self.app.demo = True
+        self.assertIsNone(self.actions.remove_entries(self.mix, self.mix_tracks()))
+        self.assertEqual(self.calls('remove_playlist_entries'), [])
+        self.app.demo = False
+        # A refusal (the playlist changed elsewhere) is reported, with no Undo.
+        self.app.engine.fail = EngineError('conflict', 'changed')
+        self.actions.remove_entries(self.mix, self.mix_tracks()[:1])
+        await self.settle()
+        self.assertEqual((self.app.reported, self.app.buttons), (['conflict'], []))
+
+    async def test_remove_from_library_asks_once_for_them_all(self):
+        chosen = [track_of(HELD_ALBUM, 0), track_of(HELD_ALBUM, 1), CATALOG_TRACK]
+        self.actions.ask_remove_from_library(chosen)
+        heading, body, confirm, done = self.confirms[0]
+        self.assertEqual((heading, confirm), ('Remove 2 Songs from Library?', '_Remove'))
+        self.assertIn('from your playlists', body)
+        self.assertEqual(self.calls('remove_from_library'), [])
+        done()
+        await self.settle()
+        # Left out at once, all of them; one write each; one toast; one sync.
+        self.assertEqual(self.app.library.hidden, [('hide', {
+            ('song', 'i.song3'), ('song', '1000000021'), ('song', 'i.song4'),
+            ('song', '1000000022')})])
+        self.assertEqual(self.calls('remove_from_library'),
+                         [('remove_from_library', 'song', 'i.song3'),
+                          ('remove_from_library', 'song', 'i.song4')])
+        self.assertEqual(self.app.toasts, ['Removed 2 songs from your library'])
+        self.assertEqual(self.app.syncs, [('quick', False, ('p.pl4',))])
+
+    async def test_remove_from_library_of_one_is_the_menus(self):
+        self.actions.ask_remove_from_library([track_of(HELD_ALBUM, 0), CATALOG_TRACK])
+        self.assertEqual(self.confirms[0][0], 'Remove from Library?')
+        self.assertIn('“Undertow”', self.confirms[0][1])
+        self.actions.ask_remove_from_library([CATALOG_TRACK])
+        self.assertEqual(len(self.confirms), 1)
+        self.assertEqual(self.app.toasts, ['These are not in your library'])
+
+    async def test_a_failure_partway_brings_back_the_rest(self):
+        engine = self.app.engine
+        removed = []
+
+        async def remove_from_library(kind, item_id):
+            if removed:
+                raise EngineError('api', 'HTTP 500')
+            removed.append(item_id)
+            return item_id
+
+        engine.remove_from_library = remove_from_library
+        self.actions.ask_remove_from_library([track_of(HELD_ALBUM, 0), track_of(HELD_ALBUM, 1),
+                                              track_of(LONE_ALBUM, 0)])
+        self.confirms[0][3]()
+        await self.settle()
+        self.assertEqual(removed, ['i.song3'])
+        self.assertEqual(self.app.library.hidden[1], ('unhide', {
+            ('song', 'i.song4'), ('song', '1000000022'), ('song', 'i.song5'),
+            ('song', '1000000023')}))
+        self.assertEqual(self.app.reported, ['api'])
+        self.assertEqual(self.app.toasts, ['Removed 1 song from your library'])
+
+    async def test_new_playlist_of_a_selection(self):
+        tracks = self.mix_tracks()[:2]
+        self.actions.new_playlist_of(tracks)
+        heading, confirm, name, description, done = self.asked[0]
+        self.assertEqual((heading, name), ('New Playlist', ''))
+        done('Picked', '')
+        await self.settle()
+        self.assertEqual(self.calls('create_playlist'), [
+            ('create_playlist', 'Picked', '', (('song', 'i.m1'), ('song', 'i.m2')), None)])
+
+    def test_add_to_playlist_menu_for_a_selection(self):
+        entries = [('p.pl1', 'Road Trip', None), ('p.pl5', 'Mix', None),
+                   ('p.fd1', 'Evenings', [('p.pl6', 'Late', None)])]
+        menu = actions_module.playlist_submenu(entries, ('playlist', 'p.pl5'),
+                                               action='selection.add-to-playlist')
+        self.assertEqual(actions_of(menu), [('selection.add-to-playlist', 'p.pl1'),
+                                            ('selection.add-to-playlist', 'p.pl6')])
+        menu = actions_module.playlist_submenu(entries, None, action='selection.add-to-playlist')
+        self.assertEqual(len(actions_of(menu)), 3)
 
 
 if __name__ == '__main__':

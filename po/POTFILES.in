@@ -49,6 +49,8 @@ src/pages/made_for_you.py
 src/pages/songs.py
 src/pages/songs.blp
 src/widgets/engine_status.py
+src/widgets/context_menu.py
+src/widgets/selection_mode.py
 src/widgets/shelf.py
 src/widgets/shelf.blp
 src/widgets/song_shelf.py

@@ -214,6 +214,23 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   No Results Found (`edit-find-symbolic`) when it leaves none, and turns a playlist's
   reordering off (`can_reorder()`, and Move Up and Move Down in its songs' menus). A grid
   takes it with `filter_words` (its label, and its count's words).
+- The Songs table and a detail page's tracks have a selection mode
+  (`widgets.selection_mode.SelectionMode`, the page's `selection_mode`; docs/decisions.md):
+  the lists stay `Gtk.NoSelection` with `single-click-activate`, and the page's activate asks
+  `selection_mode.activated(track)` first (a Ctrl+click or Shift+click, read from the
+  keyboard's modifiers, enters the mode; in it a click toggles). The selection is a
+  `selection.Selection` of Track objects: a bind reads `has(track)` (O(1)) into the row's
+  check box (`set_selected()`: TrackRow's, SongTitle's) and its description
+  (`selection_mode.row_description()`), and the page marks its bound rows again on the
+  selection's `changed`. The page gives it the tracks shown (`shown`, in order), calls
+  `prune()` after a filter or a sync, `set_available()`, `set_context()` and `set_narrow()`,
+  and leaves the mode in `do_hidden`. In the mode the header bar's title is the count
+  (HeaderTitle held), Cancel replaces Select, Sort and the filter's button (`hide_button()`)
+  and Back are left out, the artist and album links are inert (`track_links.set_inert()`), a
+  drag of a selected row carries the selection (`context_menu.set_drag_objects()`, its
+  icon a count), and a playlist does not reorder. Its keys are the window's
+  (`keyboard.selection_key()`, before the playback keys), handed to the page that holds the
+  focus (`focused_track()`, `selection_mode.key()`).
 
 ## HIG, style and icons
 
@@ -266,7 +283,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   and `MOVE_DOWN` (Alt+Up, Alt+Down on the focused song: `keyboard.move_step()`, asked by the
   page's own key controller), the window's `VOLUME_UP` and `VOLUME_DOWN` (Ctrl+Up, Ctrl+Down:
   `keyboard.volume_step()`, the bar's volume button stepped and announced) and `sections()`
-  (the Keyboard Shortcuts dialog); tests/test_shortcuts.py checks that the dialog lists every
+  (the Keyboard Shortcuts dialog), and a track list's selection keys (`SELECT_TOGGLE`,
+  `SELECT_RANGE`, `SELECT_ALL`, `SELECT_NONE`, `LEAVE_SELECTION`: `keyboard.selection_key()`,
+  asked by the window's key controller before the playback keys, so Space on a song selects
+  it in the mode); tests/test_shortcuts.py checks that the dialog lists every
   key, and that no accelerator is a HIG standard one the app does not implement (Ctrl+N is
   "New": New Playlist). `src/keyboard.py` decides which action a key runs
   (`playback_action()`, `tab_action()`, `volume_step()`, and `search_target()`: Ctrl+F's

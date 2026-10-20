@@ -19,6 +19,10 @@ actions, the menus that offer them, and what a drop on the sidebar or the player
     actions.move_to_folder(obj, folder_id) # a playlist (or folder) into a folder, at once
     actions.new_folder(parent_id)          # a folder named in a dialog ('root': top level)
     actions.move_in_playlist(playlist, 3, 1)   # its 4th song 2nd (playlist_order.py)
+    actions.queue_objects(tracks, later=False)  # a selection's Play Next (or Later)
+    actions.remove_entries(playlist, tracks)    # a selection's Remove from Playlist, Undo
+    actions.ask_remove_from_library(tracks)     # one confirmation, then all of them
+    actions.new_playlist_of(tracks)             # New Playlist… holding them
 
 The actions, each on the window (win.*) with a GLib.Variant target "(ss)", the (kind, id) of
 what it acts on (an Item's kind and id, or 'song' and a Track's id):
@@ -66,7 +70,17 @@ named in a dialog and made beside it (Move to Folder's New Folder…); item-remo
 of the queue (Player.remove_from_queue); item-move-in-playlist, "(ssii)" (playlist id, track
 id, the track's index, -1 or 1): Move Up or Move Down, one place in a playlist of the user's
 (playlist_order.PlaylistOrder: shown at once, written after a pause, so a burst is one
-write); item-undo-reorder, "s" (playlist id), the toast's Undo of a new order.
+write); item-undo-reorder, "s" (playlist id), the toast's Undo of a new order;
+item-undo-remove, "s" (playlist id), the toast's Undo of a selection's Remove from Playlist
+(the entries put back in one write, unless the playlist changed since).
+
+A track list's selection (widgets/selection_mode.py) acts through the methods above, the
+selected tracks in the order shown: Play Next and Play Later queue each run of songs as one
+`songs` command (queue_commands(), as a drop on the player bar does too; one song at a time
+when MusicKit refuses the list); Add to Playlist is add_items_to_playlist(); Remove from
+Playlist is one write of the entries kept (Engine.remove_playlist_entries()); Remove from
+Library asks once and takes them out one after the other, hidden at once, one toast and one
+sync after.
 
 A target names an object the menu was built for (remembered, the last REMEMBERED of them)
 or one the library has; failing both, the target's kind and id are used as they are. Each
@@ -169,6 +183,8 @@ LISTING_LAG = 2
 
 # How many of the objects menus were built for are remembered for their actions.
 REMEMBERED = 64
+# The songs one queue command (Play Next, Play Later of several) sends at most.
+QUEUE_BATCH = 100
 
 WEB = 'https://music.apple.com'
 # The hosts of Apple Music's pages: the only addresses the app opens or copies.
@@ -291,6 +307,35 @@ def queue_targets(refs):
     return targets if targets and None not in targets else None
 
 
+def queue_commands(targets):
+    """The queue commands that queue `targets` ((kind, id) as queue_target() gives them), in
+    order: a run of songs one ('songs', 'id,id,…') command of at most QUEUE_BATCH (the
+    bridge's queueOptions splits it, as a restored session's queue is set), a song alone
+    ('song', id), anything else (a music video, an album, a playlist) its own."""
+    commands, run = [], []
+
+    def end_run():
+        for start in range(0, len(run), QUEUE_BATCH):
+            batch = run[start:start + QUEUE_BATCH]
+            commands.append(('song', batch[0]) if len(batch) == 1
+                            else ('songs', ','.join(batch)))
+        run.clear()
+
+    for kind, item_id in targets:
+        if kind == 'song':
+            run.append(item_id)
+            continue
+        end_run()
+        commands.append((kind, item_id))
+    end_run()
+    return commands
+
+
+def queued_count(commands):
+    """How many items queue_commands() `commands` queue."""
+    return sum(len(item_id.split(',')) if kind == 'songs' else 1 for kind, item_id in commands)
+
+
 def queue_message(title, later, count=1):
     """The toast after Play Next or Play Later (`later`) of one item called `title`, or of
     `count` of them."""
@@ -361,6 +406,35 @@ def added_message(count, playlist='', new=False):
                         count).format(count=count, playlist=playlist)
     return ngettext('Added {count} song to the playlist', 'Added {count} songs to the playlist',
                     count).format(count=count)
+
+
+def removed_message(count, playlist=''):
+    """The toast after `count` songs (a selection's) were taken out of the playlist named
+    `playlist`."""
+    if playlist:
+        return ngettext('Removed {count} song from “{playlist}”',
+                        'Removed {count} songs from “{playlist}”',
+                        count).format(count=count, playlist=playlist)
+    return ngettext('Removed {count} song from the playlist',
+                    'Removed {count} songs from the playlist', count).format(count=count)
+
+
+def removals_words(count):
+    """(heading, body) of the confirmation before Remove from Library takes out `count`
+    songs (a selection's), and the toast once they are gone."""
+    heading = ngettext('Remove {count} Song from Library?', 'Remove {count} Songs from Library?',
+                       count).format(count=count)
+    body = ngettext('The song will be removed from your library and from your playlists on '
+                    'all your devices.',
+                    'The songs will be removed from your library and from your playlists on '
+                    'all your devices.', count)
+    return heading, body
+
+
+def library_removed_message(count):
+    """The toast once `count` songs (a selection's) were taken out of the library."""
+    return ngettext('Removed {count} song from your library',
+                    'Removed {count} songs from your library', count).format(count=count)
 
 
 def station_target(obj):
@@ -724,7 +798,7 @@ def folder_path(titles):
     return path
 
 
-def playlist_submenu(entries, named):
+def playlist_submenu(entries, named, action=None):
     """The Add to Playlist items for `entries` ((id, title, children), as
     ItemActions.playlists() lists them), adding the song or video `named` ((kind, id)), or
     an album's or a playlist's songs, to the playlist chosen: the top level's playlists,
@@ -732,8 +806,19 @@ def playlist_submenu(entries, named):
     another after that one's own playlists. No folder is a submenu: a Gtk.PopoverMenu names
     a submenu's page by its label, and two of one name (a folder in Move to Folder too, two
     Untitled Folders) would open one page (docs/decisions.md). A playlist is not offered its
-    own songs (nor a folder holding only it)."""
+    own songs (nor a folder holding only it). With `action` (a full action name that takes
+    the playlist's id, "s": a selection's Add to Playlist), each item runs that instead;
+    `named` is then only what is not offered (('playlist', id), or None)."""
     menu = Gio.Menu()
+
+    def item_for(entry_id, title):
+        label = mnemonic_escaped(title or _('Untitled Playlist'))
+        if action is None:
+            return menu_item('item-add-to-playlist',
+                             GLib.Variant('(sss)', (entry_id, *named)), label=label)
+        item = Gio.MenuItem.new(label, None)
+        item.set_action_and_target_value(action, GLib.Variant('s', entry_id))
+        return item
 
     def add(entries, path):
         section = Gio.Menu()
@@ -741,10 +826,8 @@ def playlist_submenu(entries, named):
         for entry_id, title, children in entries:
             if children is not None:
                 folders.append((children, (*path, title)))
-            elif tuple(named) != ('playlist', entry_id):
-                section.append_item(menu_item(
-                    'item-add-to-playlist', GLib.Variant('(sss)', (entry_id, *named)),
-                    label=mnemonic_escaped(title or _('Untitled Playlist'))))
+            elif named is None or tuple(named) != ('playlist', entry_id):
+                section.append_item(item_for(entry_id, title))
         if section.get_n_items():
             # A section's header is plain text, not a mnemonic label: the name as it is.
             menu.append_section(folder_path(path) if path else None, section)
@@ -1000,6 +1083,9 @@ class ItemActions:
         self._ratings = {}  # rating_target -> 1, 0 or -1, as the engine last said
         self._menu_rated = None  # the rating target of the last menu built
         self._adding = set()  # (playlist id, what) of each add of many songs under way
+        # playlist id -> (the ids kept, the entries before, how many went) of a selection's
+        # Remove from Playlist, for its toast's Undo
+        self._removed = {}
         app.engine.connect('rated', self._on_rated)
         handlers = {
             'item-play': self._on_play,
@@ -1031,6 +1117,7 @@ class ItemActions:
         self._add('item-remove-from-queue', QUEUE_ENTRY_TARGET, self._on_remove_from_queue)
         self._add('item-move-in-playlist', MOVE_TARGET, self._on_move_in_playlist)
         self._add('item-undo-reorder', GLib.VariantType.new('s'), self._on_undo_reorder)
+        self._add('item-undo-remove', GLib.VariantType.new('s'), self._on_undo_remove)
         self.playlist_order = PlaylistOrder(app, refresh=self._refresh_playlist)
 
     def _add(self, name, parameter_type, handler):
@@ -1140,6 +1227,7 @@ class ItemActions:
         self._ratings.clear()
         self._menu_rated = None
         self._remembered.clear()
+        self._removed.clear()
         self.playlist_order.forget()
 
     async def _refine(self, rated):
@@ -1642,19 +1730,185 @@ class ItemActions:
         targets = queue_targets(refs)
         if targets is None:
             return False
-        player = self.app.player
-
-        async def queue():
-            if next_up:
-                for kind, item_id in reversed(targets):  # each goes in front of the last
-                    await player.play_next(kind, item_id)
-            else:
-                for kind, item_id in targets:
-                    await player.play_later(kind, item_id)
-
         message = queue_message(refs.refs[0].title, not next_up, len(targets))
-        self._run(queue, (), message, ensure=False)
+        self._run(self._send_queue, (queue_commands(targets), not next_up), message,
+                  ensure=False)
         return True
+
+    async def _send_queue(self, commands, later):
+        """Queue queue_commands() `commands` in order: at the end (`later`), or after the item
+        playing, each Play Next in front of the one after it. A list of songs MusicKit refuses
+        ('api') is queued one song at a time instead. Raises the engine's EngineError."""
+        player = self.app.player
+        method = player.play_later if later else player.play_next
+        for kind, item_id in (commands if later else list(reversed(commands))):
+            try:
+                await method(kind, item_id)
+            except EngineError as error:
+                if kind != 'songs' or error.code != 'api':
+                    raise
+                log.info('a list of songs was not queued (%s): one at a time instead', error)
+                ids = item_id.split(',')
+                for song_id in (ids if later else list(reversed(ids))):
+                    await method('song', song_id)
+
+    # -- a selection's actions (widgets/selection_mode.py) -----------------------------------
+
+    def queue_objects(self, objects, later=False):
+        """Play Next (or, `later`, Play Later) of several songs and music videos, a
+        selection's in the order shown: their queue targets as queue_commands() (a run of
+        songs one command), one toast that counts them. The task, or None when none can be
+        queued."""
+        targets = [target for target in map(queue_target, objects) if target is not None]
+        if not targets:
+            self.app.toast(_('This cannot be queued'))
+            return None
+        commands = queue_commands(targets)
+        title = objects[0].title if len(objects) == 1 else ''
+        message = queue_message(title, later, queued_count(commands))
+        return self._run(self._send_queue, (commands, later), message, ensure=False)
+
+    def new_playlist_of(self, objects):
+        """New Playlist… for a selection: a playlist named in a dialog holding the songs and
+        music videos `objects` in their order (create_playlist(objects=…)), shown once made.
+        The dialog."""
+        objects = list(objects)
+        return self.ask_name(
+            _('New Playlist'), _('_Create'), '', '',
+            lambda name, description: self.create_playlist(name, description, objects=objects,
+                                                           show=True))
+
+    def remove_entries(self, playlist, tracks):
+        """A selection's Remove from Playlist: the entries `tracks` (Tracks of the playlist
+        Item `playlist`, one of the user's, by their places in it: Track.index) taken out
+        in one write (Engine.remove_playlist_entries()), the order pending written first; a
+        toast that counts them, with Undo (item-undo-remove), then the playlist read again.
+        The task, whose result says whether they went, or None (the demo library, or not a
+        playlist of the user's)."""
+        if not is_manageable(playlist) or playlist.kind != 'playlist':
+            return None
+        if self.app.refuse_in_demo():
+            return None
+        tracks = list(tracks)
+
+        async def run():
+            try:
+                await self.app.player.ensure_engine()
+                await self.playlist_order.flush(playlist.id)
+                shown = playlist.track_ids() or []
+                positions = sorted({track.index for track in tracks
+                                    if 0 <= track.index < len(shown)
+                                    and shown[track.index] == track.id})
+                if not positions:
+                    return False
+                before = await self.engine.remove_playlist_entries(playlist.id, shown,
+                                                                   positions)
+            except EngineError as error:
+                self.app.report(error)
+                return False
+            gone = set(positions)
+            kept = [entry['id'] for place, entry in enumerate(before) if place not in gone]
+            self._removed[playlist.id] = (kept, before, len(positions))
+            self.app.toast(removed_message(len(positions), playlist.title or ''), _('Undo'),
+                           'win.item-undo-remove', GLib.Variant('s', playlist.id))
+            await self._follow_tracks(playlist.id)
+            return True
+
+        return self.app.spawn(run())
+
+    def _on_undo_remove(self, _action, parameter):
+        """The toast's Undo after a selection's Remove from Playlist: the entries put back
+        as they were, in one write, unless the playlist changed since (reported). The task,
+        or None (nothing to put back)."""
+        playlist_id = parameter.get_string()
+        removed = self._removed.pop(playlist_id, None)
+        if removed is None:
+            return None
+        kept, before, count = removed
+        playlist = self.library.by_id('playlist', playlist_id)
+        name = playlist.title if playlist is not None else ''
+        if name:
+            message = ngettext('Put back {count} song in “{playlist}”',
+                               'Put back {count} songs in “{playlist}”',
+                               count).format(count=count, playlist=name)
+        else:
+            message = ngettext('Put back {count} song', 'Put back {count} songs',
+                               count).format(count=count)
+        return self._run(self.engine.put_back_playlist_entries, (playlist_id, kept, before),
+                         message, after=lambda: self._follow_tracks(playlist_id),
+                         playlist=playlist_id)
+
+    def removals(self, objects):
+        """What a selection's Remove from Library takes: (obj, removal_target) for each of
+        `objects` the library holds, in order, each library item once."""
+        found, seen = [], set()
+        for obj in objects:
+            target = self.removal_target(obj)
+            if target is not None and target not in seen:
+                seen.add(target)
+                found.append((obj, target))
+        return found
+
+    def ask_remove_from_library(self, objects):
+        """A selection's Remove from Library…: of `objects`, those the library holds
+        (removals()) taken out once one dialog confirms (removal_words() for one,
+        removals_words() for several). The dialog, or None when none is in the library."""
+        found = self.removals(objects)
+        if not found:
+            self.app.toast(_('These are not in your library'))
+            return None
+        if len(found) == 1:
+            obj, target = found[0]
+            heading, body = removal_words(target[0], obj.title or '')
+            return self.ask_confirm(heading, body, _('_Remove'),
+                                    lambda: self.remove_from_library(obj, target))
+        heading, body = removals_words(len(found))
+        return self.ask_confirm(heading, body, _('_Remove'),
+                                lambda: self.remove_all_from_library(found))
+
+    def remove_all_from_library(self, found):
+        """Take several items out of the library (`found`, removals()' pairs): the library
+        leaves them all out at once (Library.hide), Apple is asked for each in turn, and one
+        toast counts those it took; a failure brings back the rest (Library.unhide) and is
+        reported. The pages of what went are left, and once Apple's read of the last no
+        longer has it, one quick sync reads the songs and the playlists that held any of
+        them (_follow_removal's, once for all). The task, whose result says whether all
+        went, or None (the demo library)."""
+        if self.app.refuse_in_demo():
+            return None
+        parts = [(target, *self._removal_refs(obj, *target)) for obj, target in found]
+
+        async def run():
+            self.app.spawn(self.library.hide(set().union(*(part[1] for part in parts))))
+            done = 0
+            try:
+                await self.app.player.ensure_engine()
+                for (kind, library_id), *_refs in parts:
+                    await self.engine.remove_from_library(kind, library_id)
+                    done += 1
+            except EngineError as error:
+                self.app.spawn(self.library.unhide(set().union(
+                    *(part[1] for part in parts[done:]))))
+                self.app.report(error)
+            if not done:
+                return False
+            removed = parts[:done]
+            self.app.toast(library_removed_message(done))
+            gone = set().union(*(part[3] for part in removed))
+            if gone:
+                self.window.leave(gone)
+            kind, library_id = removed[-1][0]
+            if await self.wait_removed(kind, library_id):
+                await asyncio.sleep(LISTING_LAG)
+            holding = set().union(*(set(part[2]) for part in removed))
+            task = self.app.start_sync(quick=True,
+                                       videos=any(part[0][0] == 'video' for part in removed),
+                                       tracks_of=tuple(sorted(holding)))
+            if task is not None:
+                await asyncio.wait([task])
+            return done == len(parts)
+
+        return self.app.spawn(run())
 
     def drop_new_playlist(self, refs):
         """Songs, music videos or albums (a library.ItemRefs of nothing else) dropped on

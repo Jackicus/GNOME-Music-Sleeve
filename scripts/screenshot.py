@@ -18,7 +18,7 @@
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
                                     remove-from-library|credits] [--song N]
                           [--more-options] [--main-menu] [--sidebar-menu KEY [--submenu NAME]]
-                          [--drop-target KEY] [--drop-line N] [--scroll PX]
+                          [--drop-target KEY] [--drop-line N] [--scroll PX] [--select N]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
 through scripts/headless.sh, so the window opens on a private display and never on
@@ -130,6 +130,9 @@ sidebar's drop-enter calls): the drop highlight, which no headless script can dr
 --drop-line N draws the insertion line a drag of one of its songs shows on a playlist's page
 (--open playlist:ID, one of the user's), above its song at index N (0: the first; -1: below
 the last), as DetailPage.show_insertion() draws it.
+--select N puts the track list of the page shown (Songs, an album's or a playlist's) in its
+selection mode with its first N songs selected (0: the mode, none selected), as the header
+bar's Select and clicks on them would: the check boxes, the count and the action bar.
 --scroll PX scrolls the page shown down by PX pixels before the shot (its first
 scrolled window that scrolls vertically): the rest of a page taller than the
 virtual monitor, which a --size cannot show.
@@ -227,6 +230,8 @@ parser.add_argument('--drop-line', metavar='N', type=int,
                     help="the insertion line above the playlist's song N (-1: below the last)")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
+parser.add_argument('--select', metavar='N', type=int,
+                    help="the page's track list in its selection mode, its first N selected")
 parser.add_argument('--focus', action='store_true',
                     help="give the keyboard focus to the page's first tile or row")
 parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[],
@@ -305,6 +310,7 @@ sheet_opened = False
 searched = False
 seen_all = False
 filtered = False
+selected = False
 menu_opened = False
 banner_shown = False
 scrolled = False
@@ -386,6 +392,17 @@ def filter_page(window):
     bar.set_search_mode(True)  # also for no text
     bar.entry.grab_focus()
     bar.entry.set_position(-1)
+
+
+def select_songs(window):
+    """--select: the page's selection mode on, its first N songs selected."""
+    page = window.navigation_view.get_visible_page()
+    mode = getattr(page, 'selection_mode', None)
+    if mode is None:
+        sys.exit('screenshot: the page shown has no track list to select in')
+    mode.start()
+    for track in mode.selectable()[:args.select]:
+        mode.selection.toggle(track)
 
 
 def catalog_item(kind, item_id):
@@ -763,7 +780,7 @@ def shoot():
 
 def _shoot():
     global opened, sheet_opened, searched, menu_opened, banner_shown, preferences, dialog
-    global seen_all, filtered
+    global seen_all, filtered, selected
     global scrolled, focused, drop_line_scrolled
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
@@ -860,6 +877,11 @@ def _shoot():
         window.sign_in_banner.set_title(sign_in_title(args.banner == 'expired'))
         window.sign_in_banner.set_revealed(True)
         GLib.timeout_add(600, shoot)  # laid out under the header bar
+        return GLib.SOURCE_REMOVE
+    if args.select is not None and not selected:
+        selected = True
+        select_songs(window)
+        GLib.timeout_add(800, shoot)  # the check boxes and the bar laid out
         return GLib.SOURCE_REMOVE
     if args.scroll and not scrolled:
         scrolled = True

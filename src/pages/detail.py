@@ -56,6 +56,12 @@ the playlist's. A filter that leaves none shows No Results Found in the status b
 new count is announced. Go to Current Song (reveal_playing()) clears a filter that hides the
 song playing.
 
+The tracks have the selection mode of the track lists (widgets/selection_mode.py): Select
+in the header bar, a Ctrl+click or Shift+click on a song, Ctrl+A; the hero, the footer and the
+suggestions are never selected (the mode selects among _selectable(), the tracks shown), a
+playlist of the user's offers Remove from Playlist, and while selecting no song moves
+(can_reorder()). The bar's narrow layout follows the hero's narrow breakpoints.
+
 A suggested song clicked plays in full, as a track row's song does, or, with the
 `preview-suggestions` setting, Apple's 30-second preview of it (Player.start_preview(): the
 queue pauses for it), clicked again to stop; a song without a preview plays in full. The
@@ -78,6 +84,7 @@ from .. import keyboard
 from ..backend.errors import EngineError
 from ..library import (HELD_KINDS, TRACK_REF_KINDS, Item, ItemRefs, ShelfModel, Track,
                        drop_index)
+from ..actions import is_manageable
 from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
 from ..release import (album_artist, album_shelves, album_target, curator, footer_lines,
@@ -90,6 +97,7 @@ from ..widgets import context_menu, dnd, track_links
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
 from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
+from ..widgets.selection_mode import SelectionMode, row_description
 from ..widgets.labels import track_label
 from ..widgets.suggested_songs import SuggestedSongs
 from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader, is_playing
@@ -363,6 +371,8 @@ class DetailPage(Adw.NavigationPage):
                              nick='Table', blurb="A playlist's tracks as a table (wide)")
 
     table_breakpoint = Gtk.Template.Child()
+    hero_breakpoint = Gtk.Template.Child()
+    phone_breakpoint = Gtk.Template.Child()
     toolbar = Gtk.Template.Child()
     header_bar = Gtk.Template.Child()
     stack = Gtk.Template.Child()
@@ -474,6 +484,7 @@ class DetailPage(Adw.NavigationPage):
         self._table_header_factory = Gtk.SignalListItemFactory()
         connect_weak(self._table_header_factory, 'setup', self._on_setup_table_header)
         connect_weak(self._table_header_factory, 'bind', self._on_bind_table_header)
+        self._table_headers = set()  # the table's headers bound: room for the check boxes
         connect_weak(self.table_breakpoint, 'apply', self._on_table_apply)
         connect_weak(self.table_breakpoint, 'unapply', self._on_table_unapply)
         connect_weak(self.play_button, 'clicked', self._on_play_clicked)
@@ -484,11 +495,26 @@ class DetailPage(Adw.NavigationPage):
         connect_weak(self.more_notes_button, 'clicked', self._on_more_notes_clicked)
         self.more_button.set_create_popup_func(weak_method(self._on_more_popup))
         self._header_title = HeaderTitle(self.header_bar, self.title_label, self.scrolled_window)
+        # The tracks' selection mode (widgets/selection_mode.py): Select at the header bar's
+        # end, the batch actions in a bar under the list.
+        self.selection_mode = SelectionMode(self, self.header_bar, self.toolbar, self.list_view,
+                                            self._selectable, self._focus_tracks)
+        self.selection_mode.set_header_title(self._header_title)
+        self.header_bar.pack_end(self.selection_mode.select_button)
+        self.header_bar.pack_end(self.selection_mode.cancel_button)
+        connect_weak(self.selection_mode.selection, 'changed', self._on_selection_changed)
+        context_menu.set_drag_objects(self.list_view,
+                                      weak_method(self.selection_mode.drag_objects))
+        self._narrow = set()  # the narrow breakpoints applied: the bar's narrow layout
+        for breakpoint in (self.hero_breakpoint, self.phone_breakpoint):
+            connect_weak(breakpoint, 'apply', self._on_narrow, True)
+            connect_weak(breakpoint, 'unapply', self._on_narrow, False)
         # A playlist's filter: the bar under the header bar, the text filtering every group.
         self._text_filter = text_filter()
         self.filter_bar = FilterBar(_('Filter Songs'))
         self.toolbar.add_top_bar(self.filter_bar)
         self.header_bar.pack_end(self.filter_bar.button)
+        self.selection_mode.set_filter_bar(self.filter_bar)
         connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
         self.filter_bar.set_focus_return(self._focus_tracks)
         # Tab from the hero's last button goes on into the tracks (_on_list_key_pressed).
@@ -585,6 +611,7 @@ class DetailPage(Adw.NavigationPage):
         if self._album_answer is None:
             self._album_asked_for = None  # the same
         self._stop_preview()
+        self.selection_mode.leave()  # the mode is the page's while it shows
         self._visible = False
         self._reveal_wanted = False
         if self._reveal_task is not None and not self._reveal_task.done():
@@ -633,6 +660,7 @@ class DetailPage(Adw.NavigationPage):
             self._shelves_start = None
             self._sections.remove_all()
             self._update_state()
+            self.selection_mode.set_available(False)
             return
         self._album_artist = album_artist(item) if item.kind == 'album' else None
         self._show_hero(item)
@@ -695,6 +723,7 @@ class DetailPage(Adw.NavigationPage):
         self._sections.splice(0, self._sections.get_n_items(), sections)
         self._update_state()
         self._update_filter()
+        self._update_selection(item)
         if shown:
             self._want_more()
         if groups:
@@ -718,6 +747,7 @@ class DetailPage(Adw.NavigationPage):
         if self._suggestions_start is not None:
             self._suggestions_start = position
         self._update_filter()
+        self.selection_mode.prune()
         if bar.search and self._track_models:
             shown = self._shown_tracks()
             total = self._track_total
@@ -1241,9 +1271,14 @@ class DetailPage(Adw.NavigationPage):
         table = self._is_table()
         playing = self._playing.matches(track)
         favourite = self._library.is_favourite(track)
-        list_item.get_child().show_track(track, self._album_artist, table, playing, favourite)
+        row = list_item.get_child()
+        row.show_track(track, self._album_artist, table, playing, favourite)
+        selection = self.selection_mode.selection
+        selected = selection.has(track)
+        row.track_row.set_selected(selection.active, selected)
         list_item.set_accessible_label(self._track_label(track, table, favourite))
-        list_item.set_accessible_description(self._playing.description(track, playing))
+        list_item.set_accessible_description(row_description(
+            selection.active, selected, self._playing.description(track, playing)))
 
     def _track_label(self, track, table, favourite):
         show_artist = self._album_artist is None or track.artist != self._album_artist
@@ -1266,11 +1301,14 @@ class DetailPage(Adw.NavigationPage):
         """Mark the rows of the track playing now, and no other, when the item changed."""
         if not self._playing.update():
             return
+        selection = self.selection_mode.selection
         for list_item in self._bound:
             track = list_item.get_item()
             playing = self._playing.matches(track)
             list_item.get_child().track_row.set_playing(playing)
-            list_item.set_accessible_description(self._playing.description(track, playing))
+            list_item.set_accessible_description(row_description(
+                selection.active, selection.has(track),
+                self._playing.description(track, playing)))
 
     def _last_button(self):
         """The hero's last button that takes the focus: More Options, Add, Shuffle or Play."""
@@ -1420,14 +1458,61 @@ class DetailPage(Adw.NavigationPage):
         row = _row_of(focus) if focus is not None and focus.is_ancestor(self.list_view) else None
         return row is not None and row.track_row.context_item is self._rows.get_item(position)
 
+    # The selection mode.
+
+    def _selectable(self):
+        """The tracks shown, in order: what the selection mode selects among."""
+        tracks = []
+        for model in self._track_models:
+            tracks.extend(model.get_item(position) for position in range(model.get_n_items()))
+        return tracks
+
+    def _update_selection(self, item):
+        """Offer the mode while tracks show; which batch actions apply (Remove from Playlist
+        on a playlist of the user's, Remove from Library… on the library's album or
+        playlist); what is no longer shown leaves the selection."""
+        mode = self.selection_mode
+        mode.set_available(bool(self._track_models))
+        playlist = item if item.kind == 'playlist' and is_manageable(item) else None
+        mode.set_context(playlist, library=is_library_id(item.id or ''))
+        mode.prune()
+
+    def _on_selection_changed(self, selection):
+        """The bound rows' check boxes and descriptions, and the table header's room."""
+        for list_item in self._bound:
+            track = list_item.get_item()
+            selected = selection.has(track)
+            list_item.get_child().track_row.set_selected(selection.active, selected)
+            list_item.set_accessible_description(row_description(
+                selection.active, selected,
+                self._playing.description(track, self._playing.matches(track))))
+        for header in list(self._table_headers):
+            if header.get_child() is not None:
+                header.get_child().set_selecting(selection.active)
+
+    def _on_narrow(self, breakpoint, applied):
+        """A narrow breakpoint applied or not: the selection bar's narrow layout while either
+        is (only the last that matches applies)."""
+        if applied:
+            self._narrow.add(breakpoint)
+        else:
+            self._narrow.discard(breakpoint)
+        self.selection_mode.set_narrow(bool(self._narrow))
+
+    def focused_track(self, focus):
+        """The Track of the row with the focus `focus` in the list, or None (the window's
+        selection keys: keyboard.selection_key())."""
+        track = context_menu.focused(self.list_view, focus)
+        return track if isinstance(track, Track) else None
+
     # Moving a playlist's songs.
 
     def can_reorder(self):
         """Whether the songs shown can be moved: a playlist of the user's with its one list
         (PlaylistOrder.can_reorder()), shown in its own order (the page has no other), and
-        all of it (no filter)."""
+        all of it (no filter), and not while its selection mode is on."""
         return (self._groups == 1 and not self.filter_bar.search
-                and PlaylistOrder.can_reorder(self.item))
+                and not self.selection_mode.active and PlaylistOrder.can_reorder(self.item))
 
     def _move(self, from_index, to_index, at_once=False):
         """Move the song at from_index to to_index (ItemActions.move_in_playlist()): False
@@ -1561,6 +1646,8 @@ class DetailPage(Adw.NavigationPage):
     def _on_bind_table_header(self, _factory, header):
         # The tracks' section only: the hero's and the suggestions' have none.
         header.get_child().set_visible(isinstance(header.get_item(), Track))
+        header.get_child().set_selecting(self.selection_mode.active)
+        self._table_headers.add(header)
 
     def _on_bind_header(self, _factory, header):
         label = header.get_child()
@@ -1572,7 +1659,7 @@ class DetailPage(Adw.NavigationPage):
 
     def _on_activate(self, _list_view, position):
         track = self._rows.get_item(position)
-        if isinstance(track, Track):
+        if isinstance(track, Track) and not self.selection_mode.activated(track):
             self.get_root().play_request(track.play, start_with=track.index,
                                          start_id=track.id)
 

@@ -408,6 +408,28 @@ def reordered_entries(listed, shown, order):
     return [entries[position] for position in order]
 
 
+def kept_entries(listed, shown, positions):
+    """(the entries kept, the entries removed) for some of a playlist's entries taken out:
+    the entries Apple lists now (playlist_entries()) less those at `positions`, positions in
+    `shown`, the ids of the tracks as the app showed them when they were chosen, so that of a
+    song held twice only the entry chosen goes. EngineError('conflict') when Apple's list is
+    not `shown` any more, as for a new order (reordered_entries()); EngineError('usage') for
+    no positions, or one that is not a place in `shown` (or is there twice)."""
+    shown = [str(track_id) for track_id in shown]
+    positions = list(positions)
+    if not positions or len(set(positions)) != len(positions) or any(
+            isinstance(position, bool) or not isinstance(position, int)
+            or not 0 <= position < len(shown) for position in positions):
+        raise EngineError('usage', 'a removal must name places in the playlist, once each')
+    entries = playlist_entries(listed)
+    if [entry['id'] for entry in entries] != shown:
+        raise EngineError('conflict', f'Apple lists {len(entries)} tracks, not the {len(shown)} '
+                                      'the removal was chosen from, as they were')
+    gone = set(positions)
+    return ([entry for position, entry in enumerate(entries) if position not in gone],
+            [entries[position] for position in sorted(gone)])
+
+
 def next_offset(link):
     """The offset Apple's `next` link asks for (a search section's
     '/v1/catalog/gb/search?offset=25&term=…'), or None: no link, or one without an offset."""

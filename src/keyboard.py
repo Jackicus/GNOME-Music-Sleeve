@@ -18,11 +18,14 @@ field) are the window's own for the same reason, and tab_action() decides them a
     name = tab_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
     step = move_step(keyval, mods, type(focus), dialog_open, in_popover)   # -1, 1 or None
     step = volume_step(keyval, mods, type(focus), dialog_open, in_popover)  # -1, 1 or None
+    name = selection_key(keyval, mods, type(focus), dialog_open, in_popover, active, on_row)
 
 move_step() is a playlist page's (pages/detail.py): Alt+Up or Alt+Down (shortcuts.MOVE_UP,
 MOVE_DOWN) moves the focused song one place, on the same terms. volume_step() is the
 window's: Ctrl+Up or Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN) steps the volume, except
-where those keys are the focused widget's own (VOLUME_OWNERS).
+where those keys are the focused widget's own (VOLUME_OWNERS). selection_key() is a track
+list's selection mode's (widgets/selection_mode.py), asked by the window before the playback
+keys, so that in the mode Space on a song selects it rather than playing or pausing.
 
     target = search_target(page)   # 'filter' or 'search': where Ctrl+F goes
 
@@ -60,6 +63,16 @@ MOVE_KEYS = parse_keys({-1: (shortcuts.MOVE_UP, '<alt>KP_Up'),
 # The volume keys, by (keyval, modifiers) -> the step (the keypad's arrows too).
 VOLUME_KEYS = parse_keys({-1: (shortcuts.VOLUME_DOWN, '<primary>KP_Down'),
                           1: (shortcuts.VOLUME_UP, '<primary>KP_Up')})
+
+# A track list's selection mode's keys, by (keyval, modifiers) -> what they do (the keypad's
+# Space too).
+SELECTION_KEYS = parse_keys({
+    'toggle': (shortcuts.SELECT_TOGGLE, 'KP_Space'),
+    'extend': (shortcuts.SELECT_RANGE, '<shift>KP_Space'),
+    'select-all': (shortcuts.SELECT_ALL,),
+    'select-none': (shortcuts.SELECT_NONE,),
+    'leave': (shortcuts.LEAVE_SELECTION,),
+})
 
 # The primary menu's key (F10), which the window handles itself when the button is hidden.
 MAIN_MENU_KEY = Gtk.accelerator_parse(shortcuts.MAIN_MENU)[1:]
@@ -135,6 +148,29 @@ def volume_step(keyval, mods, focus_type, dialog_open, in_popover):
     if issubclass(focus_type, TYPING) or issubclass(focus_type, VOLUME_OWNERS):
         return None
     return step
+
+
+def selection_key(keyval, mods, focus_type, dialog_open, in_popover, active, on_row):
+    """What a key press does in a track list's selection mode (SELECTION_KEYS: 'toggle',
+    'extend', 'select-all', 'select-none', 'leave'), or None for the key to go on as usual:
+    `active`, the focused page's list is in its mode; `on_row`, the focus is on one of its
+    songs. Space and Shift+Space only on a song in the mode (a focused button keeps Space,
+    and outside the mode it plays or pauses); Ctrl+A in the mode, or on a song (it starts
+    the mode); Ctrl+Shift+A and Escape in the mode only. Never while the focus is typed into
+    (Ctrl+A selects the text, Escape closes the filter first), a dialog is open or the focus
+    is in a popover."""
+    name = SELECTION_KEYS.get((Gdk.keyval_to_lower(keyval), int(mods)))
+    if name is None or dialog_open or in_popover or issubclass(focus_type, TYPING):
+        return None
+    if name in ('toggle', 'extend'):
+        if not active or not on_row or issubclass(focus_type, SPACE_OWNERS):
+            return None
+    elif name == 'select-all':
+        if not active and not on_row:
+            return None
+    elif not active:
+        return None
+    return name
 
 
 def search_target(page):

@@ -64,6 +64,9 @@ UI awaits.
     await engine.edit_playlist(playlist_id, name=None, description=None)
     await engine.delete_playlist(playlist_id)
     await engine.remove_from_playlist(playlist_id, track_id, index)   # that one entry
+    await engine.remove_playlist_entries(playlist_id, shown, positions)   # several, in one
+                                 # write: the entries Apple had, for put_back_playlist_entries
+    await engine.put_back_playlist_entries(playlist_id, kept, entries)   # an Undo of that
     await engine.reorder_playlist(playlist_id, shown, order)   # its tracks in a new order:
                                  # `order` positions in `shown`, the ids as the app had them
     await engine.playlist_track_ids(playlist_id)   # its tracks' ids as Apple lists them now
@@ -1911,6 +1914,54 @@ class Engine(GObject.Object):
         del kept[position]
         await client.bridge('replacePlaylistTracks', playlist_id, kept)
         return True
+
+    async def _playlist_listing(self, playlist_id):
+        """A library playlist's tracks as Apple lists them now, every page (none for Apple's
+        404, its answer for a playlist without tracks)."""
+        try:
+            return await self.api_pages(f'/v1/me/library/playlists/{playlist_id}/tracks')
+        except EngineError as e:
+            if e.status != 404:
+                raise
+            return []
+
+    async def remove_playlist_entries(self, playlist_id, shown, positions):
+        """Several entries out of a library playlist in one write: those at `positions`, places
+        in `shown`, the ids of its tracks as the app showed them when they were chosen (a
+        selection's Remove from Playlist).
+
+        The tracks are read first, as Apple has them now; nothing is written when Apple's list
+        is not `shown` any more (EngineError('conflict'), api.kept_entries()). The entries kept
+        are put back whole (PUT …/tracks, as a reorder writes them), so of a song held twice
+        only the entry chosen goes; when none is kept, each song goes the way the web player
+        removes one (DELETE …/tracks?ids[<type>]=<id>&mode=all), never an empty PUT. Answers
+        every entry Apple had before ({id, type}, in order), which
+        put_back_playlist_entries() writes back for an Undo."""
+        playlist_id = _library_playlist(playlist_id)
+        client = await self._require_signed_in('edit playlists')
+        listed = await self._playlist_listing(playlist_id)
+        kept, removed = api.kept_entries(listed, shown, positions)
+        before = api.playlist_entries(listed)
+        if kept:
+            await client.bridge('replacePlaylistTracks', playlist_id, kept)
+            return before
+        for entry in {(entry['type'], entry['id']): entry for entry in removed}.values():
+            await client.bridge('removeFromPlaylist', playlist_id, entry['type'], entry['id'])
+        return before
+
+    async def put_back_playlist_entries(self, playlist_id, kept, entries):
+        """Undo a removal of several entries: the playlist's tracks made `entries` again (the
+        {id, type} remove_playlist_entries() answered) in one PUT, when Apple still lists the
+        ones it kept (`kept`, their ids in order); EngineError('conflict') when the playlist
+        changed since, and nothing is written."""
+        playlist_id = _library_playlist(playlist_id)
+        client = await self._require_signed_in('edit playlists')
+        listed = await self._playlist_listing(playlist_id)
+        if [str(entry.get('id') or '') for entry in listed] != [str(i) for i in kept]:
+            raise EngineError('conflict', 'the playlist changed since the songs were removed')
+        await client.bridge('replacePlaylistTracks', playlist_id,
+                            [{'id': str(entry['id']), 'type': str(entry['type'])}
+                             for entry in entries])
 
     async def playlist_track_ids(self, playlist_id):
         """The ids of a library playlist's tracks as Apple lists them now, in order (none

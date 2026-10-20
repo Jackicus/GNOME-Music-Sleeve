@@ -259,6 +259,27 @@ def classes():
             self.moved = []  # (playlist id, from, to, at_once) per move_in_playlist()
             self.favourites = []  # (artist Item, favourite, its task) per favourite_artist()
             self.ratings = {}  # what known_rating() answers, by (kind, id)
+            self.batches = []  # (what, the objects, …) per selection's action of the bar
+
+        # A selection's batch actions (widgets/selection_mode.py), recorded.
+
+        def queue_objects(self, objects, later=False):
+            self.batches.append(('queue', list(objects), later))
+
+        def add_items_to_playlist(self, playlist_id, objects):
+            self.batches.append(('add', list(objects), playlist_id))
+
+        def new_playlist_of(self, objects):
+            self.batches.append(('new-playlist', list(objects)))
+
+        def remove_entries(self, playlist, tracks):
+            self.batches.append(('remove-from-playlist', list(tracks), playlist.id))
+
+        def ask_remove_from_library(self, objects):
+            self.batches.append(('remove-from-library', list(objects)))
+
+        def playlists(self):
+            return [('l.playlist009', 'Invented Other Playlist', None)]
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
             self.added.append((playlist_id, song_id, title))
@@ -319,6 +340,7 @@ def classes():
             self.item_actions.moved = []
             self.item_actions.favourites = []
             self.item_actions.ratings = {}
+            self.item_actions.batches = []
             self.opened = []
             self.artist_pages = []  # open_artist_page()'s, Apple Music's pages of artists
             self.shelves_opened = []

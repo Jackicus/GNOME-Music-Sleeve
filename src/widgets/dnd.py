@@ -111,7 +111,9 @@ def attach_source(widget, find, actions=Gdk.DragAction.COPY,
                   phase=Gtk.PropagationPhase.BUBBLE):
     """Make widget a drag source of library.ItemRefs. When a drag starts, find(x, y) (the
     pointer in widget's coordinates) answers (refs, icon_widget), or None when nothing there
-    can be dragged; the icon is icon_widget as it looks, held at the pointer. Not from a
+    can be dragged; the icon is icon_widget as it looks, held at the pointer. It may answer
+    (refs, icon_widget, label) instead: the icon is then a pill of that text ("3 Songs", a
+    selection's drag: `.drag-count`). Not from a
     touchscreen, where a drag scrolls (a long press opens the menu instead). While the drag
     lasts, current() is its refs. `phase` CAPTURE lets the source see the press before the
     widget's children's gestures (a row's click), which it cancels once the drag starts. The
@@ -121,22 +123,26 @@ def attach_source(widget, find, actions=Gdk.DragAction.COPY,
     hold the widget (weak_method(), or one that finds it through a GObject weak reference).
     """
     source = Gtk.DragSource(actions=actions, propagation_phase=phase)
-    prepared = [None]  # the refs prepare() found, for drag-begin
+    prepared = [None, None]  # the refs prepare() found, for drag-begin, and the icon's text
 
     def on_prepare(source, x, y):
-        prepared[0] = None
+        prepared[:] = [None, None]
         device = source.get_current_event_device()
         if device is not None and device.get_source() == Gdk.InputSource.TOUCHSCREEN:
             return None
         found = find(x, y)
         if not found:
             return None
-        refs, icon_widget = found
+        refs, icon_widget = found[:2]
         if refs is None:
             return None
+        label = found[2] if len(found) > 2 else None
         hot_x, hot_y = 0, 0
         owner = source.get_widget()
-        if icon_widget is not None and owner is not None:
+        if label:
+            prepared[1] = label
+            source.set_icon(None, 0, 0)  # an earlier drag's row: the count is drag-begin's
+        elif icon_widget is not None and owner is not None:
             point = Graphene.Point()
             point.x, point.y = x, y
             ok, local = owner.compute_point(icon_widget, point)
@@ -146,13 +152,16 @@ def attach_source(widget, find, actions=Gdk.DragAction.COPY,
         prepared[0] = refs
         return provider(refs)
 
-    def on_begin(source, _drag):
+    def on_begin(source, drag):
         _set_current(prepared[0], source.get_actions())
+        if prepared[1]:
+            Gtk.DragIcon.get_for_drag(drag).set_child(
+                Gtk.Label(label=prepared[1], css_classes=['osd', 'drag-count']))
 
     def on_end(_source, *_args):
         if _current is prepared[0]:
             _set_current(None)
-        prepared[0] = None
+        prepared[:] = [None, None]
 
     def on_cancel(source, *args):
         on_end(source)
