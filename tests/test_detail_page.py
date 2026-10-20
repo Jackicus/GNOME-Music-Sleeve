@@ -901,6 +901,36 @@ class ArtistPageTest(PageTestCase):
         self.assertEqual(page.born_heading.get_label(), 'Born')
         self.assertTrue(page.play_button.get_visible())  # the catalog artist's top songs
 
+    async def test_the_portrait_without_a_banner(self):
+        page = await self.artist_page(dict(artist([]), catalogId='42'), artist_answer())
+        self.assertTrue(page.avatar.get_visible())
+        self.assertFalse(page.banner.get_visible())
+        self.assertFalse(page.hero.has_css_class('on-banner'))
+        self.assertEqual(page.content_box.get_margin_top(), 24)
+
+    async def test_a_banner_heads_the_page(self):
+        from gi.repository import Gtk
+
+        banner = {'url': None, 'art': '/invented/banner.jpg', 'crop': 'vf', 'width': 1920,
+                  'height': 640, 'color': '#102030'}
+        page = await self.artist_page(dict(artist([]), catalogId='42'),
+                                      artist_answer(banner=banner))
+        self.assertTrue(page.banner.get_visible())
+        self.assertEqual(page.banner.banner, banner)
+        self.assertFalse(page.avatar.get_visible())
+        self.assertTrue(page.hero.has_css_class('on-banner'))
+        self.assertTrue(page.more_button.has_css_class('osd'))
+        self.assertEqual(page.hero_row.get_valign(), Gtk.Align.END)
+        self.assertEqual(page.content_box.get_margin_top(), 0)  # edge to edge
+        # The name and buttons over its foot, inside it, the banner at least as tall as the
+        # banner's height for its width.
+        self.assertTrue(await self.until(lambda: page.banner.get_height() > 0))
+        found, bounds = page.hero_row.compute_bounds(page.hero)
+        self.assertTrue(found)
+        self.assertLessEqual(bounds.get_y() + bounds.get_height(),
+                             page.hero.get_height() - 24 + 0.5)
+        self.assertGreaterEqual(page.banner.get_height(), 240)
+
     async def test_a_group_was_formed(self):
         page = await self.artist_page(dict(artist([]), catalogId='42'),
                                       artist_answer(group=True))

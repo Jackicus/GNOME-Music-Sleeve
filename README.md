@@ -27,8 +27,8 @@ The screenshots show an invented demo library.
 - Your library: Recently Added, Artists, Albums, Songs, Music Videos and Made for You,
   with your playlists and playlist folders in the sidebar.
 - Home, New, Radio and Search, with a page for every album and playlist, and artist pages
-  laid out as Apple Music's: the latest release, top songs, albums, About and similar
-  artists.
+  laid out as Apple Music's: the artist's wide banner where Apple has one, the latest
+  release, top songs, albums, About and similar artists.
 - Your playlists to manage: make new ones, rename and delete them, add and remove songs, and
   pick from the songs Apple Music suggests adding; make folders and move playlists into them,
   from a menu or by dragging them onto a folder in the sidebar.

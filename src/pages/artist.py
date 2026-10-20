@@ -2,8 +2,9 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """AppleMusicArtistPage: an artist as music.apple.com shows one, laid out the GNOME way: the
-portrait and name, the latest release beside the top songs, the catalog's shelves in Apple's
-order, About, and Similar Artists; the albums in the library when the catalog cannot be had."""
+banner (or the portrait) and name, the latest release beside the top songs, the catalog's
+shelves in Apple's order, About, and Similar Artists; the albums in the library when the
+catalog cannot be had."""
 
 import logging
 from gettext import gettext as _
@@ -19,6 +20,7 @@ from ..library import Item, ShelfModel
 from ..related import artist_catalog_id, artist_song_ids
 from ..remote import fetch_cover, fetch_shelf_art, fetch_thumb, remote_item
 from ..widgets import artwork
+from ..widgets.banner import ArtistBanner  # noqa: F401  registers $AppleMusicArtistBanner
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
 from ..widgets.labels import accessible_label
@@ -33,6 +35,9 @@ log = logging.getLogger(__name__)
 HERO_SHELF = 'featured-albums'
 # The shelf that comes after About, as on music.apple.com.
 AFTER_ABOUT = ('similar-artists',)
+# Over a banner, the least of the image left above the name, in logical pixels (the banner
+# grows to keep it when the name wraps).
+BANNER_TEXT_TOP = 72
 
 
 def stand_in(artist, group):
@@ -90,8 +95,12 @@ def page_shelves(dicts):
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/artist.ui')
 class ArtistPage(Adw.NavigationPage):
     """An artist Item's page: a round portrait, the name and genre, Play (the catalog
-    artist's top songs, actions.can_play()) and the artist's menu; then what Apple's catalog
-    has for the artist (Engine.artist_page, kept for a day): the latest or featured release
+    artist's top songs, actions.can_play()) and the artist's menu, or, once the catalog
+    answers with the artist's banner (normalize.artist_banner: about half of Apple's artists
+    have one), the name, genre and buttons in white over the foot of that wide image
+    (widgets.banner.ArtistBanner), edge to edge, as music.apple.com shows it; then what
+    Apple's catalog has for the artist (Engine.artist_page, kept for a day): the latest or
+    featured release
     beside the top songs, the catalog's shelves in Apple's order and titled as Apple titles
     them (Essential Albums as large cards), About (the biography, three lines and More, and
     where the artist is from, when born or formed, and the genre) and Similar Artists. The
@@ -121,6 +130,9 @@ class ArtistPage(Adw.NavigationPage):
     header_bar = Gtk.Template.Child()
     scrolled_window = Gtk.Template.Child()
     content_box = Gtk.Template.Child()
+    hero = Gtk.Template.Child()
+    banner = Gtk.Template.Child()
+    hero_row = Gtk.Template.Child()
     avatar = Gtk.Template.Child()
     name_label = Gtk.Template.Child()
     caption_label = Gtk.Template.Child()
@@ -162,6 +174,7 @@ class ArtistPage(Adw.NavigationPage):
         self._art_task = None
         self._stand_ins = {}  # album id -> the stand-in Item made for an album not in the library
         self._catalog_artist = None  # the answer's artist, as an Item: its portrait and bio
+        self._banner = None  # the answer's banner dict, or None: the portrait
         self._release = None  # the release card's Item
         self._shelves = []  # the catalog's ShelfModels, as shown
         self._top = None  # the top songs' ShelfModel
@@ -223,7 +236,27 @@ class ArtistPage(Adw.NavigationPage):
         self.caption_label.set_label(' · '.join(detail for detail in details if detail))
         self.caption_label.set_visible(any(details))
         self.play_button.set_visible(self._play_target() is not None)
+        self._show_banner()
         self._show_about()
+
+    def _show_banner(self):
+        """The hero's two looks: over the banner (no portrait, the content from the top
+        edge, the text in white at the banner's foot, the menu button an OSD one), or the
+        round portrait beside the name."""
+        banner = self._banner
+        shown = banner is not None
+        self.banner.set_banner(banner)
+        self.banner.set_visible(shown)
+        self.avatar.set_visible(not shown)
+        self.content_box.set_margin_top(0 if shown else 24)
+        self.hero_row.set_valign(Gtk.Align.END if shown else Gtk.Align.FILL)
+        self.hero_row.set_margin_top(BANNER_TEXT_TOP if shown else 0)
+        self.hero_row.set_margin_bottom(24 if shown else 0)
+        for widget, name in ((self.hero, 'on-banner'), (self.more_button, 'osd')):
+            if shown:
+                widget.add_css_class(name)
+            else:
+                widget.remove_css_class(name)
 
     def _play_target(self):
         """What Play plays: the catalog artist (its top songs), when the page knows it: at
@@ -372,6 +405,9 @@ class ArtistPage(Adw.NavigationPage):
         self._answer = answer
         artist = answer.get('artist')
         self._catalog_artist = Item(remote_item(artist)) if isinstance(artist, dict) else None
+        banner = answer.get('banner')
+        self._banner = (banner if isinstance(banner, dict)
+                        and (banner.get('url') or banner.get('art')) else None)
         latest = answer.get('latest') or {}
         release = latest.get('item') if isinstance(latest, dict) else None
         self._release = Item(remote_item(release)) if isinstance(release, dict) else None

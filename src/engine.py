@@ -70,8 +70,8 @@ UI awaits.
     await engine.browse()        # {shelves}: the New page (the editorial groupings)
     await engine.made_for_you()  # {shelves}: the personal mixes and stations
     await engine.radio()         # {shelves[, expires]}: the Radio page (the radio grouping)
-    await engine.artist_page(id) # {id, artist, latest, topSongs, shelves}: a catalog artist's
-                                 # page, every view of it at once
+    await engine.artist_page(id) # {id, artist, banner, latest, topSongs, shelves}: a catalog
+                                 # artist's page, every view of it at once
     await engine.album_page(id, song_id=None)   # {id, artistId, artistName, release,
                                  # shelves}: what an album's page shows under its tracks (a
                                  # library album's through one of its songs)
@@ -1965,7 +1965,7 @@ class Engine(GObject.Object):
                                        refresh, fetch, normalize.radio_shelves)
 
     async def artist_page(self, artist_id, refresh=False):
-        """A catalog artist's page: {id, artist, latest, topSongs, shelves}
+        """A catalog artist's page: {id, artist, banner, latest, topSongs, shelves}
         (normalize.artist_page), every section of it in one read (api.ARTIST_ENDPOINT with
         all of api.ARTIST_VIEWS), the shelves in music.apple.com's order and titled as Apple
         titles them. From <cache>/artists/<id>.json for a day, else fetched and kept."""

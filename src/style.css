@@ -325,6 +325,43 @@ gridview.song-shelf > child {
   margin-right: -24px;
 }
 
+/* An artist's banner (widgets/banner.py), edge to edge at the top of their page: the card
+   colour until the image comes (banner.py draws Apple's colour for it over this, when there
+   is one), and over the image a scrim, deepest at the foot, where the name, the caption and
+   the buttons are (pages/artist.blp's hero, `.on-banner`), in white in either colour
+   scheme: one line of the name, on the scrim's 50% or more over a white image, reads at
+   WCAG AA's 4.5:1, the caption, at 85%, nearly as well, and a text shadow helps a name that
+   wraps higher up. */
+.artist-banner {
+  background-color: var(--card-bg-color);
+}
+
+.banner-scrim {
+  background-image: linear-gradient(to top, rgb(0 0 0 / 72%), rgb(0 0 0 / 50%) 140px,
+                                    rgb(0 0 0 / 12%) 240px, rgb(0 0 0 / 0%));
+}
+
+.on-banner .title-1,
+.on-banner .caption {
+  color: white;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 50%);
+}
+
+.on-banner .caption.dimmed {
+  opacity: 0.85;
+}
+
+@media (prefers-contrast: more) {
+  .banner-scrim {
+    background-image: linear-gradient(to top, rgb(0 0 0 / 85%), rgb(0 0 0 / 75%) 200px,
+                                      rgb(0 0 0 / 30%));
+  }
+
+  .on-banner .caption.dimmed {
+    opacity: 1;
+  }
+}
+
 /* An artist's latest release (pages/artist.blp): the cover and its caption as one button,
    flush with the page's margin. */
 button.release-card {

@@ -218,6 +218,32 @@ element kinds), shaped by `normalize.radio_shelves()` through New's own
 - the 391 (More to Explore) and 322 (genre links) elements have no `contents` and are left
   out, as on New, and so are `uploaded-videos`.
 
+### An artist's banner
+
+The artist page's header (#355). The web player's artist page asks `GET
+/v1/catalog/<sf>/artists/<id>` with
+`extend=artistBio,editorialArtwork,editorialVideo,extendedAssetUrls,hasBiographyContent,hero,keyColor,plainEditorialNotes`
+(and its canvas shelves). Its wide header is `editorialArtwork.centeredFullscreenBackground`
+(4320x2160, crop `sr`) when there is one (1 artist in 24), else the portrait in
+`attributes.hero[0].content[0].artwork` cut with crop code `vf` when its
+`recommendedCropCodes` lists `vf` (11 in 23); with neither, the round portrait. The hero
+artwork is the artist's `artwork` itself (square, 902 to 6000 px) with
+`recommendedCropCodes` from `va vb vc vd vf vn`; `{w}x{h}vf.jpg` in place of
+`{w}x{h}bb.jpg` answers an image of exactly that size cropped where Apple chose (2400x1000,
+3000x1000), where `bb` fits the square inside it. Some `hero[0]` entries have no `content`.
+Other keys seen: `originalFlowcaseBrick`, `storeFlowcase`, `subscriptionHero`,
+`musicContentColorLogoTrimmed` (a logo); `bannerUber` is a curator's, never an artist's.
+Checked against a real account on 2026-10-20 (24 catalog artists, the `gb` storefront).
+
+The app adds `editorialArtwork,hero` to its own `extend` (`api.ARTIST_PARAMS`), and
+`normalize.artist_banner()` makes the answer's `banner`, `{url, crop, width, height,
+color}` (the template with its crop, `{w}x{h}` left to fill; the source's size; Apple's
+`bgColor`), by the web player's rule, or None. `remote.fetch_banner()` asks it at the
+header's width in device pixels, in steps of 480, no wider than the source: a `vf` cut at
+3:1, an `sr` one at its own 2:1 (that `sr` answers sizes other than 4320x2160 is to be
+confirmed live), into `remote-art/`. The demo's invented banners carry `art`, a file, and
+no `url`.
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -318,20 +344,6 @@ answers curators only when asked for (`types=apple-curators`), never with the ap
 24 tried), every entry an `apple-curators` of kind `Show`; their `view/more-to-hear` holds
 episodes (`stations`, `streaming`, not live).
 
-### An artist's banner (#355)
-
-The web player's artist page asks `GET /v1/catalog/<sf>/artists/<id>` with
-`extend=artistBio,editorialArtwork,editorialVideo,extendedAssetUrls,hasBiographyContent,hero,keyColor,plainEditorialNotes`
-(and its canvas shelves). Its wide header is `editorialArtwork.centeredFullscreenBackground`
-(4320x2160, crop `sr`) when there is one (1 artist in 24), else the portrait in
-`attributes.hero[0].content[0].artwork` cut with crop code `vf` when its
-`recommendedCropCodes` lists `vf` (11 in 23); with neither, the round portrait. The hero
-artwork is the artist's `artwork` itself (square, 902 to 6000 px) with
-`recommendedCropCodes` from `va vb vc vd vf vn`; `{w}x{h}vf.jpg` in place of
-`{w}x{h}bb.jpg` answers an image of exactly that size cropped where Apple chose (2400x1000,
-3000x1000), where `bb` fits the square inside it. Other keys seen: `originalFlowcaseBrick`,
-`storeFlowcase`, `subscriptionHero`, `musicContentColorLogoTrimmed` (a logo).
-
 ## Events
 
 The client dispatches each bridge event as `am:<name>`; the Engine re-emits it as
@@ -431,11 +443,12 @@ documented date; no song carried `dateAdded` (0 of 100); the extended read took 
 had none): the app offers their Date Added only when the data has it.
 
 An artist's page (`Engine.artist_page()`, `normalize.artist_page()`) is
-`{id, artist, latest: {key, title, item} | null, topSongs: {key, title, items, more} | null,
-shelves: [{key, title, items, more}]}`: `artist` an Item without groups whose `summary` is
-the biography, with `origin`, `bornOrFormed` (Apple's own words) and `isGroup` where Apple
-has them; `latest` the featured or latest release, with its `releaseDate`; the top songs
-song Items with their `album`; each shelf one of the artist's views in music.apple.com's
+`{id, artist, banner: {url, crop, width, height, color} | null, latest: {key, title, item} |
+null, topSongs: {key, title, items, more} | null, shelves: [{key, title, items, more}]}`:
+`artist` an Item without groups whose `summary` is the biography, with `origin`,
+`bornOrFormed` (Apple's own words) and `isGroup` where Apple has them; `banner` the wide
+header ("An artist's banner" above); `latest` the featured or latest release, with its
+`releaseDate`; the top songs song Items with their `album`; each shelf one of the artist's views in music.apple.com's
 order, titled as Apple titles it, `more` when `Engine.artist_view()` has more of it. A
 video about the artist (an interview, a film) is a `link` Item: its `url` is its page,
 its subtitle its length, and it has nothing to play.

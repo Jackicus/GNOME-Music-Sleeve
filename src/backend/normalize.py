@@ -1892,14 +1892,77 @@ OWN_RELEASES = {'featured-release', 'latest-release', 'full-albums', 'singles', 
 LINK_RESOURCE_TYPES = {'uploaded-videos', 'music-movies'}
 
 
+# An artist's wide header, as music.apple.com makes it (src/backend/README.md, "An artist's
+# banner"): the editorial background where Apple has one, cut with its own crop code, else
+# the artist's hero portrait cut with the crop Apple recommends for a wide header; else none.
+BANNER_EDITORIAL = 'centeredFullscreenBackground'
+BANNER_EDITORIAL_CROP = 'sr'
+BANNER_HERO_CROP = 'vf'
+# The size and crop part of an artwork URL template ("{w}x{h}bb.jpg", "{w}x{h}{c}.{f}").
+_TEMPLATE_TAIL = re.compile(r'\{w\}x\{h\}(?:\{c\}|[a-z]{2})?\.(?:\{f\}|[A-Za-z]+)$')
+
+
+def banner_template(url, crop):
+    """An artwork URL template cut with `crop` (Apple's crop code: `vf`, `sr`), its size left
+    as {w}x{h} for the app to fill: "…/{w}x{h}bb.jpg" is "…/{w}x{h}vf.jpg". None for a URL
+    that is not an https template."""
+    if not isinstance(url, str) or not url.startswith('https://'):
+        return None
+    tail = _TEMPLATE_TAIL.search(url)
+    if tail is None:
+        return None
+    return f'{url[:tail.start()]}{{w}}x{{h}}{crop}.jpg'
+
+
+def artist_banner(attrs):
+    """An artist's wide header from its attributes (`editorialArtwork` and `hero` extended),
+    as {url, crop, width, height, color}, or None: `url` the template cut with the crop
+    (banner_template), {w}x{h} left to fill; `width` and `height` the source's pixels (no
+    bigger is worth asking for; an `sr` cut keeps the source's shape, a `vf` one is cut to
+    whatever shape is asked); `color` Apple's background colour for it (#rrggbb) or None.
+
+    The editorial background (BANNER_EDITORIAL) when Apple has one, else the artwork of the
+    first hero entry's first content when its `recommendedCropCodes` list BANNER_HERO_CROP
+    (some entries have no content), else None: the page keeps the round portrait."""
+    attrs = attrs if isinstance(attrs, dict) else {}
+
+    def banner(artwork, crop):
+        if not isinstance(artwork, dict):
+            return None
+        url = banner_template(artwork.get('url'), crop)
+        width, height = artwork.get('width'), artwork.get('height')
+        if (url is None or not isinstance(width, int) or not isinstance(height, int)
+                or width <= 0 or height <= 0):
+            return None
+        color = artwork.get('bgColor')
+        return {'url': url, 'crop': crop, 'width': width, 'height': height,
+                'color': format_color(color) if isinstance(color, str) else None}
+
+    editorial = attrs.get('editorialArtwork')
+    if isinstance(editorial, dict):
+        found = banner(editorial.get(BANNER_EDITORIAL), BANNER_EDITORIAL_CROP)
+        if found is not None:
+            return found
+    hero = attrs.get('hero')
+    first = hero[0] if isinstance(hero, list) and hero and isinstance(hero[0], dict) else {}
+    content = first.get('content')
+    entry = content[0] if isinstance(content, list) and content else None
+    artwork = entry.get('artwork') if isinstance(entry, dict) else None
+    crops = artwork.get('recommendedCropCodes') if isinstance(artwork, dict) else None
+    if isinstance(crops, list) and BANNER_HERO_CROP in crops:
+        return banner(artwork, BANNER_HERO_CROP)
+    return None
+
+
 def artist_page(raw, cache_dir):
     """An artist's page (api.ARTIST_ENDPOINT's answer) as
-    {id, artist, latest, topSongs, shelves}:
+    {id, artist, banner, latest, topSongs, shelves}:
 
     - `artist`: the artist as an Item without groups, its `summary` the biography
       (artistBio, else the editorial notes), with `origin` (the hometown), `bornOrFormed`
       (Apple's own words: "13 December 1989") and `isGroup` (formed, not born) where Apple
       has them.
+    - `banner`: the artist's wide header (artist_banner), or None.
     - `latest`: {key, title, item}: the featured release where the artist has one, else the
       latest, as an Item with its `releaseDate`; or None.
     - `topSongs`: {key, title, items, more}: the top songs as song Items, each with its
@@ -1948,6 +2011,7 @@ def artist_page(raw, cache_dir):
     return {
         'id': str(resource.get('id') or ''),
         'artist': artist,
+        'banner': artist_banner(attrs),
         'latest': release,
         'topSongs': top if top and top['items'] else None,
         'shelves': shelves,

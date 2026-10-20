@@ -81,7 +81,8 @@ RECOMMENDATIONS_PARAMS = {'limit': 25}
 
 # An artist's page, as music.apple.com's views-based artist page asks for it: the artist with
 # every view its page shows (each answered with Apple's own title, its first page of
-# resources and a `next` link where there are more) and the attributes its About reads.
+# resources and a `next` link where there are more), the attributes its About reads, and
+# the two its wide header is made from (editorialArtwork, hero: normalize.artist_banner).
 # featured-release, when an artist has one, is shown in latest-release's place;
 # featured-albums is "Essential Albums", more-to-hear the radio episodes about the artist,
 # more-to-see the videos about them (uploaded videos and films). top-songs is 24 long, three
@@ -94,7 +95,7 @@ ARTIST_VIEWS = (
 )
 ARTIST_PARAMS = {
     'views': ','.join(ARTIST_VIEWS),
-    'extend': 'artistBio,bornOrFormed,isGroup,origin',
+    'extend': 'artistBio,bornOrFormed,editorialArtwork,hero,isGroup,origin',
     'limit[artists:top-songs]': 24,
 }
 # One of an artist's views whole (See All), a page of it at a time.

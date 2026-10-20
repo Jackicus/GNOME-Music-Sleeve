@@ -166,6 +166,56 @@ async def fetch_remote(url, size=config.COVER_SIZE):
     return path if await _fetch(path, sized_url(url, size)) is not None else None
 
 
+# An artist's banner (normalize.artist_banner): a `vf` cut is asked at BANNER_ASPECT (width
+# to height; Apple cuts it to any shape asked), an `sr` one at its source's shape. Its width
+# is asked in steps of BANNER_STEP device pixels, from the first up to the source's width, so
+# a window resized a little asks for nothing new and a wide one never for more than Apple has.
+BANNER_ASPECT = 3.0
+BANNER_STEP = 480
+
+
+def banner_aspect(banner):
+    """The width to height of the image fetched for a banner dict."""
+    if banner.get('crop') != 'vf':
+        width, height = banner.get('width') or 0, banner.get('height') or 0
+        if width > 0 and height > 0:
+            return width / height
+    return BANNER_ASPECT
+
+
+def banner_size(banner, pixels):
+    """(width, height) in pixels to ask a banner at for a header `pixels` device pixels wide:
+    the width rounded up to a BANNER_STEP, no wider than the source (nor narrower than a
+    step), the height by banner_aspect()."""
+    steps = max(1, -(-int(pixels) // BANNER_STEP))
+    source = banner.get('width') or 0
+    width = steps * BANNER_STEP
+    if source > 0:
+        width = min(width, source)
+    return width, max(1, round(width / banner_aspect(banner)))
+
+
+def banner_url(banner, pixels):
+    """The banner's URL for a header `pixels` device pixels wide (banner_size), or None
+    without an https template."""
+    url = banner.get('url') if isinstance(banner, dict) else None
+    if not is_url(url):
+        return None
+    width, height = banner_size(banner, pixels)
+    return url.replace('{w}', str(width)).replace('{h}', str(height))
+
+
+async def fetch_banner(banner, pixels):
+    """The banner for a header `pixels` device pixels wide on disk under <cache>/remote-art/
+    (named by its sized URL's hash): its path once it is there, or None (no URL, or the fetch
+    failed: logged). Concurrent calls for one size share the download."""
+    url = banner_url(banner, pixels)
+    if url is None:
+        return None
+    path = os.path.join(str(config.cache_dir()), 'remote-art', normalize.artwork_filename(url))
+    return path if await _fetch(path, url) is not None else None
+
+
 async def _fetch(path, url):
     """Bring `url` to `path` (inside the cache): True when this call's download (or the one
     it shared) brought it, False when it was on disk, None when it could not (no path, not an

@@ -539,6 +539,21 @@ changes, change it here, with the date. The plan they came from is in
   catalog artist's page while the engine is up. Videos about the artist open on music.apple.com: the engine is
   headless and has no picture to show. The demo engine answers with the artist pages the
   demo library invents (marked `demo`), and with none of Apple's (#226).
+- **An artist's page opens with Apple's banner** (2026-10-20). Where Apple has a wide
+  picture of the artist (its web player's rule: the editorial background, else the
+  portrait cut with the `vf` crop Apple recommends; about half of the artists tried), the
+  page's hero is that picture, edge to edge under the header bar, with the name, genre,
+  Play and More Options in white at its foot, as Apple Music shows it; else the round
+  portrait beside the name, as before (#355). The picture is cut at 3:1 and the header is
+  its width over three, between 240 and 440 px: a phone shows the middle of it, a
+  maximized window keeps the top songs in view. White text over a picture needs no colour
+  scheme of its own: a black scrim, deepest at the foot, carries it in both (deeper still
+  with high contrast). The banner is fetched at the width shown, in steps, never at Apple's
+  full 4320 px, and its place is held in Apple's colour for it until it fades in, so
+  nothing moves when it comes; the switch from the portrait to the banner comes with the
+  catalog's answer (from the day's copy, at once, after the first visit), with the rest of
+  the page. The latest release sits beside Top Songs down to 700sp (a release card and one
+  column of songs), not 900sp, so it is not alone at a common window width.
 - **An album ends with its release and the catalog's shelves** (2026-10-20). Under the last
   disc, as every Apple Music client ends an album: the release date in full, "N songs, M
   minutes" and the ℗ line (else the label), then Other Versions, Music Videos, More By,
