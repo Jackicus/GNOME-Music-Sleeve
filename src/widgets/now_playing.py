@@ -94,6 +94,7 @@ class NowPlayingSheet(Adw.Bin):
     seek_adjustment = Gtk.Template.Child()
     elapsed_label = Gtk.Template.Child()
     remaining_label = Gtk.Template.Child()
+    live_label = Gtk.Template.Child()
     shuffle_button = Gtk.Template.Child()
     play_button = Gtk.Template.Child()
     repeat_button = Gtk.Template.Child()
@@ -128,7 +129,7 @@ class NowPlayingSheet(Adw.Bin):
                                               self.repeat_button, self.volume_button),
                                    tooltips=True)
         self._seek = SeekControl(self.seek_scale, self.seek_adjustment, self.elapsed_label,
-                                 self.remaining_label)
+                                 self.remaining_label, self.live_label)
         self._modes = ModeControl(self.shuffle_button, self.repeat_button)
         self._heart = HeartControl(self.heart_button)
         self._volume = VolumeControl(self.volume_button, self.volume_adjustment)

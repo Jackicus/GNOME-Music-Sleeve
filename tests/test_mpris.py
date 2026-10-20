@@ -21,7 +21,7 @@ from gi.repository import Gio, GLib, GObject
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 from tests.gtk import iterate, wait_for
-from tests.test_player import patched_clocks
+from tests.test_player import LIVE, NOTHING, patched_clocks
 
 from applemusic import mpris
 from applemusic.backend.errors import EngineError
@@ -321,6 +321,12 @@ class MetadataTest(unittest.TestCase):
             self.assertNotIn('mpris:length', metadata(unknown))
             self.assertEqual(metadata(unknown, duration=200.5)['mpris:length'].get_int64(),
                              200_500_000)
+
+    def test_a_live_station_has_no_length(self):
+        """MusicKit's duration for a live station is the stream's window, not a length."""
+        data = metadata(NowPlaying(LIVE), duration=160.0)
+        self.assertNotIn('mpris:length', data)
+        self.assertEqual(data['xesam:title'].get_string(), 'Harbour One')
 
     def test_a_bare_track(self):
         bare = NowPlaying({'id': 'x', 'title': None, 'artist': '', 'durationMs': None})
@@ -757,6 +763,102 @@ class ServiceTest(unittest.TestCase):
                              'Playing')
         asyncio.run(go())
 
+    def test_a_live_station_has_no_length_no_seek_and_stops(self):
+        """A live radio station (#343): no mpris:length, Position 0 and never a Seeked
+        (MusicKit's position is a place in the stream's window), CanSeek, CanPause,
+        CanGoNext and CanGoPrevious false with CanPlay true; Pause and PlayPause stop it,
+        Seek, SetPosition, Next and Previous do nothing, and Play plays the station again."""
+        async def go():
+            self.make()
+            self.engine.state = 'up'
+            await self.app.settle()
+            self.engine.calls.clear()
+            self.connection.changed()
+            self.engine.emit('event', 'nowPlayingItemDidChange',
+                             {'track': LIVE, 'index': 0, 'capabilities': NOTHING})
+            self.engine.emit('event', 'playbackStateDidChange',
+                             {'state': 'playing', 'position': 112, 'duration': 160,
+                              'capabilities': NOTHING})
+            await self.app.settle()
+            # The item's properties go out once, together.
+            changes = self.connection.changed()
+            self.assertEqual(sum('Metadata' in names for names in changes), 1)
+            self.assertEqual(sum('CanPlay' in names for names in changes), 1)
+            values = {name: value.unpack()
+                      for name, value in self.connection.get_all(PLAYER_INTERFACE).items()}
+            self.assertEqual(values['PlaybackStatus'], 'Playing')
+            self.assertEqual((values['CanPlay'], values['CanPause'], values['CanSeek'],
+                              values['CanGoNext'], values['CanGoPrevious']),
+                             (True, False, False, False, False))
+            self.assertEqual(values['Metadata']['xesam:title'], 'Harbour One')
+            self.assertNotIn('mpris:length', values['Metadata'])
+            self.assertEqual(values['Position'], 0)
+            # The window's position moves on, and jumps: nothing is told.
+            for position in (113, 150, 20):
+                self.engine.emit('event', 'playbackTimeDidChange',
+                                 {'position': position, 'duration': 176})
+            self.assertEqual(self.connection.seeked(), [])
+            self.assertEqual(self.connection.get(PLAYER_INTERFACE, 'Position').unpack(), 0)
+            self.assertEqual(self.connection.changed(), [])  # a new window is no length
+            track_id = values['Metadata']['mpris:trackid']
+            self.assertEqual(self.engine.calls, [('queue',)])  # no lyrics for a live station
+            self.engine.calls.clear()
+            call = self.connection.call
+            call(PLAYER_INTERFACE, 'Seek', GLib.Variant('(x)', (5_000_000,)))
+            call(PLAYER_INTERFACE, 'SetPosition', GLib.Variant('(ox)', (track_id, 1)))
+            call(PLAYER_INTERFACE, 'Next')
+            call(PLAYER_INTERFACE, 'Previous')
+            await self.app.settle()
+            self.assertEqual(self.engine.calls, [])
+            # Pause: MusicKit would leave it playing; it stops, and the station stays.
+            self.assertIsNone(call(PLAYER_INTERFACE, 'Pause').error)
+            await self.app.settle()
+            self.assertEqual(self.engine.calls, [('control', 'stop')])
+            self.engine.emit('event', 'playbackStateDidChange', {'state': 'stopped'})
+            self.engine.emit('event', 'nowPlayingItemDidChange', {'track': None, 'index': -1})
+            values = {name: value.unpack()
+                      for name, value in self.connection.get_all(PLAYER_INTERFACE).items()}
+            self.assertEqual(values['PlaybackStatus'], 'Stopped')
+            self.assertTrue(values['CanPlay'])
+            self.assertEqual(values['Metadata']['xesam:title'], 'Harbour One')
+            # Play: the station again.
+            self.engine.calls.clear()
+            self.assertIsNone(call(PLAYER_INTERFACE, 'Play').error)
+            await self.app.settle()
+            self.assertIn(('play', 'station', 'ra.live01', None, False, {}), self.engine.calls)
+        asyncio.run(go())
+
+    def test_playpause_and_stop_stop_a_live_station(self):
+        async def go():
+            for method in ('PlayPause', 'Stop'):
+                with self.subTest(method=method):
+                    self.make()
+                    self.engine.state = 'up'
+                    self.engine.emit('event', 'nowPlayingItemDidChange',
+                                     {'track': LIVE, 'index': 0, 'capabilities': NOTHING})
+                    self.engine.emit('event', 'playbackStateDidChange', {'state': 'playing'})
+                    await self.app.settle()
+                    self.engine.calls.clear()
+                    self.assertIsNone(self.connection.call(PLAYER_INTERFACE, method).error)
+                    await self.app.settle()
+                    self.assertEqual(self.engine.calls, [('control', 'stop')])
+                    self.assertEqual(self.connection.seeked(), [])
+        asyncio.run(go())
+
+    def test_next_and_previous_follow_what_musickit_allows(self):
+        self.make()
+        self.play()
+        self.engine.emit('event', 'capabilitiesChanged', {'capabilities': {
+            'canSeek': True, 'canPause': True, 'canSkipToNextItem': False,
+            'canSkipToPreviousItem': False}})
+        values = {name: value.unpack()
+                  for name, value in self.connection.get_all(PLAYER_INTERFACE).items()}
+        self.assertEqual((values['CanGoNext'], values['CanGoPrevious'], values['CanSeek']),
+                         (False, True, True))  # Previous restarts the item
+        self.assertIn(['CanGoNext'], self.connection.changed())
+        self.connection.call(PLAYER_INTERFACE, 'Next')
+        self.assertEqual(self.app.commands, [])
+
     def test_the_same_song_again_is_another_track(self):
         """A duplicate queue entry, or Play Next of the song playing: the trackid carries
         the queue position, so clients see the change (and its Seeked to 0)."""
@@ -1013,6 +1115,22 @@ SEQUENCES = {
         ('playbackTimeDidChange', {'position': 60, 'duration': 214}, {}),
         ('advance', 1, {}),
         ('playbackTimeDidChange', {'position': 61, 'duration': 214}, {'position': 61.0}),
+    ],
+    # A live station (#343, checked live): one item, no capability, and a duration that is
+    # the stream's window (160 s, then 176), a position inside it counting on from 112.
+    # Nothing of the window reaches the bus: no length, Position 0, no Seeked.
+    'a live station after A': [
+        ('nowPlayingItemDidChange', {'track': LIVE, 'index': 0, 'capabilities': NOTHING},
+         {'track': 'ra.live01', 'changed': [['CanGoNext', 'CanGoPrevious', 'CanPause',
+                                             'CanSeek', 'Metadata']]}),
+        ('playbackStateDidChange', {'state': 'playing', 'position': 112, 'duration': 160,
+                                    'capabilities': NOTHING},
+         {'state': 'playing', 'active': True}),
+        ('advance', 3, {}),
+        ('playbackTimeDidChange', {'position': 115, 'duration': 160}, {'position': 115.0}),
+        ('playbackDurationDidChange', {'duration': 176}, {'duration': 176.0}),
+        ('advance', 1, {}),
+        ('playbackTimeDidChange', {'position': 116, 'duration': 176}, {'position': 116.0}),
     ],
     'pause and resume': [
         ('advance', 5, {}),

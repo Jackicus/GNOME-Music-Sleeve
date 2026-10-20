@@ -28,7 +28,9 @@ class Track:
 
     def __init__(self, title='Low Tide Warning', artist='The Midnight Archipelago',
                  album='Signal from the Shallows',
-                 artwork_url='https://example.invalid/image/thumb/aW52ZW50ZWQ/256x256bb.jpg'):
+                 artwork_url='https://example.invalid/image/thumb/aW52ZW50ZWQ/256x256bb.jpg',
+                 live=False):
+        self.live = live
         self.title = title
         self.artist = artist
         self.album = album
@@ -94,6 +96,13 @@ class ActivityTest(unittest.TestCase):
 
     def test_a_track_of_no_length_has_no_timestamps(self):
         activity = discord.activity_for(Track(), 'playing', 0.0, 0.0, now=1000.0)
+        self.assertNotIn('timestamps', activity)
+
+    def test_a_live_station_has_no_timestamps(self):
+        """Its duration is only the stream's window (#343): no progress bar."""
+        activity = discord.activity_for(Track(title='Harbour One', live=True), 'playing',
+                                        112.0, 160.0, now=1000.0)
+        self.assertEqual(activity['details'], 'Harbour One')
         self.assertNotIn('timestamps', activity)
 
     def test_a_track_with_no_artist_has_no_state(self):

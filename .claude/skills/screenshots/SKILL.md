@@ -31,7 +31,8 @@ What to shoot: $ARGUMENTS
      Autoplay header; `--history` puts entries played already before the item (with
      `--now-playing queue`, Up Next's History shown); `--album N` plays the demo's Nth
      album, another cover (the sheet's tint another colour); `--restored`: the item as the last session restored at launch, paused,
-     the sheet closed;
+     the sheet closed; `--live` (with `--playing`, `--now-playing` or `--fullscreen-player`):
+     an invented live radio station instead, LIVE in place of the slider, Stop for Pause;
    - `--signed-in [NAME]`: the account button signed in (an invented NAME: its avatar's colour
      follows the name); `--banner sign-in|expired`: the sign-in banner;
    - `--sidebar` (the narrow layout: the sidebar rather than the page), `--expand first`,

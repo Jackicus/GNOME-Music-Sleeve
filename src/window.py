@@ -222,7 +222,10 @@ class Window(Adw.ApplicationWindow):
         focus = self.get_focus()
 
         def enabled(name):
-            action = app.lookup_action(name)
+            # Next and Previous are the window's keys while an item plays, as Play/Pause:
+            # where MusicKit allows no skip (a live station) they do nothing rather than
+            # move the focus.
+            action = app.lookup_action('play-pause' if name in ('next', 'previous') else name)
             return action is not None and action.get_enabled()
 
         dialog_open = self.get_visible_dialog() is not None
@@ -230,7 +233,9 @@ class Window(Adw.ApplicationWindow):
         name = keyboard.playback_action(keyval, mods, type(focus), dialog_open, in_popover,
                                         enabled)
         if name is not None:
-            app.activate_action(name)
+            action = app.lookup_action(name)
+            if action is not None and action.get_enabled():
+                app.activate_action(name)
             return True
         name = keyboard.tab_action(keyval, mods, type(focus), dialog_open, in_popover,
                                    lambda name: self.lookup_action(name).get_enabled())

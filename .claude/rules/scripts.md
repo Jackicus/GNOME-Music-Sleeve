@@ -43,7 +43,8 @@ paths:
   album's entries carry an artwork URL of their own (`harness.demo_art_url()`, its files
   copied where `remote.fetch_remote` keeps them: nothing is fetched); `--album N` plays
   another album, `--history` puts entries played already before the item (Up Next's
-  History). `--signed-in [NAME]`,
+  History), `--live` plays an invented live radio station instead
+  (`harness.invented_live_state()`: LIVE and Stop). `--signed-in [NAME]`,
   `--banner sign-in|expired` and `--sidebar` (the narrow layout's sidebar) show those states;
   `--fullscreen-player [lyrics|localized|syllable|none]` enters the full-screen player on
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;

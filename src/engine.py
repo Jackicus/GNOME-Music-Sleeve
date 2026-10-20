@@ -1470,10 +1470,12 @@ class Engine(GObject.Object):
         return answer if isinstance(answer, dict) else {}
 
     async def now_playing(self):
-        """What plays: {state, track, position, duration, shuffle, repeat, volume}, the state
-        MusicKit's PlaybackStates name as playbackStateDidChange carries it ('loading',
-        'playing', 'paused'…; 'stopped' without MusicKit) and the track the Track shape (or
-        None)."""
+        """What plays: {state, track, position, duration, shuffle, repeat, volume,
+        capabilities}, the state MusicKit's PlaybackStates name as playbackStateDidChange
+        carries it ('loading', 'playing', 'paused'…; 'stopped' without MusicKit), the track
+        the Track shape (or None; `isLive` for a live radio station) and the capabilities
+        what MusicKit allows now ({canSeek, canPause, canSkipToNextItem,
+        canSkipToPreviousItem}; none without MusicKit)."""
         client = await self._ready()
         answer = await client.bridge('nowPlaying')
         if not isinstance(answer, dict):

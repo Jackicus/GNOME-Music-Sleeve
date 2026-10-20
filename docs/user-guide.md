@@ -34,9 +34,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   profile, as "Listening to Apple Music" with the title, the artist, the album and its cover,
   and the artist in the status under your name. It is off until you turn it on, and it needs
   the Discord desktop app running on the same computer (the web client cannot be reached).
-  Discord shows it only while something plays: pausing stops the clock and, five seconds
-  later, takes it off until the music plays again, as playback ending or the app quitting
-  does.
+  Discord shows it only while something plays (a live station with no clock): pausing stops
+  the clock and, five seconds later, takes it off until the music plays again, as playback
+  ending or the app quitting does.
 - **Home** shows Apple Music's recommendations for you, your **Heavy Rotation** and what you
   added lately, from the last library refresh, and, after the first shelf, **Recently
   Played**: the albums, playlists and stations you played last, on any of your devices.
@@ -94,7 +94,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Played**), then Apple's shelves of episodes, radio shows, genre stations and more. A
   station plays when you click it; a radio show opens its page: its episodes, then its
   playlists. The page is kept for a day, or until the shows on air change, and its refresh
-  button asks Apple again. An artist who hosts a show on Apple Music Radio has it under
+  button asks Apple again. A live station (Apple Music 1 and the others) plays as it is
+  broadcast: the player bar, Now Playing and the full-screen player show **LIVE** in place
+  of the slider and the times, and the play button is a stop button, since a live station
+  cannot be paused, wound on or skipped (previous and next are off). Stopped, the station
+  stays in the bar, and **Play** tunes in again, live. The system's media controls and
+  Discord show it with no length or progress, and their pause stops it too. An artist who hosts a show on Apple Music Radio has it under
   **Radio Shows** on their page, and its episodes under **More To Hear**.
 - **Top Charts**, at the end of **New** (under **More to Explore**) and first among
   Search's browse categories, opens Apple Music's charts: **Top Songs** as a numbered list
@@ -264,9 +269,7 @@ Other limits:
   an album of their own, have no shelves.
 - Radio's shelves need the engine and your sign-in (or the last copy of them): without them
   the page shows only the stations you played recently, or says what is missing. Apple's
-  links at the end of its radio page (More to Explore, the genres) are not shown. A live
-  station plays with a song's times and slider, which mean nothing for it, and Pause does
-  not stop it yet.
+  links at the end of its radio page (More to Explore, the genres) are not shown.
 - The charts are your storefront's, of every genre: there is no genre to choose yet. Like
   New, they need the engine and your sign-in (or the last copy of them).
 - A playlist moves into a folder, but not yet out of every folder to the top level, and a

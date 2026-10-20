@@ -11,10 +11,11 @@ for the item, the idle timer. A song changing while it is hidden costs nothing; 
 caught up with as it shows again.
 
 What it shows: the artwork, the title and the artist (the sheet's TrackTitles), the seek bar
-and the transport, and a flat header bar with Leave Fullscreen, More Options (the item
-playing's menu), the heart, the volume and, while the lyrics have translations or
-pronunciations, the Translation and Pronunciation menu (now_playing.lyrics_menu()) — the
-pieces of widgets/transport.py, as the bar's and the sheet's are; and the lyrics beside the
+(LIVE in its place for a live radio station) and the transport, and a flat header bar with
+Leave Fullscreen, More Options (the item playing's menu), the heart, the volume and, while
+the lyrics have translations or pronunciations, the Translation and Pronunciation menu
+(now_playing.lyrics_menu()) — the pieces of widgets/transport.py, as the bar's and the
+sheet's are; and the lyrics beside the
 artwork while the song has some (or they are being read), larger (style.css, for a
 LyricsView inside .fullscreen-player). Without lyrics the artwork and the controls are
 centred on their own. The places follow the view's size (fullscreen.layout_for(), applied
@@ -94,6 +95,7 @@ class FullscreenPlayer(Adw.Bin):
     seek_adjustment = Gtk.Template.Child()
     elapsed_label = Gtk.Template.Child()
     remaining_label = Gtk.Template.Child()
+    live_label = Gtk.Template.Child()
     shuffle_button = Gtk.Template.Child()
     play_button = Gtk.Template.Child()
     repeat_button = Gtk.Template.Child()
@@ -120,7 +122,7 @@ class FullscreenPlayer(Adw.Bin):
                                               self.repeat_button, self.volume_button),
                                    tooltips=True)
         self._seek = SeekControl(self.seek_scale, self.seek_adjustment, self.elapsed_label,
-                                 self.remaining_label)
+                                 self.remaining_label, self.live_label)
         self._modes = ModeControl(self.shuffle_button, self.repeat_button)
         self._heart = HeartControl(self.heart_button, lazy=True)  # the bar's reads
         self._volume = VolumeControl(self.volume_button, self.volume_adjustment)

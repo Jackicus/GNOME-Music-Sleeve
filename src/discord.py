@@ -29,9 +29,10 @@ the artist, in the one-line status under the user's name.
 
 While the music plays the timestamps carry the start and end of the track in wall-clock
 seconds, so Discord counts down by itself and nothing has to be sent for the progress to stay
-right; paused, they are left out, which stops the counter where it is, and PAUSED_TIMEOUT
-into the pause the activity is cleared, as Spotify's is: the user has stopped listening, and
-the profile says so. Playing again brings it back.
+right (a live radio station has no length, and no timestamps: no progress bar); paused, they
+are left out, which stops the counter where it is, and PAUSED_TIMEOUT into the pause the
+activity is cleared, as Spotify's is: the user has stopped listening, and the profile says
+so. Playing again brings it back.
 
 Only what Discord shows is sent: the title, the artist, the album and the catalogue's own
 cover URL, which is public. No library id, no token, nothing of the account's.
@@ -174,8 +175,9 @@ def activity_for(track, state, position, duration, now=None):
 
     `state` is the Player's `resting`; `position` and `duration` are seconds. Playing, the
     timestamps span the track so Discord runs the clock itself; paused, they are left out and
-    the clock stops. Once playback has finished there is nothing to show, whatever item the
-    Player still holds."""
+    the clock stops, and a live station (its `live`) has none: it has no length. Once
+    playback has finished there is nothing to show, whatever item the Player still
+    holds."""
     if track is None or state in FINISHED_STATES:
         return None
     details = _field(track.title)
@@ -192,7 +194,8 @@ def activity_for(track, state, position, duration, now=None):
         album = _field(track.album)
         if album is not None:
             activity['assets']['large_text'] = album
-    if state == 'playing' and duration > 0:
+    # A live station's duration is only the stream's window: no clock to run.
+    if state == 'playing' and duration > 0 and not getattr(track, 'live', False):
         started = (now if now is not None else time.time()) - max(position, 0.0)
         activity['timestamps'] = {'start': int(started * 1000),
                                   'end': int((started + duration) * 1000)}

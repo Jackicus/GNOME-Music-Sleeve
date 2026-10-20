@@ -199,6 +199,15 @@ button.artist-link:hover > label {
   font-weight: bold;
 }
 
+/* LIVE in place of the seek slider while a live radio station plays (widgets/transport.py's
+   SeekControl): a pill in the user's accent, as a live badge stands out. */
+.live-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background-color: var(--accent-bg-color);
+  color: var(--accent-fg-color);
+}
+
 /* A favourite's heart, a mark in the text's dimmed colour, as the explicit badge is one: in a
    track's row an image shown by its opacity (widgets/track_row.py, song_title.py); at the end
    of a tile's subtitle line (widgets/tile.py) a background image in room the line always

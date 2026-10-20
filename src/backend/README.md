@@ -58,7 +58,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `seek(seconds)` | `{ok: true}` |
 | `volume(level)` | `{volume}`: MusicKit's level after the set (0 to 1; the page keeps it) |
 | `shuffle(on\|off\|toggle)`, `repeat(none\|one\|all\|cycle)` | `{shuffle, repeat}` |
-| `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume}`; `state` is MusicKit's `PlaybackStates` name |
+| `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume, capabilities}`; `state` is MusicKit's `PlaybackStates` name; `capabilities` is `{canSeek, canPause, canSkipToNextItem, canSkipToPreviousItem}`, `mk.capabilities`' (true when MusicKit has none; all false on a live station: below) |
 | `queue()` | `{index, items: [Track], editable, canAutoplay, autoplay}`: `editable` and `canAutoplay` are `mk.capabilities`' `canEditPlaybackQueue` and `canAutoplay` (true when MusicKit has none), `autoplay` is `mk.autoplayEnabled`; a Track autoplay added carries `autoplay: true` (its queue item's `isAutoplay`) |
 | `queueRemove(index, id)` | `{ok: true}` once the queue's entry at `index`, when it is still `id` and not the item playing, is out of the queue (`queue.spliceQueueItems(index, 1)`, else the deprecated `queue.remove(index)`), or `{error, code}`: `NOT_EDITABLE` (a station's queue), `CURRENT`, `STALE` (another entry is there now) |
 | `queueClear()` | `{ok: true, cleared}`: everything after the item playing out of the queue (`queue.clearAfterCurrent()`), its queue items kept for `queueUndoClear()`; or `{error, code: 'NOT_EDITABLE'}` |
@@ -345,6 +345,23 @@ key) and Apple's `name` as its title ('' without one: the app names it,
 `form: 'songs'`, and a song carries its `album`. The page is kept as `charts.json` for a
 day.
 
+### Live radio (#343)
+
+A live station (`attributes.isLive: true`, `kind: 'streaming'`) plays as one item:
+`nowPlayingItem.type` `radioStation`, `isLiveRadioStation` true, `attributes.isLive` true,
+its `container` the `stations` resource. MusicKit reports a finite duration that is the
+stream's window, not the programme (`currentPlaybackDuration` 160, then 176 a little later),
+and a position inside it (from about 112, counting up), with `isPlayingAtLiveEdge` false and
+`seekableTimeRanges` `[{start: 0, end: …}]`; `playbackTimeDidChange` and
+`playbackDurationDidChange` arrive as for a song. Every capability is false: `seekToTime()`
+does nothing, `pause()` leaves it playing, `mk.stop()` ends it (state `stopped`, no item).
+The bridge's `nowPlaying()` gives `track.type: 'radioStation'`, `durationMs: 0` and that
+position and duration. So a live item is told by its type and `isLive`, not by its duration:
+`formatTrack()` gives it `isLive: true` (`isLiveRadioStation`, or the type with
+`attributes.isLive`), and `capabilities` (all false) come with its item and its states. The
+app shows LIVE in place of the slider and the times, Stop in place of Pause, Next and
+Previous off, and publishes no length or position on MPRIS (src/player.py's `live`).
+
 ## Checked live, not used yet
 
 What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
@@ -364,19 +381,6 @@ was not tried. `queue.removeQueueItems(predicate)` removes every queue item
 `predicate(queueItem, index)` accepts, from the end, one event each; `mk.clearQueue()` (the
 web player's Clear) empties the whole queue (`position` -1, `length` 0) while the current
 item plays on, so it is not Up Next's Clear.
-
-### Live radio (#343)
-
-A live station (`attributes.isLive: true`, `kind: 'streaming'`) plays as one item:
-`nowPlayingItem.type` `radioStation`, `isLiveRadioStation` true, `attributes.isLive` true,
-its `container` the `stations` resource. MusicKit reports a finite duration that is the
-stream's window, not the programme (`currentPlaybackDuration` 160, then 176 a little later),
-and a position inside it (from about 112, counting up), with `isPlayingAtLiveEdge` false and
-`seekableTimeRanges` `[{start: 0, end: …}]`; `playbackTimeDidChange` and
-`playbackDurationDidChange` arrive as for a song. Every capability is false: `seekToTime()`
-does nothing, `pause()` leaves it playing, `mk.stop()` ends it (state `stopped`, no item).
-The bridge's `nowPlaying()` gives `track.type: 'radioStation'`, `durationMs: 0` and that
-position and duration. So a live item is told by its type and `isLive`, not by its duration.
 
 ### Credits (#364)
 
@@ -430,8 +434,9 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 | Event | Data |
 |---|---|
 | `authorizationStatusDidChange` | `{authorized, status}` |
-| `playbackStateDidChange` | `{state, position, duration}`; a play walks `playing`, `waiting`, `loading`, `playing` |
-| `nowPlayingItemDidChange` | `{track: Track or null, index}` |
+| `playbackStateDidChange` | `{state, position, duration, capabilities}`; a play walks `playing`, `waiting`, `loading`, `playing` |
+| `nowPlayingItemDidChange` | `{track: Track or null, index, capabilities}` |
+| `capabilitiesChanged` | `{capabilities}`, as `nowPlaying()` gives them: what MusicKit allows changed |
 | `playbackTimeDidChange` | `{position, duration}` in seconds, about four times a second while playing |
 | `playbackDurationDidChange` | `{duration}` |
 | `queueItemsDidChange` | `{index, items: [Track], editable, canAutoplay, autoplay}`, as `queue()` answers (index -1 before playback starts) |
@@ -501,7 +506,9 @@ Track = {"id": "i.…", "catalogId": "…" /* or null */, "title": "…", "artis
          "type": "library-songs",        // the API's: songs, music-videos, library-…, or ''
                                          // (the item playing may carry MusicKit's own
                                          // 'song' or 'musicVideo' instead)
-         "autoplay": true}               // a queue entry autoplay added (only then)
+         "autoplay": true,               // a queue entry autoplay added (only then)
+         "isLive": true}                 // the item playing is a live radio station (only
+                                         // then: its type 'radioStation', durationMs 0)
 ```
 
 The dates and favourites come with the listings the sync reads (`sync.SONGS_PARAMS`,
