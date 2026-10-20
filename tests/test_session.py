@@ -48,11 +48,27 @@ class SnapshotTest(unittest.TestCase):
                          (2, 0, 83.0, 214.0))
         self.assertEqual([entry['id'] for entry in data['queue']],
                          ['i.demo0003', 'i.demo0002', 'i.demo0001'])
-        self.assertEqual(set(data['queue'][2]), set(session.TRACK_KEYS) - {'type'})
+        # Every key the entry has (`autoplay` only on one autoplay added).
+        self.assertEqual(set(data['queue'][2]), set(session.TRACK_KEYS) - {'type', 'autoplay'})
         self.assertIsNone(data['source'])
         self.assertEqual(data['repeat'], 'none')
         self.assertNotIn('shuffle', data)  # comes back off, the queue in its order
         self.assertEqual(session.parse(json.loads(json.dumps(data)))['queue'], data['queue'])
+
+    def test_an_autoplay_entry_keeps_its_mark(self):
+        player, engine, app = make_player()
+        playing(player, engine)
+        items = [dict(item) for item in QUEUE['items']] + [
+            dict(TRACK, id='i.auto1', catalogId='1000000071', title='Suggested', autoplay=True)]
+        engine.event('queueItemsDidChange', {'index': 2, 'items': items})
+        data = session.snapshot(player, now=NOW)
+        self.assertIs(data['queue'][3]['autoplay'], True)
+        self.assertNotIn('autoplay', data['queue'][2])
+        parsed = session.parse(json.loads(json.dumps(data)))
+        self.assertEqual(parsed['queue'], data['queue'])
+        # A mark that is not a boolean is no entry: the file is not one.
+        data['queue'][3]['autoplay'] = 'yes'
+        self.assertIsNone(session.parse(data))
 
     def test_a_source_kept_while_the_queue_is_its(self):
         async def go():

@@ -669,6 +669,22 @@ async def walkthrough(window):
     await key(window, 'Right')
     await key(window, 'space')
     await until(lambda: sheet.tab_stack.get_visible_child_name() == 'queue')
+    queue_view = sheet.queue_view
+    await key(window, 'Tab', 0.1)
+    check('Tab reaches Autoplay', window.get_focus() is queue_view.autoplay_button,
+          describe(window.get_focus()))
+    await key(window, 'Tab', 0.1)
+    check('Tab: Clear', window.get_focus() is queue_view.clear_button,
+          describe(window.get_focus()))
+    cleared = []
+
+    async def clear():
+        cleared.append(True)
+        return 0
+    app.player.clear_up_next = clear
+    await key(window, 'space', 0.4)
+    del app.player.clear_up_next
+    check('Space on Clear clears Up Next', cleared == [True], cleared)
     await key(window, 'Tab', 0.1)
     check('Tab reaches Up Next', inside(window.get_focus(), sheet.queue_view.list_view),
           describe(window.get_focus()))
@@ -680,6 +696,7 @@ async def walkthrough(window):
           not any(each.get_visible() for each in popover) and window.bottom_sheet.get_open()
           and inside(window.get_focus(), sheet.queue_view.list_view),
           describe(window.get_focus()))
+    await up_next_remove(window, queue_view)
     jumps = []
     undo = watch('queue_jump', jumps)
     await key(window, 'Down')
@@ -1044,6 +1061,51 @@ async def walkthrough(window):
 
 
 # -- names ---------------------------------------------------------------------------------
+
+def focused_entry(queue_view):
+    """The queue entry of the Up Next row with the focus, or None."""
+    from applemusic.widgets import context_menu
+
+    focus = queue_view.get_root().get_focus()
+    found = context_menu.find(queue_view.list_view, focus) if focus is not None else None
+    return found[0].entry if found is not None else None
+
+
+async def up_next_remove(window, queue_view):
+    """Up Next's Remove: the menu of an entry after the one playing offers it, and Delete
+    takes the focused entry out (the Player's command stood in for: the demo has no engine,
+    so the stand-in takes it out of the queue as the Player would), the focus moving to the
+    entry that took its place; the entry playing stays. Leaves the focus on the first row."""
+    player = app.player
+    await key(window, 'Down')
+    await key(window, 'Menu', 0.6)
+    shown = harness.popovers(queue_view)
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check("the next entry's menu offers Remove from Up Next",
+          'Remove from Up Ne_xt' in labels, labels)
+    await key(window, 'Escape', 0.4)
+    removed = []
+
+    async def remove(index, entry_id):
+        removed.append((index, entry_id))
+        player.queue.remove(index)
+        player._renumber(index)
+        return True
+    player.remove_from_queue = remove
+    before = focused_entry(queue_view)
+    following = player.queue.get_item(2).id if player.queue.get_n_items() > 2 else None
+    await key(window, 'Delete', 0.6)
+    after = focused_entry(queue_view)
+    check('Delete removes the focused entry',
+          before is not None and removed == [(1, before.id)], removed)
+    check('the focus goes to the entry that took its place',
+          after is not None and after.id == following,
+          after.title if after is not None else describe(window.get_focus()))
+    await key(window, 'Up')
+    await key(window, 'Delete', 0.4)
+    check('Delete on the entry playing removes nothing', len(removed) == 1, removed)
+    del player.remove_from_queue
+
 
 async def now_playing_tabs(window):
     """Lyrics and Up Next: Ctrl+Shift+U and Ctrl+Shift+L open Now Playing on that tab, switch

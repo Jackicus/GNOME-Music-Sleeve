@@ -145,6 +145,19 @@ class FakeEngine(GObject.Object):
     async def queue_jump(self, index):
         return await self._command('queue_jump', index)
 
+    async def queue_remove(self, index, entry_id):
+        return await self._command('queue_remove', index, entry_id)
+
+    async def queue_clear(self):
+        return await self._command('queue_clear')
+
+    async def queue_undo_clear(self):
+        return await self._command('queue_undo_clear')
+
+    async def set_autoplay(self, on):
+        answer = await self._command('set_autoplay', on)
+        return answer if isinstance(answer, dict) else {'autoplay': on, 'canAutoplay': True}
+
     async def lyrics(self, catalog_id):
         return await self._command('lyrics', catalog_id)
 
@@ -156,12 +169,17 @@ class FakeEngine(GObject.Object):
 
 
 class FakeSettings:
-    def __init__(self, signed_in=True):
+    def __init__(self, signed_in=True, autoplay=True):
         self.signed_in = signed_in
+        self.autoplay = autoplay
 
     def get_boolean(self, key):
-        assert key == 'signed-in'
-        return self.signed_in
+        assert key in ('signed-in', 'autoplay'), key
+        return self.signed_in if key == 'signed-in' else self.autoplay
+
+    def bind(self, key, obj, prop, _flags):
+        """Gio.Settings.bind's first half: obj's property set from the setting."""
+        obj.set_property(prop, self.get_boolean(key))
 
 
 class FakeApp:
@@ -667,7 +685,9 @@ class EngineLifecycleTest(unittest.TestCase):
             engine.answers['queue'] = QUEUE
             engine.state = 'up'
             await app.settle()
-            self.assertEqual(engine.calls, [('now_playing',), ('queue',), ('lyrics', '1000000001')])
+            # The app's autoplay setting goes to MusicKit as the engine comes up.
+            self.assertEqual(engine.calls, [('now_playing',), ('set_autoplay', True), ('queue',),
+                                            ('lyrics', '1000000001')])
             self.assertEqual(player.state, 'paused')
             self.assertEqual(player.queue.get_n_items(), 3)
             self.assertEqual(player.queue_index, 2)
@@ -1029,16 +1049,17 @@ class QueueTest(unittest.TestCase):
         self.engine.event('queueItemsDidChange', dict(QUEUE, index=0))
         self.assertEqual(self.changes, [(0, 0, 3)])
         self.assertEqual(self.player.queue_index, 0)
-        # The same entries with a title filled in: replaced (the rows show the new title).
+        # The same entries with a title filled in: that entry replaced (its row shows the
+        # new title), the others kept.
         renamed = [dict(item) for item in QUEUE['items']]
         renamed[1]['title'] = 'Pilot Light (Live)'
         self.engine.event('queueItemsDidChange', {'index': 0, 'items': renamed})
-        self.assertEqual(self.changes, [(0, 0, 3), (0, 3, 3)])
+        self.assertEqual(self.changes, [(0, 0, 3), (1, 1, 1)])
         self.assertEqual(self.player.queue.get_item(1).title, 'Pilot Light (Live)')
-        # A different queue replaces it in one splice.
+        # A shorter queue: what it no longer holds goes, in one splice.
         self.engine.event('queueItemsDidChange', {'index': 0, 'items': QUEUE['items'][:1]})
         self.assertEqual(self.ids(), ['i.demo0003'])
-        self.assertEqual(self.changes, [(0, 0, 3), (0, 3, 3), (0, 3, 1)])
+        self.assertEqual(self.changes, [(0, 0, 3), (1, 1, 1), (1, 2, 0)])
 
     def test_an_identical_snapshot_makes_no_objects(self):
         self.engine.event('queueItemsDidChange', QUEUE)
@@ -1146,8 +1167,8 @@ class LyricsTest(unittest.TestCase):
             self.assertIsNone(player.lyrics)
             await app.settle()
             # The item is not in the (empty) queue, so the queue is read as well.
-            self.assertEqual(engine.calls,
-                             [('now_playing',), ('queue',), ('lyrics', '1000000001')])
+            self.assertEqual(engine.calls, [('now_playing',), ('set_autoplay', True),
+                                            ('queue',), ('lyrics', '1000000001')])
             self.assertIsInstance(player.lyrics, Lyrics)
             self.assertEqual(player.lyrics.catalog_id, '1000000001')
             self.assertEqual(len(player.lyrics), 2)
@@ -1632,6 +1653,339 @@ class SourceTest(unittest.TestCase):
             engine.event('queueItemsDidChange', dict(QUEUE, items=QUEUE['items'][:1]))
             self.assertEqual(player.source, {'kind': 'station', 'id': 'ra.1'})
         asyncio.run(go())
+
+
+def entries(count, tag='e'):
+    """An invented queue of `count` entries, as the bridge shapes them."""
+    return [dict(TRACK, id=f'i.{tag}{number:04}', catalogId=str(1100000000 + number),
+                 title=f'Entry {tag}{number}', index=number) for number in range(count)]
+
+
+class QueueDiffTest(unittest.TestCase):
+    """apply_queue: MusicKit's whole queue, sent again at every change, becomes the fewest
+    splices of the store, the entries kept as the same objects, renumbered."""
+
+    def setUp(self):
+        self.player, self.engine, self.app = make_player()
+        self.changes = []
+        self.player.queue.connect(
+            'items-changed', lambda _s, position, removed, added: self.changes.append(
+                (position, removed, added)))
+
+    def send(self, items, index=0):
+        self.engine.event('queueItemsDidChange', {'index': index, 'items': items})
+
+    def ids(self):
+        return [entry.id for entry in self.player.queue]
+
+    def check_numbered(self):
+        for position, entry in enumerate(self.player.queue):
+            self.assertEqual((entry.index, entry.raw['index']), (position, position), entry.id)
+
+    def start(self, items):
+        self.send(items)
+        self.changes.clear()
+        return list(self.player.queue)
+
+    def test_an_entry_taken_out_is_one_splice_and_the_rest_stay(self):
+        items = entries(8)
+        kept = self.start(items)
+        self.send(items[:5] + items[6:])
+        self.assertEqual(self.changes, [(5, 1, 0)])
+        self.assertEqual(list(self.player.queue), kept[:5] + kept[6:])  # the same objects
+        self.check_numbered()
+
+    def test_an_entry_put_in_is_one_splice(self):
+        items = entries(6)
+        kept = self.start(items)
+        added = dict(TRACK, id='i.next', catalogId='1100009999', title='Next')
+        self.send(items[:2] + [added] + items[2:])  # Play Next after the second
+        self.assertEqual(self.changes, [(2, 0, 1)])
+        self.assertEqual(self.ids()[2], 'i.next')
+        self.assertEqual(list(self.player.queue)[:2] + list(self.player.queue)[3:], kept)
+        self.check_numbered()
+        self.send(items[:2] + [added] + items[2:] + [dict(added, id='i.later')])  # Play Later
+        self.assertEqual(self.changes[-1], (7, 0, 1))
+        self.check_numbered()
+
+    def test_a_move_is_two_splices(self):
+        items = entries(10)
+        kept = self.start(items)
+        first = items[:8] + items[9:]          # spliceQueueItems(8, 1)
+        second = first[:2] + [items[8]] + first[2:]   # spliceQueueItems(2, 0, taken)
+        self.send(first)
+        self.send(second)
+        self.assertEqual(self.changes, [(8, 1, 0), (2, 0, 1)])
+        self.assertEqual(self.ids(), [item['id'] for item in second])
+        moved = self.player.queue.get_item(2)
+        self.assertNotIn(moved, kept)  # the entry moved is made again; the others are kept
+        self.assertEqual([entry for entry in self.player.queue if entry is not moved],
+                         kept[:8] + kept[9:])
+        self.check_numbered()
+
+    def test_a_whole_new_queue_is_one_splice(self):
+        self.start(entries(5))
+        self.send(entries(7, 'z'))
+        self.assertEqual(self.changes, [(0, 5, 7)])
+        self.assertEqual(self.ids(), [item['id'] for item in entries(7, 'z')])
+        self.check_numbered()
+        self.send([])
+        self.assertEqual(self.changes[-1], (0, 7, 0))
+
+    def test_an_entry_changed_in_place_is_replaced_alone(self):
+        items = entries(5)
+        kept = self.start(items)
+        changed = [dict(item) for item in items]
+        changed[3]['autoplay'] = True  # the mark is the entry's data
+        self.send(changed)
+        self.assertEqual(self.changes, [(3, 1, 1)])
+        self.assertTrue(self.player.queue.get_item(3).autoplay)
+        self.assertEqual(list(self.player.queue)[:3], kept[:3])
+
+    def test_the_same_song_twice_and_a_queue_inside_itself(self):
+        a, b, c = entries(3)
+        self.start([a, b, b, c])
+        self.send([a, b, c])
+        self.assertEqual(self.changes, [(2, 1, 0)])
+        self.assertEqual(self.ids(), [a['id'], b['id'], c['id']])
+        self.check_numbered()
+        self.start([a, b, a])
+        self.send([a])
+        self.assertEqual(self.changes, [(1, 2, 0)])
+        self.send([a, b, a])
+        self.assertEqual(self.changes[-1], (1, 0, 2))
+        self.assertEqual(self.ids(), [a['id'], b['id'], a['id']])
+        self.check_numbered()
+
+    def test_autoplay_turned_off_one_event_each(self):
+        items = entries(5) + [dict(item, autoplay=True) for item in entries(10, 'auto')]
+        kept = self.start(items)
+        for count in range(10):
+            self.send(items[:len(items) - 1 - count])  # MusicKit takes them from the end
+        self.assertEqual(self.changes, [(14 - count, 1, 0) for count in range(10)])
+        self.assertEqual(list(self.player.queue), kept[:5])
+        with mock.patch('applemusic.player.NowPlaying', side_effect=AssertionError('made')):
+            self.send(items[:5])  # the same again: nothing made, nothing spliced
+        self.assertEqual(len(self.changes), 10)
+
+    def test_random_edits_end_as_the_snapshot(self):
+        import random
+        chooser = random.Random(332)
+        pool = entries(40) + entries(10, 'x')
+        for _round in range(200):
+            current = chooser.sample(pool, chooser.randint(0, 20))
+            before = self.start(current)
+            wanted = list(current)
+            for _edit in range(chooser.randint(1, 3)):
+                kind = chooser.choice(('remove', 'insert', 'move', 'replace'))
+                if kind == 'remove' and wanted:
+                    wanted.pop(chooser.randrange(len(wanted)))
+                elif kind == 'insert':
+                    wanted.insert(chooser.randint(0, len(wanted)), chooser.choice(pool))
+                elif kind == 'move' and wanted:
+                    wanted.insert(chooser.randint(0, len(wanted) - 1),
+                                  wanted.pop(chooser.randrange(len(wanted))))
+                elif kind == 'replace':
+                    wanted = chooser.sample(pool, chooser.randint(0, 20))
+            self.send(wanted)
+            self.assertEqual(self.ids(), [item['id'] for item in wanted])
+            self.check_numbered()
+            self.assertLessEqual(len(self.changes), 1)  # one splice at most
+            # What is alike at the start is kept as it was.
+            start = 0
+            while (start < min(len(current), len(wanted))
+                   and current[start]['id'] == wanted[start]['id']):
+                self.assertIs(self.player.queue.get_item(start), before[start])
+                start += 1
+
+
+class QueueEditTest(unittest.TestCase):
+    """Up Next's Remove, Clear and its Undo: the store at once, then the engine; the events
+    that follow change nothing; a failure shows MusicKit's queue again."""
+
+    def playing(self, count=6, index=1, **snapshot):
+        """A Player with an invented queue of `count`, the entry at `index` playing."""
+        player, engine, app = make_player(state='up')
+        items = entries(count)
+        engine.event('queueItemsDidChange', dict(snapshot, index=index, items=items))
+        engine.event('nowPlayingItemDidChange', {'track': items[index], 'index': index})
+        return player, engine, app, items
+
+    def ids(self, player):
+        return [entry.id for entry in player.queue]
+
+    def test_remove_takes_the_entry_out_at_once(self):
+        async def go():
+            player, engine, app, items = self.playing()
+            await app.settle()
+            engine.calls.clear()
+            gate = engine.gate('queue_remove')
+            task = asyncio.ensure_future(player.remove_from_queue(3, 'i.e0003'))
+            await asyncio.sleep(0)
+            self.assertEqual(self.ids(player), [item['id'] for item in items[:3] + items[4:]])
+            self.assertEqual(engine.calls, [('queue_remove', 3, 'i.e0003')])
+            gate.set()
+            self.assertTrue(await task)
+            changes = []
+            player.queue.connect('items-changed', lambda *args: changes.append(args[1:]))
+            # MusicKit's event for it: the store as it is already.
+            engine.event('queueItemsDidChange', {'index': 1, 'items': items[:3] + items[4:]})
+            self.assertEqual(changes, [])
+            self.assertEqual([entry.index for entry in player.queue], [0, 1, 2, 3, 4])
+        asyncio.run(go())
+
+    def test_remove_refuses_what_it_may_not_take(self):
+        async def go():
+            player, engine, app, items = self.playing()
+            await app.settle()
+            engine.calls.clear()
+            for index, entry_id in ((1, 'i.e0001'), (0, 'i.e0000'), (3, 'i.e0004'),
+                                    (9, 'i.e0009')):
+                self.assertFalse(await player.remove_from_queue(index, entry_id))
+            self.assertEqual(engine.calls, [])
+            self.assertEqual(player.queue.get_n_items(), 6)
+            engine.event('queueItemsDidChange', {'index': 1, 'items': items, 'editable': False})
+            self.assertFalse(player.queue_editable)
+            self.assertFalse(player.can_edit(3))
+            self.assertFalse(player.can_clear())
+            self.assertFalse(await player.remove_from_queue(3, 'i.e0003'))
+            self.assertEqual(await player.clear_up_next(), 0)
+            self.assertEqual(engine.calls, [])
+        asyncio.run(go())
+
+    def test_a_refused_remove_shows_musickits_queue_again(self):
+        async def go():
+            player, engine, app, items = self.playing()
+            await app.settle()
+            engine.answers['queue'] = {'index': 1, 'items': items}
+            engine.fail = EngineError('queue-changed', 'the entry at 3 is another')
+            self.assertFalse(await player.remove_from_queue(3, 'i.e0003'))  # not raised
+            engine.fail = None
+            await app.settle()
+            self.assertEqual(self.ids(player), [item['id'] for item in items])
+            engine.fail = EngineError('queue-locked', 'a station')
+            with self.assertRaises(EngineError):
+                await player.remove_from_queue(3, 'i.e0003')
+            engine.fail = None
+            await app.settle()
+            self.assertEqual(player.queue.get_n_items(), 6)
+        asyncio.run(go())
+
+    def test_clear_and_undo(self):
+        async def go():
+            player, engine, app, items = self.playing()
+            await app.settle()
+            engine.calls.clear()
+            self.assertEqual(await player.clear_up_next(), 4)
+            self.assertEqual(self.ids(player), ['i.e0000', 'i.e0001'])
+            self.assertEqual(engine.calls, [('queue_clear',)])
+            self.assertFalse(player.can_clear())
+            self.assertTrue(player.can_undo_clear)
+            self.assertEqual(await player.undo_clear(), 4)
+            self.assertEqual(self.ids(player), [item['id'] for item in items])
+            self.assertEqual([entry.index for entry in player.queue], list(range(6)))
+            self.assertEqual(engine.calls, [('queue_clear',), ('queue_undo_clear',)])
+            self.assertEqual(await player.undo_clear(), 0)  # once only
+            # Another item playing since: nothing to put back after it.
+            await player.clear_up_next()
+            engine.event('queueItemsDidChange', {'index': 0, 'items': items[:2]})
+            self.assertFalse(player.can_undo_clear)
+            self.assertEqual(await player.undo_clear(), 0)
+            self.assertEqual(engine.calls[-1], ('queue_clear',))
+        asyncio.run(go())
+
+    def test_a_failed_clear_offers_no_undo(self):
+        async def go():
+            player, engine, app, items = self.playing()
+            await app.settle()
+            engine.answers['queue'] = {'index': 1, 'items': items}
+            engine.fail = EngineError('engine-down', 'gone')
+            with self.assertRaises(EngineError):
+                await player.clear_up_next()
+            engine.fail = None
+            await app.settle()
+            self.assertFalse(player.can_undo_clear)
+            self.assertEqual(player.queue.get_n_items(), 6)
+        asyncio.run(go())
+
+    def test_a_restored_session_is_edited_locally(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await app.settle()
+            engine.calls.clear()
+            queue = [{key: value for key, value in item.items() if key != 'index'}
+                     for item in entries(5)]
+            self.assertTrue(player.restore(session(queue=queue, index=1)))
+            self.assertTrue(player.queue_editable)
+            self.assertTrue(await player.remove_from_queue(3, 'i.e0003'))
+            self.assertIsNone(player.source)  # its songs' queue now, not the album's
+            self.assertEqual(await player.clear_up_next(), 2)
+            self.assertEqual(await player.undo_clear(), 2)
+            self.assertEqual(self.ids(player), ['i.e0000', 'i.e0001', 'i.e0002', 'i.e0004'])
+            self.assertEqual(engine.calls, [])  # nothing asked of MusicKit
+            await player.clear_up_next()
+            await player.resume()
+            # What MusicKit gets is the session as edited.
+            self.assertEqual(engine.calls[-1], ('play', 'songs', 'i.e0000,i.e0001', 1, False))
+            self.assertFalse(player.can_undo_clear)  # the Clear was the session's
+        asyncio.run(go())
+
+
+class AutoplayTest(unittest.TestCase):
+    """The autoplay setting goes to MusicKit at each start and bridgeReset; MusicKit's state
+    and what it allows follow its snapshots and events."""
+
+    def test_the_setting_goes_to_musickit_as_the_engine_comes_up(self):
+        async def go():
+            player, engine, app = make_player(state='down')
+            app.settings.autoplay = False
+            engine.answers['set_autoplay'] = {'autoplay': False, 'canAutoplay': True}
+            engine.state = 'up'
+            await app.settle()
+            self.assertIn(('set_autoplay', False), engine.calls)
+            self.assertFalse(player.autoplay)
+            engine.calls.clear()
+            engine.event('bridgeReset', {})  # the page set its own as it loaded
+            await app.settle()
+            self.assertIn(('set_autoplay', False), engine.calls)
+            app.settings.autoplay = True
+            engine.answers['set_autoplay'] = {'autoplay': True, 'canAutoplay': False}
+            await player.apply_autoplay()
+            self.assertTrue(player.autoplay)
+            self.assertFalse(player.can_autoplay)
+        asyncio.run(go())
+
+    def test_nothing_without_an_engine_or_in_the_demo(self):
+        async def go():
+            for player, engine, app in (make_player(state='down'),
+                                        make_player(state='up', demo=True)):
+                await app.settle()
+                engine.calls.clear()
+                await player.apply_autoplay()
+                self.assertEqual(engine.calls, [])
+            player, engine, app = make_player(state='up')
+            await app.settle()
+            engine.fail = EngineError('timeout', 'slow')
+            await player.apply_autoplay()  # logged, not raised
+        asyncio.run(go())
+
+    def test_musickits_state_and_capabilities_follow_its_snapshots(self):
+        player, engine, app = make_player()
+        engine.event('autoplayEnabledDidChange', {'autoplay': True})
+        self.assertTrue(player.autoplay)
+        engine.event('queueItemsDidChange', dict(QUEUE, editable=False, canAutoplay=False,
+                                                 autoplay=False))
+        self.assertEqual((player.queue_editable, player.can_autoplay, player.autoplay),
+                         (False, False, False))
+        engine.event('queueItemsDidChange', QUEUE)  # an older shape: everything allowed
+        self.assertEqual((player.queue_editable, player.can_autoplay), (True, True))
+        engine.event('queueItemsDidChange', dict(QUEUE, editable=False))
+        player.apply(None)  # the engine gone
+        self.assertTrue(player.queue_editable)
+        items = [dict(item) for item in QUEUE['items']]
+        items[2]['autoplay'] = True
+        engine.event('queueItemsDidChange', {'index': 0, 'items': items})
+        self.assertEqual([entry.autoplay for entry in player.queue], [False, False, True])
 
 
 class FormatTimeTest(unittest.TestCase):

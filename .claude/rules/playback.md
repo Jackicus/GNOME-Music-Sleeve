@@ -52,6 +52,20 @@ paths:
   `previous()` restarts the item after `PREVIOUS_RESTART` seconds. A `mediaPlaybackError` is
   emitted as `error(sentence)`, the sentence `playback_error_text(code)` gives MusicKit's
   code; the app toasts it as it is.
+- The queue store: `apply_queue()` makes `player.queue` MusicKit's snapshot with one splice of
+  what differs (`_splice_queue`: the entries alike at the start and the end, compared by
+  `NowPlaying.key`, kept as the same objects and renumbered), so a list over it keeps its
+  rows; never replace the store whole (docs/notes.md has the cost). Up Next's edits
+  (`remove_from_queue(index, id)`, `clear_up_next()`, `undo_clear()`) change the store at
+  once, then the engine; MusicKit's event that follows then changes nothing, and a failure
+  reads the queue again (`queue-changed`: only that; anything else is raised too). Events are
+  applied as they come, never delayed to coalesce them. Edits name an entry after the one
+  playing by index and id, only while `queue_editable` (the snapshot's `editable`: not a
+  station's queue); while restored they change the session alone and drop its `source`.
+  `apply_autoplay()` sets the `autoplay` setting on MusicKit as the engine comes up, after a
+  `bridgeReset`, and when the setting changes (main.py); `autoplay` and `can_autoplay` are
+  MusicKit's, and `NowPlaying.autoplay` marks an entry autoplay added. tests/test_player.py's
+  QueueDiffTest, QueueEditTest and AutoplayTest.
 - The last session (`src/session.py`'s `SessionKeeper`, `app.session`, not in demo mode):
   `<cache>/session.json`, written 2 s after a change and every 30 s while playing, at quit
   (the snapshot taken before the engine's stop empties the Player), never with nothing over
@@ -95,7 +109,11 @@ paths:
   `scripts/screenshot.py --demo --now-playing lyrics|queue --size WxH` and the log for
   libadwaita's "exceeds … height" warning. Up Next is a `Gtk.SliceListModel` of the queue
   from the entry playing on, its size set again with each offset (`queue.slice_size()`,
-  gtk-notes.md; tests/test_queue.py); the lyrics list is the user's while they scroll it
+  gtk-notes.md; tests/test_queue.py), in two sections by `queue.QueueSections` (the
+  Autoplay header over the first entry autoplay added: `section_bounds()`), a row being
+  queue index `queue_index_at(position)`; Remove from Up Next is in an entry's menu
+  (`context_queue_entry`) and on Delete (the focus then on the row in its place), and
+  Autoplay and Clear (an Undo toast, `app.undo-clear-up-next`) sit above the list; the lyrics list is the user's while they scroll it
   (wheel, touchpad, touch: it shows no scrollbar) or have the focus on a line. Its top and
   bottom edges fade out through an alpha mask in `LyricsView.do_snapshot` (`edge_fades()`:
   as far as the text goes on past each edge; none in high contrast), never a gradient laid

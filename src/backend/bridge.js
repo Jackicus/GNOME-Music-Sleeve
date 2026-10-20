@@ -404,17 +404,75 @@
         return { station: id };
     }
 
+    // What MusicKit allows with the queue now (mk.capabilities): edits (false on a
+    // station's queue) and autoplay. An instance without capabilities allows both.
+    function queueCapabilities(mk) {
+        const capabilities = (mk && mk.capabilities) || {};
+        return {
+            editable: capabilities.canEditPlaybackQueue !== false,
+            canAutoplay: capabilities.canAutoplay !== false
+        };
+    }
+
+    // Whether the queue's entry at `index` is one autoplay added: its queue item's
+    // isAutoplay (queue._queueItems, {item, isAutoplay}, when that lines up with the
+    // items), else whether queue.autoplayItems holds the MediaItem.
+    function autoplayFlags(queue, items) {
+        const queueItems = queue._queueItems;
+        if (Array.isArray(queueItems) && queueItems.length === items.length) {
+            return queueItems.map(function (entry, idx) {
+                return !!(entry && entry.isAutoplay && (!entry.item || entry.item === items[idx]));
+            });
+        }
+        const added = Array.isArray(queue.autoplayItems) ? queue.autoplayItems : [];
+        return items.map(function (item) { return added.indexOf(item) >= 0; });
+    }
+
     function queueSnapshot(mk) {
         if (!mk || !mk.queue) {
             return { index: 0, items: [] };
         }
-        const items = (mk.queue.items || []).map(function (it, idx) {
-            return formatTrack(it, idx);
+        const media = mk.queue.items || [];
+        const flags = autoplayFlags(mk.queue, media);
+        const items = media.map(function (it, idx) {
+            const track = formatTrack(it, idx);
+            // Only when true: the snapshot of a queue without autoplay stays as it was.
+            if (track && flags[idx]) track.autoplay = true;
+            return track;
         });
+        const capabilities = queueCapabilities(mk);
         return {
             index: mk.queue.position || 0,
-            items: items
+            items: items,
+            editable: capabilities.editable,
+            canAutoplay: capabilities.canAutoplay,
+            autoplay: !!mk.autoplayEnabled
         };
+    }
+
+    // The entries Clear took (queueClear), for its Undo (queueUndoClear): the queue items
+    // after the item playing then, and that item's id.
+    let cleared = null;
+
+    // Whether the queue's entry at `index` may be edited as the entry `id`: an error
+    // answer ({error, code}) when not, else null.
+    function editRefused(mk, index, id) {
+        if (!queueCapabilities(mk).editable) {
+            return { error: 'this queue cannot be edited', code: 'NOT_EDITABLE' };
+        }
+        const items = mk.queue.items || [];
+        const position = typeof mk.queue.position === 'number' ? mk.queue.position : -1;
+        if (!Number.isInteger(index) || index < 0 || index >= items.length) {
+            return { error: 'no entry at ' + index, code: 'STALE' };
+        }
+        if (index === position) {
+            return { error: 'the entry playing cannot be removed', code: 'CURRENT' };
+        }
+        const item = items[index];
+        if (!item || item.id !== id) {
+            return { error: 'the entry at ' + index + ' is another', code: 'STALE' };
+        }
+        return null;
     }
 
     // A restored session's start ({id, time}), while a queue loaded paused (play()'s
@@ -520,6 +578,9 @@
         },
         mediaPlaybackError: function (mk, e) {
             return { code: errorCode(e), message: describeError(e) };
+        },
+        autoplayEnabledDidChange: function (mk, e) {
+            return { autoplay: typeof e === 'boolean' ? e : !!mk.autoplayEnabled };
         }
     };
 
@@ -892,6 +953,78 @@
             pendingStart = null;
             await mk.changeToMediaAtIndex(Number(index));
             return { ok: true };
+        },
+
+        // Remove the queue's entry at `index`, when it is still the entry `id` (the web
+        // player's own check) and not the one playing: queue.spliceQueueItems, or the
+        // deprecated queue.remove where that is missing. One queueItemsDidChange follows;
+        // the item playing and its time are left alone. {ok: true}, or {error, code}:
+        // NOT_EDITABLE (a station's queue), CURRENT, STALE (the queue changed meanwhile).
+        queueRemove: function (index, id) {
+            const mk = getMusicKit();
+            if (!mk || !mk.queue) throw new Error('MusicKit not initialized');
+            index = Number(index);
+            const refused = editRefused(mk, index, String(id));
+            if (refused) return refused;
+            if (typeof mk.queue.spliceQueueItems === 'function') {
+                mk.queue.spliceQueueItems(index, 1);
+            } else {
+                mk.queue.remove(index);
+            }
+            return { ok: true };
+        },
+
+        // Everything after the item playing taken out of the queue (Up Next's Clear):
+        // queue.clearAfterCurrent, which keeps the item and those before it. The queue
+        // items taken are kept for queueUndoClear. {ok: true, cleared: n}, or {error, code}
+        // (NOT_EDITABLE).
+        queueClear: function () {
+            const mk = getMusicKit();
+            if (!mk || !mk.queue) throw new Error('MusicKit not initialized');
+            if (!queueCapabilities(mk).editable) {
+                return { error: 'this queue cannot be edited', code: 'NOT_EDITABLE' };
+            }
+            const queue = mk.queue;
+            const position = typeof queue.position === 'number' ? queue.position : -1;
+            const items = queue.items || [];
+            const kept = Array.isArray(queue._queueItems) ? queue._queueItems.slice(position + 1) : [];
+            cleared = {
+                id: items[position] ? items[position].id : null,
+                items: kept
+            };
+            queue.clearAfterCurrent();
+            return { ok: true, cleared: Math.max(0, items.length - position - 1) };
+        },
+
+        // Clear's entries put back after the item playing, while it is still the item it
+        // was (queue.spliceQueueItems). {ok: true, restored: n}, or {error, code}: STALE
+        // (nothing to put back, or another item plays now), NOT_EDITABLE.
+        queueUndoClear: function () {
+            const mk = getMusicKit();
+            if (!mk || !mk.queue) throw new Error('MusicKit not initialized');
+            const taken = cleared;
+            cleared = null;
+            const queue = mk.queue;
+            const position = typeof queue.position === 'number' ? queue.position : -1;
+            const items = queue.items || [];
+            if (!taken || !taken.items.length || !items[position] || items[position].id !== taken.id) {
+                return { error: 'nothing to put back', code: 'STALE' };
+            }
+            if (!queueCapabilities(mk).editable) {
+                return { error: 'this queue cannot be edited', code: 'NOT_EDITABLE' };
+            }
+            queue.spliceQueueItems(position + 1, 0, ...taken.items);
+            return { ok: true, restored: taken.items.length };
+        },
+
+        // Autoplay on or off (mk.autoplayEnabled; null leaves it): {autoplay, canAutoplay}.
+        // The page's own switch, which the web player sets from its local storage as it
+        // loads; the app sets its own at every start.
+        autoplay: function (on) {
+            const mk = getMusicKit();
+            if (!mk) throw new Error('MusicKit not initialized');
+            if (typeof on === 'boolean' && mk.autoplayEnabled !== on) mk.autoplayEnabled = on;
+            return { autoplay: !!mk.autoplayEnabled, canAutoplay: queueCapabilities(mk).canAutoplay };
         },
 
         // The item's rating set (`value` 1, a favourite, or -1, Suggest Less: a PUT, which

@@ -21,6 +21,11 @@ template $AppleMusicPreferencesDialog: Adw.PreferencesDialog {
         subtitle: _("Keep playing when the window is closed; the system’s media controls bring it back");
       }
 
+      Adw.SwitchRow autoplay_row {
+        title: _("Autoplay");
+        subtitle: _("When the queue ends, keep playing similar songs, shown in Up Next");
+      }
+
       Adw.SwitchRow discord_row {
         title: _("Discord Presence");
         subtitle: _("Show the song playing, with its artist, album and cover, on your Discord profile while Discord is running");

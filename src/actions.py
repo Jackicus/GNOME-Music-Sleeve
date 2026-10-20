@@ -47,7 +47,9 @@ and item-remove-from-playlist, "(ssi)" (playlist id, track id, the track's index
 of a playlist taken out; item-move-to-folder, "(sss)" (folder id, kind, id): a playlist (or
 folder) moved into the folder ('root': the top level), shown at once (Library.hold()), put
 back if Apple refuses, with Undo on its toast; with an empty folder id, into a new folder
-named in a dialog and made beside it (Move to Folder's New Folder…).
+named in a dialog and made beside it (Move to Folder's New Folder…); item-remove-from-queue,
+"(is)" (the queue index, the entry's id): an Up Next entry after the one playing taken out
+of the queue (Player.remove_from_queue).
 
 A target names an object the menu was built for (remembered, the last REMEMBERED of them)
 or one the library has; failing both, the target's kind and id are used as they are. Each
@@ -102,7 +104,7 @@ from gettext import gettext as _
 from gettext import ngettext
 from urllib.parse import urlsplit
 
-from gi.repository import Gio, GLib
+from gi.repository import Gio, GLib, Gtk
 
 from . import related
 from .backend import api
@@ -116,6 +118,7 @@ log = logging.getLogger(__name__)
 TARGET = GLib.VariantType.new('(ss)')
 PLAYLIST_TARGET = GLib.VariantType.new('(sss)')
 ENTRY_TARGET = GLib.VariantType.new('(ssi)')
+QUEUE_ENTRY_TARGET = GLib.VariantType.new('(is)')
 
 # After a playlist write, how long to wait before each look at Apple's listing, in seconds,
 # until it shows the change: a new playlist was listed 4 to 6.5 s after it was made, a
@@ -174,6 +177,7 @@ def action_labels():
         'item-open-in-browser': _('_Open in Browser'),
         'item-copy-link': _('_Copy Link'),
         'item-remove-from-playlist': _('Remo_ve from Playlist'),
+        'item-remove-from-queue': _('Remove from Up Ne_xt'),
         'item-new-playlist': _('Ne_w Playlist…'),
         'item-rename': _('Rena_me…'),
         'item-delete': _('_Delete Playlist…'),
@@ -628,7 +632,7 @@ def main_menu_section():
 
 
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
-               moves=None, removable=None):
+               moves=None, removable=None, queue_entry=None):
     """The menu for obj (an Item or a Track), or None when nothing applies (the top level
     of the folders, a category). `playlists` are the entries the Add to Playlist submenu
     lists (ItemActions.playlists(): (id, title, children), a folder's children its own
@@ -637,7 +641,8 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     queue (no Play); `container`, the playlist Item the track obj is shown in (Remove from
     Playlist, when it is one of the user's); `moves`, where a playlist or folder can be
     moved (move_targets(): Move to Folder; None, not at all); `removable`, obj's
-    removal_target (Remove from Library…, and no Add to Library)."""
+    removal_target (Remove from Library…, and no Add to Library); `queue_entry`, (index, id)
+    of the queue's entry obj is when it may be taken out of Up Next (Remove from Up Next)."""
     named = describe(obj)
     if named is None or (isinstance(obj, Item) and obj.kind not in MENU_KINDS):
         return None
@@ -654,6 +659,10 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         play.append_item(menu_item('item-play-later', target))
     for item in station_items(obj):
         play.append_item(item)
+    if queue_entry is not None:
+        play.append_item(menu_item('item-remove-from-queue',
+                                   GLib.Variant('(is)', (int(queue_entry[0]),
+                                                         str(queue_entry[1])))))
     if related.has_album(obj) and not related.shows(here, obj, 'album'):
         go.append_item(menu_item('item-go-to-album', target))
     if related.has_artist(obj) and not related.shows(here, obj, 'artist'):
@@ -806,6 +815,7 @@ class ItemActions:
         self._add('item-add-to-playlist', PLAYLIST_TARGET, self._on_add_to_playlist)
         self._add('item-remove-from-playlist', ENTRY_TARGET, self._on_remove_from_playlist)
         self._add('item-move-to-folder', PLAYLIST_TARGET, self._on_move_to_folder)
+        self._add('item-remove-from-queue', QUEUE_ENTRY_TARGET, self._on_remove_from_queue)
 
     def _add(self, name, parameter_type, handler):
         action = Gio.SimpleAction.new(name, parameter_type)
@@ -823,18 +833,19 @@ class ItemActions:
 
     # -- menus -----------------------------------------------------------------------------
 
-    def menu_for(self, obj, queued=False):
+    def menu_for(self, obj, queued=False, queue_entry=None):
         """The menu for obj (build_menu), obj remembered for its actions; None when nothing
-        applies. `queued`: obj is in the player's queue (now_playing_track()). The rating
-        actions' state shows obj's rating, as last known; with the engine up, it is asked
-        again as the menu opens."""
+        applies. `queued`: obj is in the player's queue (now_playing_track()); `queue_entry`
+        its (index, id) there when Up Next may take it out (build_menu). The rating actions'
+        state shows obj's rating, as last known; with the engine up, it is asked again as the
+        menu opens."""
         named = describe(obj)
         if named is None:
             return None
         menu = build_menu(obj, self.playlists() if playlist_song(obj) else (),
                           self._storefront(), here=self._shown(), queued=queued,
                           container=self.container(obj), moves=self.move_targets(obj),
-                          removable=self.removal_target(obj))
+                          removable=self.removal_target(obj), queue_entry=queue_entry)
         if menu is None:
             return None
         self._remember(named, obj)
@@ -1476,6 +1487,24 @@ class ItemActions:
             message = _('Removed from the playlist')
         return self._run(self.engine.remove_from_playlist, (playlist_id, track_id, index),
                          message, after=lambda: self._refresh_playlist(playlist_id))
+
+    def _on_remove_from_queue(self, _action, parameter):
+        """An Up Next entry taken out of the queue (no toast: the row goes, and assistive
+        technology is told)."""
+        index, entry_id = parameter.unpack()
+        player = self.app.player
+
+        async def remove():
+            try:
+                removed = await player.remove_from_queue(index, entry_id)
+            except EngineError as error:
+                self.app.report(error)
+                return
+            if removed:
+                self.window.announce(_('Removed from Up Next'),
+                                     Gtk.AccessibleAnnouncementPriority.MEDIUM)
+
+        return self.app.spawn(remove())
 
     def _tree_node(self, obj):
         """obj's node in the library's PlaylistTree, or None."""

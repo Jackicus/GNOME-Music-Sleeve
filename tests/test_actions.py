@@ -264,6 +264,19 @@ class MenuTest(unittest.TestCase):
         self.assertIn('win.item-play-next', menu)
         self.assertIn('win.item-go-to-album', menu)
 
+    def test_an_up_next_entry_may_be_removed_when_its_menu_says(self):
+        # Only with its queue entry (Up Next's rows after the one playing, while the queue
+        # may be edited): never the item playing's menu, nor anywhere else.
+        menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(4, 'i.song1'))
+        self.assertIn(('win.item-remove-from-queue', (4, 'i.song1')), actions_of(menu))
+        self.assertIn('Remove from Up Ne_xt', labels_of(menu))
+        letters = [label[label.index('_') + 1].lower() for label in labels_of(menu)
+                   if '_' in label]
+        self.assertEqual(len(letters), len(set(letters)), labels_of(menu))
+        self.assertNotIn('win.item-remove-from-queue',
+                         names(build_menu(LIBRARY_TRACK, queued=True)))
+        self.assertNotIn('win.item-remove-from-queue', names(build_menu(LIBRARY_TRACK)))
+
     def test_the_item_playing_as_a_track(self):
         playing = NowPlaying({'id': 'i.song1', 'catalogId': '1000000001', 'type': 'song',
                               'title': 'Harbour Lights', 'artist': 'The Invented Band',
@@ -679,6 +692,10 @@ class FakePlayer:
     async def play_later(self, kind, item_id):
         await self.engine._record('play_later', kind, item_id)
 
+    async def remove_from_queue(self, index, entry_id):
+        await self.engine._record('remove_from_queue', index, entry_id)
+        return entry_id != 'i.gone'
+
 
 class FakeLibrary:
     storefront = 'gb'
@@ -819,9 +836,13 @@ class FakeWindow:
         self.clipboard = FakeClipboard()
         self.left = []  # leave()'s (gone, parent)
         self.selected = []  # select_page()'s keys
+        self.announced = []  # what assistive technology was told
 
     def leave(self, gone, parent=None):
         self.left.append((gone, parent))
+
+    def announce(self, message, _priority):
+        self.announced.append(message)
 
     def select_page(self, key):
         self.selected.append(key)
@@ -858,6 +879,8 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
     async def run_action(self, name, *target):
         """Activate win.<name> with target, as a menu item does, and wait for its task."""
         signature = '(sss)' if len(target) == 3 else '(ss)'
+        if name == 'item-remove-from-queue':
+            signature = '(is)'
         self.window.actions[name].activate(GLib.Variant(signature, target))
         await asyncio.gather(*self.app.tasks)
         self.app.tasks.clear()
@@ -878,7 +901,10 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
             'item-copy-link', 'item-go-to-album', 'item-go-to-artist', 'item-new-playlist',
             'item-rename', 'item-delete', 'item-remove-from-playlist', 'item-new-folder',
             'item-move-to-folder', 'item-remove-from-library', 'item-create-station',
-            'item-suggest-less', 'item-undo-suggest-less']))
+            'item-suggest-less', 'item-undo-suggest-less', 'item-remove-from-queue']))
+        self.assertEqual(
+            self.window.actions['item-remove-from-queue'].get_parameter_type().dup_string(),
+            '(is)')
         self.assertEqual(
             self.window.actions['item-remove-from-playlist'].get_parameter_type().dup_string(),
             '(ssi)')
@@ -887,6 +913,14 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.window.actions['item-add-to-playlist'].get_parameter_type().dup_string(),
             '(sss)')
+
+    async def test_remove_from_up_next(self):
+        await self.run_action('item-remove-from-queue', 4, 'i.song1')
+        self.assertIn(('remove_from_queue', 4, 'i.song1'), self.app.engine.calls)
+        self.assertEqual(self.window.announced, ['Removed from Up Next'])
+        self.assertEqual(self.app.toasts, [])  # the row goes: no toast
+        await self.run_action('item-remove-from-queue', 5, 'i.gone')
+        self.assertEqual(self.window.announced, ['Removed from Up Next'])  # nothing taken
 
     async def test_love_a_track_by_its_catalog_id(self):
         self.actions.menu_for(LIBRARY_TRACK)  # the menu names the track; its action finds it

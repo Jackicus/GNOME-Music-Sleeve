@@ -30,6 +30,51 @@ function bothWays(names) {
     return map;
 }
 
+// MusicKit v3's queue as the live check saw it: `_queueItems` of {item, isAutoplay}, `items`
+// the MediaItems, `position`, and the edits, each recorded on the instance's `calls` and
+// posting one queueItemsDidChange: spliceQueueItems, the deprecated remove (which throws for
+// the current index), clearAfterCurrent. `new FakeQueue(mk, items, position, autoplay)`:
+// `autoplay` the indices of the entries autoplay added.
+class FakeQueue {
+    constructor(instance, items, position, autoplay) {
+        this.instance = instance;
+        this._queueItems = items.map((item, index) => ({
+            item, isAutoplay: (autoplay || []).includes(index),
+        }));
+        this.position = position;
+    }
+
+    get items() {
+        return this._queueItems.map(entry => entry.item);
+    }
+
+    get autoplayItems() {
+        return this._queueItems.filter(entry => entry.isAutoplay).map(entry => entry.item);
+    }
+
+    spliceQueueItems(start, count, ...added) {
+        this.instance.calls.push(['queue.spliceQueueItems', start, count, added.length]);
+        const taken = this._queueItems.splice(start, count, ...added);
+        this.instance.fire('queueItemsDidChange', {});
+        return taken;
+    }
+
+    remove(index) {
+        this.instance.calls.push(['queue.remove', index]);
+        if (index === this.position)
+            throw new Error('INVALID_ARGUMENTS');
+        this._queueItems.splice(index, 1);
+        this.instance.fire('queueItemsDidChange', {});
+    }
+
+    clearAfterCurrent() {
+        this.instance.calls.push(['queue.clearAfterCurrent']);
+        this._queueItems.splice(this.position + 1);
+        this.instance.fire('queueItemsDidChange', {});
+    }
+}
+globalThis.FakeQueue = FakeQueue;
+
 class FakeInstance {
     constructor() {
         this.calls = [];        // [method, ...args] of everything the bridge asked

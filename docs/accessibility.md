@@ -52,8 +52,10 @@ list and the script together.
    page.
 5. Ctrl+Shift+N opens Now Playing with the focus on its play button; Tab goes through the controls,
    the Lyrics and Up Next toggle (Left and Right move between the two, Space or Enter
-   switches) and into the list (arrows move, Enter seeks to a line or plays an entry, Menu
-   opens an entry's menu), then the close button and the header bar's buttons, More Options
+   switches), on Up Next its Autoplay toggle and Clear, and into the list (arrows move, Enter
+   seeks to a line or plays an entry, Menu opens an entry's menu, with Remove from Up Next
+   after the entry playing; Delete removes the focused entry, and the focus moves to the one
+   that took its place), then the close button and the header bar's buttons, More Options
    among them (the item playing's menu). Escape closes a menu, then the sheet, and the focus
    goes back to where it was. Ctrl+Shift+U opens Now Playing on Up Next and Ctrl+Shift+L on
    Lyrics (the bar's toggle for the tab shown reads as pressed); the other key switches the

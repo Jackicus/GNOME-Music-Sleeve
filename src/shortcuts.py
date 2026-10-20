@@ -8,7 +8,8 @@ main.py sets ACCELS with Gtk.Application.set_accels_for_action and builds the di
 sections(); keyboard.py parses PLAYBACK into its PLAYBACK_KEYS, NOW_PLAYING_TABS into its
 TAB_KEYS and MAIN_MENU into the window's F10, widgets/context_menu.py binds CONTEXT_MENU,
 and sidebar_view.py binds FOLDER_OPEN and FOLDER_CLOSE on the sidebar (keys for the focused
-row, only with the focus in the sidebar). tests/test_shortcuts.py checks that the dialog
+row, only with the focus in the sidebar), as widgets/queue.py binds QUEUE_REMOVE on Up Next's
+list. tests/test_shortcuts.py checks that the dialog
 lists every one of them. Keys that are none of
 these are listed as they are: Escape (the dialogs', the Now Playing sheet's, the full-screen
 player's), under General with the other keys that act on windows.
@@ -66,6 +67,8 @@ CLOSE = 'Escape'
 # On a focused sidebar row: open or close a folder (Left on an entry inside one moves to it).
 FOLDER_OPEN = 'Right'
 FOLDER_CLOSE = 'Left'
+# On a focused Up Next row (widgets/queue.py binds it on the list): Remove from Up Next.
+QUEUE_REMOVE = 'Delete'
 
 
 def accelerator(key):
@@ -111,6 +114,7 @@ def sections():
             (_('Show or Hide Now Playing'), 'app.now-playing'),
             (_('Show or Hide Lyrics'), 'show-lyrics'),
             (_('Show or Hide Up Next'), 'show-queue'),
+            (_('Remove from Up Next'), QUEUE_REMOVE),
             (_('Fullscreen Player'), 'win.fullscreen-player'),
         ]),
     ]

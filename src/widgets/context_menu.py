@@ -10,7 +10,9 @@ Gtk.ColumnView of tiles or rows, a Gtk.FlowBox or Gtk.ListBox, or a single widge
 
 A widget offering a menu has a `context_item` attribute: the Item or Track it shows, or None
 (an unbound row), and `context_queued` true when that is an entry of the player's queue (the
-player bar's item, Up Next's rows: a menu without Play, actions.build_menu). The controllers
+player bar's item, Up Next's rows: a menu without Play, actions.build_menu), and
+`context_queue_entry` its (index, id) there when Up Next may take it out (Remove from Up Next;
+None otherwise). The controllers
 sit on the view, not on each recycled tile: the right click and the long press in the capture
 phase, so they come before the rows' own click gestures (which would select or activate), the
 shortcuts for the focused row. What was pressed is found by picking the widget under the
@@ -89,14 +91,18 @@ def owner(widget):
     return None
 
 
-def popup(widget, obj, x=None, y=None, queued=None):
+def popup(widget, obj, x=None, y=None, queued=None, owner_widget=None):
     """Show the menu for obj in a popover parented to widget, pointing at (x, y) in its
-    coordinates, or at the whole widget; `queued` as widget's `context_queued` says unless
+    coordinates, or at the whole widget; `queued` and the queue entry as the widget with the
+    menu (`owner_widget`, else widget) says (`context_queued`, `context_queue_entry`) unless
     given. The popover, or None when obj has no menu."""
     actions = getattr(widget.get_root(), 'item_actions', None)
+    source = owner_widget if owner_widget is not None else widget
     if queued is None:
-        queued = bool(getattr(widget, 'context_queued', False))
-    menu = actions.menu_for(obj, queued=queued) if actions is not None else None
+        queued = bool(getattr(source, 'context_queued', False))
+    entry = getattr(source, 'context_queue_entry', None)
+    menu = (actions.menu_for(obj, queued=queued, queue_entry=entry)
+            if actions is not None else None)
     if menu is None:
         return None
     popover = Gtk.PopoverMenu.new_from_model(menu)
@@ -166,7 +172,7 @@ def popup_focused(view):
     # A button inside the widget with the menu (the player bar's): the menu hangs from it,
     # and the focus goes back to it when the menu closes.
     anchor = focus if focus is not widget and focus.is_ancestor(widget) else widget
-    return popup(anchor, obj, queued=bool(getattr(widget, 'context_queued', False))) is not None
+    return popup(anchor, obj, owner_widget=widget) is not None
 
 
 def _on_menu_key(view, _arguments):

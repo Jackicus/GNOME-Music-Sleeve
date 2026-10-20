@@ -221,6 +221,7 @@ def classes():
     class ItemActions:
         def __init__(self):
             self.asked = []
+            self.queue_entries = []  # each menu's queue entry (Up Next's rows)
             self.went = []  # (obj, kind) per go_to()
             self.added = []  # (playlist id, song id, title) per add_to_playlist()
             self.add_succeeds = True  # what the write's task answers
@@ -232,8 +233,9 @@ def classes():
             task.set_result(self.add_succeeds)
             return task
 
-        def menu_for(self, obj, queued=False):
+        def menu_for(self, obj, queued=False, queue_entry=None):
             self.asked.append(obj)
+            self.queue_entries.append(queue_entry)
             menu = Gio.Menu()
             menu.append('Invented Action', 'win.invented')
             return menu

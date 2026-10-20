@@ -90,6 +90,15 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> do the same, from anywhere but a text
   field). Lyrics is greyed out for a song Apple Music has no lyrics for. In a narrow window
   the bar leaves them out to keep the song's title readable: click the bar and pick the tab.
+- Now Playing's **Up Next** lists the song playing and what follows it. Right-click a song
+  there (or press and hold it, or press <kbd>Menu</kbd>) and choose **Remove from Up Next**,
+  or select it and press <kbd>Delete</kbd>. **Clear**, above the list, takes out everything
+  after the song playing; **Undo** on the message that follows puts it back. **Autoplay**
+  (the ∞ button beside Clear, also in Preferences › Playback) is on unless you turn it off:
+  when the queue ends, Apple Music keeps playing similar songs, which Up Next lists under
+  **Autoplay** (and which you can remove like any other). It is this app's setting: Apple's
+  other players keep their own. While a station plays, its queue is Apple's and cannot be
+  changed, and Autoplay does not start while Repeat is on.
 - Now Playing's **Lyrics** follow the song when Apple Music has them timed: click a line to
   go to it. When Apple Music times them word by word, each word of the line being sung
   fills in as it is sung (with animation effects turned off in Settings, each word lights

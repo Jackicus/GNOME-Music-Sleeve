@@ -91,6 +91,7 @@ log = logging.getLogger(__name__)
 # The rows bound one to one to their settings: (template child, property, key).
 BINDINGS = (
     ('background_row', 'active', 'background-playback'),
+    ('autoplay_row', 'active', 'autoplay'),
     ('discord_row', 'active', 'discord-presence'),
     ('more_suggestions_row', 'active', 'more-suggestions'),
     ('preview_suggestions_row', 'active', 'preview-suggestions'),
@@ -106,6 +107,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     general_page = Gtk.Template.Child()
     engine_page = Gtk.Template.Child()
     background_row = Gtk.Template.Child()
+    autoplay_row = Gtk.Template.Child()
     discord_row = Gtk.Template.Child()
     more_suggestions_row = Gtk.Template.Child()
     preview_suggestions_row = Gtk.Template.Child()

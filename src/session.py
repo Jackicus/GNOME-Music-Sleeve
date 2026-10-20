@@ -12,10 +12,12 @@
     session = read(path)     # the file's session, checked (parse()), or None
 
 <cache>/session.json holds the queue (the bridge's Track shape for each entry, the keys of
-TRACK_KEYS, at most QUEUE_LIMIT of them around the item), the item's index in it, `offset`
-(where that slice begins in the queue MusicKit had), the position and duration, the repeat
-mode, and `source`: the album, playlist or station the queue came from, only while the queue
-was still that (Player.source), so it is queued again as itself. A station keeps only its
+TRACK_KEYS, at most QUEUE_LIMIT of them around the item; `autoplay` marks one autoplay added,
+which a restored session shows under Autoplay and queues again as an ordinary song), the
+item's index in it, `offset` (where that slice begins in the queue MusicKit had), the
+position and duration, the repeat mode, and `source`: the album, playlist or station the
+queue came from, only while the queue was still that (Player.source), so it is queued again
+as itself. A station keeps only its
 item and no position (it plays live). Shuffle is not kept: the queue comes back in its order,
 shuffle off. An item that is neither a song nor a video (a station's segment, without the
 station) is not kept, and nothing (the engine gone, a request pending) never replaces what is.
@@ -55,7 +57,7 @@ POSITION_EVERY = 30   # seconds between writes of the position while playing
 # What is kept of each queue entry (the bridge's formatTrack): what the bar, the sheet, Up
 # Next and MPRIS show, and what queues it again.
 TRACK_KEYS = ('id', 'type', 'catalogId', 'title', 'artist', 'album', 'trackNumber',
-              'discNumber', 'durationMs', 'explicit', 'artUrl')
+              'discNumber', 'durationMs', 'explicit', 'artUrl', 'autoplay')
 TEXT_KEYS = ('id', 'type', 'catalogId', 'title', 'artist', 'album')
 NUMBER_KEYS = ('trackNumber', 'discNumber', 'durationMs')
 SOURCE_KINDS = ('album', 'playlist', 'station')
@@ -114,7 +116,7 @@ def _entry(raw):
             return None
         if key in NUMBER_KEYS and _number(value) is None:
             return None
-        if key == 'explicit' and not isinstance(value, bool):
+        if key in ('explicit', 'autoplay') and not isinstance(value, bool):
             return None
         if key == 'artUrl' and not (isinstance(value, str) and value.startswith('https://')):
             return None
