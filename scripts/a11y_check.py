@@ -1158,8 +1158,8 @@ async def walkthrough(window):
           not any(each.get_visible() for each in popover) and window.bottom_sheet.get_open()
           and inside(window.get_focus(), sheet.queue_view.list_view),
           describe(window.get_focus()))
-    await up_next_move(window, queue_view)
     await up_next_remove(window, queue_view)
+    await up_next_move(window, queue_view)
     jumps = []
     undo = watch('queue_jump', jumps)
     await key(window, 'Down')
@@ -1814,7 +1814,8 @@ async def up_next_remove(window, queue_view):
     """Up Next's Remove: the menu of an entry after the one playing offers it, and Delete
     takes the focused entry out (the Player's command stood in for: the demo has no engine,
     so the stand-in takes it out of the queue as the Player would), the focus moving to the
-    entry that took its place; the entry playing stays. Leaves the focus on the first row."""
+    entry that took its place; the entry playing stays. After the Delete, that entry's menu
+    closed with Escape gives it the focus back. Leaves the focus on the first row."""
     player = app.player
     await key(window, 'Down')
     await key(window, 'Menu', 0.6)
@@ -1843,6 +1844,16 @@ async def up_next_remove(window, queue_view):
     await key(window, 'Up')
     await key(window, 'Delete', 0.4)
     check('Delete on the entry playing removes nothing', len(removed) == 1, removed)
+    await key(window, 'Down')
+    entry = focused_entry(queue_view)
+    await key(window, 'Menu', 0.6)
+    shown = harness.popovers(queue_view)
+    check("after a Delete, Menu opens the next entry's menu", bool(shown))
+    await key(window, 'Escape', 0.4)
+    check('Escape closes it, the focus back on the entry',
+          not any(each.get_visible() for each in shown) and entry is not None
+          and focused_entry(queue_view) is entry, describe(window.get_focus()))
+    await key(window, 'Up')
     del player.remove_from_queue
 
 
@@ -1860,7 +1871,6 @@ async def up_next_move(window, queue_view):
     check("the next entry's menu offers Move Down, not Move Up",
           'Move _Down' in labels and '_Move Up' not in labels, labels)
     await key(window, 'Escape', 0.4)
-    await until(lambda: focused_entry(queue_view) is not None)
     moves = []
 
     async def queue_move(index, to_index, entry_id, edit=None):

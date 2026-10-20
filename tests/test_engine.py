@@ -392,6 +392,29 @@ class LifecycleTest(EngineFixture):
         self.assertGreaterEqual(time.monotonic() - started, 0.2)
         self.assertEqual(self.engine.state, 'down')
 
+    async def test_a_stubborn_chrome_outlives_an_answer_into_a_closed_pipe(self):
+        # Browser.close answered after the engine stopped waiting and closed its end of the
+        # pipe (a loaded machine answers late on its own): the answer meets a broken pipe,
+        # and a Chrome that ignores SIGTERM still lives until SIGKILL.
+        self.chrome_mode('stubborn')
+        self.engine.close_wait = 0.05
+        self.engine.stop_grace = 0.3
+        answered = asyncio.Event()
+
+        async def close_late(message):
+            await asyncio.sleep(0.15)
+            await self.chrome.send({'id': message['id'], 'result': {}})
+            answered.set()
+        self.chrome.browser_responders['Browser.close'] = close_late
+        await self.engine.start()
+        process, _ = self.engine.spawned[0]
+        pid = self.engine.pid
+        with self.assertLogs(engine_module.log, 'WARNING'):  # ignored SIGTERM; killed
+            await self.engine.stop()
+        self.assertTrue(answered.is_set())
+        self.assertIn(('term', pid), self.chrome_log())
+        self.assertEqual(process.get_term_sig(), signal.SIGKILL)
+
     async def test_a_stop_with_a_shorter_grace(self):
         self.chrome_mode('stubborn')
         self.chrome.close_on_browser_close = False

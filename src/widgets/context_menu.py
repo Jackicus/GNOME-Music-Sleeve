@@ -26,9 +26,13 @@ column finds its title cell.
 The menu is the window's (window.item_actions.menu_for(obj): see actions.py), shown in a
 Gtk.PopoverMenu parented to that widget, without an arrow, pointing at the pointer, or beside
 the widget from the keyboard; it is unparented once closed (after an idle: its action is
-activated after it closes, and looks the window's actions up through its parent). The row or
-tile whose menu is open is marked `.has-open-popup` meanwhile, as GTK's own menus mark
-theirs, so it stays highlighted while the pointer is in the menu. The sidebar's playlist
+activated after it closes, and looks the window's actions up through its parent). Before it
+is, a focus still in the menu goes back to the row or tile it was opened for, or to its
+list when a change has taken that row away or given it another item: GTK would give it back
+only after the next frame, walking up from the popover's parent, which the idle may have
+unparented by then. The row or tile whose menu is open is marked `.has-open-popup`
+meanwhile, as GTK's own menus mark theirs, so it stays highlighted while the pointer is in
+the menu. The sidebar's playlist
 and folder rows open theirs through popup() too (sidebar_view.py).
 """
 
@@ -134,21 +138,58 @@ def popup(widget, obj, x=None, y=None, queued=None, owner_widget=None):
     marked = owner(widget)
     if marked is not None:
         marked.add_css_class('has-open-popup')
-    popover.connect('closed', _on_closed, marked)
+    view = marked.get_parent() if marked is not None else None
+    home = (widget.get_root(), source, obj, view)
+    popover.connect('closed', _on_closed, marked, home)
     popover.popup()
     return popover
 
 
-def _on_closed(popover, marked):
+def _on_closed(popover, marked, home):
     if marked is not None:
         marked.remove_css_class('has-open-popup')
-    GLib.idle_add(_unparent, popover)
+    GLib.idle_add(_unparent, popover, home)
 
 
-def _unparent(popover):
+def _unparent(popover, home=None):
+    if home is not None:
+        give_focus_back(popover, *home)
     if popover.get_parent() is not None:
         popover.unparent()
     return GLib.SOURCE_REMOVE
+
+
+def _same(obj, other):
+    """Whether two context objects are the same item (a queue row makes a new Track each
+    time it is asked)."""
+    if obj is other:
+        return True
+    if obj is None or other is None or type(obj) is not type(other):
+        return False
+    key = getattr(obj, 'id', None)
+    return key is not None and key == getattr(other, 'id', None)
+
+
+def give_focus_back(popover, root, source, obj, view):
+    """A closed menu's focus, when it is still in the menu (or nowhere), back where the menu
+    was opened: the first widget from the popover's parent up that takes it, as GTK does,
+    while `source` (the row or tile it was opened for) is still in the window showing
+    `obj`; else its list `view` (its own focus item). Nothing when the focus has moved on
+    (the chosen item's action took it elsewhere)."""
+    if root is None:
+        return
+    focus = root.get_focus()
+    if focus is not None and focus is not popover and not focus.is_ancestor(popover):
+        return
+    parent = popover.get_parent()
+    if (parent is not None and parent.get_root() is root and source.get_mapped()
+            and _same(context_object(source), obj)):
+        while parent is not None:
+            if parent.get_visible() and parent.grab_focus():
+                return
+            parent = parent.get_parent()
+    if view is not None and view.get_root() is root and view.get_mapped():
+        view.grab_focus()
 
 
 def _popup_at(view, x, y):

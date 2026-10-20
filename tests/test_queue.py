@@ -15,6 +15,7 @@ import os
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 from tests.gtk import pump, requires_gtk, wait_for
@@ -290,6 +291,19 @@ class EntryArtTest(unittest.TestCase):
             self.assertEqual(find_art([url, 'https://example.invalid/none.jpg'],
                                       lambda each: art_candidates(each, cache),
                                       on_disk.__contains__), {url: candidates[1]})
+
+
+def first_focusable(widget):
+    """The first focusable widget under `widget`, depth first, or None."""
+    child = widget.get_first_child()
+    while child is not None:
+        if child.get_focusable() and child.get_mapped():
+            return child
+        found = first_focusable(child)
+        if found is not None:
+            return found
+        child = child.get_next_sibling()
+    return None
 
 
 @requires_gtk
@@ -606,6 +620,60 @@ class QueueViewTest(unittest.TestCase):
         # The entry playing is not removed.
         self.press(Gdk.KEY_Delete)
         self.assertEqual(len(removed), 2)
+
+    def test_escape_from_a_rows_menu_gives_the_row_its_focus_back(self):
+        # Delete, the next entry's menu, Escape: the popover was unparented (from an idle
+        # after `closed`) before GTK, after the next frame, gave the focus back to the widget
+        # it hung from, and with no parent left the focus fell to nothing.
+        from gi.repository import Gdk, Gio, GLib
+
+        from applemusic.widgets import context_menu
+
+        group = Gio.SimpleActionGroup()
+        action = Gio.SimpleAction.new('item-remove-from-queue', GLib.VariantType('(is)'))
+        action.connect('activate', lambda _action, parameter:
+                       self.player.queue.remove(parameter.unpack()[0]))
+        group.add_action(action)
+        self.window.insert_action_group('win', group)
+
+        class Actions:
+            def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
+                menu = Gio.Menu()
+                menu.append('Invented', 'win.invented')
+                return menu
+        self.window.item_actions = Actions()
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 3))
+        self.focus_row(1)
+        self.press(Gdk.KEY_Delete)
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 4'))
+        self.assertTrue(context_menu.popup_focused(self.view.list_view))
+        popover = self.open_popover()
+        self.assertTrue(wait_for(popover.get_mapped))
+        self.assertTrue(first_focusable(popover).grab_focus())  # its first item, as Menu's
+        # Escape's popdown, then the idle that unparents the popover, both before the frame
+        # after which GTK would give the focus back (as a real display paces them).
+        idles = []
+        with mock.patch.object(context_menu.GLib, 'idle_add',
+                               lambda function, *args: idles.append((function, args))):
+            popover.popdown()
+        for function, args in idles:
+            function(*args)
+        self.assertIsNone(popover.get_parent())
+        self.assertEqual(self.focused_title(), 'Entry 4')
+        pump()  # the frame: GTK leaves it there
+        self.assertEqual(self.focused_title(), 'Entry 4')
+
+    def open_popover(self):
+        """The popover shown under one of Up Next's rows."""
+        from gi.repository import Gtk
+
+        for row in self.view._rows:
+            child = row.get_first_child()
+            while child is not None:
+                if isinstance(child, Gtk.Popover) and child.get_visible():
+                    return child
+                child = child.get_next_sibling()
+        self.fail('no menu open')
 
     def focused_title(self):
         from applemusic.widgets import context_menu
