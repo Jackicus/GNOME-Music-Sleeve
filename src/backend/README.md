@@ -549,12 +549,17 @@ is `{id, artistId, artistName, release: {releaseDate?, copyright?, recordLabel?}
 shelves: [{key, title, items, more}]}`: `id` the catalog album's, `release` what its footer
 says (`normalize.album_release()`: each key only where Apple has it), and the shelves in
 music.apple.com's order: `other-versions`, `related-videos`, `more-by-artist`, `appears-on`
-and `related-albums`, all but More By the album's own views (`api.ALBUM_VIEWS`, one read
-with the album), titled as Apple titles them; `more-by-artist` is a page of its first
-artist's `full-albums` view, less the album, untitled (the app names it "More By …"); `more`
-when `Engine.album_view()` (or `artist_view()` for More By) has more. A library album is
-asked by its own id and one of its songs' catalog ids, through which the engine finds its
-catalog album (`api.SONG_ALBUMS_PARAMS`); the answer is kept under the id it was asked by.
+and `you-might-also-like`, all but More By the album's own views (`api.ALBUM_VIEWS`, one read
+with the album: `views=other-versions,related-videos,appears-on,you-might-also-like`, each
+under the album's `views` as `{href, attributes: {title}, data, next?}`), titled as Apple
+titles them. Apple has no `related-albums` view (never in the answer; `/view/related-albums`
+is a 400). The shelf `more-by-artist` is a page of the first artist's `full-albums` view,
+less the album, untitled (the app names it "More By …"); Apple's album has a
+`more-by-artist` view too, which the app does not ask for. `more` when
+`Engine.album_view()` (or `artist_view()` for More By) has more. A library album is asked
+by its own id and one of its songs' catalog ids, through which the engine finds its catalog
+album (`api.SONG_ALBUMS_PARAMS`); the answer is kept under the id it was asked by, with the
+views asked as its `basis`, so one kept with other views is asked again.
 
 A playlist's suggested songs (`Engine.playlist_suggestions()`,
 `normalize.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are

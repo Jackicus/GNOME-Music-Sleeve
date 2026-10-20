@@ -303,7 +303,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 keys = [shelf['key'] for shelf in answer['shelves']]
                 self.assertEqual(keys, [key for key in normalize.ALBUM_SHELVES if key in keys])
                 self.assertIn('other-versions', keys)
-                self.assertIn('related-albums', keys)
+                self.assertIn('you-might-also-like', keys)
                 for shelf in answer['shelves']:
                     self.assertEqual(shelf['title'] == '', shelf['key'] == 'more-by-artist')
                     self.assertTrue(shelf['items'])

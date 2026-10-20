@@ -2399,7 +2399,7 @@ def artist_cache_path(cache_dir, artist_id):
 # (api.ALBUM_VIEWS), titled as Apple titles them, and More By, its first artist's albums,
 # which the app titles ("More By <artist>").
 ALBUM_SHELVES = ('other-versions', 'related-videos', 'more-by-artist', 'appears-on',
-                 'related-albums')
+                 'you-might-also-like')
 MORE_BY = 'more-by-artist'
 RELEASE_DATE = re.compile(r'\d{4}(-\d{2}-\d{2})?')
 
