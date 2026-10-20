@@ -262,8 +262,9 @@ class ShelvesPage(Adw.NavigationPage):
 
 
 def category_page(item):
-    """A category's page (a tile of the search landing, a banner of New), pushed over the
-    page it was opened from: the curator's grouping as shelves."""
+    """A category's page (a tile of the search landing, a banner of New, a radio show's tile
+    on Radio or an artist's page), pushed over the page it was opened from: the curator's
+    grouping as shelves, then its playlists (a show's: its episodes, then its playlists)."""
     page = ShelvesPage(item.title,
                        lambda refresh: app().engine.category(item.id, refresh=refresh),
                        root=False, icon_name='view-grid-symbolic', hero=False,

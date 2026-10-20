@@ -12,7 +12,7 @@
                           [--idle] [--position SECONDS] [--playing] [--restored]
                           [--autoplay]
                           [--search TERM]
-                          [--context-menu [--submenu NAME]]
+                          [--context-menu [KIND] [--submenu NAME]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
                                     remove-from-library]
@@ -38,7 +38,9 @@ tile does (window.open_item), over the --page (default home): KIND is album,
 artist, playlist, folder, station or video, and ID an item id or "first", the
 first of that section (for folder, the library's first playlist folder). An
 artist opens as the library's page of them; artist-page:ID opens Apple Music's
-page of the artist instead, as Go to Artist does (window.open_artist_page). An
+page of the artist instead, as Go to Artist does (window.open_artist_page);
+category:ID the page of a category the demo library invented (a radio show's,
+categories/<ID>.json), as its tile does. An
 ID the library lacks opens the catalog's album or playlist of that id, as a
 shelf's tile would: one of the demo's invented catalog answers (an album page's
 or an artist page's shelves, demo.edition0010 say), else the catalog's copy of
@@ -78,7 +80,8 @@ that size. --idle shoots it with the controls and the cursor hidden. With --demo
 --search TERM shows the Search page in Your Library mode with TERM typed (the
 results of the offline filter; the engine is never started here).
 --context-menu pops up the context menu of the page's first tile or row (the
-first shown widget with a context_item), as a right click on it would, and
+first shown widget with a context_item; with KIND, the first whose item is of
+that kind, such as category), as a right click on it would, and
 draws the popover into the shot where the compositor put it. --submenu NAME
 shows its submenu labelled NAME (a GtkPopoverMenu names each submenu by its
 label, mnemonic underscore and all: "Add to Pla_ylist", a folder's name inside
@@ -160,8 +163,8 @@ parser.add_argument('--autoplay', action='store_true',
                     help='with --now-playing: entries autoplay added at the end of the queue')
 parser.add_argument('--search', metavar='TERM',
                     help='the Search page in Your Library mode with TERM typed')
-parser.add_argument('--context-menu', action='store_true',
-                    help="pop up the context menu of the page's first tile or row")
+parser.add_argument('--context-menu', metavar='KIND', nargs='?', const=True,
+                    help="pop up the context menu of the page's first tile or row (of KIND)")
 parser.add_argument('--submenu', metavar='NAME',
                     help='with --context-menu, show the submenu labelled NAME')
 parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
@@ -333,6 +336,8 @@ def open_item(window):
         item = getattr(app.library, SECTIONS[kind]).get_item(0)
     elif item_id == 'first' and kind == 'folder':
         item = app.library.by_id('folder', first_folder())
+    elif kind == 'category':
+        item = invented_category(item_id)
     else:
         item = app.library.by_id(kind, item_id) or catalog_item(kind, item_id)
     if item is None:
@@ -343,14 +348,31 @@ def open_item(window):
         window.open_item(item)
 
 
-def first_context_widget(widget):
-    """The first mapped widget under `widget` with a context_item, depth first."""
-    if getattr(widget, 'context_item', None) is not None and widget.get_mapped():
+def invented_category(item_id):
+    """The category Item whose page the demo library invented (categories/<id>.json), named
+    as its page is; None without one."""
+    from applemusic.backend import config, normalize
+    from applemusic.library import Item
+
+    try:
+        with open(normalize.category_cache_path(str(config.cache_dir()), item_id),
+                  encoding='utf-8') as file:
+            page = json.load(file)
+    except (OSError, ValueError):
+        return None
+    return Item({'id': item_id, 'kind': 'category', 'title': page.get('title') or ''})
+
+
+def first_context_widget(widget, kind=None):
+    """The first mapped widget under `widget` with a context_item (of `kind`, when given),
+    depth first."""
+    item = getattr(widget, 'context_item', None)
+    if item is not None and widget.get_mapped() and kind in (None, getattr(item, 'kind', None)):
         return widget
     child = widget.get_first_child()
     while child is not None:
         if child.get_mapped():
-            found = first_context_widget(child)
+            found = first_context_widget(child, kind)
             if found is not None:
                 return found
         child = child.get_next_sibling()
@@ -361,7 +383,8 @@ def open_context_menu(window):
     """--context-menu: the first tile's or row's menu, pointing into it as a click would."""
     from applemusic.widgets import context_menu
 
-    widget = first_context_widget(window.navigation_view.get_visible_page())
+    kind = args.context_menu if isinstance(args.context_menu, str) else None
+    widget = first_context_widget(window.navigation_view.get_visible_page(), kind)
     if widget is None:
         sys.exit('screenshot: nothing on the page has a context menu')
     x, y = widget.get_width() * 0.6, widget.get_height() * 0.35

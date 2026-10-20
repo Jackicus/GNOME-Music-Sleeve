@@ -74,9 +74,10 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - **Radio** is Apple Music's radio page: the live stations first, as large cards, each with
   the show on air as you open the page, then the stations you played recently (**Recently
   Played**), then Apple's shelves of episodes, radio shows, genre stations and more. A
-  station plays when you click it; a radio show opens its page of episodes. The page is
-  kept for a day, or until the shows on air change, and its refresh button asks Apple
-  again.
+  station plays when you click it; a radio show opens its page: its episodes, then its
+  playlists. The page is kept for a day, or until the shows on air change, and its refresh
+  button asks Apple again. An artist who hosts a show on Apple Music Radio has it under
+  **Radio Shows** on their page, and its episodes under **More To Hear**.
 - **Artists** lists the artists in your library beside the one you choose: their albums in
   your library, newest first (**Sort By** for titles), with **Play** and **Shuffle** for all
   their songs. A song you added without its album shows as its album. Clicking an artist you
@@ -94,7 +95,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Artist**. **Suggest Less** (for a song, an album, a playlist, a station or a music video)
   tells Apple Music to recommend less like it; **Undo Suggest Less** takes that back. A
   favourite offers no Suggest Less, and **Favourite** replaces a Suggest Less. The song playing has the same menu: right-click the player bar, or use **More
-  Options** in Now Playing; Up Next's songs have theirs too.
+  Options** in Now Playing; Up Next's songs have theirs too. A radio show or a category
+  (Search's, New's) has only **Open in Browser** and **Copy Link**: it is a page to open,
+  with nothing of its own to play or favourite.
 - **Create Station** in the menu of a song or an artist (on an artist's page, in **More
   Options**) plays a station of music like it at once, in place of what was playing. A song
   of yours that Apple Music does not have (an upload) has none, and neither has an artist

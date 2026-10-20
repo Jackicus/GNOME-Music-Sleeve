@@ -25,7 +25,8 @@ class CategoryTile(Gtk.Overlay):
     file the picture is fetched to, `thumbUrl` where from). The landing's tiles are made
     once each (a Gtk.FlowBox over the categories), not recycled; the picture is fetched while
     the tile is mapped, and decoded at its size and let go of when it is unmapped by an
-    artwork.ArtworkSlot.
+    artwork.ArtworkSlot. The Item is the tile's `context_item`: its context menu (Open in
+    Browser, Copy Link: actions.curator_menu) is the flow box's (widgets/context_menu.py).
     """
 
     __gtype_name__ = 'AppleMusicCategoryTile'
@@ -40,6 +41,10 @@ class CategoryTile(Gtk.Overlay):
         self._fetch = None
         self._slot = artwork.ArtworkSlot(self._set_art, ART_SIZE)
         self._slot.follow_scale(self)
+
+    @property
+    def context_item(self):
+        return self.item
 
     def bind(self, item):
         self.item = item

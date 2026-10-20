@@ -82,7 +82,9 @@ the catalog artist's page, which the engine finds through their songs); Rename�
 Playlist… or Delete Folder… (a playlist of the user's, Item.editable; a folder of theirs),
 Remove from Library… (what the library holds: removal_target; a playlist of Apple's, which
 cannot be deleted as the user's own are); a folder's menu starts with New Playlist… and New
-Folder… (in it); each only where it applies.
+Folder… (in it); each only where it applies. A category (an Apple curator: a genre's page, a
+radio show) has Open in Browser and Copy Link alone (curator_menu): Apple gives a curator
+nothing to play or favourite.
 
 Remove from Library takes the item out of the library's models at once (Library.hide), then
 asks Apple; a refusal puts it back and is reported. Apple takes a song out of every playlist
@@ -671,15 +673,18 @@ def main_menu_section():
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
                moves=None, removable=None, queue_entry=None):
     """The menu for obj (an Item or a Track), or None when nothing applies (the top level
-    of the folders, a category). `playlists` are the entries the Add to Playlist submenu
-    lists (ItemActions.playlists(): (id, title, children), a folder's children its own
-    entries, a submenu); `here` is the Item of the page shown (Go to Album and Go to Artist are
-    left out where they would go nowhere: related.shows); `queued`, obj is in the player's
+    of the folders); a category's is curator_menu(). `playlists` are the entries the Add to
+    Playlist submenu lists (ItemActions.playlists(): (id, title, children), a folder's
+    children its own entries, a submenu); `here` is the Item of the page shown (Go to Album
+    and Go to Artist are left out where they would go nowhere: related.shows); `queued`, obj
+    is in the player's
     queue (no Play); `container`, the playlist Item the track obj is shown in (Remove from
     Playlist, when it is one of the user's); `moves`, where a playlist or folder can be
     moved (move_targets(): Move to Folder; None, not at all); `removable`, obj's
     removal_target (Remove from Library…, and no Add to Library); `queue_entry`, (index, id)
     of the queue's entry obj is when it may be taken out of Up Next (Remove from Up Next)."""
+    if is_curator(obj):
+        return curator_menu(obj, storefront)
     named = describe(obj)
     if named is None or (isinstance(obj, Item) and obj.kind not in MENU_KINDS):
         return None
@@ -742,6 +747,29 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
         if section.get_n_items():
             menu.append_section(None, section)
     return menu if menu.get_n_items() else None
+
+
+def is_curator(obj):
+    """Whether obj is an Apple curator's tile (kind 'category': a genre's page, a radio
+    show), which opens its page: Apple gives a curator no playParams, so nothing plays it,
+    queues it or favourites it."""
+    return isinstance(obj, Item) and obj.kind == 'category' and bool(obj.id)
+
+
+def curator_menu(obj, storefront=None):
+    """A curator's menu: Open in Browser and Copy Link (its music.apple.com page, the
+    curator's own `url`: web_url), or None when it has no page."""
+    named = describe(obj)
+    if named is None or not web_url(obj, storefront):
+        return None
+    target = GLib.Variant('(ss)', named)
+    share = Gio.Menu()
+    share.append_item(menu_item('item-open-in-browser', target))
+    if share_url(obj, storefront):
+        share.append_item(menu_item('item-copy-link', target))
+    menu = Gio.Menu()
+    menu.append_section(None, share)
+    return menu
 
 
 def fill_sidebar_menu(menu, item, moves=None):

@@ -108,6 +108,60 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertEqual([s['key'] for s in out['shelves']],
                          ['cat-best-new-songs', 'cat-new-releases', 'cat-stations'])
 
+    def test_a_shows_page_lists_its_episodes_then_its_playlists(self):
+        # A radio show's page (#359, #360): its grouping's shelves (its episodes, which play
+        # as stations), then the curator's own playlists, less one a shelf shows already.
+        def playlist(pid, name):
+            return {'id': pid, 'type': 'playlists', 'attributes': {
+                'name': name, 'curatorName': 'The Lantern Hour',
+                'playParams': {'id': pid, 'kind': 'playlist'}}}
+        episode = {'id': 'ra.900000811', 'type': 'stations', 'attributes': {
+            'name': 'Lanterns at Dusk', 'isLive': False, 'kind': 'streaming',
+            'playParams': {'id': 'ra.900000811', 'kind': 'radioStation'}}}
+        element = {'id': 'episodes', 'type': 'editorial-elements', 'attributes': {
+            'editorialElementKind': '326', 'name': 'Episodes'},
+            'relationships': {'contents': {'data': [
+                episode, playlist('pl.900000821', 'Lantern Picks')]}}}
+        grouping = {'id': '900000830', 'type': 'groupings', 'relationships': {'tabs': {
+            'data': [{'id': 'tab', 'relationships': {'children': {'data': [element]}}}]}}}
+        raw = {'data': [{'id': '900000901', 'type': 'apple-curators', 'attributes': {
+            'name': 'The Lantern Hour', 'kind': 'Show', 'showHostName': 'Ada Fenwick'},
+            'relationships': {
+                'grouping': {'data': [grouping]},
+                'playlists': {'data': [playlist('pl.900000821', 'Lantern Picks'),
+                                       playlist('pl.900000822', 'Lantern Classics'),
+                                       {'id': '900000902', 'type': 'apple-curators',
+                                        'attributes': {'name': 'Invented Folk'}}]}}}]}
+        out = normalize.category_page(raw, self.tmp.name)
+        self.assertEqual(out['title'], 'The Lantern Hour')
+        self.assertEqual([(s['key'], s['title'], [(i['kind'], i['id']) for i in s['items']])
+                          for s in out['shelves']], [
+            ('cat-episodes', 'Episodes', [('station', 'ra.900000811'),
+                                          ('playlist', 'pl.900000821')]),
+            ('playlists', '', [('playlist', 'pl.900000822')]),  # titled by the app
+        ])
+        self.assertEqual(out['shelves'][0]['items'][0]['play'],
+                         {'kind': 'station', 'id': 'ra.900000811'})
+        # Without playlists of its own, the grouping's shelves alone.
+        del raw['data'][0]['relationships']['playlists']
+        self.assertEqual([s['key'] for s in normalize.category_page(raw, self.tmp.name)[
+            'shelves']], ['cat-episodes'])
+
+    def test_a_curator_is_never_a_station(self):
+        # #359: Apple gives a curator no playParams. However it reaches normalize_item, it
+        # is a category tile with nothing to play, never a station.
+        show = {'id': '900000901', 'type': 'apple-curators', 'attributes': {
+            'name': 'The Lantern Hour', 'kind': 'Show', 'showHostName': 'Ada Fenwick',
+            'url': 'https://music.apple.com/gb/curator/the-lantern-hour/900000901'}}
+        item = normalize.normalize_item(show, self.tmp.name)
+        self.assertEqual((item['kind'], item['title'], item['subtitle'], item['play'],
+                          item['groups']),
+                         ('category', 'The Lantern Hour', 'Ada Fenwick', {}, []))
+        self.assertEqual(item['url'], show['attributes']['url'])
+        nameless = normalize.normalize_item({'id': '900000903', 'type': 'apple-curators'},
+                                            self.tmp.name)
+        self.assertEqual((nameless['kind'], nameless['play']), ('unknown', {}))
+
     def test_cache_paths(self):
         self.assertEqual(normalize.browse_cache_path('/c'), os.path.join('/c', 'browse.json'))
         self.assertEqual(normalize.made_for_you_cache_path('/c'),

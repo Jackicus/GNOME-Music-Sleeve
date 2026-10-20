@@ -450,6 +450,7 @@ class FollowTest(WidgetTestCase):
                      'thumb': '/a/category', 'artColor': '#1b4965'})
         tile = CategoryTile()
         tile.bind(item)
+        self.assertIs(tile.context_item, item)  # its menu: Open in Browser, Copy Link
         self.show(tile)
         item.merge({'id': 'c1', 'kind': 'category', 'title': 'Renamed', 'thumb': '/a/category',
                     'artColor': '#ffd166'}, replace=True)

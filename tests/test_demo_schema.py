@@ -347,6 +347,35 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertTrue(page['shelves'][0]['items'])
         self.assertEqual(kinds, {'station', 'category', 'album', 'video'})
 
+    def test_artist_pages_and_the_shows_they_host(self):
+        # Each artist's page has its shelves in Apple's order; every other one, the first
+        # (which the screenshots open) among them, a Radio Shows shelf of one show, a category
+        # tile as the normaliser makes one, whose page lists its episodes and playlists.
+        category = set(normalize.normalize_category({'id': '1', 'attributes': {'name': 'C'}}))
+        hosts = []
+        for artist in self.data['sections']['artists'][:2]:
+            with self.subTest(id=artist['catalogId']):
+                path = os.path.join(self.out_dir, 'artists', f"{artist['catalogId']}.json")
+                with open(path, encoding='utf-8') as f:
+                    answer = json.load(f)
+                keys = [shelf['key'] for shelf in answer['shelves']]
+                self.assertEqual(keys, [key for key in normalize.ARTIST_SHELVES if key in keys])
+                shows = [shelf for shelf in answer['shelves'] if shelf['key'] == 'radio-shows']
+                hosts.append(bool(shows))
+                if not shows:
+                    continue
+                show = shows[0]['items'][0]
+                self.assertEqual(set(show) - {'thumb'}, category)
+                self.assertEqual(show['kind'], 'category')
+                with open(os.path.join(self.out_dir, 'categories', f"{show['id']}.json"),
+                          encoding='utf-8') as f:
+                    page = json.load(f)
+                self.assertIs(page['demo'], True)
+                self.assertEqual(page['title'], show['title'])
+                self.assertEqual([{item['kind'] for item in shelf['items']}
+                                  for shelf in page['shelves']], [{'station'}, {'playlist'}])
+        self.assertEqual(hosts, [True, False])
+
     def test_one_favourites_playlist(self):
         # The flag the app looks for (applemusic.library.FAVOURITES) is on one playlist only, and
         # no other item carries attributes.

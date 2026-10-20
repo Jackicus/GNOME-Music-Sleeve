@@ -50,6 +50,9 @@ CATALOG_VIDEO = Item({'id': '1000000012', 'kind': 'video', 'title': 'Pilot Light
 FOLDER = Item({'id': 'l.fd1', 'kind': 'folder', 'title': 'Evenings'})
 TOP_LEVEL = Item({'id': 'root', 'kind': 'folder', 'title': ''})  # the top level: All Playlists
 CATEGORY = Item({'id': '1000000008', 'kind': 'category', 'title': 'Jazz'})
+SHOW = Item({'id': '1000000009', 'kind': 'category', 'title': 'The Invented Hour',
+             'subtitle': 'Rowan Vale',
+             'url': 'https://music.apple.com/gb/curator/the-invented-hour/1000000009'})
 PLAYLIST = Item({'id': 'p.pl1', 'kind': 'playlist', 'title': 'Road Trip',
                  'play': {'kind': 'playlist', 'id': 'p.pl1'}})
 READ_ONLY = Item({'id': 'p.pl2', 'kind': 'playlist', 'title': 'Apple Picks',
@@ -296,8 +299,21 @@ class MenuTest(unittest.TestCase):
 
     def test_what_has_no_menu(self):
         self.assertIsNone(build_menu(TOP_LEVEL))  # All Playlists: not renamed, nor deleted
-        self.assertIsNone(build_menu(CATEGORY))
+        self.assertIsNone(build_menu(CATEGORY))  # a curator without a page of Apple's
         self.assertIsNone(build_menu(object()))
+
+    def test_a_curator_offers_its_page_alone(self):
+        # A radio show (an Apple curator, #359): no Play, Play Next or Favourite, which Apple
+        # gives a curator nothing for; its page to open and to copy.
+        menu = build_menu(SHOW, playlists=[('p.pl1', 'Road Trip', None)], storefront='gb')
+        self.assertEqual(actions_of(menu), [
+            ('win.item-open-in-browser', ('category', SHOW.id)),
+            ('win.item-copy-link', ('category', SHOW.id))])
+        self.assertFalse(can_play(SHOW))
+        self.assertIsNone(actions_module.rating_target(SHOW))
+        self.assertIsNone(actions_module.queue_target(SHOW))
+        # Only Apple's own pages: an address elsewhere has nothing to open.
+        self.assertIsNone(build_menu(Item(dict(SHOW.raw, url='https://example.invalid/x'))))
 
     def test_other_kinds(self):
         self.assertEqual(names(build_menu(CATALOG_ARTIST)), [
@@ -1239,6 +1255,15 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.actions.menu_for(UPLOAD_TRACK)
         await self.run_action('item-copy-link', 'song', 'i.song2')
         self.assertEqual(self.app.toasts[-1], 'This has no link to copy')
+
+    async def test_a_curators_links_are_its_own_page(self):
+        # A radio show's menu (#359): its page opens and copies; nothing plays or is loved.
+        self.assertIsNotNone(self.actions.menu_for(SHOW))
+        await self.run_action('item-open-in-browser', 'category', SHOW.id)
+        await self.run_action('item-copy-link', 'category', SHOW.id)
+        self.assertEqual(self.launched, [SHOW.url])
+        self.assertEqual(self.window.clipboard.value, SHOW.url)
+        self.assertEqual(self.app.engine.calls, [])
 
     async def test_a_library_artists_link_is_their_catalog_page(self):
         self.app.engine.state = 'down'  # started for the lookup

@@ -1249,16 +1249,19 @@
             });
         },
 
-        // A category's page: the curator with its grouping, whose one tab
+        // A category's page (an Apple curator's: a genre's, or a radio show's), as
+        // music.apple.com asks for it: the curator with its grouping, whose one tab
         // is a run of editorial elements — Best New Songs, New Releases,
-        // Playlists, Stations… — each a shelf. Not with `omit[resource]`:
+        // Playlists, Stations…, a show's episodes — each a shelf with its
+        // contents, and the curator's playlists. Not with `omit[resource]`:
         // the shelves' contents are what Apple calls autos, and go with it.
         category: async function (id) {
             const mk = getMusicKit();
             if (!mk) throw new Error('MusicKit not initialized');
             const sf = mk.storefrontId || 'us';
             return await apiCall(`/v1/catalog/${sf}/apple-curators/${encodeURIComponent(id)}`, {
-                include: 'grouping',
+                include: 'grouping,playlists',
+                'include[editorial-elements]': 'children,contents,room',
                 extend: 'editorialArtwork',
                 platform: 'web'
             });
