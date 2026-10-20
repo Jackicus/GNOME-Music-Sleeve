@@ -142,6 +142,24 @@ class ShelfTest(PageTestCase):
         self.assertTrue(shelf.previous_button.get_visible())
         self.assertTrue(shelf.next_button.get_visible())
 
+    async def test_a_shelf_rebound_out_of_the_page_shows_its_arrows_once_back(self):
+        # Home's first shelf: a ShelfColumn moves a kept widget into place, so it is
+        # bound while out of the page, with no width of its own, and its row, as wide as
+        # before, lays out again with the very adjustment it had: nothing changes then.
+        shelf = await self.shown(model('first', 40))
+        self.assertTrue(shelf.next_button.get_visible())
+        adjustment = shelf.scrolled_window.get_hadjustment()
+        settled = adjustment.get_page_size(), adjustment.get_upper()
+        self.window.root_box.remove(shelf)
+        shelf.bind_shelf(model('second', 40))
+        self.assertEqual(shelf.get_width(), 0)
+        self.window.root_box.append(shelf)
+        self.assertTrue(await self.until(lambda: shelf.get_width() > 0))
+        await self.turn()
+        self.assertEqual((adjustment.get_page_size(), adjustment.get_upper()), settled)
+        self.assertTrue(shelf.previous_button.get_visible())
+        self.assertTrue(shelf.next_button.get_visible())
+
     def test_text_scale_follows_the_xft_dpi(self):
         from types import SimpleNamespace
 

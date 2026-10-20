@@ -54,11 +54,13 @@ class PagedRow:
         page = adjustment.get_page_size()
         overflows = page > 0 and upper - page > 1
         self.see_all_button.set_visible(self._see_all and (self._truncated() or overflows))
-        # The shelf's own width (already allocated while its row is): the page's, as a page
-        # breakpoint would measure it. Not the adjustment's page, which leaves out the list's
-        # CSS padding.
-        arrows = overflows and self.get_width() > ARROWS_MIN_WIDTH * text_scale(
-            self.get_settings())
+        # The row's width, which is the shelf's (the page's, as a page breakpoint would
+        # measure it) and the allocation the adjustment's page follows: a new width is a new
+        # page, so this runs again. Not the shelf's own width, which is 0 while a ShelfColumn
+        # binds a kept shelf out of its page, back as wide with the adjustment unchanged; nor
+        # the adjustment's page, which leaves out the list's CSS padding.
+        row_width = self.scrolled_window.get_width()
+        arrows = overflows and row_width > ARROWS_MIN_WIDTH * text_scale(self.get_settings())
         self.previous_button.set_visible(arrows)
         self.next_button.set_visible(arrows)
         self.previous_button.set_sensitive(value > 1)
