@@ -91,6 +91,168 @@ A playlist the user may change lists `canEdit` and `canDelete` true; Favourite S
 false; one of Apple's added to the library `canEdit` false, `canDelete` true. The listing
 carries a playlist's `description` when it has one.
 
+## Checked live, not used yet
+
+What music.apple.com's own code asks for, and what the API and MusicKit answered, checked
+against a real account on 2026-10-20 (MusicKit `playback/AppleMusic-2642.7.0-external`, the
+`gb` storefront), for the features still to build. Only the shapes are kept here. Every
+write was made on items picked for the check and put back. Reads go through `music()`;
+the writes, and any read that must see a write (MusicKit's `music()` may answer from a
+cache), go through the request builder, as `apiWrite()` does.
+
+### Removing from the library (#331)
+
+The web player's `requestDeleteFromLibrary`: `DELETE /v1/me/library/<type>/<id>`, `<type>`
+the catalog type of the kind (`songs`, `albums`, `music-videos`, `playlists`), `<id>` the
+item's **library** id (`i.` for a song, `l.` for an album, `p.` for a playlist). When it has
+only the catalog id, it first reads the library id: `GET
+/v1/catalog/<sf>?ids[<type>]=<catalog id>&relate=library&fields[<type>]=inLibrary&omit[resource]=autos`,
+the id in `relationships.library.data[0].id` (and `attributes.inLibrary`). The same read
+gives `personalRating` (1 favourite, -1 Suggest Less, absent for none) with
+`fields[<type>]=inLibrary,personalRating`.
+
+| Request | Apple's answer |
+|---|---|
+| `POST /v1/me/library?ids[songs]=<catalog id>` (or `ids[albums]`) | 202. The library id and `inLibrary` show some seconds to a minute later, and the album leads `/v1/me/library/recently-added`; an album brings its tracks (as library songs of their own) |
+| `DELETE /v1/me/library/songs/<library id>`, `.../albums/<library id>` | 204, no body. `GET /v1/me/library/songs/<id>` is 404 within 2 s, the album within 7 s; the catalog read's `inLibrary` turns false after about 19 s. An album goes with its tracks, and no library artist was left behind |
+| `DELETE /v1/me/library/songs/<catalog id>` | 500, not a 404: a catalog id is never the id to delete by |
+
+Removing a song from the library takes it out of every library playlist that held it (the
+playlist stays, without the entry). Music videos and Apple's playlists added to the library
+were not tried; the web player removes them by the same request (`music-videos`, `playlists`).
+
+### The queue (#332, #361)
+
+`mk.queue` (MusicKit v3) holds `_queueItems`, each `{item, isAutoplay}`; `queue.items` are
+the MediaItems, `queue.position` the current index (-1 for none), and
+`queue.userAddedItems`, `queue.autoplayItems`, `queue.unplayedUserItems`,
+`queue.unplayedAutoplayItems` filter them (MediaItems, not queue items). Tried on a
+throwaway album queue while it played: none of these changed the playback state, the item
+or the time (no gap), and each splice posts one `queueItemsDidChange`.
+
+| Call | What it does |
+|---|---|
+| `queue.remove(index)` | removes a later entry; logs a deprecation warning; throws `INVALID_ARGUMENTS` (`mk-007`) for the current index. The web player's own Remove from Up Next is this, after checking `queue.item(index).id` is the item it means |
+| `queue.spliceQueueItems(start, count, items = [])` | `Array.splice` on the queue items, answering those taken out; `queue.splice()` is the same over MediaItems. A move is two calls, `spliceQueueItems(from, 1)` then `spliceQueueItems(to, 0, taken)`, and so two `queueItemsDidChange`; the next item played follows the new order. The web player has no reorder of its own |
+| `queue.removeQueueItems(predicate)` | removes every queue item `predicate(queueItem, index)` accepts, from the end, one event each |
+| `queue.clearAfterCurrent()` | everything after the current item goes; the current item and those before it stay (the history) |
+| `mk.clearQueue()` | the web player's Clear: the whole queue goes (`position` -1, `length` 0) while the current item plays on |
+| `mk.autoplayEnabled` | read and written as a property; `autoplayEnabledDidChange` carries the new boolean. Set true at the end of a queue, it adds about ten entries some 2 s later (one `queueItemsDidChange`), each `isAutoplay: true`, a song whose `container` is a `stations` resource with an `ra.cp-…` id. Set false, it removes them one at a time (a `queueItemsDidChange` each: coalesce them). It does not start while repeat is on |
+
+`mk.capabilities` says what may be done now: `canEditPlaybackQueue`, `canAutoplay`, `canSeek`,
+`canPause`, `canSkipToNextItem`, `canSkipToPreviousItem`. On an album or a playlist they
+are all true; on a song-seeded station `canEditPlaybackQueue` is false (its queue is the
+station's, two entries at a time) and the rest true; on a live station all are false. Autoplay is the
+page's, not the account's: the web player keeps it in the page's `localStorage` under
+`music-app-pref:autoplay-<music user token>` and sets `mk.autoplayEnabled` from it when it
+loads, and the page started with it off. The bridge's `formatTrack()` drops `isAutoplay`.
+
+### Live radio (#343)
+
+A live station (`attributes.isLive: true`, `kind: 'streaming'`) plays as one item:
+`nowPlayingItem.type` `radioStation`, `isLiveRadioStation` true, `attributes.isLive` true,
+its `container` the `stations` resource. MusicKit reports a finite duration that is the
+stream's window, not the programme (`currentPlaybackDuration` 160, then 176 a little later),
+and a position inside it (from about 112, counting up), with `isPlayingAtLiveEdge` false and
+`seekableTimeRanges` `[{start: 0, end: …}]`; `playbackTimeDidChange` and
+`playbackDurationDidChange` arrive as for a song. Every capability is false: `seekToTime()`
+does nothing, `pause()` leaves it playing, `mk.stop()` ends it (state `stopped`, no item).
+The bridge's `nowPlaying()` gives `track.type: 'radioStation'`, `durationMs: 0` and that
+position and duration. So a live item is told by its type and `isLive`, not by its duration.
+
+### Stations from a song or an artist (#339)
+
+`GET /v1/catalog/<sf>/songs/<id>?include=station` and `.../artists/<id>?include=station`
+both answer `relationships.station.data[0]`, a `stations` resource whose id is `ra.<the
+song's or artist's catalog id>` (`attributes.kind` `songSeeded` or `artistSeeded`, `isLive`
+false). The web player's Create Station does not read it: it builds the id and plays
+`mk.setQueue({station: 'ra.' + id})`. The bridge's `play('station', 'ra.<id>')` plays it as
+it is (a song first, two entries queued).
+
+### Favourites and Suggest Less (#357)
+
+| Request | Apple's answer |
+|---|---|
+| `POST /v1/me/favorites?ids[artists]=<catalog id>` | 202. The web player's `UpdateFavoritesIntent`, which takes any `ids[<type>]`; DELETE to unfavourite (204) |
+| `GET /v1/catalog/<sf>/artists/<id>?extend=inFavorites` | `attributes.inFavorites`, a boolean, true within 200 ms of the POST |
+| `GET /v1/catalog/<sf>?ids[artists]=<id>&fields[artists]=personalRating&relate=library&omit[resource]=autos` | `personalRating: 1` while favourited, absent otherwise |
+| `GET /v1/me/ratings/artists/<id>` | 404 whether favourited or not: an artist's favourite is not a rating |
+| `PUT /v1/me/ratings/songs/<id>` `{type: 'rating', attributes: {value: -1}}` | 200 with the rating (`value` -1): Suggest Less. `GET` answers it, the catalog read gives `personalRating: -1`; `DELETE` takes it away (204, then 404). The web player offers Suggest Less for albums, artists, music videos, playlists, songs and stations, and not with a favourite |
+
+Favouriting an artist does not add them to the library.
+
+### Credits (#364)
+
+`GET /v1/catalog/<sf>/songs/<id>/credits` (or `include=credits` on the song; the web player
+asks `include=albums,artists,credits,lyrics,music-videos`), about 250 to 300 ms: `role-categories`, each `{attributes: {kind, title},
+relationships: {'credit-artists': {data}}}`, `kind` `performer`, `composer-and-lyrics` or
+`production-and-engineering`, `title` Apple's heading for it; a `credit-artists` entry is
+`{id, type, attributes: {name, roleNames: [..], artwork?}}`, its id not an artist's catalog
+id. A library song needs its catalog id.
+
+### The editorial pages: Radio, New, rooms (#336, #370)
+
+`GET /v1/editorial/<sf>/groupings?name=radio` is the Radio page, asked exactly as the New
+page's `name=music` (`platform=web`, `tabs=subscriber`, `extend=editorialArtwork`, and the
+web player adds `include[stations]=events,radio-show` and `extend[station-events]=editorialVideo`).
+Both answer one `groupings` resource whose `tabs` hold one `editorial-elements` (kind 382)
+with `children`, each a shelf by `attributes.editorialElementKind`:
+
+| Kind | What it is |
+|---|---|
+| 316 | the hero row: children 320 (wide, with `artwork`, `editorialArtwork`, `designBadge` such as "UPDATED PLAYLIST", `designTag`, sometimes `editorialVideo`), 317 and 383 (`designBadge`), each one resource in `contents` |
+| 488 | Radio's live stations: children 489, each one live station in `contents` and a `stationGlyph` (the station's logo with its colours) |
+| 326 | a shelf: `name`, `displayStyle` (`compact`, `expanded`), `contents` (albums, playlists, stations, `apple-curators`, `music-videos`, `uploaded-videos`), and `room`, its See All |
+| 327 | a shelf of songs |
+| 385 | New's "New for <month>": children 386 (an `apple-curators` in `contents`) and 394 (`artwork`, `designTag`, and a `link` or an `apple-curators`) |
+| 391 | More to Explore: `name` and `links`, `[{label, url, target?}]` |
+| 322 | untitled `links`, every one a genre's grouping |
+
+The links' URLs and what opens them (the web player's routes):
+
+| URL | Request |
+|---|---|
+| `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>` | `GET /v1/editorial/<sf>/rooms/<id>`: `rooms` with `title`, `sorts`, `contents` (up to 100) |
+| `…/viewGrouping?cc=<sf>&id=<id>` | `GET /v1/editorial/<sf>/groupings/<id>?platform=web`, the same shape as New; without `platform` a 400 ("A single platform must be supplied") |
+| `…/viewMultiRoom?cc=<sf>&fcId=<id>` | `GET /v1/editorial/<sf>/multirooms/<id>?extend=editorialArtwork,uber,lockupStyle`: `multirooms` with `title`, `uber` (`masterArt`, `name`, `description`, colours) and `children` (404 a header, 345 shelves with `contents` and `room`) |
+| `…/viewTop?genreId=<n>` | a chart page, by genre (not tried) |
+| `https://music.apple.com/concerts` (`target: 'external'`) | a web page |
+
+On the Radio page: the live stations are `stations` with `isLive: true`, `kind: 'streaming'`,
+`relationships.events` (`station-events`: `startTime`, `endTime`, `title`, `description`,
+`artwork`, `heroArtwork`, `editorialVideo` on some: what is on air and next) and an empty
+`radio-show`; an episode of a show is a `stations` with `kind: 'streaming'`, `isLive: false`,
+`airTime: {start, end}`, `durationInMillis` and its show in `radio-show`; genre stations are
+`kind: 'editorial'`. All play as `{kind: 'radioStation', id: 'ra.<n>'}` in `playParams`.
+
+### Curators and radio shows (#359, #360)
+
+An `apple-curators` resource has `attributes.kind` `Show` (a radio show, with
+`showHostName`), `Genre` or `Curator`; third parties are `curators`. None has `playParams`:
+nothing plays, and there is nothing to favourite. Its page is `GET
+/v1/catalog/<sf>/apple-curators/<id>?include=grouping,playlists&include[editorial-elements]=children,contents,room&extend=editorialArtwork&platform=web`:
+`relationships.grouping` a grouping of 326 shelves as above (a show's: its episodes, as
+`stations`, and albums and playlists) and `relationships.playlists`. A show's banner is
+`editorialArtwork.bannerUber`, else `subscriptionCover`, else `subscriptionHero`. Search
+answers curators only when asked for (`types=apple-curators`), never with the app's
+`types`. An artist's `view/radio-shows` is not empty for the hosts of Apple's shows (21 of
+24 tried), every entry an `apple-curators` of kind `Show`; their `view/more-to-hear` holds
+episodes (`stations`, `streaming`, not live).
+
+### An artist's banner (#355)
+
+The web player's artist page asks `GET /v1/catalog/<sf>/artists/<id>` with
+`extend=artistBio,editorialArtwork,editorialVideo,extendedAssetUrls,hasBiographyContent,hero,keyColor,plainEditorialNotes`
+(and its canvas shelves). Its wide header is `editorialArtwork.centeredFullscreenBackground`
+(4320x2160, crop `sr`) when there is one (1 artist in 24), else the portrait in
+`attributes.hero[0].content[0].artwork` cut with crop code `vf` when its
+`recommendedCropCodes` lists `vf` (11 in 23); with neither, the round portrait. The hero
+artwork is the artist's `artwork` itself (square, 902 to 6000 px) with
+`recommendedCropCodes` from `va vb vc vd vf vn`; `{w}x{h}vf.jpg` in place of
+`{w}x{h}bb.jpg` answers an image of exactly that size cropped where Apple chose (2400x1000,
+3000x1000), where `bb` fits the square inside it. Other keys seen: `originalFlowcaseBrick`,
+`storeFlowcase`, `subscriptionHero`, `musicContentColorLogoTrimmed` (a logo).
+
 ## Events
 
 The client dispatches each bridge event as `am:<name>`; the Engine re-emits it as
