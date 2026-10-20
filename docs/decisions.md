@@ -256,6 +256,27 @@ changes, change it here, with the date. The plan they came from is in
   While a playlist is filtered its songs cannot be moved (no drag, no Alt+Up, no Move Up in
   their menus): the order shown is not the playlist's. Recently Added, All Playlists and a
   folder have none (few items, in an order of their own), nor an album's tracks.
+- **Play and Shuffle on Songs, at most 300 songs a queue** (2026-10-20, #376). Apple Music's
+  Songs view has Play and Shuffle at the top; here they sit beside the title, as an album's
+  under its own, and go under it below the table's 560sp breakpoint (a 360 px window). They
+  play what the table shows, its sort, filter and Favourites Only applied, never more than
+  that. The queue is one `songs` play request of library ids: MusicKit's `setQueue` looks
+  each id up before anything plays, so it is capped at `discography.PLAY_LIMIT` (300 songs,
+  about a day: the cap the library artist page's Play already used), not the 40,000 a big
+  library holds, whose request would be a megabyte of ids and a long wait. Play queues the
+  first 300 in the table's order; Shuffle draws 300 at random from all of them (so a shuffle
+  reaches the whole library, not its first letters) and turns MusicKit's shuffle on, as an
+  album's Shuffle does. Only the songs queued are read (a Track's id is a GObject property).
+  Ctrl+2 still goes to the table, not to Play (`SongsPage.focus_content()`).
+- **Your Library search in Apple's order** (2026-10-20, #376). Apple Music's library search
+  leads with its best matches and the songs; Your Library shows Top Results (at most four
+  of the artists, albums and playlists whose title is the text, begins with it, or has each
+  of its words begin one of the title's: the search provider's `rank()` at 2 or better,
+  `search.top_results()`), then Songs, Artists, Albums and Playlists. Top Results are hero
+  cards, as Apple Music mode's; a song is no card, so the songs list right under them is
+  where a song that matches best shows. The titles they are found in are read once per
+  change to a store (`search.titles()`) and searched in Python: about 5 ms for a one-letter
+  text over 3,000 albums, 868 artists and 301 playlists, under a millisecond for a word.
 - **A refresh on a schedule** (2026-09-28). The library is synced when the last sync is older
   than the chosen interval, or when library.json is missing, unreadable or of an older
   version, checked by a timer, when the engine comes up and when the library has been read;

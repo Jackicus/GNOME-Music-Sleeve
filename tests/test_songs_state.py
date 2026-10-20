@@ -3,8 +3,9 @@
 
 """The Songs page (pages/songs.py): what it shows while the songs are on their way, and a
 sync that changes the songs keeps the table's place; the Sort By menu sorts as a header does;
-a row plays its own song, on a click; the row of the song playing is marked; a column dragged
-wider or narrower follows the pointer and keeps its width on release.
+a row plays its own song, on a click; Play and Shuffle play the songs shown, at most a cap of
+them; the row of the song playing is marked; a column dragged wider or narrower follows the
+pointer and keeps its width on release.
 Over an invented library.json in a temporary cache (tests/page_harness.py's window)."""
 
 import json
@@ -40,6 +41,39 @@ class SongsStateTest(PageTestCase):
         self.assertEqual(resized_fixed_width(500, 260, 90, 2), 500)  # no room is left
         self.assertIsNone(resized_fixed_width(50, 260, 90, 2))  # narrower than its share
         self.assertIsNone(resized_fixed_width(300, 260, 90, 0))
+
+    def test_play_takes_the_first_songs_and_shuffle_a_draw_of_all_of_them(self):
+        from types import SimpleNamespace
+
+        from applemusic.pages.songs import play_target
+
+        songs = [SimpleNamespace(id=f'i.{n}') for n in range(10)]
+        self.assertEqual(play_target(songs), {'kind': 'songs', 'id': ','.join(
+            f'i.{n}' for n in range(10))})
+        self.assertEqual(play_target(songs, limit=3), {'kind': 'songs', 'id': 'i.0,i.1,i.2'})
+        self.assertIsNone(play_target([]))
+        self.assertIsNone(play_target([SimpleNamespace(id=None)]))
+        # A song without an id is passed over, the cap still filled.
+        gappy = [songs[0], SimpleNamespace(id=''), songs[1], songs[2]]
+        self.assertEqual(play_target(gappy, limit=2)['id'], 'i.0,i.1')
+        # Shuffle draws from every song shown, not only the first: the draw is what goes.
+        drawn = []
+
+        def sample(population, k):
+            drawn.append((len(population), k))
+            return list(reversed(population))[:k]
+
+        self.assertEqual(play_target(songs, shuffle=True, limit=3, sample=sample)['id'],
+                         'i.9,i.8,i.7')
+        self.assertEqual(drawn, [(10, 3)])
+        # Under the cap every song goes, for MusicKit's shuffle to order.
+        self.assertEqual(play_target(songs[:3], shuffle=True, limit=3, sample=sample)['id'],
+                         'i.0,i.1,i.2')
+        self.assertEqual(len(drawn), 1)
+        # The real draw: distinct songs of those shown.
+        ids = play_target(songs, shuffle=True, limit=5)['id'].split(',')
+        self.assertEqual(len(set(ids)), 5)
+        self.assertTrue(set(ids) <= {song.id for song in songs})
 
     def test_songs_that_exist_but_are_not_ordered_yet_are_loading(self):
         from applemusic.pages.songs import songs_state
@@ -234,6 +268,54 @@ class SongsPageTest(PageTestCase):
         # On a click; with no selection, which GTK would move to the hovered row.
         self.assertTrue(page.column_view.get_single_click_activate())
         self.assertIsInstance(page.column_view.get_model(), Gtk.NoSelection)
+
+    async def test_play_and_shuffle_play_the_songs_shown_in_their_order(self):
+        page = await self.songs_page(30)
+        window = page.get_root()
+        self.assertTrue(page.play_button.get_sensitive())
+        page.activate_action('songs.sort-order', _variant('descending'))
+        page.set_filter('Song 001')  # Song 0010 to Song 0019, the last first
+        page.play_button.emit('clicked')
+        play, start_with, shuffle = window.played[-1]
+        self.assertEqual(play['kind'], 'songs')
+        self.assertEqual(play['id'].split(','), [page._rows.get_item(n).id for n in range(10)])
+        self.assertEqual(play['id'].split(',')[0], track('l.album001', 19)['id'])
+        self.assertIsNone(start_with)
+        self.assertIs(shuffle, False)
+        page.shuffle_button.emit('clicked')
+        play, _start_with, shuffle = window.played[-1]
+        self.assertIs(shuffle, True)
+        self.assertEqual(sorted(play['id'].split(',')),
+                         sorted(page._rows.get_item(n).id for n in range(10)))
+        # Nothing shown, nothing to play.
+        page.set_filter('no such song')
+        self.assertEqual(page.results_stack.get_visible_child_name(), 'no-results')
+        self.assertFalse(page.play_button.get_sensitive())
+        self.assertFalse(page.shuffle_button.get_sensitive())
+        page.set_filter('')
+        self.assertTrue(page.play_button.get_sensitive())
+        # Ctrl+2 goes to the table, not to Play above it.
+        page.play_button.grab_focus()
+        page.focus_content()
+        focus = window.get_focus()
+        self.assertTrue(focus is not None and focus.is_ancestor(page.column_view), focus)
+
+    async def test_play_and_shuffle_go_under_the_title_in_a_narrow_window(self):
+        from gi.repository import Gtk
+
+        from applemusic.pages.songs import SongsPage
+
+        library_json(self.cache, 3)
+        await self.library.load()
+        page = await self.show_at(SongsPage(self.library, 'Songs'), 360)
+        self.assertTrue(await self.until(
+            lambda: page.heading_box.get_orientation() == Gtk.Orientation.VERTICAL, 2))
+        self.assertTrue(await self.until(page.shuffle_button.get_mapped))
+        bounds = page.shuffle_button.compute_bounds(page)[1]
+        self.assertLessEqual(bounds.get_x() + bounds.get_width(), page.get_width())
+        page.get_root().set_default_size(1000, 640)
+        self.assertTrue(await self.until(
+            lambda: page.heading_box.get_orientation() == Gtk.Orientation.HORIZONTAL, 2))
 
     async def test_a_plain_click_plays_and_a_ctrl_click_starts_selecting(self):
         """A click plays a song (docs/decisions.md), the selection mode or not; a Ctrl+click

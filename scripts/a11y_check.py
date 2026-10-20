@@ -1290,6 +1290,22 @@ async def walkthrough(window):
     check('Escape closes the filter bar, the focus back in the table',
           not songs.filter_bar.get_search_mode()
           and inside(window.get_focus(), songs.column_view), describe(window.get_focus()))
+    requests = []
+    window.play_request = lambda play, start_with=None, shuffle=None, start_id=None: (
+        requests.append((play.get('kind'), len(play.get('id', '').split(',')), shuffle)))
+    await key(window, '<shift>Tab')
+    check('Shift+Tab from the table: Shuffle', window.get_focus() is songs.shuffle_button,
+          describe(window.get_focus()))
+    await key(window, 'space')
+    await key(window, '<shift>Tab')
+    check('Shift+Tab: Play', window.get_focus() is songs.play_button,
+          describe(window.get_focus()))
+    await key(window, 'Return')
+    window.play_request = play_request
+    from applemusic.discography import PLAY_LIMIT
+    shown = min(len(songs._matches), PLAY_LIMIT)
+    check('Space on Shuffle, Enter on Play: the songs shown, shuffled, then in order',
+          requests == [('songs', shown, True), ('songs', shown, False)], requests)
     print('-- Artists')
     window.select_page('artists')
     window.split_view.set_show_content(True)

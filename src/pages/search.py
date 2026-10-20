@@ -7,7 +7,9 @@ Two modes, an Adw.ToggleGroup beside the entry: Apple Music, which searches the 
 through the engine (suggestions as you type, shelves of results on Enter, Apple's browse
 categories before anything is typed, Top Charts first: pages/charts.py), and Your Library,
 which filters the library's cached models as you type (Gtk.FilterListModel over the albums,
-artists, playlists and songs) and works with the engine down. The entry has no title over
+artists, playlists and songs) and works with the engine down. Its results are in Apple's
+order: Top Results (the artists, albums and playlists whose title is or begins with the
+text: top_results()) as cards, Songs, Artists, Albums, Playlists. The entry has no title over
 it: it names the page.
 
 Apple Music's results are of every kind, or of the one the filter beside the entry names
@@ -43,6 +45,7 @@ from ..library import Item, Track, fold
 from ..remote import (fetch_items_art, fetch_shelf_art, fetch_thumb, needs_thumb, remote_item,
                       remote_items, remote_shelves)
 from ..search_pager import SearchPager
+from ..search_provider import rank
 from ..widgets import context_menu
 from ..widgets.category_tile import CategoryTile
 from ..widgets.cover import Cover
@@ -61,6 +64,8 @@ log = logging.getLogger(__name__)
 
 DEBOUNCE_MS = 250
 SONG_LIMIT = 25   # songs listed in Your Library results; See All opens the Songs page
+TOP_LIMIT = 4     # Your Library's Top Results: the cards a wide window shows
+TOP_RANK = 2      # and the worst search_provider.rank() among them (title_rank())
 MODES = ('music', 'library')
 # The filter's choices, in its order: every kind (the shelves), or one (api.SEARCH_KIND_TYPES).
 FILTER_KEYS = ('all', 'artists', 'songs', 'albums', 'playlists', 'music-videos', 'stations',
@@ -111,6 +116,49 @@ class LibraryShelf:
         self.items = items
 
 
+def title_rank(search, title):
+    """How well a library object whose folded title is `title` stands for the folded search
+    `search` as a top result: the search provider's rank() of it (0 the title is the search,
+    1 it begins with it, 2 each of the search's words begins one of its words) when the title
+    holds the search, as the shelves under Top Results match it, and that is TOP_RANK or
+    better; else None (the search only within a word, or only in the subtitle)."""
+    if search not in title:
+        return None
+    score = rank(title, '', search.split())
+    return score if score is not None and score <= TOP_RANK else None
+
+
+def titles(items):
+    """(folded title, Item) for each of a store's Items, in its order: what top_results()
+    reads, made once for a store as it is (an Item's search_key starts with its title)."""
+    return [(item.search_key.partition('\n')[0], item) for item in items]
+
+
+def top_results(search, groups, limit=TOP_LIMIT):
+    """Your Library's Top Results for the folded search `search`: of `groups`, each kind's
+    titles() in the order Apple ranks the kinds (artists, albums, playlists), at most `limit`
+    Items whose title best stands for the search (title_rank()): by rank, then kind, then
+    the store's order. A kind's scan ends once it has `limit` titles that are the search."""
+    if not search:
+        return []
+    found = []  # (rank, kind's place, place, item)
+    for kind_place, entries in enumerate(groups):
+        exact = 0
+        for place, (title, item) in enumerate(entries):
+            if search not in title:  # the test of most titles, in C
+                continue
+            score = title_rank(search, title)
+            if score is None:
+                continue
+            found.append((score, kind_place, place, item))
+            if score == 0:
+                exact += 1
+                if exact >= limit:
+                    break
+    found.sort(key=lambda entry: entry[:3])
+    return [entry[3] for entry in found[:limit]]
+
+
 def _item_filter():
     """A filter matching an Item whose title or subtitle holds the search, case ignored:
     an Adw.AnyFilter of one Gtk.StringFilter per property (its `set_search` is set on both)."""
@@ -156,6 +204,8 @@ class SearchPage(Adw.NavigationPage):
     suggestions_list = Gtk.Template.Child()
     results_box = Gtk.Template.Child()
     kind_list = Gtk.Template.Child()
+    library_box = Gtk.Template.Child()
+    top_shelf = Gtk.Template.Child()
     albums_shelf = Gtk.Template.Child()
     artists_shelf = Gtk.Template.Child()
     playlists_shelf = Gtk.Template.Child()
@@ -237,9 +287,11 @@ class SearchPage(Adw.NavigationPage):
         # build their tiles for nothing (the search page cost 250 ms to open).
         self._item_filters = []
         self._library_models = []  # (Gtk.FilterListModel, the store it filters)
+        self._filtering = False  # setting the filters' text: the state is shown once after
+        # The kinds in Top Results' order (top_results()): artists before albums.
         for widget, key, title, store in (
-                (self.albums_shelf, 'albums', _('Albums'), library.albums),
                 (self.artists_shelf, 'artists', _('Artists'), library.artists),
+                (self.albums_shelf, 'albums', _('Albums'), library.albums),
                 (self.playlists_shelf, 'playlists', _('Playlists'), library.playlists)):
             any_filter, filters = _item_filter()
             self._item_filters.extend(filters)
@@ -248,6 +300,14 @@ class SearchPage(Adw.NavigationPage):
             self._library_models.append((model, store))
             widget.bind_shelf(LibraryShelf(key, title, model))
             connect_weak(widget.list_view, 'activate', self._on_shelf_activated)
+        # Top Results: the best of those three, as cards (top_results()), found in their
+        # stores' titles(), made at the first search after a change to a store. A change
+        # to the library (a sync's splices) finds them again once, in an idle.
+        self._top = Gio.ListStore(item_type=Item)
+        self._titles = None
+        self._top_idle = 0
+        self.top_shelf.bind_shelf(LibraryShelf('top', _('Top Results'), self._top))
+        connect_weak(self.top_shelf.list_view, 'activate', self._on_shelf_activated)
         self._song_filter = _song_filter()
         self._songs = Gtk.FilterListModel(model=None, filter=self._song_filter)
         connect_weak(self._songs, 'items-changed', self._on_library_results_changed)
@@ -267,6 +327,8 @@ class SearchPage(Adw.NavigationPage):
         self._handlers = MappedHandlers(self)
         self._handlers.add(library, 'notify::state', self._on_library_results_changed)
         self._handlers.add(library, 'notify::songs-ready', self._on_library_results_changed)
+        for store in (library.artists, library.albums, library.playlists):
+            self._handlers.add(store, 'items-changed', self._on_titles_changed)
         self._playing = PlayingMark(getattr(app(), 'player', None))
         if self._playing.player is not None:
             self._handlers.add(self._playing.player, 'notify::track', self._on_track_changed)
@@ -306,6 +368,7 @@ class SearchPage(Adw.NavigationPage):
 
     def do_map(self):
         Adw.NavigationPage.do_map(self)
+        self._titles = None  # the stores may have changed while hidden
         if self._recent is not None:
             app().spawn(self._recent.load())  # read once, and again after a Clear Cache
         if self._stale():
@@ -565,25 +628,64 @@ class SearchPage(Adw.NavigationPage):
     def _filter_library(self, text):
         if text and not self._library.songs_ready:
             app().spawn(self._library.build_songs())
-        for string_filter in self._item_filters:
-            string_filter.set_search(text)
-        self._song_filter.set_search(fold(text))
-        for model, store in self._library_models:
-            wanted = store if text else None
-            if model.get_model() is not wanted:
-                model.set_model(wanted)
+        self._filtering = True  # each filter's change would show the state again
+        try:
+            self._song_filter.set_search(fold(text))
+            for string_filter in self._item_filters:
+                string_filter.set_search(text)
+            for model, store in self._library_models:
+                wanted = store if text else None
+                if model.get_model() is not wanted:
+                    model.set_model(wanted)
+        finally:
+            self._filtering = False
         self._update_library_state()
 
     def _on_library_results_changed(self, *_args):
-        if self.mode == 'library' and self.get_mapped():
-            self._update_library_state()
+        if self.mode == 'library' and self.get_mapped() and not self._filtering:
+            self._update_library_state(top=False)
+            self._update_top_later()
 
-    def _update_library_state(self):
+    def _on_titles_changed(self, *_args):
+        """A store's Items changed (a sync): its titles are made again, once its splices
+        are done, and Top Results found again."""
+        self._titles = None
+        self._update_top_later()
+
+    def _update_top_later(self):
+        if not self._top_idle:
+            self._top_idle = GLib.idle_add(weak_method(self._update_top_idle))
+
+    def _update_top_idle(self):
+        self._top_idle = 0
+        if self.mode == 'library' and self.get_mapped() and self.text:
+            self._update_top()
+        return GLib.SOURCE_REMOVE
+
+    def _update_top(self):
+        """Top Results for the text, the store changed only when they did (the cards are
+        built again for a change), the shelf shown while there are some."""
+        top = []
+        if self.text:
+            if self._titles is None:
+                library = self._library
+                self._titles = [titles(store) for store in
+                                (library.artists, library.albums, library.playlists)]
+            top = top_results(fold(self.text), self._titles)
+        if top != list(self._top):
+            self._top.splice(0, self._top.get_n_items(), top)
+        self.top_shelf.set_visible(bool(top))
+
+    def _update_library_state(self, top=True):
+        """What Your Library shows for the text: its results (Top Results found again with
+        `top`, else left to _update_top_later()), the spinner, or a status page."""
         if not self.text:
             self._show_status('library-empty')
             return
+        if top:
+            self._update_top()
         counts = []
-        for widget in (self.albums_shelf, self.artists_shelf, self.playlists_shelf):
+        for widget in (self.artists_shelf, self.albums_shelf, self.playlists_shelf):
             count = widget.shelf.items.get_n_items()
             widget.set_visible(count > 0)
             counts.append(count)
@@ -623,7 +725,7 @@ class SearchPage(Adw.NavigationPage):
             title, description = _('Search Apple Music'), _('Type to search the catalogue')
         else:
             title = _('Search Your Library')
-            description = _('Albums, artists, playlists and songs in your library')
+            description = _('Songs, artists, albums and playlists in your library')
         self._draw_status(status, icon, title, description, None)
 
     def _show_engine_status(self, status, title, description, button):

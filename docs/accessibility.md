@@ -102,7 +102,9 @@ list and the script together.
    focus back on the item it was on, scrolled into view however far down the list it was and
    whatever the filter left (the first item when the focus was elsewhere, the filter's
    button when no list shows), so the next arrow key moves on from it; on a playlist opened
-   from a grid a second Escape goes back.
+   from a grid a second Escape goes back. On Songs, Shift+Tab from the table reaches Shuffle,
+   then Play: Space or Enter on either plays the songs the table shows (shuffled, or in
+   their order).
 7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
    it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
    Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its

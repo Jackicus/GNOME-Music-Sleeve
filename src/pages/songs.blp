@@ -11,7 +11,7 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
 
     // Narrow: the album and artist columns go, the artist shown under the title instead
     // (songs.py stacks the title cells as this applies), so that the title has the room and
-    // title and time fit a 360 px window.
+    // title and time fit a 360 px window; Play and Shuffle go under the page's title.
     Adw.Breakpoint narrow_breakpoint {
       condition ("max-width: 560sp")
 
@@ -19,6 +19,7 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
         album_column.visible: false;
         artist_column.visible: false;
         title_column.fixed-width: 260;
+        heading_box.orientation: vertical;
       }
     }
 
@@ -73,32 +74,72 @@ template $AppleMusicSongsPage: Adw.NavigationPage {
               "view",
             ]
 
-            Box {
+            // The title and the count, then Play and Shuffle: beside them, or under them in
+            // the narrow table (the breakpoint turns the box), as an album's page has them
+            // under its title.
+            Box heading_box {
               spacing: 12;
               margin-start: 24;
               margin-end: 24;
               margin-top: 24;
               margin-bottom: 12;
 
-              Label title_label {
-                xalign: 0;
-                ellipsize: end;
-                valign: baseline_fill;
+              Box {
+                spacing: 12;
+                hexpand: true;
 
-                styles [
-                  "title-1",
-                ]
+                Label title_label {
+                  xalign: 0;
+                  ellipsize: end;
+                  valign: baseline_fill;
+
+                  styles [
+                    "title-1",
+                  ]
+                }
+
+                Label count_label {
+                  xalign: 0;
+                  hexpand: true;
+                  ellipsize: end;
+                  valign: baseline_fill;
+
+                  styles [
+                    "dimmed",
+                  ]
+                }
               }
 
-              Label count_label {
-                xalign: 0;
-                hexpand: true;
-                ellipsize: end;
-                valign: baseline_fill;
+              // What the table shows, in its order (songs.play_target()).
+              Box {
+                spacing: 12;
+                halign: start;
+                valign: center;
 
-                styles [
-                  "dimmed",
-                ]
+                Button play_button {
+                  child: Adw.ButtonContent {
+                    icon-name: "media-playback-start-symbolic";
+                    label: _("Play");
+                    can-shrink: true;
+                  };
+
+                  styles [
+                    "pill",
+                    "suggested-action",
+                  ]
+                }
+
+                Button shuffle_button {
+                  child: Adw.ButtonContent {
+                    icon-name: "media-playlist-shuffle-symbolic";
+                    label: _("Shuffle");
+                    can-shrink: true;
+                  };
+
+                  styles [
+                    "pill",
+                  ]
+                }
               }
             }
 
