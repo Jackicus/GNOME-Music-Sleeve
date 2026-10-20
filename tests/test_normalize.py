@@ -546,8 +546,57 @@ class TestSync(unittest.TestCase):
         album = out['shelves'][1]['items'][0]
         self.assertEqual(album['groups'], [])
         self.assertIn('256x256', album['art'])
+        # A genre's: no host, and no banner without the editorial artwork.
+        self.assertEqual((out['host'], out['banner']), ('', None))
         self.assertEqual(normalize.category_page(None, self.tmp_dir),
-                         {'id': '', 'title': '', 'shelves': []})
+                         {'id': '', 'title': '', 'host': '', 'banner': None, 'shelves': []})
+
+    def test_a_radio_shows_page_has_its_host_and_its_banner(self):
+        art = lambda name, width, height: {  # noqa: E731
+            'url': f'https://x.invalid/{name}/{{w}}x{{h}}bb.jpg', 'width': width,
+            'height': height, 'bgColor': '1a2b3c'}
+        raw = {'data': [{
+            'id': '900000202', 'type': 'apple-curators',
+            'attributes': {'name': 'The Invented Hour', 'kind': 'Show',
+                           'showHostName': ' Ada Vellum ',
+                           'editorialArtwork': {'subscriptionHero': art('hero', 3840, 1080),
+                                                'bannerUber': art('uber', 4320, 1080)}}}]}
+        out = normalize.category_page(raw, self.tmp_dir)
+        self.assertEqual(out['host'], 'Ada Vellum')
+        self.assertEqual(out['banner'], {'url': 'https://x.invalid/uber/{w}x{h}sr.jpg',
+                                         'crop': 'sr', 'width': 4320, 'height': 1080,
+                                         'color': '#1a2b3c'})
+        # The host is a show's alone; a curator of another kind with the keys has the banner.
+        raw['data'][0]['attributes']['kind'] = 'Curator'
+        out = normalize.category_page(raw, self.tmp_dir)
+        self.assertEqual(out['host'], '')
+        self.assertIsNotNone(out['banner'])
+
+    def test_a_curators_banner_is_the_first_of_its_keys_it_has(self):
+        def editorial(*names):
+            return {'editorialArtwork': {
+                name: {'url': f'https://x.invalid/{name}/{{w}}x{{h}}{{c}}.{{f}}',
+                       'width': 3000, 'height': 1000} for name in names}}
+
+        def chosen(attrs):
+            banner = normalize.curator_banner(attrs)
+            return banner['url'].split('/')[3] if banner else None
+
+        self.assertEqual(chosen(editorial('subscriptionHero', 'subscriptionCover',
+                                          'bannerUber')), 'bannerUber')
+        self.assertEqual(chosen(editorial('subscriptionHero', 'subscriptionCover')),
+                         'subscriptionCover')
+        self.assertEqual(chosen(editorial('subscriptionHero')), 'subscriptionHero')
+        self.assertIsNone(chosen(editorial('superHeroWide')))  # not a curator's banner
+        self.assertIsNone(chosen({}))
+        self.assertIsNone(chosen(None))
+        self.assertIsNone(chosen({'editorialArtwork': 'odd'}))
+        # One without a size or an https template is passed over for the next.
+        attrs = editorial('subscriptionHero')
+        attrs['editorialArtwork']['bannerUber'] = {'url': 'https://x.invalid/{w}x{h}bb.jpg'}
+        attrs['editorialArtwork']['subscriptionCover'] = {
+            'url': 'http://x.invalid/{w}x{h}bb.jpg', 'width': 10, 'height': 10}
+        self.assertEqual(chosen(attrs), 'subscriptionHero')
 
     def test_normalize_station(self):
         raw_station = {

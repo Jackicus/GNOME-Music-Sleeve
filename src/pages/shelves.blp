@@ -62,16 +62,47 @@ template $AppleMusicShelvesPage: Adw.NavigationPage {
             spacing: 18;
             margin-bottom: 18;
 
-            Label title_label {
-              xalign: 0;
-              ellipsize: end;
-              margin-start: 24;
-              margin-end: 24;
-              margin-top: 24;
+            // The title, and a radio show's host under it; over the curator's wide banner
+            // when it has one (shelves.py's _show_header), the text in white at its foot. The
+            // overlay is as tall as the taller of the two.
+            Overlay hero {
+              child: $AppleMusicArtistBanner banner {
+                visible: false;
+                accessible-role: presentation;
+              };
 
-              styles [
-                "title-1",
-              ]
+              [overlay]
+              Box hero_box {
+                orientation: vertical;
+                spacing: 6;
+                margin-start: 24;
+                margin-end: 24;
+                margin-top: 24;
+
+                layout {
+                  measure: true;
+                }
+
+                Label title_label {
+                  xalign: 0;
+                  ellipsize: end;
+
+                  styles [
+                    "title-1",
+                  ]
+                }
+
+                Label caption_label {
+                  xalign: 0;
+                  wrap: true;
+                  visible: false;
+
+                  styles [
+                    "caption",
+                    "dimmed",
+                  ]
+                }
+              }
             }
           };
         };

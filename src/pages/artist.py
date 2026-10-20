@@ -20,6 +20,7 @@ from ..library import Item, ShelfModel
 from ..related import artist_catalog_id, artist_song_ids
 from ..remote import fetch_cover, fetch_shelf_art, fetch_thumb, remote_item
 from ..widgets import artwork
+from ..widgets.banner import TEXT_TOP, shown_banner
 from ..widgets.banner import ArtistBanner  # noqa: F401  registers $AppleMusicArtistBanner
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
@@ -35,9 +36,6 @@ log = logging.getLogger(__name__)
 HERO_SHELF = 'featured-albums'
 # The shelf that comes after About, as on music.apple.com.
 AFTER_ABOUT = ('similar-artists',)
-# Over a banner, the least of the image left above the name, in logical pixels (the banner
-# grows to keep it when the name wraps).
-BANNER_TEXT_TOP = 72
 
 
 def stand_in(artist, group):
@@ -264,7 +262,7 @@ class ArtistPage(Adw.NavigationPage):
         self.avatar.set_visible(not shown)
         self.content_box.set_margin_top(0 if shown else 24)
         self.hero_row.set_valign(Gtk.Align.END if shown else Gtk.Align.FILL)
-        self.hero_row.set_margin_top(BANNER_TEXT_TOP if shown else 0)
+        self.hero_row.set_margin_top(TEXT_TOP if shown else 0)
         self.hero_row.set_margin_bottom(24 if shown else 0)
         for widget, name in ((self.hero, 'on-banner'), (self.favourite_button, 'osd'),
                              (self.more_button, 'osd')):
@@ -420,9 +418,7 @@ class ArtistPage(Adw.NavigationPage):
         self._answer = answer
         artist = answer.get('artist')
         self._catalog_artist = Item(remote_item(artist)) if isinstance(artist, dict) else None
-        banner = answer.get('banner')
-        self._banner = (banner if isinstance(banner, dict)
-                        and (banner.get('url') or banner.get('art')) else None)
+        self._banner = shown_banner(answer.get('banner'))
         latest = answer.get('latest') or {}
         release = latest.get('item') if isinstance(latest, dict) else None
         self._release = Item(remote_item(release)) if isinstance(release, dict) else None

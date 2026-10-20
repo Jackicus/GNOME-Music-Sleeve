@@ -357,7 +357,9 @@ class TestDemoLibrarySchema(unittest.TestCase):
                          [True] + [False] * (len(shelves) - 1))
         station = set(normalize.normalize_station({'id': 'ra.1', 'attributes': {'name': 'S'}}))
         category = set(normalize.normalize_category({'id': '1', 'attributes': {'name': 'C'}}))
+        page_keys = set(normalize.category_page(None, self.out_dir))
         kinds = set()
+        banners = []
         for shelf in shelves:
             self.assertTrue(shelf['key'] and shelf['title'] and shelf['items'])
             for item in shelf['items']:
@@ -371,9 +373,21 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     with open(path, encoding='utf-8') as f:
                         page = json.load(f)
                     self.assertIs(page['demo'], True)
+                    self.assertEqual(set(page) - {'demo', 'cached'}, page_keys)
                     self.assertEqual(page['title'], item['title'])
+                    self.assertEqual(page['host'], item['subtitle'])  # the show's host
                     self.assertTrue(page['shelves'][0]['items'])
+                    banners.append(page['banner'])
         self.assertEqual(kinds, {'station', 'category', 'album', 'video'})
+        # Every show's page under an invented banner on disk, 3:1, but the last's.
+        self.assertIsNone(banners[-1])
+        self.assertTrue(banners[:-1])
+        for banner in banners[:-1]:
+            self.assertEqual(set(banner), {'url', 'art', 'crop', 'width', 'height', 'color'})
+            self.assertIsNone(banner['url'])
+            self.assertEqual(banner['crop'], normalize.CURATOR_BANNER_CROP)
+            _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(banner['art'])
+            self.assertEqual((width, height), (banner['width'], banner['height']))
 
     def test_new_page_and_its_links_pages(self):
         # The New page's answer, as the engine keeps it (normalize.editorial_shelves' shape):

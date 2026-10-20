@@ -99,7 +99,8 @@ touches widgets.
   `radio.py`'s pure functions: the library's stations as Recently Played after Apple's live
   stations, each live one subtitled with the programme on air as the page is shown. The
   artist page draws Apple's wide banner behind its header when the artist has one
-  (`widgets/banner.py`, `ArtistBanner`), else the round portrait. A playlist of the user's
+  (`widgets/banner.py`, `ArtistBanner`), else the round portrait, and a category page (a
+  radio show's) its curator's, the title and the show's host over its foot. A playlist of the user's
   ends with the songs Apple
   suggests adding to it (`widgets/suggested_songs.py`, what is shown and asked for next in
   `suggestions.py`), kept for a day while the playlist holds the same songs; a song plays in

@@ -1473,7 +1473,9 @@ def curator_item(raw):
 def category_page(raw, cache_dir):
     """Engine.category()'s answer from a curator with its grouping and its
     playlists (a genre's, or a radio show's: its episodes, albums and
-    playlists): the category's `id` and `title`, and its `shelves` — the
+    playlists): the category's `id` and `title`, a show's `host` (its
+    `showHostName`; '' for any other kind, or a show without one), its
+    `banner` (curator_banner, or None), and its `shelves` — the
     grouping's one tab's editorial elements, each `{key, title, items}` in
     Apple's order, items normalised as a search hit is (no groups, art as it
     stands), then the curator's own playlists (_curator_playlists); an
@@ -1490,7 +1492,30 @@ def category_page(raw, cache_dir):
     playlists = _curator_playlists(curator, cache_dir, shelves)
     if playlists is not None:
         shelves.append(playlists)
-    return {'id': str(curator.get('id') or ''), 'title': title, 'shelves': shelves}
+    host = str(attrs.get('showHostName') or '').strip() if attrs.get('kind') == 'Show' else ''
+    return {'id': str(curator.get('id') or ''), 'title': title, 'host': host,
+            'banner': curator_banner(attrs), 'shelves': shelves}
+
+
+# A curator's banner (README.md, "A radio show's banner"): the first of these its
+# editorialArtwork has, cut at its source's shape.
+CURATOR_BANNER_KEYS = ('bannerUber', 'subscriptionCover', 'subscriptionHero')
+CURATOR_BANNER_CROP = 'sr'
+
+
+def curator_banner(attrs):
+    """A curator's wide header from its attributes (`editorialArtwork` extended), as
+    wide_artwork() makes it ({url, crop, width, height, color}, {w}x{h} left to fill): the
+    first of CURATOR_BANNER_KEYS it has with an https template and a size, whatever the
+    curator's kind; else None (the page keeps its plain title)."""
+    editorial = attrs.get('editorialArtwork') if isinstance(attrs, dict) else None
+    if not isinstance(editorial, dict):
+        return None
+    for key in CURATOR_BANNER_KEYS:
+        found = wide_artwork(editorial.get(key), CURATOR_BANNER_CROP)
+        if found is not None:
+            return found
+    return None
 
 
 def _curator_playlists(curator, cache_dir, shelves):

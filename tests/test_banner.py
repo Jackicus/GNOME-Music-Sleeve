@@ -28,6 +28,16 @@ class SizeTest(unittest.TestCase):
         self.assertEqual(banner_height(1110), 370)  # 3:1
         self.assertEqual(banner_height(4000), MAX_HEIGHT)
 
+    def test_a_banner_is_shown_with_something_to_show(self):
+        from applemusic.widgets.banner import shown_banner
+
+        self.assertIs(shown_banner(WIDE), WIDE)
+        on_disk = {'url': None, 'art': '/invented/banner.jpg', 'crop': 'sr'}
+        self.assertIs(shown_banner(on_disk), on_disk)  # the demo's
+        self.assertIsNone(shown_banner({'url': None, 'art': None, 'crop': 'sr'}))
+        self.assertIsNone(shown_banner(None))
+        self.assertIsNone(shown_banner('https://x.invalid/b.jpg'))
+
     def test_the_edge_decoded_covers_the_box(self):
         from applemusic.widgets.banner import drawn_edge
 
