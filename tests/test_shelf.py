@@ -173,17 +173,25 @@ class ShelfTest(PageTestCase):
         # Home's first shelf: a ShelfColumn moves a kept widget into place, so it is
         # bound while out of the page, with no width of its own, and its row, as wide as
         # before, lays out again with the very adjustment it had: nothing changes then.
-        shelf = await self.shown(model('first', 40))
+        # FIRST_TILES items, all given at once: a longer row grows a few tiles a frame
+        # (give_items()), and its upper would change as they come.
+        from applemusic.widgets.shelf import FIRST_TILES
+
+        shelf = await self.shown(model('first', FIRST_TILES))
+        self.assertIsNone(shelf._growing)
         self.assertTrue(shelf.next_button.get_visible())
         adjustment = shelf.scrolled_window.get_hadjustment()
         settled = adjustment.get_page_size(), adjustment.get_upper()
         self.window.root_box.remove(shelf)
-        shelf.bind_shelf(model('second', 40))
+        shelf.bind_shelf(model('second', FIRST_TILES))
+        self.assertIsNone(shelf._growing)
         self.assertEqual(shelf.get_width(), 0)
         self.window.root_box.append(shelf)
         self.assertTrue(await self.until(lambda: shelf.get_width() > 0))
         await self.turn()
-        self.assertEqual((adjustment.get_page_size(), adjustment.get_upper()), settled)
+        self.assertTrue(await self.until_frames(
+            shelf, lambda: (adjustment.get_page_size(), adjustment.get_upper()) == settled),
+            (adjustment.get_page_size(), adjustment.get_upper()))
         self.assertTrue(shelf.previous_button.get_visible())
         self.assertTrue(shelf.next_button.get_visible())
 

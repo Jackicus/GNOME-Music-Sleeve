@@ -25,7 +25,10 @@ paths:
   are slower: a widget test waits (`wait_for()`) for what comes after a frame, never trusting
   one `pump()`. On a GL or Vulkan renderer (headless.sh's) the first frames compile shaders
   and one can take a second, so what a widget does a frame at a time (ShelfColumn's shelves
-  after the first) is waited for in frames, `PageTestCase.until_frames()`, not in seconds.
+  after the first, a row's items after its first: `PagedRow.give_items()`, a grid page's
+  tiles, a list growing back) is waited for in frames, `PageTestCase.until_frames()`, not in
+  seconds; a test that compares a row's size before and after gives it no more items than it
+  gets at once (`FIRST_TILES`), or waits for both to be whole.
 - Put logic in non-widget classes and pure functions and test it with stand-ins (as
   test_mpris.py, test_player.py and test_actions.py do). A test that must build widgets uses
   `tests/gtk.py`: `@requires_gtk` on the class or method (it skips without a display or a
