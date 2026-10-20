@@ -57,6 +57,11 @@ paths:
   am.py's commands against the engine fixture. No test looks for a real Chrome, so CI has none.
   test_bridge.py runs src/backend/bridge.js under gjs against tests/bridge_harness.js's fake
   page, all its scenarios in one gjs process; it is skipped without gjs, which CI installs.
+  The harness's fakes take their arguments as MusicKit's own do (src/backend/README.md has the
+  signatures seen live) and fail where MusicKit would: a fake that accepts a call MusicKit
+  refuses lets the bridge pass its tests and fail in the page (`spliceQueueItems` takes one
+  array, and spread arguments throw, as in the page). Record a new MusicKit call's real
+  signature in the README before faking it.
 - Fixtures (`tests/fixtures/`) and anything a test writes are invented: no real titles, names
   or IDs.
 - Some tests guard project rules rather than behaviour: test_build_lists (install, blueprint,

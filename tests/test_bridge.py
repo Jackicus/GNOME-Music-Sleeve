@@ -762,11 +762,65 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(value['station']['code'], 'NOT_EDITABLE')
 
     @scenario("""
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b'), song('i.c'), song('i.d')], 1, [3]);
+        bridge.queueClear();
+        // MusicKit throws inside the splice: what Clear took is kept for another Undo.
+        const splice = mk.queue.spliceQueueItems;
+        mk.queue.spliceQueueItems = function () { throw new TypeError('refused'); };
+        const out = {};
+        try {
+            bridge.queueUndoClear();
+        } catch (error) {
+            out.thrown = String(error);
+        }
+        mk.queue.spliceQueueItems = splice;
+        out.again = bridge.queueUndoClear();
+        out.back = mk.queue._queueItems.map(entry => [entry.item.id, entry.isAutoplay]);
+        // An entry MusicKit's filter drops is not counted as put back.
+        const entries = mk.queue._queueItems.slice(2);
+        bridge.queueClear();
+        entries[0].item = null;
+        out.partial = bridge.queueUndoClear();
+        out.partialBack = mk.queue.items.map(item => item.id);
+        return out;
+    """)
+    def test_an_undo_musickit_refuses_may_be_tried_again(self, value):
+        self.assertIn('refused', value['thrown'])
+        self.assertEqual(value['again'], {'ok': True, 'restored': 2})
+        self.assertEqual(value['back'], [['i.a', False], ['i.b', False], ['i.c', False],
+                                         ['i.d', True]])
+        self.assertEqual(value['partial'], {'ok': True, 'restored': 1})
+        self.assertEqual(value['partialBack'], ['i.a', 'i.b', 'i.d'])
+
+    @scenario("""
+        // The harness's queue takes its arguments as MusicKit's does: the entries to put in
+        // as one array of queue items, never spread out.
+        const song = id => ({id, type: 'song', attributes: {name: id}});
+        mk.queue = new FakeQueue(mk, [song('i.a'), song('i.b')], 0);
+        const entry = {item: song('i.c'), isAutoplay: false};
+        const out = {};
+        try {
+            mk.queue.spliceQueueItems(1, 0, entry);
+        } catch (error) {
+            out.spread = error.name;
+        }
+        mk.queue.spliceQueueItems(1, 0, [entry, song('i.d')]);  // a MediaItem is dropped
+        out.items = mk.queue.items.map(item => item.id);
+        out.taken = mk.queue.spliceQueueItems(1, 1).map(taken => taken.item.id);
+        return out;
+    """)
+    def test_the_fake_queue_takes_musickits_arguments(self, value):
+        self.assertEqual(value['spread'], 'TypeError')
+        self.assertEqual(value['items'], ['i.a', 'i.c', 'i.b'])
+        self.assertEqual(value['taken'], ['i.c'])
+
+    @scenario("""
         bridge.subscribe();
         const out = {read: bridge.autoplay(null)};
-        out.on = bridge.autoplay(true);
+        out.on = bridge.autoplay(true);                 // MusicKit posts the event itself
         out.flag = mk.autoplayEnabled;
-        mk.fire('autoplayEnabledDidChange', true);
+        out.same = bridge.autoplay(true);               // already on: not set, no event
         out.off = bridge.autoplay(false);
         mk.fire('autoplayEnabledDidChange', {});        // no boolean: the instance's
         mk.capabilities = {canAutoplay: false};
@@ -779,9 +833,11 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(value['read'], {'autoplay': False, 'canAutoplay': True})
         self.assertEqual(value['on'], {'autoplay': True, 'canAutoplay': True})
         self.assertIs(value['flag'], True)
+        self.assertEqual(value['same'], {'autoplay': True, 'canAutoplay': True})
         self.assertEqual(value['off'], {'autoplay': False, 'canAutoplay': True})
         self.assertEqual(value['station'], {'autoplay': False, 'canAutoplay': False})
-        self.assertEqual(value['events'], [{'autoplay': True}, {'autoplay': False}])
+        self.assertEqual(value['events'], [{'autoplay': True}, {'autoplay': False},
+                                           {'autoplay': False}])
 
     # -- lyrics ----------------------------------------------------------------------------
 
