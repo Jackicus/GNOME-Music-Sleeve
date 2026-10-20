@@ -241,7 +241,8 @@ def invented_live_state(app):
     """A Player.apply() dict of a live radio station playing (#343), as the bridge gives
     one: the demo library's first station as the item (type radioStation, isLive, no length
     of its own, its cover as the artwork), the position a place in the stream's window as
-    MusicKit reports it (112 s of 160), and nothing allowed: no seek, pause or skip."""
+    MusicKit reports it (112 s of 160), and nothing allowed: no seek, pause, skip, shuffle
+    or repeat."""
     if not app.demo:
         sys.exit('harness: an invented playing state needs the demo library')
     station = app.library.radio.get_item(0)
@@ -256,7 +257,8 @@ def invented_live_state(app):
         'shuffle': 'off', 'repeat': 'none', 'volume': 0.7,
         'queue': {'index': 0, 'items': [track], 'editable': False},
         'capabilities': dict.fromkeys(('canSeek', 'canPause', 'canSkipToNextItem',
-                                       'canSkipToPreviousItem'), False),
+                                       'canSkipToPreviousItem', 'canSetShuffleMode',
+                                       'canSetRepeatMode'), False),
     }
 
 

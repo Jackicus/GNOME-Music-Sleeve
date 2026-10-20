@@ -16,6 +16,7 @@ the playback commands as thin coroutines over the engine.
     player.live        # the item is a live radio station: no length, no seek, no pause
     player.can_seek, player.can_pause           # what MusicKit allows with the item now
     player.can_go_next, player.can_go_previous  # (mk.capabilities; all False while live)
+    player.can_shuffle, player.can_repeat       # the modes may be set (False while live)
     player.position, player.duration           # seconds, floats
     player.shuffle (bool), player.repeat ('none', 'one', 'all'), player.volume (0 to 1)
     player.position_updated_at                 # time.monotonic() when position last changed
@@ -59,7 +60,8 @@ The properties change only from the engine's events (playbackStateDidChange,
 nowPlayingItemDidChange, playbackTimeDidChange, playbackDurationDidChange,
 shuffleModeDidChange, repeatModeDidChange, playbackVolumeDidChange, queueItemsDidChange,
 queuePositionDidChange, autoplayEnabledDidChange, capabilitiesChanged), plus one now_playing()
-(and queue()) read when the engine comes up,
+(and queue()) read when the engine comes up, and the level a volume command answers (MusicKit
+posts no playbackVolumeDidChange while it holds no item),
 so the bar follows what MusicKit does rather than what was asked; nothing here polls. A
 null item clears the track only after TRACK_GRACE_MS without a new one (`track_grace_ms`;
 MusicKit sends a null between queues, right before the next item), and the previous item's
@@ -112,7 +114,9 @@ A live radio station (the Track's `isLive`: MusicKit plays it as one item, and t
 it reports is only the stream's window) cannot be sought, paused or skipped (every
 mk.capabilities flag false; MusicKit ignores the seek and the pause): `live` is True, the
 can_* properties False, seek(), next() and previous() do nothing, and toggle() and pause()
-stop it, as the bar's Stop does. MusicKit then holds nothing, so the station is kept as a
+stop it, as the bar's Stop does; nor shuffled or repeated (can_shuffle and can_repeat False:
+set_shuffle() and set_repeat() send nothing, as a mode set on a stream would only change what
+plays after it). MusicKit then holds nothing, so the station is kept as a
 session restored (its item alone, stopped, its station the source): Play plays it again.
 The can_* properties follow the capabilities the state and item events carry otherwise
 (true when MusicKit says nothing, and while a session is restored, whose commands are the
@@ -183,7 +187,8 @@ EVENTS = ('playbackStateDidChange', 'nowPlayingItemDidChange', 'playbackTimeDidC
 # `capabilities` says MusicKit allows (the bridge's playbackCapabilities). They are taken
 # from an item event with an item, a state event in CAPABLE_STATES (an item loaded), and
 # capabilitiesChanged: never from the moments between items, when MusicKit holds none.
-CAPABILITIES = ('canSeek', 'canPause', 'canSkipToNextItem', 'canSkipToPreviousItem')
+CAPABILITIES = ('canSeek', 'canPause', 'canSkipToNextItem', 'canSkipToPreviousItem',
+                'canSetShuffleMode', 'canSetRepeatMode')
 CAPABLE_STATES = ('playing', 'paused', 'waiting', 'stalled')
 
 
@@ -334,6 +339,8 @@ class Player(GObject.Object):
     can_pause = GObject.Property(type=bool, default=True)
     can_go_next = GObject.Property(type=bool, default=True)
     can_go_previous = GObject.Property(type=bool, default=True)
+    can_shuffle = GObject.Property(type=bool, default=True)
+    can_repeat = GObject.Property(type=bool, default=True)
 
     def __init__(self, app):
         """`app` gives the engine (`app.engine`), the settings (`signed-in`), `toast()`,
@@ -853,7 +860,8 @@ class Player(GObject.Object):
 
     def _take_capabilities_of(self, data, update=True):
         """An event's or an answer's `capabilities` ({canSeek, canPause, canSkipToNextItem,
-        canSkipToPreviousItem}: MusicKit's now), when it has them; {} forgets them. `update`
+        canSkipToPreviousItem, canSetShuffleMode, canSetRepeatMode}: MusicKit's now), when it
+        has them; {} forgets them. `update`
         False leaves the can_* properties to the caller (the item's change sets them)."""
         capabilities = data.get('capabilities')
         if not isinstance(capabilities, dict):
@@ -864,8 +872,9 @@ class Player(GObject.Object):
             self._update_controls()
 
     def _update_controls(self):
-        """can_seek, can_pause, can_go_next and can_go_previous from the item and what
-        MusicKit allows: nothing for a live station; everything for a session restored (its
+        """can_seek, can_pause, can_go_next, can_go_previous, can_shuffle and can_repeat
+        from the item and what MusicKit allows: nothing for a live station (whatever MusicKit
+        says); everything for a session restored (its
         commands are the Player's own) and where MusicKit says nothing; Previous also while
         the item can be sought (it restarts it)."""
         live = self.live
@@ -873,7 +882,9 @@ class Player(GObject.Object):
                    for key in CAPABILITIES}
         values = {'can_seek': allowed['canSeek'], 'can_pause': allowed['canPause'],
                   'can_go_next': allowed['canSkipToNextItem'],
-                  'can_go_previous': allowed['canSkipToPreviousItem'] or allowed['canSeek']}
+                  'can_go_previous': allowed['canSkipToPreviousItem'] or allowed['canSeek'],
+                  'can_shuffle': allowed['canSetShuffleMode'],
+                  'can_repeat': allowed['canSetRepeatMode']}
         for name, value in values.items():
             if self.get_property(name) != value:
                 self.set_property(name, value)
@@ -1548,27 +1559,43 @@ class Player(GObject.Object):
         await self._engine.seek(seconds)
 
     async def set_volume(self, level):
-        """MusicKit's volume; with a session restored and the engine down, the Player's
-        until the engine comes up or the session plays."""
+        """MusicKit's volume, the level it answers taken at once: MusicKit posts
+        playbackVolumeDidChange from its media element, and holding no item (nothing played
+        yet, a live station stopped) it has none to post it. With a session restored and the
+        engine down, the Player's until the engine comes up or the session plays."""
         if self.restored and self._engine.state == 'down':
             level = min(1.0, max(0.0, _number(level, 1.0)))
             self._volume_wanted = level
             self._set_volume(level)
             return level
-        return await self._engine.volume(level)
+        answer = await self._engine.volume(level)
+        if isinstance(answer, (int, float)) and not isinstance(answer, bool):
+            self._set_volume(answer)
+        return answer
+
+    def _modes(self):
+        return {'shuffle': 'on' if self.shuffle else 'off', 'repeat': self.repeat}
 
     async def set_shuffle(self, on):
-        """Shuffle on or off; with a session restored, the Player's until it plays."""
+        """Shuffle on or off; with a session restored, the Player's until it plays; nothing
+        while it cannot be set (can_shuffle: a live station)."""
+        if not self.can_shuffle:
+            log.debug('shuffle: not while MusicKit allows no mode')
+            return self._modes()
         if self.restored:
             self._set_shuffle(bool(on))
-            return {'shuffle': 'on' if self.shuffle else 'off', 'repeat': self.repeat}
+            return self._modes()
         return await self._engine.shuffle('on' if on else 'off')
 
     async def set_repeat(self, mode):
-        """The repeat mode; with a session restored, the Player's until it plays."""
+        """The repeat mode; with a session restored, the Player's until it plays; nothing
+        while it cannot be set (can_repeat: a live station)."""
+        if not self.can_repeat:
+            log.debug('repeat: not while MusicKit allows no mode')
+            return self._modes()
         if self.restored:
             self._set_repeat(mode)
-            return {'shuffle': 'on' if self.shuffle else 'off', 'repeat': self.repeat}
+            return self._modes()
         return await self._engine.repeat(mode)
 
     def next_repeat(self):

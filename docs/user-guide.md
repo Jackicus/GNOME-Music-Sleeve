@@ -102,7 +102,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   button asks Apple again. A live station (Apple Music 1 and the others) plays as it is
   broadcast: the player bar, Now Playing and the full-screen player show **LIVE** in place
   of the slider and the times, and the play button is a stop button, since a live station
-  cannot be paused, wound on or skipped (previous and next are off). Stopped, the station
+  cannot be paused, wound on or skipped (previous and next are off, and so are shuffle
+  and repeat). Stopped, the station
   stays in the bar, and **Play** tunes in again, live. The system's media controls and
   Discord show it with no length or progress, and their pause stops it too. An artist who hosts a show on Apple Music Radio has it under
   **Radio Shows** on their page, and its episodes under **More To Hear**.

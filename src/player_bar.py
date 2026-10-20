@@ -34,7 +34,8 @@ does, or after the item playing with Shift held, as Play Next does
 takes is over it. A drag carrying anything that cannot be queued (a folder) is refused.
 
 For assistive technology: the bar announces each new item (Gtk.Accessible.announce, "Now
-playing …"); the button Adw.BottomSheet puts around the bar (a click on the bar opens the
+playing …", "Now playing live: …" for a live radio station, whose LIVE badge no focus
+reaches); the button Adw.BottomSheet puts around the bar (a click on the bar opens the
 sheet) is named "Now Playing" and described by the item playing, where it would otherwise be
 named after everything in the bar; the volume button and its slider are named "Volume" and
 read their level as a percentage (VolumeControl), which the window's volume keys step
@@ -99,8 +100,7 @@ class PlayerBar(Adw.Bin):
         self._announced = None      # the id of the item last announced
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
-                                   sensitive=(self.seek_box, self.shuffle_button,
-                                              self.repeat_button, self.volume_button))
+                                   sensitive=(self.seek_box, self.volume_button))
         self._seek = SeekControl(self.seek_scale, self.seek_adjustment, self.elapsed_label,
                                  self.remaining_label, self.live_label)
         self._modes = ModeControl(self.shuffle_button, self.repeat_button)
@@ -172,6 +172,8 @@ class PlayerBar(Adw.Bin):
             'not-playing': _('Not Playing'),
             'announce': _('Now playing: {title} by {artist}'),
             'announce-title': _('Now playing: {title}'),
+            # Translators: announced as a live radio station starts; {title} is its name.
+            'announce-live': _('Now playing live: {title}'),
         }
         button = self._bar_button()
         if button is not None:
@@ -286,7 +288,9 @@ class PlayerBar(Adw.Bin):
         accessible object no client has asked for yet (the bar's, usually), and the window's
         always is."""
         title = self.title_label.get_label()
-        if track.artist:
+        if track.live:
+            message = self._strings['announce-live'].format(title=title)
+        elif track.artist:
             message = self._strings['announce'].format(title=title, artist=track.artist)
         else:
             message = self._strings['announce-title'].format(title=title)

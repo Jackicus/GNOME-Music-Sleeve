@@ -643,6 +643,22 @@ class LyricsViewTest(unittest.TestCase):
                                  and root.get_focus().get_mapped()))
         self.assertTrue(root.get_focus().is_ancestor(list_view))
 
+    def test_the_empty_page_names_a_live_station(self):
+        """A live station has no lyrics to look for (#451): its page says radio, where a
+        song without lyrics says there are none for this song."""
+        from tests.test_player import LIVE
+
+        self.player.apply({'state': 'playing', 'track': LIVE, 'position': 112,
+                           'duration': 160})
+        self.assertEqual(self.view.get_visible_child_name(), 'empty')
+        self.assertEqual((self.view.empty_page.get_title(),
+                          self.view.empty_page.get_description()),
+                         ('No Lyrics', 'Lyrics are not available for live radio'))
+        self.play(None)  # a song the engine found no lyrics for
+        self.assertEqual(self.view.get_visible_child_name(), 'empty')
+        self.assertEqual(self.view.empty_page.get_description(),
+                         'No lyrics are available for this song')
+
     def test_the_unsynced_text_follows_the_settings(self):
         self.play({'synced': False, 'lines': [
             {'text': '潮', 'pronunciation': 'Shio', 'translation': 'Tide'},

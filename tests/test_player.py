@@ -887,8 +887,9 @@ class CommandTest(unittest.TestCase):
                 ('repeat', 'all'),
                 ('play_next', 'song', 'i.1'), ('play_later', 'album', 'l.2'),
                 ('queue_jump', 1)])
-            # Nothing above touched the properties: only events do.
-            self.assertEqual(player.volume, 1.0)
+            # Nothing above touched the properties but the volume MusicKit answered: the
+            # rest only events do.
+            self.assertEqual(player.volume, 0.3)
             self.assertFalse(player.shuffle)
         asyncio.run(go())
 
@@ -2664,6 +2665,93 @@ class LiveTest(unittest.TestCase):
         player, engine, app = make_player()
         player.restore(session())
         self.assertEqual(controls(player), dict.fromkeys(CONTROLS, True))
+
+
+class ModesTest(unittest.TestCase):
+    """Shuffle and Repeat follow what MusicKit allows (canSetShuffleMode,
+    canSetRepeatMode), and a live station allows neither (#441): a mode set on a stream
+    would only change what plays after it."""
+
+    def test_a_live_station_allows_no_mode_whatever_musickit_says(self):
+        player, engine, app = make_player()
+        live_playing(engine)  # capabilities without the modes: allowed, but live
+        self.assertEqual((player.can_shuffle, player.can_repeat), (False, False))
+        engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2,
+                                                 'capabilities': EVERYTHING})
+        self.assertEqual((player.can_shuffle, player.can_repeat), (True, True))
+        engine.event('capabilitiesChanged', {'capabilities': dict(
+            EVERYTHING, canSetShuffleMode=False, canSetRepeatMode=True)})
+        self.assertEqual((player.can_shuffle, player.can_repeat), (False, True))
+        player.apply(None)  # the engine down: forgotten
+        self.assertEqual((player.can_shuffle, player.can_repeat), (True, True))
+
+    def test_the_modes_are_not_sent_while_live(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            live_playing(engine)
+            engine.calls.clear()
+            self.assertEqual(await player.set_shuffle(True), {'shuffle': 'off',
+                                                               'repeat': 'none'})
+            self.assertEqual(await player.set_repeat('all'), {'shuffle': 'off',
+                                                               'repeat': 'none'})
+            self.assertEqual(engine.calls, [])
+            self.assertEqual((player.shuffle, player.repeat), (False, 'none'))
+            # The station stopped (a session restored, live): still nothing.
+            await player.stop()
+            engine.event('nowPlayingItemDidChange', {'track': None, 'index': -1})
+            self.assertTrue(player.restored and player.live)
+            engine.calls.clear()
+            await player.set_shuffle(True)
+            await player.set_repeat('one')
+            self.assertEqual(engine.calls, [])
+            self.assertEqual((player.shuffle, player.repeat), (False, 'none'))
+        asyncio.run(go())
+
+
+class VolumeTest(unittest.TestCase):
+    """The level MusicKit answers a volume set with is the Player's at once (#466):
+    holding no item, MusicKit posts no playbackVolumeDidChange."""
+
+    def test_the_answer_is_taken_without_an_event(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await app.settle()
+            notified = []
+            player.connect('notify::volume', lambda p, _pspec: notified.append(p.volume))
+            engine.answers['volume'] = 0.2455
+            self.assertEqual(await player.set_volume(0.2455), 0.2455)
+            self.assertEqual(player.volume, 0.2455)
+            # The event that follows while an item plays changes nothing more.
+            engine.event('playbackVolumeDidChange', {'volume': 0.2455})
+            self.assertEqual(notified, [0.2455])
+        asyncio.run(go())
+
+    def test_a_live_station_stopped_takes_the_level(self):
+        """As seen live: a live station stopped (a session restored, the engine up,
+        MusicKit's queue empty), then a volume set."""
+        async def go():
+            player, engine, app = make_player(state='up')
+            await app.settle()
+            live_playing(engine)
+            await player.stop()
+            engine.event('playbackStateDidChange', {'state': 'stopped'})
+            engine.event('nowPlayingItemDidChange', {'track': None, 'index': -1})
+            self.assertTrue(player.restored)
+            engine.answers['volume'] = 0.25
+            await player.set_volume(0.25)
+            self.assertEqual(player.volume, 0.25)
+            self.assertEqual(engine.calls[-1], ('volume', 0.25))
+        asyncio.run(go())
+
+    def test_no_answer_keeps_the_level(self):
+        async def go():
+            player, engine, app = make_player(state='up')
+            await app.settle()
+            engine.event('playbackVolumeDidChange', {'volume': 0.6})
+            engine.answers['volume'] = None  # a stand-in with nothing to say
+            await player.set_volume(0.3)
+            self.assertEqual(player.volume, 0.6)
+        asyncio.run(go())
 
 
 class FormatTimeTest(unittest.TestCase):

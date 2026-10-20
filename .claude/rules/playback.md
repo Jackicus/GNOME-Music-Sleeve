@@ -19,8 +19,9 @@ paths:
 # Playback: the Player, MPRIS, the bar and Now Playing
 
 - `Player` (player.py) has no GTK. Its properties change from the engine's `event` signal, from
-  one `now_playing()`/`queue()` read when the engine comes up, and from the lyrics fetched once
-  per catalog song. Nothing polls MusicKit (sign-in's wait is the one poll). The bar, the sheet
+  one `now_playing()`/`queue()` read when the engine comes up, from the lyrics fetched once
+  per catalog song, and from the level a volume set is answered with (MusicKit posts no
+  `playbackVolumeDidChange` while it holds no item). Nothing polls MusicKit (sign-in's wait is the one poll). The bar, the sheet
   and MPRIS follow `notify::*`. Every view reads the same cleaned state, because the Player
   does the cleaning once:
   - `resting` is the state with MusicKit's `seeking` transient seen through; `active` and
@@ -111,16 +112,22 @@ paths:
   the engine goes down or the page is reloaded.
 - A live radio station (`player.live`, the Track's `isLive`: told by its item, never by its
   times, its duration being the stream's window) allows only Stop: `can_seek`, `can_pause`,
-  `can_go_next` and `can_go_previous` are False (otherwise MusicKit's capabilities, taken
-  from an item event, a state with an item loaded and `capabilitiesChanged`; Previous also
-  while the item can be sought: it restarts it). seek(), next() and previous() do nothing,
+  `can_go_next`, `can_go_previous`, `can_shuffle` and `can_repeat` are False (otherwise
+  MusicKit's capabilities, taken from an item event, a state with an item loaded and
+  `capabilitiesChanged`; Previous also while the item can be sought: it restarts it).
+  seek(), next(), previous(), set_shuffle() and set_repeat() do nothing (MPRIS's Shuffle
+  and LoopStatus too; `ModeControl`'s toggles are insensitive),
   toggle() and pause() stop it, and `_keep_station()` then shows the station as a session
   restored, stopped, so Play tunes in again. The bar, the sheet and the full screen show
   `SeekControl`'s LIVE badge (the scale's sibling in a `Gtk.Stack`, so the row keeps its
-  height) and `play_button_look()`'s Stop; app.next and app.previous follow `can_go_*`, and
+  height) and `play_button_look()`'s Stop, the play button described "Live Radio"
+  (`PlayButton`: the badge is a label no focus reaches) and the item announced "Now
+  playing live: …"; the Lyrics tab says lyrics are not available for live radio; app.next
+  and app.previous follow `can_go_*`, and
   their keys stay the window's while an item plays (they do nothing rather than move the
   focus). MPRIS: no `mpris:length`, Position 0, no Seeked, Pause, PlayPause and Stop stop it;
-  Discord: no timestamps; no lyrics are asked. tests/test_player.py's LiveTest, test_mpris's
+  Discord: no timestamps; no lyrics are asked. tests/test_player.py's LiveTest and
+  ModesTest, test_mpris's
   live sequence; `scripts/screenshot.py --demo --playing --live` shows it.
 - `player.stopped` means no item, or `none`, `stopped`, `ended` or `completed` (paused is not).
   MusicKit passes through `ended` and `stopped` between items, so anything acting on "stopped"

@@ -176,15 +176,17 @@
     }
 
     // What MusicKit allows with the item playing now (mk.capabilities): every one false on a
-    // live station, which cannot be sought, paused or skipped. An instance without
-    // capabilities allows them all.
+    // live station, which cannot be sought, paused, skipped, shuffled or repeated. An
+    // instance without capabilities, or without one of them, allows it.
     function playbackCapabilities(mk) {
         const capabilities = (mk && mk.capabilities) || {};
         return {
             canSeek: capabilities.canSeek !== false,
             canPause: capabilities.canPause !== false,
             canSkipToNextItem: capabilities.canSkipToNextItem !== false,
-            canSkipToPreviousItem: capabilities.canSkipToPreviousItem !== false
+            canSkipToPreviousItem: capabilities.canSkipToPreviousItem !== false,
+            canSetShuffleMode: capabilities.canSetShuffleMode !== false,
+            canSetRepeatMode: capabilities.canSetRepeatMode !== false
         };
     }
 

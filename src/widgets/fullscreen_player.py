@@ -118,8 +118,7 @@ class FullscreenPlayer(Adw.Bin):
         self._pointer = None            # where the pointer last moved to
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
-                                   sensitive=(self.seek_box, self.shuffle_button,
-                                              self.repeat_button, self.volume_button),
+                                   sensitive=(self.seek_box, self.volume_button),
                                    tooltips=True)
         self._seek = SeekControl(self.seek_scale, self.seek_adjustment, self.elapsed_label,
                                  self.remaining_label, self.live_label)
