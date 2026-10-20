@@ -97,7 +97,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   leads Search's categories and the link among New's; its header bar's genre menu
   (`charts.GenreMenu`, a `Gtk.DropDown` over src/charts.py's `choices()`) asks
   `Engine.charts(genre=…)` and starts the page over (`ShelvesPage.start_over()`), and a
-  `viewTop?genreId=` link opens it on that genre (`charts.link_genre()`). A shelves page ends with its
+  `viewTop?genreId=` link opens it on that genre (`charts.link_genre()`). The Replay page
+  (pages/replay.py) is pushed the same way, for `explore.replay_item()`, the link of the
+  More for You section Made for You and Home end with (`explore.replay_sections()`), and
+  its year menu (`replay.YearMenu`, over src/replay.py's `choices()`) asks
+  `Engine.replay(year=…)` and starts the page over, titled with the answer's year. A shelves page ends with its
   answer's `links` (`widgets.explore.ExploreBox` after the shelves: src/explore.py's
   Sections, cards of a label and a chevron, `LinkChild`, each holding its Item; New's
   `explore` puts Top Charts first unless Apple's links reach the charts), which

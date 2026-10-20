@@ -43,9 +43,9 @@ browsed twice, and pages opened and closed leaving at most 5 MB behind):
   twice, and the peak (VmHWM).
 - pages: 20 albums, 5 artists, 5 of Apple Music's artist pages (the demo's invented
   ones: window.open_artist_page, as Go to Artist does), 5 See All grids, the Charts page
-  twice and 2 of a search's See All pages (the demo's search for "e": its Songs and
-  Albums) opened (window.open_item and open_shelf, as a tile or See All does) and popped
-  one after the other, --settle ms each: a first round that warms the caches (the
+  twice, the Replay page twice and 2 of a search's See All pages (the demo's search for
+  "e": its Songs and Albums) opened (window.open_item and open_shelf, as a tile or See All
+  does) and popped one after the other, --settle ms each: a first round that warms the caches (the
   artwork's LRU fills once, the page modules load), then --rounds measured ones (default
   3), so that what each visit leaves behind adds up where one round would hide it: the
   RSS and anonymous RSS they left behind, after gc.collect() and malloc_trim(0), with the
@@ -91,7 +91,7 @@ FRAME_TIMEOUT = 3000  # ms to wait for a frame before calling it missing
 # What the pages step opens and pops, each round: 'artist-page' is Apple Music's page of an
 # artist, 'search-all' a search's See All page of one kind.
 PAGES = (('album', 20), ('artist', 5), ('artist-page', 5), ('shelf', 5), ('charts', 2),
-         ('search-all', 2))
+         ('replay', 2), ('search-all', 2))
 SEARCH_TERM = 'e'  # what the pages step searches the demo's invented catalog for
 
 parser = argparse.ArgumentParser()
@@ -267,7 +267,8 @@ def parent():
               f'after gc.collect() and malloc_trim(0), {verdict(grown, PAGES_TARGET)} the '
               f'{PAGES_TARGET} MB target; still alive (run 1): {alive}')
         names = {'album': 'an album', 'artist': 'an artist', 'artist-page': 'an artist page',
-                 'shelf': 'See All', 'charts': 'Charts', 'search-all': "a search's See All"}
+                 'shelf': 'See All', 'charts': 'Charts', 'replay': 'Replay',
+                 'search-all': "a search's See All"}
         timings = ', '.join(
             f'{names[kind]} {fmt(median(page["open_ms"].get(kind) for page in pages), "ms")}'
             for kind, _count in PAGES if any(kind in page.get('open_ms', {}) for page in pages))
@@ -346,6 +347,7 @@ def child():
     from applemusic import main, sections
     from applemusic.backend import api
     from applemusic.pages.charts import charts_item
+    from applemusic.pages.replay import replay_item
     from applemusic.pages.search_all import see_all_page
     from applemusic.remote import remote_shelves
     from applemusic.sidebar import folder_key, playlist_key
@@ -628,6 +630,8 @@ def child():
         for kind, count in PAGES:
             if kind == 'charts':
                 plan += [(kind, charts_item())] * count
+            elif kind == 'replay':
+                plan += [(kind, replay_item())] * count
             elif kind == 'search-all':
                 found = await search_shelves(SEARCH_TERM)
                 plan += [(kind, found[i % len(found)]) for i in range(count if found else 0)]
@@ -677,7 +681,7 @@ def child():
         opened = {}
         for kind, _target in plan:
             name = {'album': 'albums', 'artist': 'artists', 'artist-page': 'artist pages',
-                    'shelf': 'See All', 'charts': 'Charts',
+                    'shelf': 'See All', 'charts': 'Charts', 'replay': 'Replay',
                     'search-all': 'search See All'}[kind]
             opened[name] = opened.get(name, 0) + 1
         return {

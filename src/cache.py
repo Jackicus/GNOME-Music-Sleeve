@@ -27,17 +27,18 @@ log = logging.getLogger(__name__)
 
 # What the cache directory holds, all of it fetched again as needed: the library, its artwork
 # (covers, thumbnails, remote art), lyrics, the day-long answers (landing, categories, the
-# New page, Made for You, Radio, Charts (every genre's, a genre's, the genres), Home's
-# Recently Played, the artists', albums' and catalog playlists' pages, the playlists'
-# suggested songs, the songs' credits), Recently Searched (recent_searches.py) and the last
-# session (session.py), which go with the account's other traces. `items` and
-# `library.lock` are what older versions kept there (items' answers, the sync's lock),
-# cleared with the rest; `demo-search.json` is only ever in the demo's cache (the catalog its
-# search answers from).
+# New page, Made for You, Radio, Charts (every genre's, a genre's, the genres), Replay (the
+# latest year's, a past year's), Home's Recently Played, the artists', albums' and catalog
+# playlists' pages, the playlists' suggested songs, the songs' credits), Recently Searched
+# (recent_searches.py) and the last session (session.py), which go with the account's other
+# traces. `items` and `library.lock` are what older versions kept there (items' answers, the
+# sync's lock), cleared with the rest; `demo-search.json` is only ever in the demo's cache
+# (the catalog its search answers from).
 CACHE_ENTRIES = ('library.json', 'art', 'thumb', 'remote-art', 'lyrics', 'landing.json',
                  'categories', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
                  'charts', 'genres.json', 'artists', 'albums', 'playlists', 'suggestions',
-                 'credits', 'rooms', 'groupings', 'multirooms', 'recent-played.json',
+                 'credits', 'rooms', 'groupings', 'multirooms', 'replay.json', 'replay',
+                 'recent-played.json',
                  'recent-searches.json', 'items',
                  'library.lock', 'session.json', 'demo-search.json')
 

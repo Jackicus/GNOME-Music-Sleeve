@@ -7,8 +7,11 @@ GTK here (widgets/explore.py draws them).
 
     sections(answer.get('links'))            # [Section(key, title, items)] in Apple's order
     sections(links, charts=True)             # New's: Top Charts among them
+    sections(links, replay=True)             # Made for You's: More for You, Replay, last
+    replay_sections()                        # that last section alone (Home's)
     link_item(link)                          # one link as an Item: window.open_item opens it
     charts_item()                            # the Top Charts tile's and link's Item
+    replay_item()                            # the Replay link's Item
 
 A link is a room (a grid of its contents: Engine.room), a grouping or a multiroom (a page of
 shelves: Engine.grouping, Engine.multiroom), the Charts page (`charts`, under Apple's label)
@@ -29,6 +32,10 @@ EXPLORE_KEY = 'explore'
 # The Charts page's Item kind (pages/charts.py): what its tiles show and the window's
 # double-push guard compares.
 CHARTS_KIND = 'charts'
+# The Replay page's Item kind (pages/replay.py), and the key of the section that links to it
+# at the end of Made for You and Home.
+REPLAY_KIND = 'replay'
+REPLAY_KEY = 'replay'
 
 Section = namedtuple('Section', ('key', 'title', 'items'))
 
@@ -39,6 +46,23 @@ def charts_item():
     return Item({'id': CHARTS_KIND, 'kind': CHARTS_KIND, 'title': _('Top Charts'),
                  'subtitle': None, 'art': None, 'thumb': None, 'artColor': None, 'url': None,
                  'play': {}, 'groups': []})
+
+
+def replay_item():
+    """The Item the Replay link shows and window.open_item opens (kind 'replay'): the page
+    of the account's year in music (pages/replay.py)."""
+    # Translators: the link at the end of Made for You and Home to the Replay page: the
+    # songs, artists and albums the account played most this year, and in the years before.
+    title = _('Replay: Your Year in Music')
+    return Item({'id': REPLAY_KIND, 'kind': REPLAY_KIND, 'title': title, 'subtitle': None,
+                 'art': None, 'thumb': None, 'artColor': None, 'url': None, 'play': {},
+                 'groups': []})
+
+
+def replay_sections():
+    """The section Made for You and Home end with: More for You, its one link Replay's."""
+    # Translators: the heading of the link to Replay at the end of Made for You and Home.
+    return [Section(REPLAY_KEY, _('More for You'), [replay_item()])]
 
 
 def link_item(link):
@@ -58,11 +82,12 @@ def link_item(link):
     return Item(data)
 
 
-def sections(links, charts=False):
+def sections(links, charts=False, replay=False):
     """The engine's rows of links ([{key, title, links}]) as Sections of Items (link_item;
     a row left with none is left out), in Apple's order. With `charts` (New's), Top Charts
     (charts_item()) leads the first titled row when no link opens the charts, or makes a
-    More to Explore row of its own, first, when no row is titled."""
+    More to Explore row of its own, first, when no row is titled. With `replay` (Made for
+    You's), replay_sections() follows them."""
     found = []
     for row in links or []:
         if not isinstance(row, dict):
@@ -75,6 +100,8 @@ def sections(links, charts=False):
     if charts and not any(item.kind == CHARTS_KIND for section in found
                           for item in section.items):
         found = _with_charts(found)
+    if replay:
+        found = [*found, *replay_sections()]
     return found
 
 

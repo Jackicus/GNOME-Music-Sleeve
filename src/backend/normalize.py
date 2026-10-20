@@ -30,9 +30,9 @@ log = logging.getLogger(__name__)
 # What download_art raises when it gives up (store.CacheGone, a wiped cache, is one too).
 Cancelled = store.Cancelled
 
-# How long a kept answer (landing, a category, the New page, Made for You, Charts) is answered
-# from the cache before Apple is asked again, and a song's lyrics (Apple replaces plain lyrics
-# with synced ones, and corrects them).
+# How long a kept answer (landing, a category, the New page, Made for You, Charts, Replay) is
+# answered from the cache before Apple is asked again, and a song's lyrics (Apple replaces
+# plain lyrics with synced ones, and corrects them).
 ANSWER_MAX_AGE = 24 * 60 * 60
 LYRICS_MAX_AGE = 30 * 24 * 60 * 60
 # How long prune_caches() leaves a kept answer: past its day it is no longer fresh, but it is
@@ -46,10 +46,10 @@ REMOTE_ART_BUDGET = 32 * 1024 * 1024
 LYRICS_KEEP = 2000
 # The day-long answers in the cache's top folder, beside categories/.
 KEPT_ANSWERS = ('landing.json', 'browse.json', 'made-for-you.json', 'radio.json', 'charts.json',
-                'genres.json', 'recent-played.json')
+                'genres.json', 'replay.json', 'recent-played.json')
 # The folders of day-long answers, one file an item.
 ANSWER_FOLDERS = ('categories', 'artists', 'albums', 'playlists', 'suggestions', 'credits',
-                  'rooms', 'groupings', 'multirooms', 'charts')
+                  'rooms', 'groupings', 'multirooms', 'charts', 'replay')
 
 # Scaling a cached cover down to its thumbnail, without fetching it again,
 # takes an image library, and nothing in the backend imports gi. The app
@@ -2256,6 +2256,94 @@ def _chart_items(resources, cache_dir):
     return items
 
 
+# Replay's views, by the name each has in the summary's `views`, in the page's order, and the
+# `chart` each shelf is (the app names a shelf Apple leaves untitled by it).
+REPLAY_VIEWS = (('top-songs', 'songs'), ('top-artists', 'artists'), ('top-albums', 'albums'))
+# The chart of the shelf of each year's Replay playlist.
+REPLAY_PLAYLISTS = 'replay-playlists'
+
+
+def replay_page(raw, cache_dir):
+    """`replay`'s answer from Apple's music summaries: {year, years, shelves}. `raw` is
+    {summary, years, year}: the summary read (`/v1/me/music-summaries` with `views`; None
+    when Apple had none), the years read (`/v1/me/music-summaries/search`; None without it)
+    and the year asked ('' for the latest). `year` is the summary's (its `attributes.year`),
+    else the one asked ('' when neither says); `years` every year Apple lists a Replay of,
+    newest first, as strings (replay_years()). The shelves are the summary's views with
+    something in them, in REPLAY_VIEWS' order, each `{key, title, items, chart, ranked}`
+    keyed `replay-<chart>` (`songs`, `artists`, `albums`), titled as Apple titles the view
+    ('' without one: the app names it by `chart`), the items as a chart's (each once, a song
+    with its album's name), Top Songs `form: 'songs'`; then, when the years read lists their
+    playlists, one shelf of them, newest first (`replay-playlists`, untitled)."""
+    raw = raw if isinstance(raw, dict) else {}
+    summary = _first_resource(raw.get('summary'))
+    attrs = (summary.get('attributes') or {}) if summary else {}
+    year = str(attrs.get('year') or raw.get('year') or '')
+    if not api.is_replay_year(year):
+        year = ''
+    views = summary.get('views') if summary else None
+    views = views if isinstance(views, dict) else {}
+    shelves = []
+    for name, chart in REPLAY_VIEWS:
+        view = views.get(name)
+        data = view.get('data') if isinstance(view, dict) else None
+        if not isinstance(data, list):
+            continue
+        items = _chart_items(data, cache_dir)
+        if not items:
+            continue
+        title = (view.get('attributes') or {}).get('title')
+        shelf = {'key': f'replay-{chart}', 'title': str(title or '').strip(), 'items': items,
+                 'chart': chart, 'ranked': True}
+        if chart == 'songs':
+            shelf['form'] = 'songs'
+        shelves.append(shelf)
+    years = replay_years(raw.get('years'), cache_dir)
+    playlists = [entry['playlist'] for entry in years if entry['playlist'] is not None]
+    if playlists:
+        shelves.append({'key': REPLAY_PLAYLISTS, 'title': '', 'items': playlists,
+                        'chart': REPLAY_PLAYLISTS})
+    return {'year': year, 'years': [entry['year'] for entry in years], 'shelves': shelves}
+
+
+def replay_years(raw, cache_dir=None):
+    """The years Apple lists a Replay of (`/v1/me/music-summaries/search?period=year` with
+    `include[music-summaries]=playlist`), newest first, each once: [{year, playlist}], `year`
+    a string (api.is_replay_year), `playlist` the year's Replay playlist as a shelf item (its
+    `relationships.playlist`, included in the answer), or None. A summary of another period
+    than a year is left out."""
+    data = raw.get('data') if isinstance(raw, dict) else None
+    found = {}
+    for resource in data if isinstance(data, list) else []:
+        if not isinstance(resource, dict):
+            continue
+        attrs = resource.get('attributes') or {}
+        if attrs.get('period') not in (None, 'year'):
+            continue
+        year = str(attrs.get('year') or '')
+        if not api.is_replay_year(year) or year in found:
+            continue
+        playlist = None
+        related = ((resource.get('relationships') or {}).get('playlist') or {}).get('data')
+        for entry in related if isinstance(related, list) else []:
+            if isinstance(entry, dict) and entry.get('type') in ('playlists',
+                                                                   'library-playlists'):
+                playlist = _shelf_item(entry, cache_dir, curators=False)
+                if playlist is not None:
+                    break
+        found[year] = {'year': year, 'playlist': playlist}
+    return [found[year] for year in sorted(found, reverse=True)]
+
+
+def _first_resource(answer):
+    """The first resource (a dict) of an answer's `data`, or None."""
+    data = answer.get('data') if isinstance(answer, dict) else None
+    for resource in data if isinstance(data, list) else []:
+        if isinstance(resource, dict):
+            return resource
+    return None
+
+
 def _is_made_for_you(raw_item):
     """A personal mix (Favourites Mix, Chill Mix, New Music Mix…, playlists
     of `playlistType` personal-mix) or a station: what Made for You holds."""
@@ -3257,6 +3345,14 @@ def genres_cache_path(cache_dir):
     """Where the catalog's genres (catalog_genres), the Charts page's choice, are kept for a
     day."""
     return os.path.join(cache_dir, 'genres.json')
+
+
+def replay_cache_path(cache_dir, year=None):
+    """Where Replay (replay_page) is kept for a day: the latest year's in replay.json, a past
+    year's in replay/<year>.json."""
+    if year:
+        return os.path.join(cache_dir, 'replay', f'{_safe_id(year)}.json')
+    return os.path.join(cache_dir, 'replay.json')
 
 
 def room_cache_path(cache_dir, room_id):

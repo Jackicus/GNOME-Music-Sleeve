@@ -61,7 +61,10 @@ invented curators with their pages in categories/), and the Charts page's
 (charts.json, normalize.charts_shelves()'s shape: the demo's own songs, albums,
 playlists and videos ranked, and invented Daily Top 100 and City Charts playlists of
 its songs, for invented places; invented genres in genres.json, each genre's charts of
-the demo's albums of it in charts/<id>.json), the New page's (browse.json,
+the demo's albums of it in charts/<id>.json), the Replay page's (replay.json and
+replay/<year>.json, normalize.replay_page()'s shape: the demo's own songs, artists and
+albums ranked for each invented year, and an invented Replay playlist of its songs for each
+year), the New page's (browse.json,
 normalize.editorial_shelves()'s shape: invented banners over the demo's own albums and
 playlists, its shelves, and More to Explore's invented links, each link's page in rooms/,
 groupings/ or multirooms/), and each hand-written album's songs' credits (credits/<catalog
@@ -224,6 +227,9 @@ DEMO_CHART_GENRES = [
     ('9006', 'Hip-Hop/Rap', ('Lo-Fi Hip-Hop',)),
     ('9007', 'Ambient', ('Ambient', 'Downtempo')),
 ]
+# The years of the demo's invented Replay, newest first: the latest year's answer is
+# replay.json, each earlier year's replay/<year>.json.
+DEMO_REPLAY_YEARS = ('2026', '2025', '2024')
 DEMO_GENRE_STATIONS = [('Coastal Indie', 'Indie & Alternative'), ('Night Jazz', 'Jazz'),
                        ('Harbour Folk', 'Folk'), ('Deep Focus', 'Ambient'),
                        ('Northern Soul Kitchen', 'R&B/Soul'), ('Tape Hiss Classics', 'Rock')]
@@ -2434,6 +2440,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
                          library['generated'])
     build_charts_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
                       own_videos, draw_cover, thumb_for, cover_size, library['generated'])
+    build_replay_page(out_dir, albums[:len(ALBUMS_DATA)], artists[:len(ARTISTS_DATA)],
+                      draw_cover, thumb_for, cover_size, library['generated'])
     build_new_page(out_dir, albums[:len(ALBUMS_DATA)], playlists[:len(PLAYLISTS_DATA)],
                    own_videos, radio_stations, draw_cover, library['generated'])
     build_recently_played(out_dir, recently_played_items, library['generated'])
@@ -3114,15 +3122,7 @@ def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for,
     def brief(item):
         return dict(item, groups=[])
 
-    def song(track, album):
-        return {'id': track['catalogId'], 'kind': 'song', 'title': track['title'],
-                'subtitle': track['artist'], 'year': album['year'], 'genre': album['genre'],
-                'summary': None, 'art': album['art'], 'thumb': album['thumb'],
-                'artColor': album['artColor'], 'durationMs': track['durationMs'],
-                'explicit': track['explicit'], 'catalogId': track['catalogId'], 'url': None,
-                'play': {'kind': 'song', 'id': track['catalogId']}, 'groups': [],
-                'album': album['title']}
-
+    song = chart_song
     tracks = [(track, album) for album in albums for group in album['groups']
               for track in group['entries']]
 
@@ -3201,6 +3201,78 @@ def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for,
         with open(os.path.join(out_dir, 'charts', f'{genre_id}.json'), 'w',
                   encoding='utf-8') as f:
             json.dump(chart, f, indent=2)
+
+
+def chart_song(track, album):
+    """One of the library's songs as a chart's song (normalize.charts_shelves()'s, and
+    Replay's Top Songs): its catalog id, its album's art and name."""
+    return {'id': track['catalogId'], 'kind': 'song', 'title': track['title'],
+            'subtitle': track['artist'], 'year': album['year'], 'genre': album['genre'],
+            'summary': None, 'art': album['art'], 'thumb': album['thumb'],
+            'artColor': album['artColor'], 'durationMs': track['durationMs'],
+            'explicit': track['explicit'], 'catalogId': track['catalogId'], 'url': None,
+            'play': {'kind': 'song', 'id': track['catalogId']}, 'groups': [],
+            'album': album['title']}
+
+
+def build_replay_page(out_dir, albums, artists, draw_cover, thumb_for, cover_size, generated):
+    """Write replay.json, the Replay page's answer for the latest of DEMO_REPLAY_YEARS
+    (normalize.replay_page()'s shape, kept as the engine keeps it, stamped `cached` with the
+    library's date), and each earlier year's in replay/<year>.json: Top Songs (twenty-five
+    of the library's songs, ranked, a list), Top Artists and Top Albums (ten of the
+    library's own each, ranked: their pages are the library's), untitled for the app to name
+    them, then each year's invented Replay playlist of the library's songs, with its tracks,
+    so its page opens without the engine. A Random of its own: the other pages stay as they
+    were."""
+    rnd = random.Random(53)
+    art_dir = os.path.join(out_dir, 'art')
+    tracks = [(track, album) for album in albums for group in album['groups']
+              for track in group['entries']]
+
+    def replay_playlist(year, palette_index):
+        item_id = f'pl.demo-replay-{year}'
+        path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
+        palette = PALETTES[palette_index % len(PALETTES)]
+        draw_cover(out_path=path, title=f'Replay {year}', subtitle='Apple Music',
+                   badge='REPLAY', palette=palette, motif=MOTIFS[palette_index % len(MOTIFS)],
+                   is_artist=False, size=cover_size)
+        play = {'kind': 'playlist', 'id': item_id}
+        entries = [dict(track, index=position)
+                   for position, (track, _album) in enumerate(rnd.sample(tracks, 30))]
+        return {'id': item_id, 'kind': 'playlist', 'title': f'Replay {year}',
+                'subtitle': 'Apple Music', 'year': None, 'genre': None, 'summary': None,
+                'art': path, 'thumb': thumb_for(path), 'artColor': palette[1],
+                'trackCount': len(entries),
+                'durationMs': sum(entry['durationMs'] for entry in entries),
+                'explicit': any(entry['explicit'] for entry in entries), 'catalogId': None,
+                'url': None, 'play': play,
+                'groups': [{'name': '', 'play': play, 'entries': entries}]}
+
+    playlists = [replay_playlist(year, number * 7 + 2)
+                 for number, year in enumerate(DEMO_REPLAY_YEARS)]
+    os.makedirs(os.path.join(out_dir, 'replay'), exist_ok=True)
+    for number, year in enumerate(DEMO_REPLAY_YEARS):
+        answer = {
+            'year': year,
+            'years': list(DEMO_REPLAY_YEARS),
+            'shelves': [
+                {'key': 'replay-songs', 'title': '', 'chart': 'songs', 'ranked': True,
+                 'form': 'songs',
+                 'items': [chart_song(track, album) for track, album in rnd.sample(tracks, 25)]},
+                {'key': 'replay-artists', 'title': '', 'chart': 'artists', 'ranked': True,
+                 'items': [dict(artist, groups=[]) for artist in rnd.sample(artists, 10)]},
+                {'key': 'replay-albums', 'title': '', 'chart': 'albums', 'ranked': True,
+                 'items': [dict(album, groups=[]) for album in rnd.sample(albums, 10)]},
+                {'key': 'replay-playlists', 'title': '', 'chart': 'replay-playlists',
+                 'items': playlists},
+            ],
+            'cached': generated,
+            'demo': True,  # invented: the demo engine answers only these
+        }
+        path = (os.path.join(out_dir, 'replay.json') if number == 0
+                else os.path.join(out_dir, 'replay', f'{year}.json'))
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(answer, f, indent=2)
 
 
 # The New page's invented banners: the label over each, its line under the title, and which

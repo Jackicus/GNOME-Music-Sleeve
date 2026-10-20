@@ -598,6 +598,53 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 self.assertLessEqual({item['id'] for item in chart['shelves'][1]['items']},
                                      albums)
 
+    def test_replay(self):
+        # Replay's answers, as the engine keeps them (normalize.replay_page's shape): the
+        # latest year's in replay.json, each earlier year's in replay/<year>.json, every one
+        # listing the years, its views ranked and untitled (the app names them), Top Songs a
+        # list of songs with their albums, the artists and albums the library's own, and
+        # each year's Replay playlist with its tracks, so its page opens in the demo.
+        def read(*parts):
+            with open(os.path.join(self.out_dir, *parts), encoding='utf-8') as f:
+                return json.load(f)
+
+        latest = read('replay.json')
+        years = latest['years']
+        self.assertEqual(years, sorted(years, reverse=True))
+        self.assertGreater(len(years), 1)
+        self.assertEqual(latest['year'], years[0])
+        library = {(item['kind'], item['id'])
+                   for name in ('albums', 'artists') for item in self.data['sections'][name]}
+        for year in years:
+            with self.subTest(year=year):
+                answer = latest if year == years[0] else read('replay', f'{year}.json')
+                self.assertIs(answer['demo'], True)
+                self.assertEqual(set(answer) - {'demo', 'cached'}, {'year', 'years', 'shelves'})
+                self.assertEqual((answer['year'], answer['years']), (year, years))
+                shelves = answer['shelves']
+                self.assertEqual([shelf['chart'] for shelf in shelves],
+                                 [chart for _name, chart in normalize.REPLAY_VIEWS]
+                                 + [normalize.REPLAY_PLAYLISTS])
+                for shelf in shelves:
+                    self.assertEqual(shelf['key'], 'replay-' + shelf['chart'].removeprefix(
+                        'replay-'))
+                    self.assertEqual(shelf['title'], '')
+                    self.assertTrue(shelf['items'])
+                self.assertEqual([shelf.get('ranked', False) for shelf in shelves],
+                                 [True, True, True, False])
+                songs = shelves[0]['items']
+                self.assertEqual(shelves[0]['form'], 'songs')
+                self.assertTrue(all(item['kind'] == 'song' and item['album'] for item in songs))
+                for shelf in shelves[1:3]:
+                    for item in shelf['items']:
+                        self.assertIn((item['kind'], item['id']), library)
+                        self.assertEqual(item['groups'], [])
+                self.assertEqual(len(shelves[3]['items']), len(years))
+                for item in shelves[3]['items']:
+                    self.assertEqual(item['kind'], 'playlist')
+                    self.assertTrue(item['groups'][0]['entries'])
+                    self.assertTrue(os.path.exists(item['thumb']))
+
     def test_recently_played(self):
         # Home's Recently Played, as the engine keeps it (normalize.recently_played's
         # shape): the library's own albums, playlists and station, without track lists.

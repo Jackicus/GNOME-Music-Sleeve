@@ -151,6 +151,7 @@ def _classes():
             self.radio_answer = None  # what radio() answers, the same way
             self.charts_answer = None  # what charts() answers, the same way
             self.genres_answer = None  # what genres() answers, the same way
+            self.replay_answer = None  # what replay() answers, the same way
             self.credits_answer = None  # what credits() answers, the same way
 
         async def start(self, visible=None):
@@ -215,6 +216,12 @@ def _classes():
             if self.genres_answer is None:
                 raise EngineError('engine-down')
             return self.genres_answer
+
+        async def replay(self, year=None, refresh=False):
+            self.calls.append('replay')
+            if self.replay_answer is None:
+                raise EngineError('engine-down')
+            return self.replay_answer
 
         async def credits(self, song_id, refresh=False):
             self.calls.append('credits')
@@ -883,6 +890,34 @@ class PageLifetimeTest(WidgetTestCase):
             return [menu.drop_down.weak_ref()]
 
         refs = await self.pushed_and_popped(charts.create(charts.charts_item()), SongShelf,
+                                            SongRow, RankedTile, during=choose)
+        await self.assert_freed(*refs)
+
+    async def test_replay_page(self):
+        # A shelves page of Replay's forms (numbered songs, numbered tiles) and its year
+        # menu, a past year chosen once: the page starts over.
+        from applemusic.pages import replay
+        from applemusic.widgets.shelf import RankedTile
+        from applemusic.widgets.song_shelf import SongRow, SongShelf
+
+        songs = [{'id': f'19{n}', 'kind': 'song', 'title': f'Song {n}', 'subtitle': 'Artist',
+                  'play': {'kind': 'song', 'id': f'19{n}'}} for n in range(6)]
+        self.app.engine.replay_answer = {'year': '2026', 'years': ['2026', '2025'], 'shelves': [
+            {'key': 'replay-songs', 'title': '', 'chart': 'songs', 'ranked': True,
+             'form': 'songs', 'items': songs},
+            {'key': 'replay-albums', 'title': '', 'chart': 'albums', 'ranked': True,
+             'items': [dict(_album(n, tracks=0), id=f'c{n}') for n in range(6)]}]}
+        self.addCleanup(setattr, self.app.engine, 'replay_answer', None)
+
+        async def choose(page):
+            menu = page.year_menu
+            self.assertTrue(await self.until(lambda: menu.drop_down.get_visible()))
+            menu.drop_down.set_selected(1)
+            self.assertEqual(menu.year, '2025')
+            self.assertTrue(await self.until(lambda: _find(page, SongShelf) is not None))
+            return [menu.drop_down.weak_ref()]
+
+        refs = await self.pushed_and_popped(replay.create(replay.replay_item()), SongShelf,
                                             SongRow, RankedTile, during=choose)
         await self.assert_freed(*refs)
 

@@ -26,6 +26,7 @@ The standard library only; engine.py and actions.py use it.
     playlist_entries(listed)            # a playlist's tracks as a PUT of them sends them back
     reordered_entries(listed, shown, order)   # those in a new order, or EngineError('conflict')
     is_editorial_id('6789.12')          # whether it may name an editorial room or grouping
+    replay_params('2025')               # what a year's Replay is asked with ('' the latest)
 """
 
 import re
@@ -147,6 +148,32 @@ RECOMMENDATIONS_PARAMS = {'limit': 25}
 RECENT_PLAYED_ENDPOINT = '/v1/me/recent/played'
 RECENT_PLAYED_PAGE = 10
 RECENT_PLAYED_LIMIT = 30
+
+# Replay: the account's year in music, Apple's music summaries ("Get the user's replay data",
+# documented with `filter[year]=latest` alone): the year's top songs, artists and albums as
+# the summary's `views`, each in its order. The years Apple has a Replay of, each with its
+# playlist (the web player's Replay listing, REPLAY_YEARS_*), and a past year's summary by
+# its year (replay_params) are as remembered, not checked live: the engine takes Apple
+# refusing either as there being none.
+REPLAY_ENDPOINT = '/v1/me/music-summaries'
+REPLAY_VIEWS = 'top-songs,top-artists,top-albums'
+REPLAY_LATEST = 'latest'
+REPLAY_YEARS_ENDPOINT = '/v1/me/music-summaries/search'
+REPLAY_YEARS_PARAMS = {'period': 'year', 'fields[music-summaries]': 'period,year',
+                       'include[music-summaries]': 'playlist'}
+# What a Replay year may be: four digits (it goes into a query and the kept answer's name).
+REPLAY_YEAR = re.compile(r'^[12][0-9]{3}$')
+
+
+def is_replay_year(value):
+    """Whether `value` may name a year of Replay (REPLAY_YEAR)."""
+    return isinstance(value, str) and REPLAY_YEAR.match(value) is not None
+
+
+def replay_params(year=None):
+    """What a year's Replay is asked with: its summary's views, of `year` (an
+    is_replay_year year), or of the latest year without one."""
+    return {'filter[year]': year or REPLAY_LATEST, 'views': REPLAY_VIEWS}
 
 # An artist's page, as music.apple.com's views-based artist page asks for it: the artist with
 # every view its page shows (each answered with Apple's own title, its first page of
