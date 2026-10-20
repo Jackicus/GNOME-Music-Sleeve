@@ -2065,12 +2065,44 @@ class QueueEditTest(unittest.TestCase):
             self.assertEqual([entry.index for entry in player.queue], list(range(6)))
             self.assertEqual(engine.calls, [('queue_clear',), ('queue_undo_clear',)])
             self.assertEqual(await player.undo_clear(), 0)  # once only
-            # Another item playing since: nothing to put back after it.
+            self.assertEqual(app.toasts, [])
+            # Another item playing since: nothing to put back after it, and a toast says so.
             await player.clear_up_next()
             engine.event('queueItemsDidChange', {'index': 0, 'items': items[:2]})
             self.assertFalse(player.can_undo_clear)
             self.assertEqual(await player.undo_clear(), 0)
             self.assertEqual(engine.calls[-1], ('queue_clear',))
+            self.assertEqual(app.toasts, ['The cleared songs could not be put back'])
+            self.assertEqual(await player.undo_clear(), 0)  # nothing cleared: no toast
+            self.assertEqual(len(app.toasts), 1)
+        asyncio.run(go())
+
+    def test_a_failed_undo_shows_musickits_queue_again(self):
+        async def go():
+            player, engine, app, items = self.playing()
+            await app.settle()
+            self.assertEqual(await player.clear_up_next(), 4)
+            # MusicKit's queue as the failed Undo left it: Clear's entries gone.
+            engine.answers['queue'] = {'index': 1, 'items': items[:2]}
+            engine.fail = EngineError('api', 'TypeError: r.filter is not a function')
+            with self.assertRaises(EngineError):  # player_command toasts it
+                await player.undo_clear()
+            engine.fail = None
+            await app.settle()
+            self.assertEqual(self.ids(player), ['i.e0000', 'i.e0001'])
+            self.assertFalse(player.can_undo_clear)
+            # Nothing to put back in the page (it reloaded, or its queue changed): the
+            # queue read again, a toast, nothing raised.
+            engine.event('queueItemsDidChange', {'index': 1, 'items': items})
+            self.assertEqual(await player.clear_up_next(), 4)
+            engine.calls.clear()
+            engine.fail = EngineError('queue-changed', 'nothing to put back')
+            self.assertEqual(await player.undo_clear(), 0)
+            engine.fail = None
+            await app.settle()
+            self.assertEqual(engine.calls, [('queue_undo_clear',), ('queue',)])
+            self.assertEqual(self.ids(player), ['i.e0000', 'i.e0001'])
+            self.assertEqual(app.toasts, ['The cleared songs could not be put back'])
         asyncio.run(go())
 
     def test_a_failed_clear_offers_no_undo(self):

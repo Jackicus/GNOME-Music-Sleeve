@@ -1441,9 +1441,13 @@ class Player(GObject.Object):
         """Put back what the last clear_up_next() took, after the entry playing, while that
         is still the entry it was (and MusicKit's, or the session's, as the Clear was): into
         the store at once, then MusicKit's queue (engine.queue_undo_clear). Once only. How
-        many came back."""
+        many came back. An Undo that cannot be done now (another entry plays, or MusicKit's
+        queue changed meanwhile) says so in a toast; one the engine fails reads MusicKit's
+        queue again and raises, as every edit does."""
         if not self.can_undo_clear:
-            self._cleared = None
+            if self._cleared is not None:
+                self._cleared = None
+                self._app.toast(_('The cleared songs could not be put back'))
             return 0
         cleared, self._cleared = self._cleared, None
         at = self.queue_index + 1
@@ -1453,6 +1457,7 @@ class Player(GObject.Object):
         if self.restored:
             return len(cleared['entries'])
         if not await self._send_edit(self._engine.queue_undo_clear()):
+            self._app.toast(_('The cleared songs could not be put back'))
             return 0
         return len(cleared['entries'])
 

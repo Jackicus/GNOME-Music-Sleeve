@@ -1033,24 +1033,30 @@
         },
 
         // Clear's entries put back after the item playing, while it is still the item it
-        // was (queue.spliceQueueItems). {ok: true, restored: n}, or {error, code}: STALE
-        // (nothing to put back, or another item plays now), NOT_EDITABLE.
+        // was: queue.spliceQueueItems(start, 0, queueItems), the entries as ONE array of
+        // queue items, as MusicKit takes them (spread out, MusicKit throws a TypeError), so
+        // each keeps its isAutoplay. What Clear took is kept until the splice is done, so
+        // an Undo that throws may be tried again. {ok: true, restored: n}, or {error, code}:
+        // STALE (nothing to put back, or another item plays now), NOT_EDITABLE.
         queueUndoClear: function () {
             const mk = getMusicKit();
             if (!mk || !mk.queue) throw new Error('MusicKit not initialized');
             const taken = cleared;
-            cleared = null;
             const queue = mk.queue;
             const position = typeof queue.position === 'number' ? queue.position : -1;
             const items = queue.items || [];
             if (!taken || !taken.items.length || !items[position] || items[position].id !== taken.id) {
+                cleared = null;
                 return { error: 'nothing to put back', code: 'STALE' };
             }
             if (!queueCapabilities(mk).editable) {
                 return { error: 'this queue cannot be edited', code: 'NOT_EDITABLE' };
             }
-            queue.spliceQueueItems(position + 1, 0, ...taken.items);
-            return { ok: true, restored: taken.items.length };
+            queue.spliceQueueItems(position + 1, 0, taken.items.slice());
+            cleared = null;
+            // What MusicKit put in: its filter drops an entry it cannot play now.
+            const restored = (queue.items || []).length - items.length;
+            return { ok: true, restored: Math.max(0, restored) };
         },
 
         // Autoplay on or off (mk.autoplayEnabled; null leaves it): {autoplay, canAutoplay}.

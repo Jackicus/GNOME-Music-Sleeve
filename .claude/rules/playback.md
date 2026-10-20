@@ -59,7 +59,8 @@ paths:
   rows; never replace the store whole (docs/notes.md has the cost). Up Next's edits
   (`remove_from_queue(index, id)`, `clear_up_next()`, `undo_clear()`) change the store at
   once, then the engine; MusicKit's event that follows then changes nothing, and a failure
-  reads the queue again (`queue-changed`: only that; anything else is raised too). Events are
+  reads the queue again (`queue-changed`: only that, but an Undo that cannot be done says so
+  in a toast; anything else is raised too). Events are
   applied as they come, never delayed to coalesce them. Edits name an entry after the one
   playing by index and id, only while `queue_editable` (the snapshot's `editable`: not a
   station's queue); while restored they change the session alone and drop its `source`.

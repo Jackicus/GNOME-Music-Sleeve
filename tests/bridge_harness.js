@@ -34,7 +34,9 @@ function bothWays(names) {
 // the MediaItems, `position`, and the edits, each recorded on the instance's `calls` and
 // posting one queueItemsDidChange: spliceQueueItems, the deprecated remove (which throws for
 // the current index), clearAfterCurrent. `new FakeQueue(mk, items, position, autoplay)`:
-// `autoplay` the indices of the entries autoplay added.
+// `autoplay` the indices of the entries autoplay added. Each edit takes its arguments as
+// MusicKit's does (src/backend/README.md, "The queue"), so a call MusicKit would refuse
+// fails here too.
 class FakeQueue {
     constructor(instance, items, position, autoplay) {
         this.instance = instance;
@@ -52,9 +54,16 @@ class FakeQueue {
         return this._queueItems.filter(entry => entry.isAutoplay).map(entry => entry.item);
     }
 
-    spliceQueueItems(start, count, ...added) {
-        this.instance.calls.push(['queue.spliceQueueItems', start, count, added.length]);
-        const taken = this._queueItems.splice(start, count, ...added);
+    // MusicKit's own, in the page (playback/AppleMusic-2642.7.0-external):
+    //   spliceQueueItems(e, t, r = [], s = !0) { r = r.filter(a => cn(a?.item, …)); … }
+    // The entries to put in are one array of queue items ({item, isAutoplay}): spread out as
+    // arguments, `items` is the first of them, an object, and its filter() throws the
+    // TypeError MusicKit throws; an entry without an `item` (a MediaItem) is dropped, as
+    // MusicKit's filter drops it. The fourth argument is not modelled.
+    spliceQueueItems(start, deleteCount, items = [], _notify = true) {
+        const added = items.filter(entry => Boolean(entry?.item));
+        this.instance.calls.push(['queue.spliceQueueItems', start, deleteCount, added.length]);
+        const taken = this._queueItems.splice(start, deleteCount, ...added);
         this.instance.fire('queueItemsDidChange', {});
         return taken;
     }
@@ -96,6 +105,7 @@ class FakeInstance {
         this.nowPlayingItem = null;
         this.nowPlayingItemIndex = -1;
         this.queue = { items: [], position: -1 };
+        this._autoplayEnabled = false;  // the page started with it off (README, "The queue")
         const instance = this;
         this.api = {
             async music(path, params) {
@@ -118,6 +128,20 @@ class FakeInstance {
                 },
             },
         };
+    }
+
+    // MusicKit's autoplay switch, a property: set to another value, it posts
+    // autoplayEnabledDidChange with the new boolean.
+    get autoplayEnabled() {
+        return this._autoplayEnabled;
+    }
+
+    set autoplayEnabled(on) {
+        on = Boolean(on);
+        if (on === this._autoplayEnabled)
+            return;
+        this._autoplayEnabled = on;
+        this.fire('autoplayEnabledDidChange', on);
     }
 
     addEventListener(name, handler) {
