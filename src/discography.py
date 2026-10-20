@@ -23,8 +23,8 @@ GLib, GObject and Gio only, no GTK: the unit tests run it with a stand-in librar
 from .backend.normalize import stand_in_album_id
 from .library import Item, fold
 
-# The songs Play and Shuffle queue at most: MusicKit looks a queue of songs up by id, and
-# this many already play for a day.
+# The songs Play and Shuffle queue at most (here and on the Songs page: pages/songs.py):
+# MusicKit looks a queue of songs up by id, and this many already play for a day.
 PLAY_LIMIT = 300
 
 

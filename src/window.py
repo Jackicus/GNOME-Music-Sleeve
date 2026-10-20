@@ -945,7 +945,7 @@ class Window(Adw.ApplicationWindow):
         if page is None:
             return GLib.SOURCE_REMOVE
         own = getattr(page, 'focus_content', None)
-        if own is not None:  # a page of two panes (Artists) knows which one is shown
+        if own is not None:  # Artists knows which of its panes shows, Songs its table
             own()
             return GLib.SOURCE_REMOVE
         toolbar = first_descendant(page, Adw.ToolbarView)

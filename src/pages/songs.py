@@ -44,17 +44,23 @@ selected in the table's selection mode instead (widgets/selection_mode.py: Selec
 header bar, a Ctrl+click or Shift+click, Ctrl+A), whose bar acts on them all; its check box is
 in the title cell (SongTitle), and a row's description says whether it is selected.
 
+Play and Shuffle, beside the title (under it in a narrow window), play what the table shows,
+in its order and under its filter and Favourites Only: Play from its first song, Shuffle a
+random draw of them, shuffled; at most PLAY_LIMIT songs either way (play_target()).
+
 The row of the song playing is marked (SongTitle's play icon and bold title, "Playing" as
 the row's accessible description): the page follows the Player's `notify::track` while it is
 shown, through the title cells and the rows it has bound (widgets/track_row.py's
 PlayingMark), and catches up as it maps.
 """
 
+import random
 from gettext import gettext as _
 from gettext import ngettext
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+from ..discography import PLAY_LIMIT
 from ..library import SongOrder, Track, apply_diff
 from ..widgets import context_menu, track_links
 from ..widgets.filter_bar import FilterBar
@@ -96,6 +102,28 @@ def resized_fixed_width(width, start_width, share, others):
         return None
     left = max(share - round((width - start_width) / others), 0)
     return width - left if left <= width else None
+
+
+def play_target(tracks, shuffle=False, limit=PLAY_LIMIT, sample=random.sample):
+    """What Play (or with `shuffle`, Shuffle) plays of `tracks`, the songs the table shows in
+    its order: their ids, {'kind': 'songs', 'id': 'i.…,i.…'} as the bridge takes them, or
+    None without a song to play.
+
+    MusicKit looks a queue of songs up by id before it plays, so the queue is `limit` songs
+    at most (a day's listening), never the library's 40,000: Play takes the first of them,
+    Shuffle a random draw (`sample(population, k)`) from all of them, so that a shuffle
+    reaches the whole of what is shown, not only its first songs. Only the songs queued are
+    read (a Track's id is a GObject property: 40,000 reads would take a click 100 ms)."""
+    if shuffle and len(tracks) > limit:
+        tracks = sample(tracks, limit)
+    ids = []
+    for track in tracks:
+        track_id = track.id
+        if track_id:
+            ids.append(track_id)
+            if len(ids) >= limit:
+                break
+    return {'kind': 'songs', 'id': ','.join(ids)} if ids else None
 
 
 def narrows(old, new):
@@ -140,6 +168,9 @@ class SongsPage(Adw.NavigationPage):
     album_column = Gtk.Template.Child()
     time_column = Gtk.Template.Child()
     narrow_breakpoint = Gtk.Template.Child()
+    heading_box = Gtk.Template.Child()
+    play_button = Gtk.Template.Child()
+    shuffle_button = Gtk.Template.Child()
 
     def __init__(self, library, title, icon_name=None):
         super().__init__(title=title)
@@ -183,6 +214,8 @@ class SongsPage(Adw.NavigationPage):
         self.selection_mode.set_filter_bar(self.filter_bar)
         connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
         self.filter_bar.set_focus_return(self._focus_table)
+        connect_weak(self.play_button, 'clicked', self._on_play_clicked, False)
+        connect_weak(self.shuffle_button, 'clicked', self._on_play_clicked, True)
         self.empty_page.set_icon_name(icon_name)
         self.empty_page.set_title(_('No Songs'))
         self.empty_page.set_description(_('Songs in your library appear here'))
@@ -496,6 +529,8 @@ class SongsPage(Adw.NavigationPage):
             return
         shown = len(self._matches)
         self.results_stack.set_visible_child_name('table' if shown else 'no-results')
+        self.play_button.set_sensitive(shown > 0)
+        self.shuffle_button.set_sensitive(shown > 0)
         if not shown:
             favourites = self._favourites_only and not self._search
             self.no_results_page.set_icon_name(
@@ -517,6 +552,22 @@ class SongsPage(Adw.NavigationPage):
         first), the bar shown with the text in it; closed, and the filter cleared, for no
         text."""
         self.filter_bar.set_text(text)
+
+    def focus_content(self):
+        """Ctrl+2 (win.focus-content): the focus in the table, as on the other library pages
+        it goes to the list, from Play and Shuffle above it too (Shift+Tab reaches them);
+        nothing moves when the focus is in the table already."""
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        if focus is not None and (focus is self.results_stack
+                                  or focus.is_ancestor(self.results_stack)):
+            return
+        if (self.stack.get_visible_child_name() == 'items'
+                and self.results_stack.get_visible_child_name() == 'table'
+                and self.column_view.child_focus(Gtk.DirectionType.TAB_FORWARD)):
+            return
+        if not self.stack.child_focus(Gtk.DirectionType.TAB_FORWARD):
+            self.child_focus(Gtk.DirectionType.TAB_FORWARD)
 
     def focus_filter(self):
         """Show the filter bar with the cursor in its entry and its text selected (Ctrl+F on
@@ -554,6 +605,13 @@ class SongsPage(Adw.NavigationPage):
         if track is not None and not self.selection_mode.activated(track):
             self.get_root().play_request(track.play, start_with=track.index,
                                          start_id=track.id)
+
+    def _on_play_clicked(self, _button, shuffle):
+        """Play or Shuffle: the songs shown, in order (play_target()); Play turns shuffle
+        off, Shuffle on, as an album's buttons do."""
+        play = play_target(self._matches, shuffle)
+        if play is not None:
+            self.get_root().play_request(play, shuffle=shuffle)
 
     # Cells. The time is a Gtk.Inscription: its size comes from its line count, not its text,
     # so rebinding it redraws it without laying it out again; in tabular figures, so that

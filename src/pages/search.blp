@@ -297,8 +297,9 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
             child: $AppleMusicSearchList kind_list {};
           }
 
-          // Your Library: the cached models filtered as you type, three shelves and a list
-          // of songs (the first SONG_LIMIT; See All opens the Songs page with the filter).
+          // Your Library: the cached models filtered as you type, in Apple's order: Top
+          // Results as cards (search.top_results()), the songs (the first SONG_LIMIT; See All
+          // opens the Songs page with the filter), then the artists, albums and playlists.
           StackPage {
             name: "library";
 
@@ -311,16 +312,8 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
                 margin-top: 6;
                 margin-bottom: 18;
 
-                $AppleMusicShelf albums_shelf {
-                  see-all: true;
-                }
-
-                $AppleMusicShelf artists_shelf {
-                  see-all: true;
-                }
-
-                $AppleMusicShelf playlists_shelf {
-                  see-all: true;
+                $AppleMusicShelf top_shelf {
+                  hero: true;
                 }
 
                 Box songs_box {
@@ -387,6 +380,18 @@ template $AppleMusicSearchPage: Adw.NavigationPage {
                       "track-list",
                     ]
                   }
+                }
+
+                $AppleMusicShelf artists_shelf {
+                  see-all: true;
+                }
+
+                $AppleMusicShelf albums_shelf {
+                  see-all: true;
+                }
+
+                $AppleMusicShelf playlists_shelf {
+                  see-all: true;
                 }
               };
             };

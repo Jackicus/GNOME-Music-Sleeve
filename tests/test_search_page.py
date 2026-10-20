@@ -2,8 +2,9 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """The Search page over the stand-in engine (tests/page_harness.py): stale Apple Music answers
-never take over, Your Library follows the library's state (and marks the song playing), and
-the status pages offer Your Library."""
+never take over, Your Library follows the library's state (and marks the song playing) and
+lists its results in Apple's order, Top Results first, and the status pages offer Your
+Library."""
 
 import asyncio
 import unittest
@@ -12,6 +13,53 @@ from tests.page_harness import PageTestCase, album, find_all, playing, track
 
 from applemusic.backend.errors import EngineError
 from applemusic.library import Item
+
+
+class TopResultsTest(unittest.TestCase):
+    def items(self, kind, *titles):
+        return [Item({'id': f'l.{kind}{n}', 'kind': kind, 'title': title,
+                      'subtitle': 'Invented Artist'}) for n, title in enumerate(titles)]
+
+    def test_a_title_that_is_or_begins_with_the_search_ranks(self):
+        from applemusic.pages.search import title_rank
+
+        self.assertEqual(title_rank('neon', 'neon'), 0)
+        self.assertEqual(title_rank('neon', 'neon lights'), 1)
+        self.assertEqual(title_rank('neon', 'the neon hour'), 2)
+        self.assertEqual(title_rank('neon hour', 'the neon hour'), 2)
+        self.assertIsNone(title_rank('neon', 'paraneon'))  # within a word
+        self.assertIsNone(title_rank('hour neon', 'the neon hour'))  # not as the shelves match
+
+    def test_top_results_rank_by_title_then_kind_then_order(self):
+        from applemusic.pages.search import titles, top_results
+
+        artists = titles(self.items('artist', 'The Neon Choir', 'Neon'))
+        albums = titles(self.items('album', 'Neon Lights', 'Paraneon', 'NEON'))
+        playlists = titles(self.items('playlist', 'Néon'))
+        self.assertEqual([title for title, _item in albums], ['neon lights', 'paraneon', 'neon'])
+        top = top_results('neon', [artists, albums, playlists], limit=4)
+        self.assertEqual([(item.kind, item.title) for item in top],
+                         [('artist', 'Neon'), ('album', 'NEON'), ('playlist', 'Néon'),
+                          ('album', 'Neon Lights')])
+        self.assertEqual(top_results('', [artists]), [])
+        self.assertEqual(top_results('zzz', [artists, albums]), [])
+        # Only the subtitle holds it: no top result.
+        self.assertEqual(top_results('invented', [artists, albums]), [])
+
+    def test_a_kind_stops_reading_once_it_has_enough_exact_titles(self):
+        from applemusic.pages.search import top_results
+
+        read = []
+
+        class Counted(str):
+            def __contains__(self, search):
+                read.append(self)
+                return str.__contains__(self, search)
+
+        albums = [(Counted('neon'), item) for item in self.items('album', *(['Neon'] * 50))]
+        top = top_results('neon', [albums], limit=4)
+        self.assertEqual(len(top), 4)
+        self.assertLessEqual(len(read), 8)  # four titles read, not fifty
 
 
 class SearchPageTest(PageTestCase):
@@ -157,6 +205,45 @@ class SearchPageTest(PageTestCase):
         self.assertEqual(rows[songs[0]['id']].get_accessible_description(), '3:00')
         self.app.player.track = None
         self.assertFalse(any(item.get_child().playing for item in page._bound_songs))
+
+    async def test_your_library_lists_top_results_songs_artists_albums_playlists(self):
+        from applemusic.library import Track
+
+        page = await self.search_page()
+        neon = dict(album(1, tracks=0), title='Neon')
+        later = dict(album(2, tracks=0), title='Neon Lights')
+        within = dict(album(3, tracks=0), title='Paraneon')
+        self.library.albums.splice(0, 0, [Item(data) for data in (within, later, neon)])
+        self.library.artists.splice(0, 0, [Item({'id': 'l.artist001', 'kind': 'artist',
+                                                 'title': 'Neon Choir', 'subtitle': ''})])
+        self.library.songs_ready = True
+        self.library.songs.splice(0, 0, [Track(dict(track('l.album001', 0), title='Neon'))])
+        page.set_mode('library')
+        self.type(page, 'neon')
+        self.assertEqual(page.stack.get_visible_child_name(), 'library')
+        order = []
+        child = page.library_box.get_first_child()
+        while child is not None:
+            order.append(child)
+            child = child.get_next_sibling()
+        self.assertEqual(order, [page.top_shelf, page.songs_box, page.artists_shelf,
+                                 page.albums_shelf, page.playlists_shelf])
+        self.assertTrue(page.top_shelf.get_visible())
+        self.assertTrue(page.top_shelf.hero)
+        self.assertEqual([item.title for item in page._top],
+                         ['Neon', 'Neon Choir', 'Neon Lights'])
+        self.assertEqual(page.albums_shelf.shelf.items.get_n_items(), 3)
+        # A sync's change to a store: Top Results found again, once its splices are done.
+        self.library.albums.splice(0, 0, [Item(dict(album(4, tracks=0), title='neon'))])
+        self.library.albums.remove(self.library.albums.get_n_items() - 1)  # Neon goes
+        self.assertTrue(await self.until(
+            lambda: [item.title for item in page._top] == ['neon', 'Neon Choir', 'Neon Lights']))
+        # Nothing whose title begins a word with the text: no Top Results, the rest shown.
+        self.type(page, 'aneon')
+        self.assertFalse(page.top_shelf.get_visible())
+        self.assertTrue(page.albums_shelf.get_visible())
+        self.type(page, '')
+        self.assertEqual(page._top.get_n_items(), 0)
 
     LANDING = {'categories': [{'id': 'g1', 'kind': 'category', 'title': 'Invented Genre'}]}
 

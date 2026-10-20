@@ -240,6 +240,13 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   icon a count), and a playlist does not reorder. Its keys are the window's
   (`keyboard.selection_key()`, before the playback keys), handed to the page that holds the
   focus (`focused_track()`, `selection_mode.key()`).
+- Songs has Play and Shuffle beside its title (under it below its 560sp breakpoint), which
+  play what the table shows, filter and Favourites Only applied, as one `songs` play
+  request of at most `discography.PLAY_LIMIT` ids (`songs.play_target()`: Play the first,
+  Shuffle a random draw of them all); its `focus_content()` keeps Ctrl+2 on the table.
+  Search's Your Library lists Top Results (`search.top_results()`: the artists, albums and
+  playlists whose title is or begins with the text, as hero cards), Songs, Artists, Albums,
+  then Playlists, as Apple's library search orders them.
 
 ## HIG, style and icons
 

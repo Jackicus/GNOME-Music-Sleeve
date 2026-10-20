@@ -62,9 +62,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   more cannot be loaded, **Try Again** at the end of the list asks once more. A radio show
   or a curator opens its page (one Apple Music has no page for here opens in your browser).
 - **Your Library**, beside **Apple Music** by the search field, searches your library
-  instead, as you type, whether or not the engine runs: your albums, artists and playlists
-  as shelves, then your songs as a list. When there are more songs than it lists, the songs'
-  **See All** opens Songs filtered by what you typed.
+  instead, as you type, whether or not the engine runs, in Apple Music's order: **Top
+  Results** first (your artists, albums and playlists whose name is or begins with what you
+  typed), then your songs as a list, then artists, albums and playlists as shelves. When
+  there are more songs than it lists, the songs' **See All** opens Songs filtered by what
+  you typed.
 - On Albums, Artists, Songs, Music Videos and a playlist's page (Favourite Songs too),
   just start typing to filter what the page lists (or press <kbd>Ctrl</kbd>+<kbd>F</kbd>,
   or click the search button in the header bar): it keeps what has the text in its title,
@@ -72,6 +74,10 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   works with **Favourites Only**; while it filters a playlist, the playlist's songs cannot be
   moved. Elsewhere <kbd>Ctrl</kbd>+<kbd>F</kbd> goes to Search. On Songs, click a column
   title to sort by it, or use **Sort and Filter**.
+- **Play** and **Shuffle** beside the Songs title (under it in a narrow window) play the
+  songs the page lists, as sorted and filtered (**Favourites Only** too): Play in that
+  order from the first, Shuffle in a random order drawn from all of them. Either queues up
+  to 300 songs at once, about a day of music.
 - Your favourites (songs, albums, playlists and music videos you marked as a favourite, here
   or in another Apple Music app) have a small heart: on a song's row before its time, on a
   tile after its artist. **Favourites Only** in **Sort and Filter**, on Albums, Songs and
