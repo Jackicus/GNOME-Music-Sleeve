@@ -21,8 +21,9 @@ Each run is a process of its own (this script again, with --child), --runs of th
 the platform's own cost, which no change to the app can remove (GTK's start, the
 icon theme, the compositor's first configure, the GL driver's memory). The report
 gives each run and the median, against the targets (.claude/rules/performance.md:
-content under 1 s, switches under 100 ms, anonymous memory under 250 MB after every
-page has been browsed twice, and pages opened and closed leaving at most 5 MB behind):
+content painted within 250 ms of the bare window's first frame, the app's own share of the
+start, switches under 100 ms, anonymous memory under 250 MB after every page has been
+browsed twice, and pages opened and closed leaving at most 5 MB behind):
 
 - startup: from the process start (/proc/self/stat, so the interpreter's own start
   counts) to the window mapped, its first frame painted, the library ready, and the
@@ -78,7 +79,9 @@ import harness
 
 root = harness.ROOT
 
-CONTENT_TARGET = 1000  # ms from launch
+# ms from a bare window's first frame to the content painted: the app's own share of the
+# start, which is what a change to the app can move (the bare window took 790-860 ms here).
+CONTENT_TARGET = 250
 SWITCH_TARGET = 100  # ms
 # MB of anonymous memory (RssAnon: the app's own, where RSS adds the files the libraries and
 # the GL driver map, which the app cannot shrink) after every page has been browsed twice.
@@ -175,6 +178,8 @@ def parent():
     if not os.path.exists(os.path.join(args.cache, 'library.json')):
         sys.exit(f'bench: no library.json in {args.cache}; see scripts/bench.py --help')
     runs, bares = [], []
+    owns = []  # each run's content painted less the first frame of the bare window run beside it
+    run_child('--bare')  # untimed: the first start after a while is cold (1.7-1.9 s here)
     for number in range(args.runs):
         bare, _output = run_child('--bare')
         if bare:
@@ -189,6 +194,8 @@ def parent():
             continue
         runs.append(result)
         startup = result['startup']
+        if bare and startup.get('albums-painted') is not None:
+            owns.append(startup['albums-painted'] - bare['first_frame'])
         print(f'run {number + 1}: first frame {fmt(startup.get("first-frame"))}, '
               f'library ready {fmt(startup.get("library-ready"))}, '
               f'content {fmt(startup.get("albums-painted"))}; '
@@ -209,8 +216,12 @@ def parent():
         for stage in stages))
     content = median(run['startup'].get('albums-painted') for run in runs)
     floor = median(bare['first_frame'] for bare in bares)
-    print(f'  content painted {fmt(content)} ({verdict(content, CONTENT_TARGET)} the '
-          f"{CONTENT_TARGET} ms target); a bare Adw window's first frame {fmt(floor)}")
+    # Paired run by run: the machine's load moves both, and a bare window's first run in a
+    # bench starts cold.
+    own = median(owns)
+    print(f"  content painted {fmt(content)}; a bare Adw window's first frame {fmt(floor)}: "
+          f'the app {fmt(own)} more ({verdict(own, CONTENT_TARGET)} the {CONTENT_TARGET} ms '
+          'target)')
     print('  page switches (selection to the end of the next paint), first visit / again; '
           f'the longest frame in the {args.watch} ms after each:')
     for key in first['order']:
@@ -482,8 +493,12 @@ def child():
                     pstats.Stats(profile, stream=sys.stdout).sort_stats('cumulative') \
                         .print_stats(22)
                 def account():
-                    # What the first visit added: a page's widgets, and for Songs the
-                    # songs built on the way (their rows painted).
+                    GLib.timeout_add(max(args.settle, args.watch), settled)
+
+                def settled():
+                    # What the first visit added, once its frames are over (a grid lets its
+                    # tiles in a frame at a time after its first paint): a page's widgets,
+                    # and for Songs the songs built on the way (their rows painted).
                     if stage == 'first':
                         now = rss_mb()
                         page_rss[key] = round(now - last_rss[0], 1)
@@ -491,7 +506,7 @@ def child():
                         counts = tile_counts(window.navigation_view.get_visible_page())
                         if counts:
                             page_tiles[key] = counts
-                    GLib.timeout_add(max(args.settle, args.watch), visit, position + 1)
+                    return visit(position + 1)
 
                 if key == 'songs' and stage == 'first' and not app.library.songs_ready:
                     wait_for_songs(started, account)

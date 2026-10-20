@@ -392,6 +392,23 @@ class Window(Adw.ApplicationWindow):
         sidebar = 0 if self.split_view.get_collapsed() else self.split_view.get_max_sidebar_width()
         return pages.estimate_width(self.get_default_size()[0], maximized, monitor, sidebar)
 
+    def content_height(self):
+        """The content pane's height in px, for a grid sizing its first frame before it is
+        laid out: its allocation once it has one, else the window's default height, or the
+        tallest monitor's while maximized or fullscreen (the header and player bars left in:
+        a grid makes a row more than this shows)."""
+        height = self.navigation_view.get_height()
+        if height > 0:
+            return height
+        if (self.is_maximized() or self.is_fullscreen()
+                or self._settings.get_boolean('window-maximized')):
+            monitors = Gdk.Display.get_default().get_monitors()
+            tallest = max((monitors.get_item(n).get_geometry().height
+                           for n in range(monitors.get_n_items())), default=0)
+            if tallest > 0:
+                return tallest
+        return self.get_default_size()[1]
+
     def open_songs(self, search=''):
         """Show the Songs page filtered by `search` (Your Library results' See All)."""
         self.select_page('songs')

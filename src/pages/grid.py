@@ -8,8 +8,9 @@ Gtk.FilterListModel (a Gtk.EveryFilter of the filter bar's text, on a page that 
 widgets/filter_bar.text_filter(), matching everything until there is text, and Favourites
 Only, on a page that offers it: a Gtk.BoolFilter on Item.favourite) → ShownModel (that
 order backwards, for a descending text, and a filter's change shown so that the grid rebinds
-its tiles rather than building new ones) → Gtk.NoSelection → Gtk.GridView, whose factory
-recycles AppleMusicTiles. Sorting uses
+its tiles rather than building new ones) → Gtk.SliceListModel (the rows the first frame
+shows, then a few more a frame until it holds them all: GROW_TILES) → Gtk.NoSelection →
+Gtk.GridView, whose factory recycles AppleMusicTiles. Sorting uses
 Gtk.StringSorter and Gtk.NumericSorter over Gtk.PropertyExpressions, which compute one key per
 item and sort in C: about 10 ms for 2,000 albums, against 25 ms for a Python
 Gtk.CustomSorter, whose cost grows with every comparison rather than every item.
@@ -24,7 +25,8 @@ from ..widgets import context_menu
 from ..widgets.filter_bar import FilterBar, ShownModel, text_filter
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, Tile
-from ..widgets.util import HeaderTitle, MappedHandlers, connect_weak, focus_position
+from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
+                            weak_method)
 from . import SignInOffer, app, mark_bound
 
 
@@ -51,7 +53,18 @@ def _chain(*sorters):
 # the page's 24 less the child's padding) whatever the width. A grid of music videos has
 # columns of its 16:9 tiles (tile.GRID_VIDEO_SIZE, 240 px wide) instead.
 COLUMN_WIDTH = 166
+ALL = GLib.MAXUINT32  # a Gtk.SliceListModel's size for every item from offset 0
 VIDEO_COLUMN_WIDTH = 246
+# About a row of tiles' height (tile.blp: the cover, two lines and the margins), for the rows
+# a grid shows before it is laid out: a little more than a video row's or an artist row's.
+ROW_HEIGHT = 220
+
+# A Gtk.GridView makes tiles for about 30 rows (estimate_columns), all in the frame its model
+# fills in: 129 tiles in a 1100×760 window, which show 12. Before its first paint a grid
+# shows the rows that fit (first_tiles()), and the rest come GROW_TILES a frame after it,
+# about 8 ms of building each: the first frame of the Albums page restored at startup took
+# 60 ms less, and a grid's first visit is painted sooner (docs/notes.md).
+GROW_TILES = 16
 
 
 def columns_for(width, column_width=COLUMN_WIDTH):
@@ -59,6 +72,14 @@ def columns_for(width, column_width=COLUMN_WIDTH):
     grid's margins (left out here) tip it: never fewer, so a grid told this many as
     max-columns lays out as it would with no limit."""
     return max(2, width // column_width)
+
+
+def first_tiles(columns, height, row_height=ROW_HEIGHT):
+    """How many items a grid shows before its first paint: the rows a content pane `height`
+    px tall shows, and one more, of `columns` tiles; None (all) without a height."""
+    if not columns or not height or height <= 0:
+        return None
+    return columns * (-(-height // row_height) + 1)
 
 
 def estimate_columns(column_width=COLUMN_WIDTH):
@@ -75,6 +96,15 @@ def estimate_columns(column_width=COLUMN_WIDTH):
     content_width = getattr(window, 'content_width', None)
     width = content_width() if content_width is not None else 0
     return columns_for(width, column_width) if width and width > 0 else None
+
+
+def estimate_height():
+    """The content pane's height (Window.content_height(), an estimate before the window has
+    laid it out), or None without a window."""
+    application = app()
+    window = application.get_active_window() if application is not None else None
+    content_height = getattr(window, 'content_height', None)
+    return content_height() if content_height is not None else None
 
 
 # The sort orders a page can offer: key -> (label, the Item properties compared in turn,
@@ -257,8 +287,17 @@ class GridPage(Adw.NavigationPage):
         self._columns_idle = None
         if video:
             self.grid_view.set_min_columns(1)  # two of them are wider than a 360 px window
-        self._set_columns(estimate_columns(self._column_width))
-        self.grid_view.set_model(Gtk.NoSelection(model=self._shown))
+        columns = estimate_columns(self._column_width)
+        self._set_columns(columns)
+        # The rows the first frame shows (first_tiles()), the rest a frame at a time after
+        # its paint (_grow).
+        first = first_tiles(columns, estimate_height())
+        self._limited = Gtk.SliceListModel(model=self._shown, offset=0,
+                                           size=ALL if first is None else first)
+        self._first_frame = None  # the frame clock's count of the frame of the first tiles
+        if first is not None:
+            self.grid_view.add_tick_callback(weak_method(self._grow))
+        self.grid_view.set_model(Gtk.NoSelection(model=self._limited))
         context_menu.attach(self.grid_view, drag=True)
 
         # Sort By: a menu of the orders and of the directions, as radio items of the stateful
@@ -328,6 +367,31 @@ class GridPage(Adw.NavigationPage):
             self.grid_view.set_max_columns(columns)
         return GLib.SOURCE_REMOVE
 
+    def _grow(self, _grid_view, clock):
+        """The grid's tick, while it shows the first tiles only: from the frame after the one
+        that paints them, GROW_TILES more a frame, until it shows every item."""
+        if self._limited.get_size() == ALL:
+            return GLib.SOURCE_REMOVE
+        if not self._bound:
+            return GLib.SOURCE_CONTINUE
+        frame = clock.get_frame_counter()
+        if self._first_frame is None:
+            self._first_frame = frame
+        if frame == self._first_frame:
+            return GLib.SOURCE_CONTINUE
+        size = self._limited.get_size() + GROW_TILES
+        if size >= self._shown.get_n_items():
+            self._show_all()
+            return GLib.SOURCE_REMOVE
+        self._limited.set_size(size)
+        return GLib.SOURCE_CONTINUE
+
+    def _show_all(self):
+        """Every item in the grid now, not a frame at a time (_grow): before anything that
+        changes or looks through what it shows."""
+        if self._limited.get_size() != ALL:
+            self._limited.set_size(ALL)
+
     def do_map(self):
         Adw.NavigationPage.do_map(self)
         if not self._sort_restored:
@@ -368,6 +432,7 @@ class GridPage(Adw.NavigationPage):
         favourites = value.get_boolean()
         if favourites != self._favourites_on:
             self._favourites_on = favourites
+            self._show_all()
             with self._shown.replacing(self._scroll_top):
                 if favourites:
                     self._filters.append(self._favourite_filter)
@@ -387,6 +452,7 @@ class GridPage(Adw.NavigationPage):
     def _on_filter_changed(self, bar):
         """The filter's text changed (after the entry's delay): the grid shows what matches it
         (and Favourites Only), from the top, and the new count is announced."""
+        self._show_all()
         with self._shown.replacing(self._scroll_top):  # the tiles recycled (ShownModel)
             self._text_filter.set_search(bar.search or None)
         self._update_state()
@@ -411,6 +477,7 @@ class GridPage(Adw.NavigationPage):
         the focus was on), else the first; False while the grid does not show."""
         if self.stack.get_visible_child_name() != 'items' or not self._shown.get_n_items():
             return False
+        self._show_all()
         position = self._shown.find(obj) if obj is not None else None
         focus_position(self.grid_view, position or 0)
         return True

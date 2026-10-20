@@ -94,6 +94,20 @@ class TestRecentlyAddedOrder(unittest.TestCase):
         self.assertEqual([item.id for item in order],
                          ['l.b', 'l.c', 'l.a', 'p.1', 'l.alb_loose', 'l.alb_zed'])
 
+    def test_ties_outside_apples_list_go_by_title(self):
+        when = '2026-03-01T10:00:00Z'
+        z = Item(dated(album('l.z', title='zulu'), when))
+        a = Item(dated(album('l.a', title='Alpha'), when))
+        e = Item(dated(album('l.e', title='Écho'), when))
+        ten = Item(dated(album('l.10', title='10 Days'), when))
+        two = Item(dated(album('l.2', title='2 Days'), when))
+        listed = Item(dated(album('l.r', title='Zed'), when))
+        newer = Item(dated(album('l.n', title='Zz'), '2026-03-02T10:00:00Z'))
+        # Apple's list first among those of the second, then the rest by title_key().
+        order = recently_added_order([z, a, e, ten, two, listed, newer], [listed])
+        self.assertEqual([item.id for item in order],
+                         ['l.n', 'l.r', 'l.10', 'l.2', 'l.a', 'l.e', 'l.z'])
+
     def test_without_dates_it_is_apples_list(self):
         a, b = Item(album('l.a')), Item(album('l.b'))
         self.assertEqual(recently_added_order([a, b], [b]), [b])
