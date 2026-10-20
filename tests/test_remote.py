@@ -212,6 +212,11 @@ class BannerTest(RemoteTestCase):
         self.assertIsNone(remote.banner_url(dict(self.WIDE, url='http://x.invalid/{w}x{h}vf.jpg'),
                                             1100))
         self.assertIsNone(remote.banner_url(None, 1100))
+        # A composite Apple makes (normalize.template_effect) at its own 4:1, query kept.
+        composed = {'url': 'https://x.invalid/c/source.png/{w}x{h}SH.FPINV01.jpg?l=en-GB',
+                    'crop': 'SH.FPINV01', 'width': 4320, 'height': 1080, 'color': None}
+        self.assertEqual(remote.banner_url(composed, 1100),
+                         'https://x.invalid/c/source.png/1440x360SH.FPINV01.jpg?l=en-GB')
 
     def test_fetched_into_remote_art(self):
         async def go():

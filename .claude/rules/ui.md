@@ -208,9 +208,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   goes back to the last track (`_on_list_key_pressed`, as for a playlist's suggestions).
   A catalog playlist (`release.playlist_target()`: never the user's) ends the same way,
   without the footer, once `Engine.playlist_page` answers (Featured Artists, More By the
-  curator, You Might Also Like: `release.playlist_shelves()`), and its curator's name
-  becomes the hero's link (`artist_button`, `release.curator_item()`: the curator's category
-  page, a third party's page in the browser, through `window.open_item`).
+  curator, its See All `Engine.curator_playlists`, You Might Also Like:
+  `release.playlist_shelves()`), and its curator's name becomes the hero's link
+  (`artist_button`, `release.curator_item()`: the curator's category page, a third party's
+  or a shared playlist's listener's page in the browser, through `window.open_item`).
 - A pre-release album (`release.is_prerelease()`: the Item's `prerelease`, Apple's
   isPrerelease) says "Coming <date>" in its caption and footer, and the artist page's release
   card too (`release.coming_text()`). Its tracks not out yet (`Track.unreleased`) are dimmed

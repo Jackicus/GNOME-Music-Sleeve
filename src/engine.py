@@ -123,9 +123,12 @@ UI awaits.
     # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
     # suggestions are kept with `basis`, what the playlist held, and asked again once it holds
     # something else; Radio's until its live programmes run out (`expires`), whatever its age.
+    # Each is stamped `shape` too (normalize.ANSWER_SHAPE): one an older version kept in
+    # another shape is asked again, whatever its age.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole
-    await engine.playlist_view(id, 'more-by-curator')   # [Item…]: one of a playlist's views
+    await engine.playlist_view(id, 'featured-artists')   # [Item…]: one of a playlist's views
+    await engine.curator_playlists(id)   # [Item…]: an Apple curator's playlists whole (More By)
     await engine.catalog_artist(name, song_ids)   # the catalog artist a library one stands
                                                   # for, found through its songs, or None
     await engine.related('song', id)  # {album, artists}: a catalog song's (or music video's)
@@ -2279,7 +2282,8 @@ class Engine(GObject.Object):
         answer was asked about, as a string), the answer is kept with it, and one kept with
         another is not fresh, whatever its age: Apple is asked again (and the old one is
         still answered, stale, when Apple cannot be asked). Nor is one whose `expires` has
-        passed (normalize.answer_expired: Radio's live programmes). Demo mode has none of
+        passed (normalize.answer_expired: Radio's live programmes), or one an older version
+        kept in another shape (normalize.answer_current, ANSWER_SHAPE). Demo mode has none of
         Apple's answers: only an invented one the demo library wrote there (marked `demo`), at
         any age, else 'engine-down'."""
         if self.demo:
@@ -2292,7 +2296,7 @@ class Engine(GObject.Object):
         if not refresh:
             kept = await asyncio.to_thread(cache.read_kept, path)
             if (kept is not None and (basis is None or kept.get('basis') == basis)
-                    and not normalize.answer_expired(kept)):
+                    and normalize.answer_current(kept) and not normalize.answer_expired(kept)):
                 return kept
         try:
             client = await self._require_signed_in('browse')
@@ -2307,6 +2311,8 @@ class Engine(GObject.Object):
                 stale['stale'] = True  # young, but for what the playlist held before
             if normalize.answer_expired(stale):
                 stale['stale'] = True  # young, but its programmes are over
+            if not normalize.answer_current(stale):
+                stale['stale'] = True  # young, but kept by a version that shaped it otherwise
             log.info('answering a kept answer no longer fresh: %s', error)
             return stale
         return await asyncio.to_thread(_shape_and_keep, shaper, raw, path,
@@ -2378,11 +2384,13 @@ class Engine(GObject.Object):
         Top 100 and City Charts playlists, Top Music Videos (ranked). Apple refusing the
         playlists' `with` (a 400) is asked again without it (api.CHARTS_PLAIN_PARAMS). With a
         `genre` (a catalog genre's id, genres()'s), that genre's rankings alone
-        (api.charts_params). From <cache>/charts.json (a genre's charts/<genre>.json) for a
-        day, else fetched and kept."""
+        (api.charts_params); Music's, api.ROOT_GENRE, are every genre's. From
+        <cache>/charts.json (a genre's charts/<genre>.json) for a day, else fetched and
+        kept."""
         genre = str(genre or '')
         if genre and not api.is_genre_id(genre):
             raise EngineError('usage', 'charts needs a genre id')
+        genre = api.chart_genre(genre)  # Music's (api.ROOT_GENRE) are every genre's
 
         async def fetch(client):
             storefront = await self._current_storefront()
@@ -2493,11 +2501,11 @@ class Engine(GObject.Object):
         return await asyncio.to_thread(normalize.artist_view_items, view, resources,
                                        str(self.cache_dir))
 
-    async def _whole_view(self, client, path):
-        """The resources of a view (an artist's, an album's), a page of
-        api.ARTIST_VIEW_LIMIT at a time: Apple's `next` links followed (RELATIONSHIP_PAGES
-        at most)."""
-        answer = await self._api(client, path, {'limit': api.ARTIST_VIEW_LIMIT},
+    async def _whole_view(self, client, path, limit=None):
+        """The resources of a view (an artist's, an album's) or a relationship, a page of
+        `limit` (api.ARTIST_VIEW_LIMIT unless given) at a time: Apple's `next` links followed
+        (RELATIONSHIP_PAGES at most)."""
+        answer = await self._api(client, path, {'limit': limit or api.ARTIST_VIEW_LIMIT},
                                  timeout=READ_TIMEOUT)
         resources = api.page_data(answer)
         link = answer.get('next')
@@ -2578,12 +2586,15 @@ class Engine(GObject.Object):
         """The rest of a catalog playlist's page, under its tracks: {id, curator, shelves}
         (normalize.playlist_page): the curator its title names, for the link to their page,
         and the shelves in music.apple.com's order (Featured Artists, More By the curator,
-        You Might Also Like), titled as Apple titles them. One read, the catalog playlist with
-        its curator and views (api.PLAYLIST_PARAMS), asked again with the documented views
-        alone (api.PLAYLIST_PLAIN_PARAMS) when Apple answers it with a 400. From
-        <cache>/playlists/<id>.json for a day, else fetched and kept, with the views it asked
-        for as its `basis`. A playlist the catalog lacks is Apple's 404 (EngineError.status);
-        a library playlist's id is `usage` (its catalog id is asked by)."""
+        You Might Also Like), titled as Apple titles them. Two reads: the catalog playlist
+        with its curator and views (api.PLAYLIST_PARAMS), asked again with the documented
+        views alone (api.PLAYLIST_PLAIN_PARAMS) when Apple answers it with a 400, then, for
+        an Apple curator's, a page of the curator's playlists, which More By shows (Apple's
+        view of it is empty: api.CURATOR_PLAYLISTS_ENDPOINT; More By is left out when that
+        read fails). From <cache>/playlists/<id>.json for a day, else fetched and kept, with
+        the views it asked for as its `basis`. A playlist the catalog lacks is Apple's 404
+        (EngineError.status); a library playlist's id is `usage` (its catalog id is asked
+        by)."""
         playlist_id = str(playlist_id or '')
         if not playlist_id or api.is_library_id(playlist_id):
             raise EngineError('usage', 'playlist_page needs a catalog playlist id')
@@ -2592,25 +2603,39 @@ class Engine(GObject.Object):
             storefront = await self._current_storefront()
             path = api.PLAYLIST_ENDPOINT.format(storefront=storefront, id=playlist_id)
             try:
-                return await self._api(client, path, api.PLAYLIST_PARAMS, timeout=READ_TIMEOUT)
+                playlist = await self._api(client, path, api.PLAYLIST_PARAMS,
+                                           timeout=READ_TIMEOUT)
             except EngineError as error:
                 if error.status != 400:
                     raise
                 log.info('playlist %s with its views: %s; asking for fewer', playlist_id,
                          error)
-            return await self._api(client, path, api.PLAYLIST_PLAIN_PARAMS,
-                                   timeout=READ_TIMEOUT)
+                playlist = await self._api(client, path, api.PLAYLIST_PLAIN_PARAMS,
+                                           timeout=READ_TIMEOUT)
+            curator_playlists = None
+            curator_id = api.apple_curator_id(playlist)
+            if curator_id is not None:
+                try:
+                    curator_playlists = await self._api(
+                        client, api.CURATOR_PLAYLISTS_ENDPOINT.format(storefront=storefront,
+                                                                      id=curator_id),
+                        {'limit': api.CURATOR_PLAYLISTS_LIMIT}, timeout=READ_TIMEOUT)
+                except EngineError as error:
+                    if error.code == 'engine-down':
+                        raise
+                    log.info('the playlists of curator %s: %s', curator_id, error)
+            return {'playlist': playlist, 'curatorPlaylists': curator_playlists}
         return await self._kept_answer(
             normalize.playlist_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
             normalize.playlist_page, basis=api.PLAYLIST_PARAMS['views'])
 
     async def playlist_view(self, playlist_id, view):
-        """One of a catalog playlist's views (api.PLAYLIST_VIEWS) whole, for its See All: its
-        Items as playlist_page() has them (the playlist itself left out), Apple's `next`
-        links followed."""
+        """One of a catalog playlist's views (api.PLAYLIST_READABLE_VIEWS) whole, for its See
+        All: its Items as playlist_page() has them (the playlist itself left out), Apple's
+        `next` links followed. More By the curator is curator_playlists()."""
         playlist_id, view = str(playlist_id or ''), str(view or '')
         if (not playlist_id or api.is_library_id(playlist_id)
-                or view not in api.PLAYLIST_VIEWS):
+                or view not in api.PLAYLIST_READABLE_VIEWS):
             raise EngineError('usage', 'playlist_view needs a catalog playlist id and a view')
         client = await self._require_signed_in('browse')
         storefront = await self._current_storefront()
@@ -2618,6 +2643,21 @@ class Engine(GObject.Object):
                                                  view=view)
         resources = await self._whole_view(client, path)
         return await asyncio.to_thread(normalize.playlist_view_items, resources, playlist_id,
+                                       str(self.cache_dir))
+
+    async def curator_playlists(self, curator_id):
+        """An Apple curator's playlists whole (api.CURATOR_PLAYLISTS_ENDPOINT), for See All on
+        a catalog playlist's More By: Items as playlist_page() has them, every one (the page
+        leaves its own playlist out), a page of api.CURATOR_PLAYLISTS_LIMIT at a time,
+        Apple's `next` links followed."""
+        curator_id = str(curator_id or '')
+        if not api.is_curator_id(curator_id):
+            raise EngineError('usage', 'curator_playlists needs an Apple curator id')
+        client = await self._require_signed_in('browse')
+        storefront = await self._current_storefront()
+        path = api.CURATOR_PLAYLISTS_ENDPOINT.format(storefront=storefront, id=curator_id)
+        resources = await self._whole_view(client, path, api.CURATOR_PLAYLISTS_LIMIT)
+        return await asyncio.to_thread(normalize.playlist_view_items, resources, '',
                                        str(self.cache_dir))
 
     async def playlist_suggestions(self, playlist_id, refresh=False, limit=SUGGESTIONS_LIMIT,

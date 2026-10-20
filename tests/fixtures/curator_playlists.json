@@ -1,0 +1,17 @@
+{
+  "next": "/v1/catalog/gb/apple-curators/1724049500/playlists?offset=10",
+  "data": [
+    {"id": "pl.aW52ZW50ZWRwbA", "type": "playlists",
+     "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwbA",
+     "attributes": {"name": "Invented Night Drive", "curatorName": "Apple Music Invented",
+                    "playParams": {"id": "pl.aW52ZW50ZWRwbA", "kind": "playlist"}}},
+    {"id": "pl.aW52ZW50ZWRwMg", "type": "playlists",
+     "href": "/v1/catalog/gb/playlists/pl.aW52ZW50ZWRwMg",
+     "attributes": {"name": "Invented Morning Run", "curatorName": "Apple Music Invented",
+                    "artwork": {"url": "https://example.invalid/image/thumb/cGwy/{w}x{h}cc.jpg",
+                                "width": 1080, "height": 1080},
+                    "playParams": {"id": "pl.aW52ZW50ZWRwMg", "kind": "playlist"}}},
+    {"id": "1724049500", "type": "apple-curators",
+     "attributes": {"name": "Apple Music Invented"}}
+  ]
+}

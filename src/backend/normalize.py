@@ -39,6 +39,12 @@ LYRICS_MAX_AGE = 30 * 24 * 60 * 60
 # what the engine answers, marked stale, when Apple cannot be asked (the engine down, signed
 # out, offline), so it stays until an answer from Apple replaces it, or for this long.
 ANSWER_KEEP_AGE = 30 * 24 * 60 * 60
+# The shape of the answers this version keeps (write_answer stamps it as `shape`). One kept by
+# a version that shaped them otherwise (another `shape`, or none: 1) is not fresh, whatever
+# its age (Engine._kept_answer asks Apple again), and is answered only when Apple cannot be
+# asked, stale. Bump it when a shaper's answer carries something new: 2, New's banners and
+# links, and a catalog playlist's More By the curator.
+ANSWER_SHAPE = 2
 
 # What prune_caches() leaves of the caches that only grow: the covers the pages fetch
 # themselves, and the lyrics of the songs played last.
@@ -1297,10 +1303,11 @@ def normalize_station(raw_station, cache_dir=None, art_urls=None):
 
 
 def curator_link(raw):
-    """A third party's curator (type `curators`: a label's, a magazine's editors) as
-    normalize_item answers one: the app has no page for it (category_page reads Apple's
-    curators only), so it is a `link` Item, opened on music.apple.com (its `url`), with
-    nothing to play and its name; kind `unknown` without an https page."""
+    """A third party's curator (type `curators`: a label's, a magazine's editors; or a
+    shared playlist's listener, `social-profiles`) as normalize_item answers one: the app
+    has no page for it (category_page reads Apple's curators only), so it is a `link` Item,
+    opened on music.apple.com (its `url`), with nothing to play and its name; kind
+    `unknown` without an https page."""
     attrs = raw.get('attributes') or {}
     url = attrs.get('url')
     artwork = (attrs.get('artwork') or {}).get('url')
@@ -1868,7 +1875,8 @@ def editorial_link(link):
     - 'grouping' (`…/viewGrouping?id=<id>`): Engine.grouping(id), a page of shelves;
     - 'multiroom' (`…/viewMultiRoom?fcId=<id>`): Engine.multiroom(id), a page of shelves;
     - 'charts' (`…/viewTop?genreId=<n>`, `music.apple.com/<sf>/charts`): the Charts page,
-      `genre` the genre's id when the link names one;
+      `genre` the genre's id when the link names one other than Music (api.ROOT_GENRE,
+      every genre's);
     - 'link' (any other https URL, and one marked `target: 'external'`): opened in the
       browser, `id` and `url` the URL.
 
@@ -1909,7 +1917,7 @@ def editorial_link(link):
             found = query.get(name, '')
             if kind == 'charts':
                 answer = {'title': label, 'kind': 'charts', 'id': 'charts', 'url': None}
-                if api.is_genre_id(found):
+                if api.chart_genre(found):  # Music's own is every genre's: All Genres
                     answer['genre'] = found
                 return answer
             if not api.is_editorial_id(found):
@@ -2169,6 +2177,12 @@ def _radio_expiry(shelves, now=None):
     now = now or datetime.now(UTC)
     floor = datetime.fromtimestamp(now.timestamp() + RADIO_MIN_AGE, UTC).strftime(STAMP_FORMAT)
     return max(min(ends), floor)
+
+
+def answer_current(answer):
+    """Whether a kept answer is in the shape this version keeps (ANSWER_SHAPE): one from
+    an older version is not fresh, whatever its age."""
+    return isinstance(answer, dict) and answer.get('shape', 1) == ANSWER_SHAPE
 
 
 def answer_expired(answer, now=None):
@@ -2717,14 +2731,31 @@ BANNER_EDITORIAL_CROP = 'sr'
 BANNER_HERO_CROP = 'vf'
 # The size and crop part of an artwork URL template ("{w}x{h}bb.jpg", "{w}x{h}{c}.{f}").
 _TEMPLATE_TAIL = re.compile(r'\{w\}x\{h\}(?:\{c\}|[a-z]{2})?\.(?:\{f\}|[A-Za-z]+)$')
+# The size and effect part of a template Apple composes (README.md, "New's banners"): an
+# effect code, upper case, then the format and maybe a query ("{w}x{h}SH.FPESS04.jpg?l=en-GB",
+# an Essentials playlist's banner, its source picture placed on a colour beside a word).
+_EFFECT_TAIL = re.compile(r'\{w\}x\{h\}([A-Z]{2,4}\.[A-Z0-9]{2,16})\.[A-Za-z]+(?:\?[^/#]*)?$')
+
+
+def template_effect(url):
+    """The effect code of an https artwork template Apple composes ("SH.FPESS04"), or None
+    for any other URL."""
+    if not isinstance(url, str) or not url.startswith('https://'):
+        return None
+    tail = _EFFECT_TAIL.search(url)
+    return tail.group(1) if tail is not None else None
 
 
 def banner_template(url, crop):
     """An artwork URL template cut with `crop` (Apple's crop code: `vf`, `sr`), its size left
-    as {w}x{h} for the app to fill: "…/{w}x{h}bb.jpg" is "…/{w}x{h}vf.jpg". None for a URL
-    that is not an https template."""
+    as {w}x{h} for the app to fill: "…/{w}x{h}bb.jpg" is "…/{w}x{h}vf.jpg". A template with
+    an effect (template_effect: Apple's composite of its source, made for that shape) is kept
+    as it is, query and all: a crop of its source would cut the picture. None for a URL that
+    is not an https template."""
     if not isinstance(url, str) or not url.startswith('https://'):
         return None
+    if template_effect(url) is not None:
+        return url
     tail = _TEMPLATE_TAIL.search(url)
     if tail is None:
         return None
@@ -2734,8 +2765,10 @@ def banner_template(url, crop):
 def wide_artwork(artwork, crop):
     """An Apple artwork dict ({url, width, height, bgColor}) as a wide image to fetch, {url,
     crop, width, height, color}: `url` its template cut with `crop` (banner_template), {w}x{h}
-    left to fill; `width` and `height` the source's pixels; `color` its background colour
-    (#rrggbb) or None. None without an https template and a size."""
+    left to fill, and `crop` that crop, or the template's effect code when it has one (it is
+    asked at its source's shape, as an `sr` cut is: remote.banner_aspect); `width` and
+    `height` the source's pixels; `color` its background colour (#rrggbb) or None. None
+    without an https template and a size."""
     if not isinstance(artwork, dict):
         return None
     url = banner_template(artwork.get('url'), crop)
@@ -2744,8 +2777,8 @@ def wide_artwork(artwork, crop):
             or width <= 0 or height <= 0):
         return None
     color = artwork.get('bgColor')
-    return {'url': url, 'crop': crop, 'width': width, 'height': height,
-            'color': format_color(color) if isinstance(color, str) else None}
+    return {'url': url, 'crop': template_effect(url) or crop, 'width': width,
+            'height': height, 'color': format_color(color) if isinstance(color, str) else None}
 
 
 def artist_banner(attrs):
@@ -3170,21 +3203,25 @@ PLAYLIST_SHELVES = ('featured-artists', 'more-by-curator', 'you-might-also-like'
 
 def playlist_page(raw, cache_dir):
     """The rest of a catalog playlist's page (Engine.playlist_page()'s answer, from
-    api.PLAYLIST_ENDPOINT's answer), as {id, curator, shelves}:
+    {playlist: api.PLAYLIST_ENDPOINT's answer, curatorPlaylists: a page of its Apple
+    curator's playlists, api.CURATOR_PLAYLISTS_ENDPOINT's, or None}), as
+    {id, curator, shelves}:
 
     - `id`: the catalog playlist's id.
     - `curator`: who made it, for the link under its title (playlist_curator()): an Apple
-      curator's category tile (its page is the category page), a third party's `link` (its
-      page on music.apple.com), or None.
+      curator's category tile (its page is the category page), a third party's or a shared
+      playlist's listener's `link` (their page on music.apple.com), or None.
     - `shelves`: [{key, title, items, more}] in PLAYLIST_SHELVES's order, titled as Apple
       titles the views ('' without a title: the app names it), `more` True when Apple has
-      more than it sent. The curator's playlists and those like it leave the playlist itself
-      out; a shelf with nothing the app can show is left out.
+      more than it sent. More By the curator is the curator's playlists (Apple sends its
+      view empty) unless the view holds some. The curator's playlists and those like it
+      leave the playlist itself out; a shelf with nothing the app can show is left out.
 
     Items are shaped as a search's are (_shelf_item: an artist, a playlist with its
     curator)."""
     raw = raw if isinstance(raw, dict) else {}
-    data = raw.get('data')
+    playlist = raw.get('playlist')
+    data = playlist.get('data') if isinstance(playlist, dict) else None
     resource = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else {}
     attrs = resource.get('attributes') if isinstance(resource.get('attributes'), dict) else {}
     playlist_id = str(resource.get('id') or '')
@@ -3197,6 +3234,15 @@ def playlist_page(raw, cache_dir):
         found[name] = {'key': name, 'title': title.strip() if isinstance(title, str) else '',
                        'items': playlist_view_items(view.get('data'), playlist_id, cache_dir),
                        'more': bool(view.get('next'))}
+    more_by = found.get('more-by-curator')
+    curator_playlists = raw.get('curatorPlaylists')
+    if (playlist_id and isinstance(curator_playlists, dict)
+            and (more_by is None or not more_by['items'])):
+        found['more-by-curator'] = {
+            'key': 'more-by-curator', 'title': more_by['title'] if more_by else '',
+            'items': playlist_view_items(curator_playlists.get('data'), playlist_id,
+                                         cache_dir),
+            'more': bool(curator_playlists.get('next'))}
     curator_name = attrs.get('curatorName') if isinstance(attrs.get('curatorName'), str) else ''
     return {
         'id': playlist_id,
@@ -3210,9 +3256,9 @@ def playlist_curator(resource, name=''):
     """Who made a catalog playlist, from its `curator` relationship (`include=curator`): an
     Apple curator (`apple-curators`) as its category tile (normalize_curator) titled with its
     whole name, not a tile's short one (named `name`, the playlist's curatorName, when Apple
-    sent its id alone), a third party (`curators`) as
-    a `link` to its page on music.apple.com (curator_link); None for anything else, one with
-    no id, or a third party without an https page."""
+    sent its id alone), a third party (`curators`) or a shared playlist's listener
+    (`social-profiles`) as a `link` to their page on music.apple.com (curator_link); None for
+    anything else, one with no id, or one of those without an https page."""
     relationships = resource.get('relationships') if isinstance(resource, dict) else None
     curator = relationships.get('curator') if isinstance(relationships, dict) else None
     data = curator.get('data') if isinstance(curator, dict) else None
@@ -3230,19 +3276,21 @@ def playlist_curator(resource, name=''):
         if full:  # the page the link opens is titled with the whole name, not a tile's
             item.update(title=full, subtitle=None)
         return item
-    if raw.get('type') == 'curators':
+    if raw.get('type') in ('curators', 'social-profiles'):
         item = curator_link(raw)
         return item if item['kind'] == 'link' else None
     return None
 
 
 def playlist_view_items(resources, playlist_id, cache_dir):
-    """The Items of one of a playlist's views whole (See All), as playlist_page() has them:
-    the playlist itself left out, what the app cannot show too."""
+    """The Items of one of a playlist's views whole (See All), or of its curator's playlists,
+    as playlist_page() has them: the playlist itself left out (none without a
+    `playlist_id`), what the app cannot show too."""
     items = []
     for resource in resources if isinstance(resources, list) else []:
         item = _shelf_item(resource, cache_dir, curators=False)
-        if item is not None and str(playlist_id) not in (item['id'], item.get('catalogId')):
+        if item is not None and not (playlist_id and str(playlist_id) in (
+                item['id'], item.get('catalogId'))):
             items.append(item)
     return items
 
@@ -3458,11 +3506,12 @@ def multiroom_cache_path(cache_dir, multiroom_id):
 
 def write_answer(path, answer, cache_dir, generation=None):
     """Keep `answer` at `path` (in the cache at `cache_dir`), atomically, as
-    JSON without spaces, stamped `cached` with when; not once the cache's
-    generation has moved from `generation` (store.py). Best effort: a cache
+    JSON without spaces, stamped `cached` with when and `shape` with ANSWER_SHAPE; not once
+    the cache's generation has moved from `generation` (store.py). Best effort: a cache
     that cannot be written is only a cache."""
     answer = dict(answer)
     answer['cached'] = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    answer['shape'] = ANSWER_SHAPE
     try:
         store.atomic_write(path, lambda f: json.dump(answer, f, separators=(',', ':')),
                            root=cache_dir, text=True, generation=generation)

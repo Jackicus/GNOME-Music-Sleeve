@@ -647,7 +647,10 @@ changes, change it here, with the date. The plan they came from is in
   with new rows and the focus lost. The Player replays the edits not yet held onto each
   snapshot before comparing it, so events are still applied as they come, never delayed;
   Clear and its Undo are not replayed (nothing is moved while a Clear is out). No toast for
-  a move (the row moves); a screen reader is told where it went.
+  a move (the row moves); a screen reader is told where it went. A move made while Shuffle
+  is on is lost when Shuffle is turned off: MusicKit puts back its own unshuffled order, the
+  moved entry with it, and Up Next follows MusicKit's queue (checked live on 2026-10-20). The
+  app does not replay the moves over the new order: they were made in an order that is gone.
 - **Up Next with covers and History; Now Playing tinted by the artwork** (2026-10-20,
   #353). As Apple's queues do, each Up Next row shows its entry's cover in place of a
   number (the entry playing has the track rows' play symbol over its cover), under a
@@ -965,14 +968,17 @@ changes, change it here, with the date. The plan they came from is in
   page's are. The demo library invents an answer for each hand-written album.
 - **A catalog playlist ends with the catalog's shelves, its curator a link** (2026-10-20,
   #371). As an album's page does: Featured Artists, More By the curator and You Might Also
-  Like, from one read of the playlist with its curator and views (`Engine.playlist_page`),
-  kept a day (`playlists/`), asked after the tracks' first paint and appended to the list,
+  Like, from one read of the playlist with its curator and views (`Engine.playlist_page`)
+  and, for an Apple curator's, a page of the curator's playlists (Apple's More By view is
+  always empty and has no /view/ read: checked live on 20 playlists, #532), kept a day
+  (`playlists/`), asked after the tracks' first paint and appended to the list,
   only for a playlist of the catalog's (Apple's or a curator's, in the library or not:
   `release.playlist_target()`); a playlist of the user's has Suggested Songs there instead.
   The curator's name under the title stays plain text until that answer names the curator,
   then is the same flat link an album's artist is: an Apple curator's page is the category
-  page the app already has; a third party's (`curators`) has no page the app can read, so it
-  opens on music.apple.com, as a third-party curator found by Search does. No answer leaves
+  page the app already has; a third party's (`curators`) and a shared playlist's listener's
+  (`social-profiles`, their profile) have no page the app can read, so they open on
+  music.apple.com, as a third-party curator found by Search does. No answer leaves
   the plain name and the songs, and nothing is toasted.
 - **Radio is Apple's radio page, with Recently Played as one shelf** (2026-10-20, #336).
   The page is the editorial grouping behind music.apple.com's own Radio page
@@ -1018,7 +1024,9 @@ changes, change it here, with the date. The plan they came from is in
   under a new name. The choice is the page's: Top Charts opens on all genres, as
   music.apple.com's charts do, and a `viewTop?genreId=` link on its genre (titled Top
   Charts, the genre's name, or the link's own words until the genres are read, in the
-  menu); a setting would have a Top Charts tile open on a genre chosen days before. Each
+  menu), but for Music's (34, `api.ROOT_GENRE`, the genre every other belongs to, which
+  New's own "Charts" link names): its charts are every genre's, so it opens All Genres
+  (#530); a setting would have a Top Charts tile open on a genre chosen days before. Each
   genre's answer is kept a day beside every genre's (`charts/<id>.json`), the genres too
   (`genres.json`). The page is still a `ShelvesPage`: the menu is a small class it holds
   (`pages.charts.GenreMenu`), its pure parts src/charts.py's.

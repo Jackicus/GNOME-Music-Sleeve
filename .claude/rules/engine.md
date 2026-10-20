@@ -136,7 +136,9 @@ paths:
   views it asked for, `api.ALBUM_PARAMS`, `api.PLAYLIST_PARAMS`; Replay, the shape it is kept in,
   `normalize.REPLAY_SHAPE`, bumped when its reading of Apple's answer changes) is kept with it and is not fresh
   for another, whatever its age; nor is one whose `expires` has passed (Radio's, once a live
-  station's programmes run out: `normalize.answer_expired()`). Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations') or in an older `format` than `lyrics.FORMAT` (bump it when the lines carry something new). `item()`'s artwork
+  station's programmes run out: `normalize.answer_expired()`), nor one an older version kept
+  in another `shape` (`normalize.answer_current()`: bump `normalize.ANSWER_SHAPE` when a
+  shaper's answer carries something new). Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations') or in an older `format` than `lyrics.FORMAT` (bump it when the lines carry something new). `item()`'s artwork
   goes to remote-art/ (`place_in_remote_art`): art/ and thumb/ are the library's, pruned
   against library.json after every sync.
 - Cache writes: every file in the cache goes through `backend/store.py` (`atomic_write`, or

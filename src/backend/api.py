@@ -107,11 +107,22 @@ GENRES_PARAMS = {}
 # What a genre's id may be: Apple's are digits; anything else is not asked for (it goes into
 # a query and the kept answer's file name).
 GENRE_ID = re.compile(r'^[0-9]{1,12}$')
+# Music, the genre every other belongs to (in `genres`, the one without a parent): its
+# charts are every genre's, so a link naming it (New's "Charts", `viewTop?genreId=34`)
+# opens All Genres, and the charts are never asked for it (chart_genre).
+ROOT_GENRE = '34'
 
 
 def is_genre_id(value):
     """Whether `value` may name a catalog genre (GENRE_ID)."""
     return isinstance(value, str) and GENRE_ID.match(value) is not None
+
+
+def chart_genre(value):
+    """The genre the charts are asked for: `value` when it is_genre_id and not ROOT_GENRE,
+    else '' (every genre's)."""
+    value = str(value or '')
+    return value if is_genre_id(value) and value != ROOT_GENRE else ''
 
 
 def charts_params(genre=None):
@@ -241,19 +252,49 @@ MORE_BY_VIEW = 'full-albums'
 MORE_BY_LIMIT = 30
 # A catalog playlist's page under its tracks (Engine.playlist_page), as music.apple.com's
 # asks for it: the playlist with its curator (`include=curator`: an Apple curator,
-# `apple-curators`, or a third party's, `curators`, with its name and page) and the views
-# its page shows below the list, each with Apple's own title, its first page of resources
-# and a `next` link where there are more. featured-artists ("Featured Artists") and
-# more-by-curator (the curator's other playlists) are Apple's documented playlist views;
-# you-might-also-like is the album's view of that name, asked of a playlist too (to confirm
-# live: Apple leaves a view it does not have out of the answer, as the album's
-# related-albums was). A 400 is asked again with the documented views alone.
+# `apple-curators`, a third party's, `curators`, or a shared playlist's listener,
+# `social-profiles`, with its name and page) and the views its page shows below the list,
+# each with Apple's own title, its first page of resources and a `next` link where there
+# are more. featured-artists ("Featured Artists") and more-by-curator (the curator's other
+# playlists) are Apple's documented playlist views; you-might-also-like is the album's view
+# of that name, asked of a playlist too (Apple leaves it out of the answer: no playlist has
+# it). A 400 is asked again with the documented views alone.
 PLAYLIST_ENDPOINT = '/v1/catalog/{storefront}/playlists/{id}'
 PLAYLIST_VIEWS = ('featured-artists', 'more-by-curator', 'you-might-also-like')
 PLAYLIST_PARAMS = {'views': ','.join(PLAYLIST_VIEWS), 'include': 'curator'}
 PLAYLIST_PLAIN_PARAMS = {'views': 'featured-artists,more-by-curator', 'include': 'curator'}
-# One of a playlist's views whole (See All), a page of it at a time.
+# One of a playlist's views whole (See All), a page of it at a time: not more-by-curator,
+# which Apple has no view of to read (a 404; PLAYLIST_READABLE_VIEWS).
 PLAYLIST_VIEW_ENDPOINT = '/v1/catalog/{storefront}/playlists/{id}/view/{view}'
+PLAYLIST_READABLE_VIEWS = ('featured-artists', 'you-might-also-like')
+# More By the curator: Apple sends its view titled ("More By <curator>", or untitled) but
+# empty (20 playlists of 20, checked live on 2026-10-20, whatever was extended), so the
+# page's second read is an Apple curator's own playlists, its `playlists` relationship, a
+# page of CURATOR_PLAYLISTS_LIMIT (the size asked live); See All reads them all, a page of
+# that size at a time. A third party's or a listener's curator has none to read.
+CURATOR_PLAYLISTS_ENDPOINT = '/v1/catalog/{storefront}/apple-curators/{id}/playlists'
+CURATOR_PLAYLISTS_LIMIT = 10
+# What an Apple curator's id may be: Apple's are digits (it goes into a path).
+CURATOR_ID = re.compile(r'^[0-9]{1,20}$')
+
+
+def is_curator_id(value):
+    """Whether `value` may name an Apple curator (CURATOR_ID)."""
+    return isinstance(value, str) and CURATOR_ID.match(value) is not None
+
+
+def apple_curator_id(answer):
+    """The id of the Apple curator (`apple-curators`) an answer's first resource names as
+    its `curator` (a catalog playlist's, read with `include=curator`), or None for another
+    kind of curator, or none."""
+    data = page_data(answer)
+    relationships = data[0].get('relationships') if data else None
+    relationship = relationships.get('curator') if isinstance(relationships, dict) else None
+    related = page_data(relationship)
+    if not related or related[0].get('type') != 'apple-curators':
+        return None
+    found = str(related[0].get('id') or '')
+    return found if is_curator_id(found) else None
 # A catalog song with its albums: the catalog album a library album is, found through one of
 # its songs (a library album carries no catalog id of its own).
 SONG_ALBUMS_PARAMS = {'include': 'albums'}

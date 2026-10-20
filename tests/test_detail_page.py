@@ -293,13 +293,19 @@ class DetailPageTest(PageTestCase):
         page.artist_button.emit('clicked')
         self.assertEqual([(item.kind, item.id) for item in self.window.opened],
                          [('category', '1724049500')])
-        # See All fetches the rest of a shelf Apple has more of, the playlist left out.
+        # See All fetches the rest of a shelf Apple has more of, the playlist left out: More
+        # By is the curator's playlists (Apple has no view of it to read).
         more = page._shelf_column.shelves[1]
         self.assertIsNone(page._shelf_column.shelves[0].complete)
-        self.app.engine.answers['playlist_view'] = [
-            {'id': 'pl.aW52ZW50ZWRwbA', 'kind': 'playlist', 'title': 'This One', 'groups': []},
-            {'id': 'pl.aW52ZW50ZWQ4', 'kind': 'playlist', 'title': 'Other 8', 'groups': []}]
+        curators = []
+        self.app.engine.answers['curator_playlists'] = lambda curator_id: (
+            curators.append(curator_id),
+            [{'id': 'pl.aW52ZW50ZWRwbA', 'kind': 'playlist', 'title': 'This One', 'groups': []},
+             {'id': 'pl.aW52ZW50ZWQ4', 'kind': 'playlist', 'title': 'Other 8',
+              'groups': []}])[1]
         await more.complete()
+        self.assertEqual(curators, ['1724049500'])
+        self.assertNotIn('playlist_view', self.app.engine.calls)
         self.assertEqual([item.id for item in more.items], ['pl.aW52ZW50ZWQ4'])
         # Where Tab from a track goes into the shelves: after the songs a filter shows.
         self.assertEqual(page._shelves_start, 4)
