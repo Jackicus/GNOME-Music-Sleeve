@@ -192,6 +192,26 @@ globalThis.document = {
     },
 };
 
+// The page's navigator: requestMediaKeySystemAccess() grants the key systems in
+// `page.keySystems` (Widevine, as Google Chrome's page does) and rejects the rest with the
+// NotSupportedError a browser without the module throws; `page.keyRequests` records each
+// request as [keySystem, configs].
+globalThis.navigator = {};
+
+function resetNavigator() {
+    page.keySystems = ['com.widevine.alpha'];
+    page.keyRequests = [];
+    navigator.requestMediaKeySystemAccess = async function (keySystem, configs) {
+        page.keyRequests.push([keySystem, configs]);
+        if (!page.keySystems.includes(keySystem)) {
+            const error = new Error('Unsupported keySystem or supportedConfigurations.');
+            error.name = 'NotSupportedError';
+            throw error;
+        }
+        return { keySystem };
+    };
+}
+
 // -- DOMParser ---------------------------------------------------------------------------------
 
 const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -340,6 +360,7 @@ function newPage(version) {
     audios.length = 0;
     audioFailure = null;
     page.elements = {};
+    resetNavigator();
     const mk = new FakeInstance();
     window.MusicKit = fakeMusicKit(mk);
     window.__amEvent = json => posted.push(JSON.parse(json));

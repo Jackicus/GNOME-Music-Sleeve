@@ -215,6 +215,25 @@ class BridgeTest(unittest.TestCase):
                                             'storefront': 'us', 'bitrate': 256})
 
     @scenario("""
+        const granted = await bridge.drm();
+        const asked = page.keyRequests.map(request => request[0]);
+        const configs = page.keyRequests[0][1];
+        page.keySystems = [];   // Chromium without its Widevine module
+        const refused = await bridge.drm();
+        delete navigator.requestMediaKeySystemAccess;   // no Encrypted Media Extensions
+        return {granted, asked, configs, refused, none: await bridge.drm()};
+    """)
+    def test_drm_asks_for_widevine(self, value):
+        self.assertEqual(value['granted'], {'widevine': True})
+        self.assertEqual(value['asked'], ['com.widevine.alpha'])
+        self.assertEqual(value['configs'][0]['audioCapabilities'][0]['contentType'],
+                         'audio/mp4; codecs="mp4a.40.2"')
+        self.assertEqual(value['refused'], {
+            'widevine': False, 'error': 'Unsupported keySystem or supportedConfigurations.'})
+        self.assertEqual(value['none'], {'widevine': False,
+                                         'error': 'no Encrypted Media Extensions'})
+
+    @scenario("""
         const first = bridge.subscribe();
         const second = bridge.subscribe();
         return {first, second, listeners: mk.listenerCounts()};

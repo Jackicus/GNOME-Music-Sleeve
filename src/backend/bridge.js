@@ -104,6 +104,15 @@
         '.navigation__account-name', '.account-name', '.user-name'
     ];
 
+    // The key system Apple's full streams are protected with, and what they ask of it: AAC
+    // audio in MP4, decrypted in software (all a desktop browser has). Google Chrome grants
+    // it; Chromium does without its Widevine module, as does a browser that has not fetched it.
+    const WIDEVINE = 'com.widevine.alpha';
+    const WIDEVINE_CONFIGS = [{
+        initDataTypes: ['cenc'],
+        audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"', robustness: 'SW_SECURE_CRYPTO' }]
+    }];
+
     function formatDuration(ms) {
         if (!ms || ms <= 0) return '0:00';
         const totalSec = Math.floor(ms / 1000);
@@ -577,6 +586,20 @@
                 }
             }
             return null;
+        },
+
+        // Whether this browser can decrypt the songs: {widevine: true}, or {widevine: false,
+        // error} when it refuses Widevine or has no Encrypted Media Extensions. Never throws.
+        drm: async function () {
+            if (typeof navigator === 'undefined' || typeof navigator.requestMediaKeySystemAccess !== 'function') {
+                return { widevine: false, error: 'no Encrypted Media Extensions' };
+            }
+            try {
+                await navigator.requestMediaKeySystemAccess(WIDEVINE, WIDEVINE_CONFIGS);
+                return { widevine: true };
+            } catch (err) {
+                return { widevine: false, error: describeError(err) };
+            }
         },
 
         signin: async function () {

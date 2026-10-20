@@ -42,8 +42,8 @@ body:
   - type: input
     id: chrome
     attributes:
-      label: Google Chrome version
-      description: The playback engine. `google-chrome-stable --version` prints it.
+      label: Browser and version
+      description: The playback engine's browser (Google Chrome, unless Preferences names another). `google-chrome-stable --version` prints Chrome's.
       placeholder: Google Chrome 154.0.0000.00
     validations:
       required: true

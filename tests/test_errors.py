@@ -16,7 +16,10 @@ from applemusic.errors import error_message
 class ErrorMessageTest(unittest.TestCase):
     def test_the_table(self):
         self.assertEqual(error_message('no-browser'), (
-            'Google Chrome is needed to play Apple Music', 'Preferences',
+            'Install Google Chrome to play Apple Music', 'Preferences',
+            'app.show-engine-preferences'))
+        self.assertEqual(error_message('no-widevine'), (
+            'This browser cannot play songs; Google Chrome can', 'Preferences',
             'app.show-engine-preferences'))
         self.assertEqual(error_message('engine-down'), (
             'The playback engine is not running', 'Start', 'app.start-engine'))
@@ -90,6 +93,26 @@ class LostTest(AppTestCase):
         self.app.signing_out = False
         self.app._quitting = object()  # the quit under way
         self.app.engine.emit('lost', 'stopped')
+        self.assertEqual(self.app.toasts, [])
+
+
+
+class WidevineTest(AppTestCase):
+    def setUp(self):
+        super().setUp()
+        self.app.engine.connect('notify::widevine', self.app._on_engine_widevine)
+
+    def test_a_browser_without_widevine_is_told_as_the_engine_comes_up(self):
+        self.app.engine.widevine = False
+        self.assertEqual(self.app.toasts, [(
+            'This browser cannot play songs; Google Chrome can', 'Preferences',
+            'app.show-engine-preferences')])
+        self.app.engine.widevine = True  # the next start's browser can
+        self.assertEqual(len(self.app.toasts), 1)
+
+    def test_nothing_while_the_account_changes(self):
+        self.app.signing_in = True
+        self.app.engine.widevine = False
         self.assertEqual(self.app.toasts, [])
 
 

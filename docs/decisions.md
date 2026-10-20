@@ -231,6 +231,15 @@ changes, change it here, with the date. The plan they came from is in
   app's icon doing nothing.
 - **Chrome as the engine** (2026-09-27). See "Why there is a browser inside" in
   `docs/architecture.md`. The real Chrome, because Chromium ships without Widevine.
+- **Any Chromium-based browser with Widevine** (2026-10-20, #326). Nothing in the engine is
+  Chrome's alone (the pipe, the flags, the profile's lock and Local State are Chromium's), so
+  the browser is checked by what it can do rather than its name: once the engine is up, the
+  page is asked for Widevine (`navigator.requestMediaKeySystemAccess`), and a browser that
+  refuses it is kept running (the library, browsing and previews need none) but plays no
+  song (`no-widevine`), with a toast saying so. Google Chrome is still the one tried first
+  and the one tested; Edge, Brave, Vivaldi and Chromium follow it, and a snap is skipped (it
+  cannot use a profile under a hidden directory). Not Firefox: it no longer speaks CDP, and
+  WebDriver BiDi listens on a port, which the pipe was chosen to avoid.
 - **The app owns MPRIS** (2026-09-27). The app publishes `org.mpris.MediaPlayer2.<app id>`
   from its Player, and Chrome runs with `--disable-features=HardwareMediaKeyHandling` so its
   own player never appears. A module of D-Bus code and every command relayed, in return

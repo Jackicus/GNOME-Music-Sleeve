@@ -24,8 +24,8 @@ BASE_ID = 'io.github.jackicus.MusicSleeve'
 
 
 class FakeEngine(GObject.Object):
-    """The Engine as the app sees it: `state`, `authorized`, `headless`, the `lost` signal,
-    and start/stop/kill that record themselves."""
+    """The Engine as the app sees it: `state`, `authorized`, `headless`, `widevine`, the
+    `lost` signal, and start/stop/kill that record themselves."""
 
     __gsignals__ = {
         'lost': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
@@ -34,6 +34,7 @@ class FakeEngine(GObject.Object):
     state = GObject.Property(type=str, default='down')
     authorized = GObject.Property(type=bool, default=False)
     headless = GObject.Property(type=bool, default=True)
+    widevine = GObject.Property(type=bool, default=True)
 
     def __init__(self):
         super().__init__()

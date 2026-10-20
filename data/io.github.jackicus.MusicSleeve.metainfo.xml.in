@@ -14,8 +14,8 @@
     <p>
       Playback runs through Google Chrome, which the app starts in the
       background: Apple's streams are protected with Widevine, which Google
-      Chrome includes and Chromium does not. It needs Google Chrome and an
-      Apple Music subscription.
+      Chrome includes. Another Chromium-based browser with Widevine can be used
+      instead. It needs one of them and an Apple Music subscription.
     </p>
     <p>
       The app talks only to Apple, and controls its Chrome through a private

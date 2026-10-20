@@ -35,8 +35,8 @@ SAMPLE_TARGETS = [
 
 class EngineErrorTest(unittest.TestCase):
     def test_codes(self):
-        for code in ('engine-down', 'no-browser', 'no-keyring', 'not-signed-in', 'api',
-                     'timeout', 'usage'):
+        for code in ('engine-down', 'no-browser', 'no-widevine', 'no-keyring', 'not-signed-in',
+                     'api', 'timeout', 'usage'):
             error = EngineError(code, 'why')
             self.assertEqual((error.code, error.message, str(error)), (code, 'why', f'{code}: why'))
         self.assertEqual(str(EngineError('timeout')), 'timeout')
@@ -201,6 +201,15 @@ class HostChromeTest(unittest.TestCase):
         self.assertEqual(seen, [['my-chrome', *chrome.CANDIDATES]])
 
 
+class CandidatesTest(unittest.TestCase):
+    def test_chromium_based_browsers_chrome_first_chromium_last(self):
+        self.assertEqual(chrome.CANDIDATES[:3], (
+            'google-chrome-stable', 'google-chrome', '/opt/google/chrome/chrome'))
+        for name in ('microsoft-edge-stable', 'brave-browser', 'vivaldi-stable'):
+            self.assertIn(name, chrome.CANDIDATES)
+        self.assertEqual(chrome.CANDIDATES[-2:], ('chromium', 'chromium-browser'))
+
+
 class FindChromeTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -236,6 +245,28 @@ class FindChromeTest(unittest.TestCase):
     def test_absolute_candidate(self):
         opt = self.executable(self.opt)
         self.assertEqual(chrome.find_chrome(None, path=str(self.bin)), opt)
+
+    def test_the_default_command_missing_is_no_warning(self):
+        found = self.executable(self.bin / 'google-chrome')
+        with self.assertNoLogs(chrome.log, 'WARNING'):
+            self.assertEqual(chrome.find_chrome('google-chrome-stable', path=str(self.bin)),
+                             found)
+
+    def test_a_snap_is_not_a_candidate(self):
+        snap = pathlib.Path(self.tmp.name) / 'snap'
+        target = self.executable(snap / 'bin' / 'chromium')
+        (self.bin / 'google-chrome-stable').symlink_to(target)   # resolves into the snap
+        wrapper = self.bin / 'google-chrome'   # a script that runs it (Ubuntu's chromium-browser)
+        self.executable(wrapper)
+        wrapper.write_text(f'#!/bin/sh\nexec {target} "$@"\n')
+        with mock.patch.object(chrome, 'SNAP_ROOT', f'{snap}/'):
+            self.assertTrue(chrome.is_snap(target))
+            self.assertIsNone(chrome.find_chrome(None, path=str(self.bin)))
+            opt = self.executable(self.opt)
+            self.assertEqual(chrome.find_chrome(None, path=str(self.bin)), opt)
+            self.assertFalse(chrome.is_snap(opt))
+            # Named in the settings, a snap is the user's choice.
+            self.assertEqual(chrome.find_chrome(str(wrapper), path=str(self.bin)), str(wrapper))
 
     def test_none_when_absent(self):
         (self.bin / 'google-chrome').write_text('not executable')

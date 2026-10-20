@@ -95,7 +95,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 
 ## Known limitations
 
-- Google Chrome is required, and must be the real Chrome: Chromium lacks Widevine.
+- Songs play only in a browser with Widevine: Google Chrome has it. Microsoft Edge, Brave
+  and Vivaldi can fetch it (Brave and Vivaldi may ask first, in their own window: turn off
+  Preferences › Engine › Run Browser Hidden to see it), and Chromium needs its
+  distribution's Widevine package. Only Google Chrome is tested. A snap cannot be the
+  engine. Changing browser may mean signing in again.
 - Music videos play as audio only: the engine has no window to show them in.
 - No offline listening or downloads: the app streams, as the web player does.
 - Reordering a playlist's songs, making playlist folders and moving playlists between them
@@ -107,8 +111,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 
 ## Troubleshooting
 
-- **"Google Chrome is needed to play Apple Music."** No Chrome was found. Install Google
-  Chrome, or name its command in Preferences › Engine › Browser program.
+- **"Install Google Chrome to play Apple Music."** No browser was found: neither Google
+  Chrome nor another Chromium-based browser. Install Google Chrome, or name another
+  browser's command in Preferences › Engine › Browser program.
+- **"This browser cannot play songs; Google Chrome can."** The browser the engine runs in
+  has no Widevine, which the songs are protected with: browsing, your library and the
+  30-second previews work, but songs do not play. Install Google Chrome and name it in
+  Preferences › Engine › Browser program (`google-chrome-stable`), or give the browser its
+  Widevine module.
 - **"The playback engine stopped."** Chrome exited or its page stopped answering. Click
   **Restart** in the message, or just play something.
 - **"Unlock the keyring, then start the engine."** Chrome keeps the key that encrypts its

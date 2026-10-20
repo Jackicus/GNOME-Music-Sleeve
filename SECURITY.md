@@ -18,8 +18,8 @@ Only the latest release and `main` get security fixes.
 
 ## The threat model
 
-The app plays music through a local Google Chrome that it starts on a private profile,
-showing music.apple.com. That Chrome is signed in to your Apple Account, and the app has full
+The app plays music through a local Google Chrome (or another Chromium-based browser) that
+it starts on a private profile, showing music.apple.com. That Chrome is signed in to your Apple Account, and the app has full
 control of it over Chrome's DevTools protocol, so the connection between them is what matters
 most. It runs over a private pipe between the two processes, with no listening port; the
 Chrome profile and the cache are the app's own directories under your home.

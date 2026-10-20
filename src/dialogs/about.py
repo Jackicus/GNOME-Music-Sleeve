@@ -32,7 +32,8 @@ def comments():
     the metainfo's: .claude/rules/packaging.md)."""
     return '\n\n'.join((
         _('Your Apple Music library, playlists, radio and recommendations in a native GNOME '
-          'app, played through Google Chrome in the background.'),
+          'app, played through Google Chrome, or another Chromium-based browser, in the '
+          'background.'),
         _('Not affiliated with Apple. Apple Music is a trademark of Apple Inc.'),
     ))
 

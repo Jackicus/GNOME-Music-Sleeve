@@ -161,6 +161,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
             (engine, engine.connect('notify::state', self._update_engine)),
             (engine, engine.connect('notify::authorized', self._update_engine)),
             (engine, engine.connect('notify::headless', self._update_engine)),
+            (engine, engine.connect('notify::widevine', self._update_engine)),
         ]
         # The dialog's own rows and buttons are connected weakly (widgets/util.py): a bound
         # method would keep every closed dialog alive.
@@ -294,6 +295,8 @@ class PreferencesDialog(Adw.PreferencesDialog):
             subtitle = _('Signing in…')
         elif state != 'up':
             subtitle = _('Not running')
+        elif not engine.widevine:
+            subtitle = _('Running, but this browser cannot play songs')
         elif not engine.authorized:
             subtitle = _('Running, not signed in')
         elif engine.headless:

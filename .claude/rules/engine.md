@@ -71,6 +71,13 @@ paths:
   a window (and sign-out, starting a stopped engine to revoke the session, for headless). A changed browser command applies at the next start. Nothing is reclaimed and no
   state file is kept: a start first ends a Chrome this process did not start that holds the
   profile (am.py's, or one a crash left).
+- The browser: `chrome.find_chrome()` takes the `browser-command` setting, else the first of
+  `CANDIDATES` (Google Chrome's names, then Edge, Brave, Vivaldi, Chromium), never a snap
+  (`is_snap()`). Its name proves nothing: once the engine is up, `_check_widevine()` asks the
+  page (the bridge's `drm()`, `DRM_TIMEOUT`), beside the start rather than in it, and a
+  browser that refuses Widevine leaves the engine up with `widevine` False, so `play()` and
+  `queue_jump()` raise `no-widevine` (they wait for a check under way); previews and the
+  API still work. A check that cannot answer counts as Widevine present.
 - `stop(grace=None)`: `Browser.close` over the pipe (up to 2 s), SIGTERM, `grace` (5 s),
   SIGKILL, the process kept until it is gone, so `kill()` (the synchronous last resort, after
   quit's 6 s bound) still reaches it; `kill()` lets go of the client first, as a stop does.
