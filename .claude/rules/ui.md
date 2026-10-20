@@ -260,4 +260,5 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   belongs to a focused button, switch, check box or boxed-list row (GTK's own binding presses
   it), Ctrl+Up and Ctrl+Down to a slider or a boxed-list row (the sidebar's move without
   selecting), and every key to an entry, a popover or a dialog; `context_menu.MENU_KEYS` is built from
-  `shortcuts.CONTEXT_MENU`.
+  `shortcuts.CONTEXT_MENU` (the tiles' and rows' views bind it, and the sidebar for its rows,
+  whose menus are `context_menu.popup()`'s too: sidebar.md).

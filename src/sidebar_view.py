@@ -19,6 +19,7 @@ rows' accessible names and indentation.
     sidebar.forget_expanded()         # every folder closed (sign-out)
     sidebar.write_expanded()          # the expanded folders written now (the window closing)
     sidebar.show_drop_target(key)     # key's row marked as a drop's target (None: no mark)
+    sidebar.popup_menu(key)           # key's row's context menu, opened beside the row
 
 The first sections are fixed items; the Playlists section is bound to a store of SidebarEntry
 (sidebar.py): its two destinations, then the library's folders and playlists. The window shows
@@ -50,6 +51,14 @@ rows are drag sources (AdwSidebar has none of its own: a Gtk.DragSource on the s
 the capture phase, before the rows' clicks, finds the row under the pointer as rows()
 walks them). After a move the moved row has the focus again if it had it.
 
+Context menus: a playlist's, a folder's, Favourite Songs' and All Playlists' rows have the item
+actions' menu for their Item, the one its page's More Options and its tile show
+(actions.build_menu), opened from the row itself as a tile's is (widgets/context_menu.py's
+popup()): by a right click or a long press, pointing at the pointer, or by Menu or Shift+F10
+on the focused row, under it. AdwSidebar's own menu (a section's menu-model, filled on
+setup-menu) is not used: a section's model leaves Menu and Shift+F10 dead (they need a model
+on the whole sidebar), and they would open the selected row's menu, not the focused one's.
+
 Nesting: a nested item's row carries a style class for its depth (sidebar.depth_class(),
 `depth-1` to `depth-3`), which style.css indents, set with the rows' accessible names and
 levels by update_rows() whenever the rows can have changed (a reload's splices, a folder
@@ -67,7 +76,7 @@ from .library import ROOT_FOLDER, ItemRefs
 from .sections import ALL_PLAYLISTS, FAVOURITE_SONGS, HOME, PLAYLISTS_SECTION
 from .sidebar import (DEPTH_CLASSES, SidebarEntry, SidebarItem, depth_class, is_shown,
                       plan_update, playlist_entries, reveal)
-from .widgets import dnd
+from .widgets import context_menu, dnd
 from .widgets.util import descendants, first_descendant
 
 log = logging.getLogger(__name__)
@@ -119,9 +128,6 @@ class SidebarController:
                 self._positions = {destination.key: position
                                    for position, destination in enumerate(spec.destinations)}
                 section.bind_model(self._playlist_store, self._create_playlist_item)
-                # The playlists' context menu: filled for the item it opens on (setup-menu).
-                self._sidebar_menu = Gio.Menu()
-                section.set_menu_model(self._sidebar_menu)
             else:
                 for destination in spec.destinations:
                     item = Adw.SidebarItem(title=destination.title,
@@ -137,7 +143,6 @@ class SidebarController:
         # once built, and the folders' arrows shown only in the sidebar mode.
         self._sidebar.connect('notify::mode', self._on_mode_changed)
         self._sidebar.connect('activated', self._on_activated)
-        self._sidebar.connect('setup-menu', self._on_setup_menu)
         # Tracks dragged from a list (widgets/context_menu.py) drop onto playlists, and
         # playlists and folders onto folders and All Playlists.
         self._sidebar.setup_drop_target(Gdk.DragAction.COPY | Gdk.DragAction.MOVE, [ItemRefs])
@@ -159,6 +164,21 @@ class SidebarController:
                 Gtk.CallbackAction.new(lambda _widget, _args, expand=expand: self._on_arrow(
                     expand))))
         self._sidebar.add_controller(keys)
+        # The context menus (see the module): the right click and the long press in the
+        # capture phase, before the rows' own gestures; Menu and Shift+F10 on the focused row.
+        click = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY,
+                                 propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        click.connect('pressed', lambda gesture, _n, x, y: self._on_menu_press(gesture, x, y))
+        self._sidebar.add_controller(click)
+        press = Gtk.GestureLongPress(touch_only=True,
+                                     propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        press.connect('pressed', self._on_menu_press)
+        self._sidebar.add_controller(press)
+        menu_keys = Gtk.ShortcutController(propagation_phase=Gtk.PropagationPhase.BUBBLE)
+        menu_keys.add_shortcut(Gtk.Shortcut.new(
+            Gtk.ShortcutTrigger.parse_string(context_menu.MENU_KEYS),
+            Gtk.CallbackAction.new(lambda _widget, _args: self._on_menu_key())))
+        self._sidebar.add_controller(menu_keys)
 
     # -- what the sidebar has ------------------------------------------------------------
 
@@ -490,26 +510,54 @@ class SidebarController:
             return self._library.by_id('folder', ROOT_FOLDER)
         return None
 
-    def _on_setup_menu(self, _sidebar, item):
-        """The Playlists section's context menu opens on item: point it at the playlist or
-        folder (actions.fill_sidebar_menu). Nothing to offer: the menu is closed before it
-        is drawn, since AdwSidebar would show it empty. None: it closed, before its action
-        runs, so the menu is left as it is."""
-        if item is None:
-            return
-        self._item_actions.fill_sidebar_menu(self._sidebar_menu, self._item_of(item))
-        if not self._sidebar_menu.get_n_items():
-            GLib.idle_add(self._close_menu, priority=GLib.PRIORITY_HIGH)
+    def popup_menu(self, key):
+        """Open key's row's context menu beside the row, as Menu on it does: the popover,
+        or None when the row is not shown or has no menu."""
+        item = self.item_for(key)
+        row = self.row(item.get_index()) if item is not None else None
+        return self._popup(row, item) if row is not None else None
 
-    def _close_menu(self):
-        # The popover is the sidebar's own child (libadwaita 1.9 parents its context menu
-        # to the sidebar itself); if a later version moves it, an empty menu shows instead.
-        child = self._sidebar.get_first_child()
-        while child is not None:
-            if isinstance(child, Gtk.Popover) and child.get_visible():
-                child.popdown()
-            child = child.get_next_sibling()
-        return GLib.SOURCE_REMOVE
+    def _popup(self, row, item, x=None, y=None):
+        """The item actions' menu for the sidebar item `item` (whose row is `row`), from the
+        row: pointing at (x, y) in it, or under it. The popover, or None (no menu)."""
+        obj = self._item_of(item)
+        if obj is None or not row.get_mapped():
+            return None
+        return context_menu.popup(row, obj, x, y)
+
+    def _on_menu_press(self, gesture, x, y):
+        """A right click or a long press at (x, y): the menu of the row there, if it has
+        one, the press claimed (the row neither selects nor activates)."""
+        found = self._row_at(x, y)
+        if found is None:
+            return
+        row, item = found
+        point = Graphene.Point()
+        point.x, point.y = x, y
+        ok, local = self._sidebar.compute_point(row, point)
+        if ok and self._popup(row, item, local.x, local.y) is not None:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+
+    def _on_menu_key(self):
+        """Menu or Shift+F10: the focused row's menu. True when it opened."""
+        focus = self._window.get_focus()
+        if focus is None:
+            return False
+        for index, row in enumerate(self.rows()):
+            if focus is row or focus.is_ancestor(row):
+                item = self._sidebar.get_items().get_item(index)
+                return self._popup(row, item) is not None
+        return False
+
+    def _row_at(self, x, y):
+        """(row, sidebar item) of the row under (x, y) in the sidebar, or None."""
+        picked = self._sidebar.pick(x, y, Gtk.PickFlags.DEFAULT)
+        row = picked if isinstance(picked, Gtk.ListBoxRow) else (
+            picked.get_ancestor(Gtk.ListBoxRow) if picked is not None else None)
+        rows = self.rows()
+        if row is None or row not in rows:
+            return None
+        return row, self._sidebar.get_items().get_item(rows.index(row))
 
     # -- drags and drops ------------------------------------------------------------------
 
@@ -624,13 +672,10 @@ class SidebarController:
         """dnd.attach_source()'s find: the playlist or folder whose row is under (x, y), as
         library.ItemRefs, with its row as the drag's icon; None for anything else (the
         fixed items, a header, a playlist or folder that cannot be moved)."""
-        picked = self._sidebar.pick(x, y, Gtk.PickFlags.DEFAULT)
-        row = picked if isinstance(picked, Gtk.ListBoxRow) else (
-            picked.get_ancestor(Gtk.ListBoxRow) if picked is not None else None)
-        rows = self.rows()
-        if row is None or row not in rows:
+        found = self._row_at(x, y)
+        if found is None:
             return None
-        item = self._sidebar.get_items().get_item(rows.index(row))
+        row, item = found
         if not isinstance(item, SidebarItem) or item.entry.kind not in ('playlist', 'folder'):
             return None
         if self._item_actions.move_targets(item.entry.item) is None:
@@ -693,6 +738,11 @@ class SidebarController:
         for index, row in enumerate(self.rows()):
             item = items.get_item(index)
             row.update_property([Gtk.AccessibleProperty.LABEL], [item.get_title()])
+            # A row with a context menu says so (AdwSidebar would, with a menu of its own).
+            if self._item_of(item) is not None:
+                row.update_property([Gtk.AccessibleProperty.HAS_POPUP], [True])
+            else:
+                row.reset_property(Gtk.AccessibleProperty.HAS_POPUP)
             depth = 0
             if isinstance(item, SidebarItem):
                 depth = item.entry.depth

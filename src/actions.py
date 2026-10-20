@@ -12,7 +12,6 @@ actions, the menus that offer them, and what a drop on the sidebar or the player
     actions.add_to_library(item)           # a catalog album's or playlist's page's Add button
     actions.favourite_artist(artist, True) # an artist page's star (quiet=True: no toast)
     actions.known_rating(('artist', id))   # 1, 0, -1 as the engine last said, or None
-    actions.fill_sidebar_menu(menu, item)  # a sidebar playlist's or folder's menu
     actions.drop(playlist, refs)           # a library.ItemRefs dropped on a sidebar playlist
     actions.add_items_to_playlist(playlist_id, [album])   # its songs, in order, one toast
     actions.drop_new_playlist(refs)        # songs dropped on All Playlists: a new playlist
@@ -186,10 +185,6 @@ QUEUE_KINDS = ('album', 'playlist')
 SOURCE_KINDS = ('album', 'playlist')
 RATED_KINDS = ('album', 'playlist', 'station', 'video')
 LIBRARY_KINDS = ('song', 'album', 'playlist', 'video')
-
-# A sidebar playlist's menu (the section's menu model): these, in this order.
-SIDEBAR_ACTIONS = ('item-play', 'item-play-next', 'item-open-in-browser')
-
 
 def action_labels():
     """The menu's labels, by action, translated on call (after gettext is set up). Each has
@@ -523,6 +518,12 @@ def playlist_song(obj):
     return track[1] if track is not None else None
 
 
+def is_folder(obj):
+    """Whether obj is a playlist folder Item: one of the user's, or the top level
+    (ROOT_FOLDER, All Playlists), each with New Playlist… and New Folder… in its menu."""
+    return isinstance(obj, Item) and obj.kind == 'folder' and bool(obj.id)
+
+
 def is_user_folder(obj):
     """Whether obj is one of the user's playlist folders (not the top level, ROOT_FOLDER):
     one that can be renamed and deleted."""
@@ -801,8 +802,10 @@ def main_menu_section():
 
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
                moves=None, removable=None, queue_entry=None, reorder=True):
-    """The menu for obj (an Item or a Track), or None when nothing applies (the top level
-    of the folders); a category's is curator_menu(). `playlists` are the entries the Add to
+    """The menu for obj (an Item or a Track), or None when nothing applies; a category's is
+    curator_menu(). It is the one menu of an item wherever it shows: a tile's or row's, a
+    page's More Options, a sidebar row's (a folder's, All Playlists' too: New Playlist… and
+    New Folder… in it). `playlists` are the entries the Add to
     Playlist submenu lists (ItemActions.playlists(): (id, title, children), a folder's
     children its own entries, a submenu); `here` is the Item of the page shown (Go to Album
     and Go to Artist are left out where they would go nowhere: related.shows); `queued`, obj
@@ -821,7 +824,7 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     target = GLib.Variant('(ss)', named)
     sections = [Gio.Menu(), Gio.Menu(), Gio.Menu(), Gio.Menu(), Gio.Menu()]
     play, go, keep, share, manage = sections
-    if is_user_folder(obj):
+    if is_folder(obj):
         for item in new_items(obj.id):
             play.append_item(item)
     if can_play(obj) and not queued:
@@ -902,44 +905,6 @@ def curator_menu(obj, storefront=None):
     menu = Gio.Menu()
     menu.append_section(None, share)
     return menu
-
-
-def fill_sidebar_menu(menu, item, moves=None):
-    """Make `menu` a sidebar item's: a playlist's Play, Play Next, Open in Browser
-    (SIDEBAR_ACTIONS), then Move to Folder (`moves`, move_targets()'s, unless None), then
-    Rename… and Delete Playlist… for one of the user's; a folder's New Playlist… and New
-    Folder… (in it), Move to Folder, Rename… and Delete Folder…; All Playlists' (the folder
-    Item ROOT_FOLDER) New Playlist… and New Folder…. Empty when `item` is None."""
-    menu.remove_all()
-    named = describe(item)
-    if named is None:
-        return
-    target = GLib.Variant('(ss)', named)
-    first = Gio.Menu()
-    if item.kind == 'folder':
-        for entry in new_items(item.id):
-            first.append_item(entry)
-    elif item.kind == 'playlist':
-        for action in SIDEBAR_ACTIONS:
-            if action == 'item-play' and not can_play(item):
-                continue
-            if action == 'item-play-next' and queue_target(item) is None:
-                continue
-            if action == 'item-open-in-browser' and not web_url(item):
-                continue
-            first.append_item(menu_item(action, target))
-    keep = Gio.Menu()
-    if moves is not None:
-        keep.append_submenu(action_labels()['item-move-to-folder'], move_submenu(moves, named))
-    manage = Gio.Menu()
-    for entry in manage_items(item):
-        manage.append_item(entry)
-    for entry in removal_items(item, (item.kind, item.id) if is_removable_playlist(item)
-                               else None):
-        manage.append_item(entry)
-    for section in (first, keep, manage):
-        if section.get_n_items():
-            menu.append_section(None, section)
 
 
 def now_playing_track(now_playing):
@@ -1064,14 +1029,6 @@ class ItemActions:
         if rated is not None and self._engine_ready():
             self.app.spawn(self._refine(rated))
         return menu
-
-    def fill_sidebar_menu(self, menu, item):
-        """The sidebar's menu for a playlist or a folder (None: emptied). See
-        fill_sidebar_menu()."""
-        fill_sidebar_menu(menu, item, self.move_targets(item))
-        named = describe(item)
-        if named is not None:
-            self._remember(named, item)
 
     def container(self, obj):
         """The playlist of the user's that the Track obj is shown in (its group plays that

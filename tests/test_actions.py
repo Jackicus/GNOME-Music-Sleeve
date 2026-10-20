@@ -15,7 +15,7 @@ from gi.repository import Gio, GLib, GObject
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
 from applemusic.actions import (ItemActions, build_menu, can_play, describe,
-                                favourite_target, fill_sidebar_menu, is_apple_music_url,
+                                favourite_target, is_apple_music_url,
                                 is_removable_playlist, is_shareable,
                                 library_target, main_menu_section, mnemonic_escaped,
                                 move_targets, new_playlist_tracks, now_playing_track,
@@ -323,7 +323,6 @@ class MenuTest(unittest.TestCase):
         self.assertIsNone(now_playing_track(None))
 
     def test_what_has_no_menu(self):
-        self.assertIsNone(build_menu(TOP_LEVEL))  # All Playlists: not renamed, nor deleted
         self.assertIsNone(build_menu(CATEGORY))  # a curator without a page of Apple's
         self.assertIsNone(build_menu(object()))
 
@@ -447,38 +446,43 @@ class MenuTest(unittest.TestCase):
             ('win.item-open-in-browser', ('artist', 'l.art_0123456789ab')),
             ('win.item-copy-link', ('artist', 'l.art_0123456789ab'))])
 
-    def test_sidebar_menu(self):
-        menu = Gio.Menu()
-        fill_sidebar_menu(menu, PLAYLIST)
-        self.assertEqual(actions_of(menu), [
-            ('win.item-play', ('playlist', 'p.pl1')),
-            ('win.item-play-next', ('playlist', 'p.pl1')),
-            ('win.item-open-in-browser', ('playlist', 'p.pl1')),
-            ('win.item-rename', ('playlist', 'p.pl1')),
-            ('win.item-delete', ('playlist', 'p.pl1'))])
-        # Apple's own and Favourite Songs: played, never renamed or deleted.
-        for playlist in (READ_ONLY, FAVOURITES):
-            fill_sidebar_menu(menu, playlist)
-            self.assertFalse({'win.item-rename', 'win.item-delete'} & set(names(menu)))
-        fill_sidebar_menu(menu, FOLDER)
-        self.assertEqual(actions_of(menu), [
+    def test_folders_and_all_playlists(self):
+        # A sidebar row's menu is its Item's, as its page's More Options shows it (a
+        # playlist's: the menu this class checks throughout).
+        self.assertEqual(actions_of(build_menu(FOLDER)), [
             ('win.item-new-playlist', ('folder', 'l.fd1')),
             ('win.item-new-folder', ('folder', 'l.fd1')),
             ('win.item-rename', ('folder', 'l.fd1')),
             ('win.item-delete', ('folder', 'l.fd1'))])
-        self.assertIn('_Delete Folder…', labels_of(menu))
-        self.assertIn('New _Folder…', labels_of(menu))
-        fill_sidebar_menu(menu, TOP_LEVEL)  # All Playlists
-        self.assertEqual(actions_of(menu), [('win.item-new-playlist', ('folder', 'root')),
-                                            ('win.item-new-folder', ('folder', 'root'))])
-        # With where it can be moved: Move to Folder, before Rename… and Delete….
-        fill_sidebar_menu(menu, PLAYLIST, (False, [('l.fd1', 'Evenings', True, [])]))
-        self.assertEqual(names(menu)[3:], ['win.item-move-to-folder',
-                                           'win.item-move-to-folder', 'win.item-rename',
-                                           'win.item-delete'])
+        self.assertIn('_Delete Folder…', labels_of(build_menu(FOLDER)))
+        self.assertIn('New _Folder…', labels_of(build_menu(FOLDER)))
+        # All Playlists (the top level's folder Item): new ones there, nothing to rename.
+        self.assertEqual(actions_of(build_menu(TOP_LEVEL)), [
+            ('win.item-new-playlist', ('folder', 'root')),
+            ('win.item-new-folder', ('folder', 'root'))])
+        # With where it can be moved: Move to Folder, before Rename… and Delete Folder….
+        moves = (True, [('l.fd2', 'Mornings', True, [])])
+        self.assertEqual(names(build_menu(FOLDER, moves=moves))[2:],
+                         ['win.item-move-to-folder', 'win.item-move-to-folder',
+                          'win.item-move-to-folder', 'win.item-rename', 'win.item-delete'])
+
+    def test_a_playlists_menu_has_the_pages_items(self):
+        # The sidebar's too: Play Later, Favourite (the rating items, each shown by its
+        # state), Add to Playlist, Move to Folder and the rest, in the page's order.
+        menu = build_menu(PLAYLIST, playlists=[('p.pl9', 'Evening Mix', None)],
+                          moves=(False, [('l.fd1', 'Evenings', True, [])]))
+        self.assertEqual(names(menu), [
+            'win.item-play', 'win.item-play-next', 'win.item-play-later',
+            *(f'win.{name}' for name in RATING_ACTIONS), 'win.item-add-to-playlist',
+            'win.item-new-playlist',
+            'win.item-move-to-folder', 'win.item-move-to-folder',
+            'win.item-open-in-browser', 'win.item-rename', 'win.item-delete'])
+        self.assertIsNotNone(submenu_of(menu, 'Add to Pla_ylist'))
         self.assertIsNotNone(submenu_of(menu, 'Mov_e to Folder'))
-        fill_sidebar_menu(menu, None)
-        self.assertEqual(menu.get_n_items(), 0)
+        # Apple's own and Favourite Songs: played, never renamed or deleted.
+        for playlist in (READ_ONLY, FAVOURITES):
+            self.assertFalse({'win.item-rename', 'win.item-delete'}
+                             & set(names(build_menu(playlist))))
 
     def test_move_targets_and_their_submenu(self):
         playlists = [Item(dict(item.raw)) for item in (PLAYLIST, READ_ONLY, FAVOURITES)]
@@ -2287,14 +2291,6 @@ class RemovalMenuTest(unittest.TestCase):
         letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label
                    and label != 'Road Trip']
         self.assertEqual(len(letters), len(set(letters)), labels)
-
-    def test_the_sidebar_offers_it_for_apples_playlists(self):
-        menu = Gio.Menu()
-        fill_sidebar_menu(menu, READ_ONLY)
-        self.assertEqual(names(menu)[-1], 'win.item-remove-from-library')
-        for item in (PLAYLIST, FAVOURITES, KEPT_PLAYLIST):
-            fill_sidebar_menu(menu, item)
-            self.assertNotIn('win.item-remove-from-library', names(menu))
 
     def test_the_confirmation_says_what_goes_with_it(self):
         heading, body = removal_words('song', 'Undertow')

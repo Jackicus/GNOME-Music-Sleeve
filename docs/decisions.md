@@ -114,6 +114,17 @@ changes, change it here, with the date. The plan they came from is in
   another playlist's adds its songs too (its drag offers MOVE alone, which the row
   answers); on a folder it still moves. Albums dropped on All Playlists make a new playlist
   of their songs; playlists dropped there still move.
+- **A sidebar row's menu is its page's** (2026-10-20). A playlist's, a folder's, Favourite
+  Songs' and All Playlists' rows open the item actions' menu for their Item
+  (`actions.build_menu`, through `menu_for`), the one their page's More Options and their
+  tile show, so the two never drift apart (the sidebar's had been a shorter list of its
+  own). The controller opens it from the row as a tile's opens (`widgets/context_menu.py`'s
+  `popup()`): at the pointer for a right click or a long press, under the row for Menu or
+  Shift+F10. AdwSidebar's own context menu is not used: a section's `menu-model` leaves Menu
+  and Shift+F10 dead (its `menu.popup` is enabled only by a model on the whole sidebar), and
+  in the sidebar mode they would open the selected row's menu rather than the focused one's
+  (#349). The narrower font and the menu over the top of the sidebar in the audit's
+  screenshot were the harness's: the row was scrolled out of view.
 - **Sidebar sections: titles and dividers** (2026-10-19). Library and Playlists keep their
   titles (Playlists especially, which the library's folders and playlists fill), and a thin
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider

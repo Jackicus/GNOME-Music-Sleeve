@@ -25,7 +25,8 @@ Gtk.PopoverMenu parented to that widget, without an arrow, pointing at the point
 the widget from the keyboard; it is unparented once closed (after an idle: its action is
 activated after it closes, and looks the window's actions up through its parent). The row or
 tile whose menu is open is marked `.has-open-popup` meanwhile, as GTK's own menus mark
-theirs, so it stays highlighted while the pointer is in the menu.
+theirs, so it stays highlighted while the pointer is in the menu. The sidebar's playlist
+and folder rows open theirs through popup() too (sidebar_view.py).
 """
 
 from gi.repository import Gdk, GLib, Graphene, Gtk

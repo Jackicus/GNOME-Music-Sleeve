@@ -1358,6 +1358,19 @@ async def walkthrough(window):
           describe(window.get_focus()))
     await key(window, 'Left', 0.4)
     check('Left closes the folder', not child_item.get_visible())
+    await key(window, 'Menu', 0.6)
+    shown = [each for each in harness.popovers(folder_row) if isinstance(each, Gtk.PopoverMenu)]
+    labels = menu_labels(shown[0].get_menu_model())[:2] if shown else []
+    check("Menu on the folder's row opens its menu from the row (New Playlist…, New Folder…)",
+          labels == ['Ne_w Playlist…', 'New _Folder…'], (labels, describe(window.get_focus())))
+    await key(window, 'Escape', 0.4)
+    check('Escape closes it, the focus back on the row',
+          not any(each.get_visible() for each in shown) and window.get_focus() == folder_row,
+          describe(window.get_focus()))
+    await key(window, '<shift>F10', 0.6)
+    shown = [each for each in harness.popovers(folder_row) if isinstance(each, Gtk.PopoverMenu)]
+    check('Shift+F10 opens it too', bool(shown) and shown[0].get_visible())
+    await key(window, 'Escape', 0.4)
     print('-- Move to Folder, New Folder')
     window.select_page('all-playlists')
     await asyncio.sleep(0.6)
