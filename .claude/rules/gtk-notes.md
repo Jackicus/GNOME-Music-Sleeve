@@ -124,6 +124,13 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   offers MOVE alone. `Gtk.DragSource`'s `prepare` can be
   emitted from a test (no event device then). `Gdk.Clipboard.set(text)` works from Python (it
   is `set_value`).
+- A `Gtk.PopoverMenu` (sliding, the default) keeps each submenu as a page of one
+  `GtkStack` named by the submenu's label, mnemonic underscore and all, and a submenu's
+  item opens the page of that name: two submenus of one label share the first's page
+  (`duplicate child name in GtkStack`), and one labelled `main` is the menu's own. Nothing
+  names a page otherwise (4.20 to 4.22), so a menu has no submenu labelled with a name of
+  the user's: its folders are headed sections (a section's label, plain text, no
+  mnemonic), docs/decisions.md.
 - A `Gio.MenuItem` with the attribute `hidden-when` = `action-disabled` is shown by a
   `Gtk.PopoverMenu` only while its action is enabled, and follows the action's state while
   the menu is open (Favourite / Remove from Favourites, as Nautilus's Star / Unstar).
