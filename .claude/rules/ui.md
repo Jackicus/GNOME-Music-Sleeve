@@ -76,7 +76,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   subtitled with its year, its artist in `artistName`. All Playlists and a folder's page have
   New Playlist (`list-add-symbolic`) and New Folder (`folder-new-symbolic`) in the header
   bar, and a folder's page its More Options menu (`pages.add_folder_buttons()`); their tiles
-  drag onto the sidebar's folders (`GridPage(drag=True)`). The playlists' dialogs (the name, the confirmation
+  drag onto the sidebar's folders (every `GridPage`'s and `Shelf`'s tiles are drag
+  sources: an album or a playlist onto a sidebar playlist, its songs added, or the bar). The playlists' dialogs (the name, the confirmation
   before a delete) are `dialogs/playlist.py`'s, presented by the item actions.
 - New, Made for You, Radio and a search category are `ShelvesPage`s over the engine's
   answers (a shelf's `subtitle`, a recommendation's reason, is a dimmed line under its

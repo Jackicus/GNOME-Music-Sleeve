@@ -14,6 +14,7 @@ from applemusic.backend.api import (LIBRARY_ROUTES, api_error, http_status, is_d
                                     page_data,
                                     playlist_entries, reordered_entries, resource_type,
                                     track_type)
+from applemusic.backend import api
 from applemusic.backend.errors import EngineError
 
 
@@ -73,6 +74,16 @@ class PlaylistTest(unittest.TestCase):
         self.assertEqual(track_type('musicVideo', '1'), 'music-videos')
         for kind, item_id in (('album', 'l.1'), ('station', 'ra.1'), ('song', ''), (None, '1')):
             self.assertIsNone(track_type(kind, item_id))
+
+    def test_the_entries_of_a_tracks_post_and_their_batches(self):
+        self.assertEqual(api.playlist_entries_for([('song', 'i.1'), ('video', '1000000009')]), [
+            {'id': 'i.1', 'type': 'library-songs'}, {'id': '1000000009', 'type': 'music-videos'}])
+        self.assertEqual(api.playlist_entries_for([]), [])
+        with self.assertRaises(EngineError) as raised:
+            api.playlist_entries_for([('song', 'i.1'), ('album', 'l.1')])
+        self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(api.batches(list(range(5)), 2), [[0, 1], [2, 3], [4]])
+        self.assertEqual(api.batches([], 2), [])
 
     def test_what_the_account_deleted(self):
         # As Apple went on listing a deleted playlist, and a deleted folder (2026-10-03).

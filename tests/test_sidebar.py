@@ -539,7 +539,9 @@ class StubActions:
 
         self.library = library
         self.dropped = []
+        self.refs = []  # the ItemRefs each drop() was given
         self.can_move_refs = ItemActions.can_move_refs.__get__(self)
+        self.can_drop_refs = ItemActions.can_drop_refs.__get__(self)
         self.move_targets = ItemActions.move_targets.__get__(self)
 
     def can_drop(self, playlist):
@@ -547,6 +549,7 @@ class StubActions:
 
     def drop(self, playlist, refs):
         self.dropped.append(('playlist', playlist.id, [ref.id for ref in refs]))
+        self.refs.append(refs)
         return True
 
     def drop_into_folder(self, folder_id, refs):
@@ -595,7 +598,7 @@ class DragDropTest(unittest.TestCase):
         return ItemRefs.for_objects([self.controller.entry(key).item for key in keys])
 
     def test_what_each_row_takes(self):
-        from applemusic.library import ItemRefs, Ref
+        from applemusic.library import Item, ItemRefs, Ref
 
         copy, move = self.Gdk.DragAction.COPY, self.Gdk.DragAction.MOVE
         action = self.controller.drop_action
@@ -603,7 +606,8 @@ class DragDropTest(unittest.TestCase):
         self.assertEqual(action(self.index('folder:c'), p1), move)
         self.assertEqual(action(self.index('folder:b'), p1), move)
         self.assertEqual(action(self.index('folder:a'), p1), 0)  # where it is
-        self.assertEqual(action(self.index('playlist:p2'), p1), 0)  # a playlist takes songs
+        self.assertEqual(action(self.index('playlist:p2'), p1), copy)  # p1's songs added
+        self.assertEqual(action(self.index('playlist:p1'), p1), 0)  # not to itself
         self.assertEqual(action(self.index(ALL_PLAYLISTS), p1), 0)  # the top level: gated
         self.assertEqual(action(self.index(HOME), p1), 0)
         song = ItemRefs([Ref('song', 'i.s1', 'Song')])
@@ -613,7 +617,17 @@ class DragDropTest(unittest.TestCase):
         songs = ItemRefs([Ref('song', 'i.s1', 'Song'), Ref('video', 'i.v1', 'Clip')])
         self.assertEqual(action(self.index(ALL_PLAYLISTS), song), copy)
         self.assertEqual(action(self.index(ALL_PLAYLISTS), songs), copy)
-        self.assertEqual(action(self.index('playlist:p2'), songs), 0)  # one at a time there
+        self.assertEqual(action(self.index('playlist:p2'), songs), copy)  # all of them
+        # An album (a tile): its songs onto a playlist, a new playlist of them on All
+        # Playlists; never into a folder.
+        album = ItemRefs.for_objects([Item({'id': 'l.alb1', 'kind': 'album', 'title': 'A'})])
+        self.assertEqual(action(self.index('playlist:p2'), album), copy)
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), album), copy)
+        self.assertEqual(action(self.index('folder:c'), album), 0)
+        # A sidebar row's drag offers MOVE alone: a playlist row onto another answers that.
+        self.dnd._set_current(p1, move)
+        self.assertEqual(action(self.index('playlist:p2'), p1), move)
+        self.dnd._set_current(None)
         self.assertEqual(action(self.index(HOME), song), 0)
         mixed = ItemRefs([Ref('song', 'i.s1', 'Song'), Ref('playlist', 'p1', 'P')])
         self.assertEqual(action(self.index(ALL_PLAYLISTS), mixed), 0)
@@ -635,7 +649,7 @@ class DragDropTest(unittest.TestCase):
     def test_drop_enter_marks_the_row_and_drop_hands_it_over(self):
         self.dnd._set_current(self.refs('playlist:p2'))
         rows = self.controller.rows()
-        target, refused = self.index('folder:c'), self.index('playlist:p1')
+        target, refused = self.index('folder:c'), self.index(HOME)
         self.assertEqual(self.controller._on_drop_enter(self.widget, target),
                          self.Gdk.DragAction.MOVE)
         self.assertTrue(rows[target].has_css_class('drop-highlight'))
@@ -648,6 +662,21 @@ class DragDropTest(unittest.TestCase):
         self.assertFalse(self.controller._on_drop(self.widget, refused,
                                                   self.refs('playlist:p2'), 0))
         self.assertEqual(self.actions.dropped, [('folder', 'c', ['p2'])])
+
+    def test_a_playlist_dropped_on_a_playlist_adds_its_songs(self):
+        # The drag's own ItemRefs (dnd.current(), with its objects) goes to the actions,
+        # not the value GTK loaded.
+        from applemusic.library import ItemRefs, Ref
+
+        dragged = self.refs('playlist:p2')
+        self.dnd._set_current(dragged)
+        target = self.index('playlist:p1')
+        self.assertEqual(self.controller._on_drop_enter(self.widget, target),
+                         self.Gdk.DragAction.COPY)
+        self.assertTrue(self.controller._on_drop(self.widget, target,
+                                                 ItemRefs([Ref('playlist', 'p2', '')]), 0))
+        self.assertEqual(self.actions.dropped, [('playlist', 'p1', ['p2'])])
+        self.assertIs(self.actions.refs[-1], dragged)
 
     def test_songs_dropped_on_all_playlists_make_a_new_playlist(self):
         from applemusic.library import ItemRefs, Ref

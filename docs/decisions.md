@@ -100,6 +100,20 @@ changes, change it here, with the date. The plan they came from is in
   Apple lists it; playlists dropped there still move to the top level (switched off, above).
   A drag carries its objects as well as their Refs (`ItemRefs.objects`), since a Ref names a
   song by the id a playlist takes, not the catalog id MusicKit queues it by.
+- **Add to Playlist for albums and playlists** (2026-10-20). As on every Apple client, an
+  album's or a playlist's menu has Add to Playlist (the same nested submenu as a song's, a
+  playlist not offered to itself, New Playlist… named after it), and its tile drags onto a
+  sidebar playlist; every grid and shelf of tiles is a drag source now, the drag on the
+  view, not the tile, so binding costs nothing more. What is added is its tracks, in order:
+  the library's (by their own `i.` ids) when it has them, else the engine's `item()` read
+  (catalog ids), which follows Apple's pages. One POST of the list
+  (`Engine.add_tracks_to_playlist`), in runs of `api.PLAYLIST_BATCH` (100) since no limit
+  is documented or checked, one after the other so the order holds; a failure partway
+  leaves what went in, is reported, and the playlist is read again. One toast counts them.
+  A second click while the same add runs is ignored. A playlist's sidebar row dropped on
+  another playlist's adds its songs too (its drag offers MOVE alone, which the row
+  answers); on a folder it still moves. Albums dropped on All Playlists make a new playlist
+  of their songs; playlists dropped there still move.
 - **Sidebar sections: titles and dividers** (2026-10-19). Library and Playlists keep their
   titles (Playlists especially, which the library's folders and playlists fill), and a thin
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider

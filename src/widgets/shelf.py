@@ -138,7 +138,8 @@ class Shelf(PagedRow, Gtk.Box):
     ROW_LIMIT, or wider than the window; always for an artist page's In Your Library, which
     has a page of its own), which opens the shelf as a grid (window.open_shelf). Activating
     a tile opens its item (window.open_item); a right click, a long press or the Menu key
-    opens its context menu (context_menu.py).
+    opens its context menu (context_menu.py), and a tile drags (widgets/dnd.py: an album or
+    a playlist onto a sidebar playlist or the player bar).
 
     The row is a horizontal Gtk.ListView of the first ROW_LIMIT items, the scrolled window's
     own child. It builds a tile for each of them, but only the tiles on screen are mapped and
@@ -188,7 +189,7 @@ class Shelf(PagedRow, Gtk.Box):
         connect_weak(self.see_all_button, 'clicked', self._on_see_all_clicked)
         self._connect_controls()
         self._row = self.list_view
-        context_menu.attach(self.list_view)
+        context_menu.attach(self.list_view, drag=True)  # tiles onto playlists and the bar
 
     def _get_hero(self):
         return self._hero

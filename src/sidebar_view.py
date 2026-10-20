@@ -35,12 +35,14 @@ close it without changing the page, Left on a nested item moves to its folder. T
 folders are kept in the expanded-folders setting, written a moment after the last change
 (EXPANDED_WRITE_DELAY_MS) and when the window closes.
 
-Drags (widgets/dnd.py, library.ItemRefs; only drags that start in the app): a track dropped
-on a playlist that takes songs is added to it (COPY); songs and music videos dropped on All
-Playlists make a new playlist of them, named in New Playlist's dialog (COPY,
-actions.drop_new_playlist); a playlist (or a folder) dropped on a folder goes into it, and
-on All Playlists to the top level (MOVE, actions.drop_into_folder), unless that is where it
-is, or a folder would go into itself (refused: 0). The row a drop
+Drags (widgets/dnd.py, library.ItemRefs; only drags that start in the app): a track, an
+album or a playlist (a tile, or another playlist's row) dropped on a playlist that takes
+songs adds its songs to it (COPY, or MOVE from a sidebar row, whose drag offers nothing
+else; actions.drop); songs, music videos and albums dropped on All Playlists make a new
+playlist of them, named in New Playlist's dialog (COPY, actions.drop_new_playlist); a
+playlist (or a folder) dropped on a folder goes into it, and on All Playlists to the top
+level (MOVE, actions.drop_into_folder), unless that is where it is, or a folder would go
+into itself (refused: 0). The row a drop
 would go to is highlighted (DropFeedback), the sidebar scrolls while the pointer is near
 its top or bottom edge, and a closed folder the drag hovers over opens after a moment
 (SPRING_DELAY_MS), so what is inside can take the drop. The playlists' and folders' own
@@ -60,7 +62,7 @@ import time
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
 
 from . import sections, shortcuts
-from .actions import new_playlist_tracks
+from .actions import new_playlist_refs
 from .library import ROOT_FOLDER, ItemRefs
 from .sections import ALL_PLAYLISTS, FAVOURITE_SONGS, HOME, PLAYLISTS_SECTION
 from .sidebar import (DEPTH_CLASSES, SidebarEntry, SidebarItem, depth_class, is_shown,
@@ -529,20 +531,20 @@ class SidebarController:
 
     def drop_action(self, index, refs):
         """What dropping `refs` (a library.ItemRefs) on the item at index would do: COPY a
-        track onto a playlist that takes songs, or songs and music videos onto All Playlists
-        (a new playlist of them: actions.new_playlist_tracks), MOVE playlists or folders into
-        a folder (All Playlists: the top level) they can go into (actions.can_move_refs),
-        else 0."""
+        track, an album or a playlist onto a playlist that takes its songs
+        (actions.can_drop_refs; MOVE when the drag offers nothing else, as a sidebar row's
+        does), or songs, music videos and albums onto All Playlists (a new playlist of them:
+        actions.new_playlist_refs), MOVE playlists or folders into a folder (All Playlists:
+        the top level) they can go into (actions.can_move_refs), else 0."""
         if not isinstance(refs, ItemRefs):
             return 0
         item = self._sidebar.get_item(index)
-        if self._is_all_playlists(item) and new_playlist_tracks(refs):
+        if self._is_all_playlists(item) and new_playlist_refs(refs):
             return Gdk.DragAction.COPY
         if isinstance(item, SidebarItem) and item.entry.kind == 'playlist':
-            playlist = item.entry.item
-            if (len(refs) == 1 and refs.tracks()
-                    and self._item_actions.can_drop(playlist)):
-                return Gdk.DragAction.COPY
+            if self._item_actions.can_drop_refs(item.entry.item, refs):
+                offered = dnd.offered() or Gdk.DragAction.COPY
+                return dnd.choose_action(offered, Gdk.DragAction.COPY)
             return 0
         folder_id = self._drop_folder(item)
         if folder_id is not None and self._item_actions.can_move_refs(refs, folder_id):
@@ -603,11 +605,12 @@ class SidebarController:
     def _on_drop(self, _sidebar, index, value, _action):
         self._end_drag()
         item = self._sidebar.get_item(index)
+        value = dnd.current() or value  # the drag's own ItemRefs, with its objects
         if not self.drop_action(index, value):
             return False
         if isinstance(item, SidebarItem) and item.entry.kind == 'playlist':
             return self._item_actions.drop(item.entry.item, value)
-        if self._is_all_playlists(item) and new_playlist_tracks(value):
+        if self._is_all_playlists(item) and new_playlist_refs(value):
             # The dialog once the drop is over, not inside the drag's own handling.
             GLib.idle_add(self._new_playlist, value)
             return True

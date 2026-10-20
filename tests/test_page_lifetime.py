@@ -512,7 +512,7 @@ class PageLifetimeTest(WidgetTestCase):
         store = Gio.ListStore(item_type=Item)
         store.splice(0, 0, [Item(_album(number)) for number in range(8)])
         refs = await self.pushed_and_popped(
-            GridPage(self.library, 'Invented Folder', store, root=False, drag=True), Tile)
+            GridPage(self.library, 'Invented Folder', store, root=False), Tile)
         await self.assert_freed(*refs)
 
     async def test_search_see_all_page(self):

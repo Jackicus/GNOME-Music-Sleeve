@@ -58,6 +58,33 @@ class ShelfTest(PageTestCase):
         self.assertEqual(tiles['video'].cover.get_height(), ART_SIZE)
         self.assertEqual(tiles['album'].cover.get_height(), ART_SIZE)
 
+    async def test_album_and_playlist_tiles_are_drag_sources(self):
+        # Onto a sidebar playlist (their songs added) or the player bar (queued); an
+        # artist's tile drags nowhere.
+        from gi.repository import Graphene, Gtk
+
+        from applemusic.library import Item, ShelfModel
+        from applemusic.widgets.tile import Tile
+        from tests.page_harness import find_all
+
+        items = [Item(album(0)),
+                 Item({'id': 'p.pl1', 'kind': 'playlist', 'title': 'Invented Playlist'}),
+                 Item({'id': 'r1', 'kind': 'artist', 'title': 'Invented Artist'})]
+        shelf = await self.shown(ShelfModel('mixed', 'Invented Mix', items))
+        view = shelf.list_view
+        sources = [controller for controller in view.observe_controllers()
+                   if isinstance(controller, Gtk.DragSource)]
+        self.assertEqual(len(sources), 1)
+        tiles = {tile.context_item.kind: tile for tile in find_all(view, Tile)
+                 if tile.context_item is not None}
+        for kind, draggable in (('album', True), ('playlist', True), ('artist', False)):
+            tile = tiles[kind]
+            ok, middle = tile.compute_point(view, Graphene.Point().init(
+                tile.get_width() / 2, tile.get_height() / 2))
+            self.assertTrue(ok)
+            provider = sources[0].emit('prepare', middle.x, middle.y)
+            self.assertEqual(provider is not None, draggable, kind)
+
     async def test_a_short_row_offers_no_see_all_nor_arrows(self):
         shelf = await self.shown(model('short', 1))
         self.assertFalse(shelf.see_all_button.get_visible())

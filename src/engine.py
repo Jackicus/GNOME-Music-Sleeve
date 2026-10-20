@@ -58,6 +58,7 @@ UI awaits.
     await engine.in_library('album', library_id)   # False once Apple's library read is a 404
     await engine.catalog_url('album', library_id)   # its music.apple.com page, or None
     await engine.add_to_playlist(playlist_id, song_id)   # kind='video' for a music video
+    await engine.add_tracks_to_playlist(playlist_id, [(kind, id)…])   # how many, in batches
     await engine.create_playlist(name, description, [(kind, id)…], folder_id)   # its id
     await engine.edit_playlist(playlist_id, name=None, description=None)
     await engine.delete_playlist(playlist_id)
@@ -1748,13 +1749,38 @@ class Engine(GObject.Object):
         """Add a song, or a music video (`kind` 'video'), to the end of a library playlist
         (POST /v1/me/library/playlists/<id>/tracks): a library id ("i.") as `library-songs`
         or `library-music-videos`, a catalog one as `songs` or `music-videos`."""
-        playlist_id, song_id = str(playlist_id or ''), str(song_id or '')
-        track_type = api.track_type(kind, song_id)
-        if not is_library_id(playlist_id) or track_type is None:
+        await self.add_tracks_to_playlist(playlist_id, [(kind, song_id)])
+
+    async def add_tracks_to_playlist(self, playlist_id, tracks):
+        """Add songs and music videos `tracks` ((kind, id) pairs, as add_to_playlist takes
+        one: an album's or a playlist's) to the end of a library playlist, in their order:
+        one POST of their list for each api.PLAYLIST_BATCH of them, one after the other.
+        Answers how many were added. A failure after some batches went in is raised with
+        how many had (the `api` code and Apple's status kept); those stay in the playlist."""
+        playlist_id = str(playlist_id or '')
+        if not is_library_id(playlist_id):
             raise EngineError('usage', 'add to playlist needs a library playlist and a song '
                                        'or a music video')
+        entries = api.playlist_entries_for(tracks)
+        if not entries:
+            raise EngineError('usage', 'add to playlist needs a song or a music video')
         client = await self._require_signed_in('add to playlists')
-        await client.bridge('addToPlaylist', playlist_id, song_id, track_type)
+        await self._add_entries(client, playlist_id, entries)
+        return len(entries)
+
+    async def _add_entries(self, client, playlist_id, entries, added=0):
+        """POST `entries` to the playlist's tracks in batches (add_tracks_to_playlist);
+        `added`, how many of the whole list went in before these, for the message of a
+        failure partway."""
+        for batch in api.batches(entries, api.PLAYLIST_BATCH):
+            try:
+                await client.bridge('addToPlaylist', playlist_id, batch)
+            except EngineError as e:
+                if not added:
+                    raise
+                raise EngineError(e.code, f'after {added} tracks: {e.message}',
+                                  status=e.status) from e
+            added += len(batch)
 
     # -- managing playlists ----------------------------------------------------------------
     # The writes music.apple.com's web player makes to the account's playlists and folders,
@@ -1763,26 +1789,25 @@ class Engine(GObject.Object):
     async def create_playlist(self, name, description='', tracks=(), folder_id=None):
         """A new library playlist named `name` (POST /v1/me/library/playlists), with the
         songs and music videos `tracks` ((kind, id) pairs, as add_to_playlist takes them) in
-        it, in the folder `folder_id` (None or 'root': the top level). Answers its id. Apple
+        it (the first api.PLAYLIST_BATCH with it, the rest added after: _add_entries), in
+        the folder `folder_id` (None or 'root': the top level). Answers its id. Apple
         lists a new playlist only seconds later (6.5 s once: src/backend/README.md)."""
         name = str(name or '').strip()
         if not name:
             raise EngineError('usage', 'a playlist needs a name')
-        entries = []
-        for kind, track_id in tracks:
-            track_type = api.track_type(kind, track_id)
-            if track_type is None:
-                raise EngineError('usage', f'cannot put {kind} {track_id} in a playlist')
-            entries.append({'id': str(track_id), 'type': track_type})
+        entries = api.playlist_entries_for(tracks)
         attributes = {'name': name}
         if description:
             attributes['description'] = str(description)
         client = await self._require_signed_in('make playlists')
-        answer = await client.bridge('createPlaylist', attributes, entries,
+        first, rest = entries[:api.PLAYLIST_BATCH], entries[api.PLAYLIST_BATCH:]
+        answer = await client.bridge('createPlaylist', attributes, first,
                                      _folder(folder_id))
         new_id = answer.get('id') if isinstance(answer, dict) else None
         if not new_id:
             raise EngineError('api', 'the new playlist came back without its id')
+        if rest:
+            await self._add_entries(client, str(new_id), rest, added=len(first))
         return str(new_id)
 
     async def edit_playlist(self, playlist_id, name=None, description=None):

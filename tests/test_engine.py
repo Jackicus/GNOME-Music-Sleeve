@@ -2236,16 +2236,61 @@ class LibraryWriteTest(EngineFixture):
         await self.engine.add_to_playlist('p.1', 'i.video1', kind='video')
         await self.engine.add_to_playlist('p.1', '1000000009', kind='musicVideo')
         self.assertEqual(self.page.bridge_calls, [
-            ('addToPlaylist', 'p.1', 'i.song1', 'library-songs'),
-            ('addToPlaylist', 'p.1', '1000000001', 'songs'),
-            ('addToPlaylist', 'p.1', 'i.video1', 'library-music-videos'),
-            ('addToPlaylist', 'p.1', '1000000009', 'music-videos')])
+            ('addToPlaylist', 'p.1', [{'id': 'i.song1', 'type': 'library-songs'}]),
+            ('addToPlaylist', 'p.1', [{'id': '1000000001', 'type': 'songs'}]),
+            ('addToPlaylist', 'p.1', [{'id': 'i.video1', 'type': 'library-music-videos'}]),
+            ('addToPlaylist', 'p.1', [{'id': '1000000009', 'type': 'music-videos'}])])
         for playlist_id, song_id, kind in (('pl.u-1', '1', 'song'), ('', '1', 'song'),
                                            ('p.1', '', 'song'), ('p.1', '1', 'album'),
                                            ('p.1', '1', 'station'), ('p.1', '1', None)):
             with self.assertRaises(EngineError) as raised:
                 await self.engine.add_to_playlist(playlist_id, song_id, kind)
             self.assertEqual(raised.exception.code, 'usage')
+
+    async def test_many_tracks_are_added_in_batches_in_order(self):
+        # An album's or a playlist's songs: one POST of their list per PLAYLIST_BATCH, in
+        # order, library and catalog ids each typed as its own.
+        await self.up()
+        tracks = [('song', f'i.s{n}') for n in range(5)] + [('video', '1000000009'),
+                                                            ('song', '1000000001')]
+        with mock.patch.object(api, 'PLAYLIST_BATCH', 3):
+            self.assertEqual(await self.engine.add_tracks_to_playlist('p.1', tracks), 7)
+        sent = [call[2] for call in self.page.bridge_calls]
+        self.assertEqual([len(batch) for batch in sent], [3, 3, 1])
+        self.assertEqual([entry['id'] for batch in sent for entry in batch],
+                         [track_id for _kind, track_id in tracks])
+        self.assertEqual(sent[1][2], {'id': '1000000009', 'type': 'music-videos'})
+        self.assertEqual(sent[2][0], {'id': '1000000001', 'type': 'songs'})
+        # Nothing to add, or something that cannot go in: nothing sent.
+        self.page.bridge_calls.clear()
+        for bad in ([], [('song', 'i.s1'), ('album', 'l.1')]):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.add_tracks_to_playlist('p.1', bad)
+            self.assertEqual(raised.exception.code, 'usage')
+        self.assertEqual(self.page.bridge_calls, [])
+
+    async def test_a_batch_refused_partway_says_how_many_went_in(self):
+        await self.up()
+        page = self.page
+        posts = []
+
+        def refuse_second(message):
+            if 'addToPlaylist' in message['params']['expression']:
+                posts.append(message)
+                if len(posts) == 2:
+                    return {'result': {'type': 'object'}, 'exceptionDetails': {
+                        'text': 'Uncaught', 'exception': {
+                            'description': 'Error: HTTP 500 Unable to update tracks'}}}
+            return page(message)
+
+        self.chrome.responders['Runtime.evaluate'] = refuse_second
+        tracks = [('song', f'i.s{n}') for n in range(5)]
+        with mock.patch.object(api, 'PLAYLIST_BATCH', 2):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.add_tracks_to_playlist('p.1', tracks)
+        self.assertEqual(raised.exception.code, 'api')
+        self.assertIn('after 2 tracks', raised.exception.message)
+        self.assertEqual(len(posts), 2)  # the third batch is not sent
 
     async def test_a_refused_write_is_api(self):
         await self.up()
@@ -2347,6 +2392,20 @@ class PlaylistWriteTest(EngineFixture):
             ('updatePlaylist', 'p.new', {'name': 'Renamed'}),
             ('updatePlaylist', 'p.new', {'description': ''}),
             ('deletePlaylist', 'p.new')])
+
+    async def test_a_new_playlist_of_many_songs_gets_the_rest_after(self):
+        await self.up()
+        self.page.bridge_answers['createPlaylist'] = {'id': 'p.new'}
+        tracks = [('song', f'i.s{n}') for n in range(5)]
+        with mock.patch.object(api, 'PLAYLIST_BATCH', 2):
+            self.assertEqual(await self.engine.create_playlist('Long', tracks=tracks), 'p.new')
+        calls = self.page.bridge_calls
+        self.assertEqual([call[0] for call in calls],
+                         ['createPlaylist', 'addToPlaylist', 'addToPlaylist'])
+        self.assertEqual([entry['id'] for entry in calls[0][2]], ['i.s0', 'i.s1'])
+        self.assertEqual(calls[1][1], 'p.new')
+        self.assertEqual([entry['id'] for call in calls[1:] for entry in call[2]],
+                         ['i.s2', 'i.s3', 'i.s4'])
 
     async def test_what_the_playlist_writes_refuse(self):
         await self.up()
