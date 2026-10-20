@@ -770,7 +770,10 @@ async def walkthrough(window):
     await until(lambda: sheet.tab_stack.get_visible_child_name() == 'queue')
     queue_view = sheet.queue_view
     await key(window, 'Tab', 0.1)
-    check('Tab reaches Autoplay', window.get_focus() is queue_view.autoplay_button,
+    check('Tab reaches History', window.get_focus() is queue_view.history_button,
+          describe(window.get_focus()))
+    await key(window, 'Tab', 0.1)
+    check('Tab: Autoplay', window.get_focus() is queue_view.autoplay_button,
           describe(window.get_focus()))
     await key(window, 'Tab', 0.1)
     check('Tab: Clear', window.get_focus() is queue_view.clear_button,
@@ -802,6 +805,7 @@ async def walkthrough(window):
     await key(window, 'Return')
     undo()
     check('Down, Enter plays the next entry', jumps == [1], jumps)
+    await up_next_history(window, queue_view)
     await key(window, 'Escape', 0.8)
     check('Escape closes the sheet', not window.bottom_sheet.get_open())
     await now_playing_tabs(window)
@@ -1273,6 +1277,55 @@ async def up_next_remove(window, queue_view):
     await key(window, 'Delete', 0.4)
     check('Delete on the entry playing removes nothing', len(removed) == 1, removed)
     del player.remove_from_queue
+
+
+async def up_next_history(window, queue_view):
+    """History: a queue with entries played before the one playing (the invented one's
+    history); Shift+Tab from Up Next back to the History toggle, Space shows them, the most
+    recent first, Tab reaches them, their menu has no Remove from Up Next, Enter plays one
+    again, and Space on the toggle goes back to Up Next. Leaves the focus in Up Next."""
+    app.player.apply(harness.invented_playing_state(app, lyrics=True, history=True))
+    current = app.player.queue_index
+    await until(lambda: inside(window.get_focus(), queue_view.list_view))
+    for _ in range(3):  # Clear, Autoplay, History
+        await key(window, '<shift>Tab', 0.1)
+    check('Shift+Tab from Up Next reaches History',
+          window.get_focus() is queue_view.history_button, describe(window.get_focus()))
+    await key(window, 'space', 0.4)
+    await until(lambda: queue_view.lists.get_visible_child_name() == 'history')
+    shown = queue_view.history_model
+    check('Space on it shows History, the most recent first, without Autoplay and Clear',
+          queue_view.history_shown and queue_view.lists.get_visible_child_name() == 'history'
+          and shown.get_n_items() == current
+          and shown.get_item(0) is app.player.queue.get_item(current - 1)
+          and not queue_view.clear_button.get_visible(), shown.get_n_items())
+    await key(window, 'Tab', 0.2)
+    check('Tab reaches History', inside(window.get_focus(), queue_view.history_view),
+          describe(window.get_focus()))
+    await key(window, 'Menu', 0.6)
+    popover = harness.popovers(queue_view)
+    labels = menu_labels(popover[0].get_menu_model()) if popover else []
+    check("Menu opens the entry's menu, without Remove from Up Next",
+          bool(popover) and 'Remove from Up Ne_xt' not in labels, labels)
+    await key(window, 'Escape', 0.4)
+    check('Escape closes it, the focus back in History',
+          inside(window.get_focus(), queue_view.history_view), describe(window.get_focus()))
+    jumps = []
+    undo = watch('queue_jump', jumps)
+    await key(window, 'Down')
+    await key(window, 'Return')
+    undo()
+    check('Down, Enter plays the entry played before the last one again',
+          jumps == [current - 2], jumps)
+    await key(window, '<shift>Tab', 0.1)
+    check('Shift+Tab: the History toggle', window.get_focus() is queue_view.history_button,
+          describe(window.get_focus()))
+    await key(window, 'space', 0.4)
+    await until(lambda: queue_view.lists.get_visible_child_name() == 'up-next')
+    check('Space on it goes back to Up Next',
+          not queue_view.history_shown and queue_view.clear_button.get_visible()
+          and queue_view.lists.get_visible_child_name() == 'up-next')
+    queue_view.list_view.grab_focus()
 
 
 async def now_playing_tabs(window):

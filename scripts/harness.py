@@ -47,9 +47,10 @@ ICONS = os.path.join(PREFIX, 'share', 'icons')
 DEMO_DIR = os.path.join(ROOT, 'build', 'demo')  # what the development launcher passes
 BASE_ID = 'io.github.jackicus.MusicSleeve'
 
-# invented_playing_state()'s artwork URL: the album's cover is copied to where
-# remote.fetch_remote would put this URL's 640 px image, so nothing is fetched.
-DEMO_ART_URL = 'https://example.invalid/demo-art/{w}x{h}bb.jpg'
+# invented_playing_state()'s artwork URLs, one per album (ALBUM: its id): the album's cover
+# and thumbnail are copied to where remote.fetch_remote would put this URL's 640 px and
+# 320 px images, so nothing is fetched.
+DEMO_ART_URL = 'https://example.invalid/demo-art/ALBUM/{w}x{h}bb.jpg'
 PLAYING_POSITION = 65.0  # seconds in: a line of the lyrics fixture is current, mid-song
 
 
@@ -167,41 +168,67 @@ def album_entries(album):
             for entry in group.get('entries') or []]
 
 
-def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None,
-                           autoplay=False):
-    """A Player.apply() dict: the demo library's first album as the queue, its first track
-    playing `position` seconds in (PLAYING_POSITION, 65 s, by default), the album's cover as
-    the artwork, and with `lyrics` the synced lyrics of the LYRICS_FIXTURES file named
-    `fixture`; with `autoplay`, the album's first AUTOPLAY_AFTER tracks, then the next
-    album's first AUTOPLAY_COUNT as entries autoplay added. The demo cannot play: this is
-    what the Player would show."""
+def demo_art_url(album):
+    """An invented artwork URL for a demo album, its cover and thumbnail put where
+    remote.fetch_remote keeps that URL's images (so nothing is ever fetched for it)."""
     from applemusic.backend import config
     from applemusic.remote import remote_art_path
 
+    url = DEMO_ART_URL.replace('ALBUM', album.id)
+    for size, source in ((config.COVER_SIZE, album.art), (config.THUMB_SIZE, album.thumb)):
+        path = remote_art_path(url, size)
+        if source and path and os.path.exists(source) and not os.path.exists(path):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            shutil.copyfile(source, path)
+    return url
+
+
+def album_queue_entries(album, count=None, **extra):
+    """The first `count` (all: None) of an album's tracks as queue entries with its
+    artwork URL (demo_art_url()) and `extra` keys."""
+    url = demo_art_url(album)
+    return [dict(entry, artUrl=url, **extra) for entry in album_entries(album)[:count]]
+
+
+def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None,
+                           autoplay=False, album=0, history=False):
+    """A Player.apply() dict: the demo library's album at position `album` (the first by
+    default) as the queue, its first track playing `position` seconds in (PLAYING_POSITION,
+    65 s, by default), the album's cover as the artwork, and with `lyrics` the synced lyrics
+    of the LYRICS_FIXTURES file named `fixture`; with `autoplay`, the album's first
+    AUTOPLAY_AFTER tracks, then the next album's first AUTOPLAY_COUNT as entries autoplay
+    added; with `history`, the queue first holds HISTORY_COUNT tracks of each of the
+    HISTORY_ALBUMS albums after those, played already (Up Next's History). Each album's
+    entries have its own artwork. The demo cannot play: this is what the Player would
+    show."""
     if not app.demo:
         sys.exit('harness: an invented playing state needs the demo library')
-    album = app.library.albums.get_item(0)
-    if album is None:
-        sys.exit('harness: the demo library has no album')
-    entries = album_entries(album)
+    albums = app.library.albums
+    playing = albums.get_item(album)
+    if playing is None:
+        sys.exit(f'harness: the demo library has no album {album}')
+    entries = album_queue_entries(playing)
     if not entries:
         sys.exit('harness: the demo album has no tracks')
     if autoplay:
-        following = app.library.albums.get_item(1)
-        added = album_entries(following)[:AUTOPLAY_COUNT] if following is not None else []
-        entries = entries[:AUTOPLAY_AFTER] + [dict(entry, autoplay=True) for entry in added]
+        following = albums.get_item(album + 1)
+        added = (album_queue_entries(following, AUTOPLAY_COUNT, autoplay=True)
+                 if following is not None else [])
+        entries = entries[:AUTOPLAY_AFTER] + added
+    played = []
+    if history:
+        for number in range(HISTORY_ALBUMS):
+            earlier = albums.get_item((album + 2 + number) % albums.get_n_items())
+            played += album_queue_entries(earlier, HISTORY_COUNT)
+    entries = played + entries
     for index, entry in enumerate(entries):
-        entry['artUrl'] = DEMO_ART_URL
         entry['index'] = index
-    art_path = remote_art_path(DEMO_ART_URL, config.COVER_SIZE)
-    if album.art and art_path and not os.path.exists(art_path):
-        os.makedirs(os.path.dirname(art_path), exist_ok=True)
-        shutil.copyfile(album.art, art_path)
+    current = len(played)
     state = {
-        'state': 'playing', 'track': entries[0],
+        'state': 'playing', 'track': entries[current],
         'position': PLAYING_POSITION if position is None else position,
-        'duration': entries[0].get('durationMs', 0) / 1000, 'shuffle': 'off',
-        'repeat': 'none', 'volume': 0.7, 'queue': {'index': 0, 'items': entries},
+        'duration': entries[current].get('durationMs', 0) / 1000, 'shuffle': 'off',
+        'repeat': 'none', 'volume': 0.7, 'queue': {'index': current, 'items': entries},
     }
     if lyrics:
         path = os.path.join(ROOT, 'tests', 'fixtures', LYRICS_FIXTURES[fixture])
@@ -212,6 +239,8 @@ def invented_playing_state(app, lyrics=False, fixture='lyrics', position=None,
 
 AUTOPLAY_AFTER = 4   # the album's tracks an invented queue with autoplay keeps
 AUTOPLAY_COUNT = 5   # and the entries autoplay added after them
+HISTORY_ALBUMS = 3   # an invented queue with history: the albums played before
+HISTORY_COUNT = 2    # and the tracks of each
 
 
 def invented_session(app, position=None):

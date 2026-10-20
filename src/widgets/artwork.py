@@ -32,7 +32,7 @@ import asyncio
 import functools
 import itertools
 import logging
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 
 import gi
 
@@ -554,13 +554,87 @@ def scrim_alpha(pixels, texts=FIELD_TEXT, floor=SCRIM_FLOOR):
     return 1.0
 
 
-Field = namedtuple('Field', 'texture scrim')
+# The Now Playing sheet's tint (widgets/backdrop.py): the same field drawn faintly over the
+# sheet's own background, at most TINT_MAX opaque, and only as far as its text keeps reading
+# on it: the sheet's text colour at full opacity and at its dimmed labels' 70% (style.css)
+# at AA's 4.5:1, its dimmed lyric lines (large text, at libadwaita's 55%) at 3:1
+# (tint_alpha()).
+TINT_MAX = 0.5
+TINT_TEXT = ((1.0, 4.5), (0.7, 4.5), (0.55, 3.0))
+# The field's pixels tint_alpha() checks: every SAMPLE_STEP-th of each row and column of the
+# blurred field (which changes slowly from one pixel to the next), and its lightest and
+# darkest pixels.
+SAMPLE_STEP = 2
+
+
+def tint_alpha(pixels, base, text, texts=TINT_TEXT, ceiling=TINT_MAX):
+    """The opacity to draw a field of `pixels` ((r, g, b) tuples in 0-1) at over a `base`
+    background ((r, g, b)) so that `text` ((r, g, b), alpha: the colour drawn over it) at
+    each of `texts`' opacities reaches its contrast ratio ((opacity, ratio) pairs) on every
+    one of the pixels: the most, up to `ceiling`, in steps of 2%. 0 when even the base
+    alone does not let the text read so (a theme of its own): no tint then, the plain
+    background."""
+    colour, alpha = text
+    needs = [(alpha * opacity, ratio) for opacity, ratio in texts]
+
+    def readable(background):
+        return all(contrast_ratio(colour, opacity, background) >= ratio
+                   for opacity, ratio in needs)
+
+    if not readable(base):
+        return 0.0
+    # The pixels least like the text first: a step too deep fails on the first of them.
+    ordered = sorted(pixels, key=luminance, reverse=luminance(colour) < 0.5)
+    for step in range(round(ceiling * 50), 0, -1):
+        amount = step / 50
+        if all(readable(tuple(b + amount * (p - b) for p, b in zip(pixel, base, strict=True)))
+               for pixel in ordered):
+            return amount
+    return 0.0
+
+
+def field_samples(pixels, size, step=SAMPLE_STEP):
+    """The pixels of a `size` px square field tint_alpha() checks: every `step`-th of each
+    row and column, and the lightest and darkest of them all."""
+    if not pixels:
+        return []
+    samples = [pixels[y * size + x] for y in range(0, size, step) for x in range(0, size, step)]
+    samples.append(max(pixels, key=luminance))
+    samples.append(min(pixels, key=luminance))
+    return samples
+
+
+class Field:
+    """A cover as a backdrop: `texture` (the cover shrunk and blurred, FIELD_SIZE px), the
+    `scrim` the full-screen player's white text needs over it, and its `samples` for the
+    sheet's tint, whose alpha for each pair of colours is worked out once (tint_for())."""
+
+    __slots__ = ('texture', 'scrim', 'samples', '_tints')
+
+    def __init__(self, texture, scrim, samples=()):
+        self.texture = texture
+        self.scrim = scrim
+        self.samples = list(samples)
+        self._tints = {}
+
+    def tint_for(self, base, text):
+        """tint_alpha() of the field over `base` under `text` (as tint_alpha() takes them),
+        remembered: safe to call from a thread, cheap once known."""
+        key = (base, text)
+        alpha = self._tints.get(key)
+        if alpha is None:
+            alpha = self._tints[key] = tint_alpha(self.samples, base, text)
+        return alpha
+
+    def has_tint(self, base, text):
+        return (base, text) in self._tints
 
 
 def load_field(path):
-    """The full-screen backdrop's field for the cover at `path`, in a worker thread: a Field
-    of the cover shrunk and blurred (a FIELD_SIZE px Gdk.Texture) and the scrim its text
-    needs over it (scrim_alpha()), or None when the file does not decode."""
+    """The backdrop's field for the cover at `path`, in a worker thread: a Field of the
+    cover shrunk and blurred (a FIELD_SIZE px Gdk.Texture), the scrim its text needs over it
+    (scrim_alpha()) and its samples (field_samples()), or None when the file does not
+    decode."""
     try:
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, FIELD_SIZE, FIELD_SIZE, False)
     except GLib.Error as error:
@@ -572,7 +646,41 @@ def load_field(path):
                  for pixel in blurred for channel in pixel)
     texture = Gdk.MemoryTexture.new(FIELD_SIZE, FIELD_SIZE, Gdk.MemoryFormat.R8G8B8,
                                     GLib.Bytes.new(data), FIELD_SIZE * 3)
-    return Field(texture, scrim_alpha(blurred))
+    return Field(texture, scrim_alpha(blurred), field_samples(blurred, FIELD_SIZE))
+
+
+# The fields made last, by cover path: the sheet's tint and the full-screen player's
+# backdrop show the same item's, and a song played again finds its own.
+FIELD_CACHE = 8
+_fields = OrderedDict()   # path -> Field, least recently used first
+_field_loads = {}         # path -> the asyncio.Task making its Field
+
+
+async def field_for(path, tint=None):
+    """The Field for the cover at `path` (load_field(), in a thread, once: the last
+    FIELD_CACHE are kept), or None when it does not decode; with `tint`, a (base, text) pair
+    as Field.tint_for() takes it, its alpha for them worked out in the thread too when it
+    is not known yet. Concurrent calls for one path share the load."""
+    field = _fields.get(path)
+    if field is not None:
+        _fields.move_to_end(path)
+    else:
+        task = _field_loads.get(path)
+        if task is None:
+            task = asyncio.get_running_loop().create_task(asyncio.to_thread(load_field, path))
+            _field_loads[path] = task
+            task.add_done_callback(lambda done: _field_loads.pop(path, None)
+                                   if _field_loads.get(path) is done else None)
+        field = await asyncio.shield(task)
+        if field is None:
+            return None
+        _fields[path] = field
+        _fields.move_to_end(path)
+        while len(_fields) > FIELD_CACHE:
+            _fields.popitem(last=False)
+    if tint is not None and not field.has_tint(*tint):
+        await asyncio.to_thread(field.tint_for, *tint)
+    return field
 
 
 def field_pixels(pixbuf):

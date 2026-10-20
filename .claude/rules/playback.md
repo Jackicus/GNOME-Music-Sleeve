@@ -113,11 +113,21 @@ paths:
   `scripts/screenshot.py --demo --now-playing lyrics|queue --size WxH` and the log for
   libadwaita's "exceeds … height" warning. Up Next is a `Gtk.SliceListModel` of the queue
   from the entry playing on, its size set again with each offset (`queue.slice_size()`,
-  gtk-notes.md; tests/test_queue.py), in two sections by `queue.QueueSections` (the
-  Autoplay header over the first entry autoplay added: `section_bounds()`), a row being
-  queue index `queue_index_at(position)`; Remove from Up Next is in an entry's menu
-  (`context_queue_entry`) and on Delete (the focus then on the row in its place), and
-  Autoplay and Clear (an Undo toast, `app.undo-clear-up-next`) sit above the list; the lyrics list is the user's while they scroll it
+  gtk-notes.md; tests/test_queue.py), in sections by `queue.QueueSections` (the entry
+  playing; Playing Next; Autoplay from the first entry autoplay added: `section_bounds()`),
+  a row being queue index `queue_index_at(position)` and showing its entry's cover, which
+  `queue.EntryArt` finds once per artwork URL (on disk in a thread, else a thumbnail
+  fetched, never in the demo), only for the rows bound and at most every `ART_DELAY_MS`:
+  bind is a dictionary lookup. Remove from Up Next is in an entry's menu
+  (`context_queue_entry`) and on Delete (the focus then on the row in its place); History
+  (a toggle above the list, off when the tab is left) shows the entries before the one
+  playing, most recent first, in a second list over a `queue.HistoryModel` brought up to
+  date (one splice) only while it shows; Autoplay and Clear (an Undo toast,
+  `app.undo-clear-up-next`) sit above the list. The sheet's background is the item's
+  artwork as a tint (`widgets.backdrop.ArtworkBackdrop`, `tint`: the full-screen player's
+  field drawn faintly over the sheet's colour, as deep as `artwork.tint_alpha()` lets its
+  text read at AA in the scheme shown, none in high contrast), made only while the sheet is
+  in sight; the sheet's dimmed labels are at 70% (style.css). The lyrics list is the user's while they scroll it
   (wheel, touchpad, touch: it shows no scrollbar) or have the focus on a line. Its top and
   bottom edges fade out through an alpha mask in `LyricsView.do_snapshot` (`edge_fades()`:
   as far as the text goes on past each edge; none in high contrast), never a gradient laid
@@ -148,8 +158,9 @@ paths:
   no field: `_show_item()` catches up as it shows) and leaves only when the Player's item
   goes (after its grace), never from one song to the next; tests/test_fullscreen.py.
   Its layout is `fullscreen.layout_for()` (a pure function, applied as the view is
-  allocated), its idle `fullscreen.should_hide()`; its background a FullscreenBackdrop over
-  `artwork.load_field()` and `scrim_alpha()`. Check it with `scripts/screenshot.py --demo
+  allocated), its idle `fullscreen.should_hide()`; its background an ArtworkBackdrop
+  (widgets/backdrop.py, the sheet's too) over `artwork.field_for()` (the last few covers'
+  fields, shared with the sheet) and `scrim_alpha()`. Check it with `scripts/screenshot.py --demo
   --fullscreen-player [lyrics|localized|syllable|none] --size WxH` (and `--idle`).
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with

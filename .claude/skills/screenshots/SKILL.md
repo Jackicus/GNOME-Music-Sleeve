@@ -28,7 +28,9 @@ What to shoot: $ARGUMENTS
      with background vocals, a long intro and a long break); `--position SECONDS` puts the
      item that far in (65 by default), mid-word or inside a break; `--autoplay` (with
      `--now-playing queue`) ends the queue with entries autoplay added, under Up Next's
-     Autoplay header; `--restored`: the item as the last session restored at launch, paused,
+     Autoplay header; `--history` puts entries played already before the item (with
+     `--now-playing queue`, Up Next's History shown); `--album N` plays the demo's Nth
+     album, another cover (the sheet's tint another colour); `--restored`: the item as the last session restored at launch, paused,
      the sheet closed;
    - `--signed-in [NAME]`: the account button signed in (an invented NAME: its avatar's colour
      follows the name); `--banner sign-in|expired`: the sign-in banner;

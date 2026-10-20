@@ -681,5 +681,116 @@ class TestField(unittest.TestCase):
         self.assertAlmostEqual(blurred[2 * size + 4][0], 1 / 9)
         self.assertEqual(blurred[0][0], 0.0)
 
+
+# The sheet's colours in libadwaita's two schemes: the window's background and its text.
+DARK = ((0x22 / 255, 0x22 / 255, 0x26 / 255), ((1.0, 1.0, 1.0), 1.0))
+LIGHT = ((0xfa / 255, 0xfa / 255, 0xfb / 255), ((0.0, 0.0, 6 / 255), 0.8))
+
+
+class TestTint(unittest.TestCase):
+    """The Now Playing sheet's tint: as deep as its text keeps reading, in either scheme."""
+
+    def check_readable(self, pixels, base, text, alpha):
+        colour, opacity = text
+        for pixel in pixels:
+            shown = tuple(b + alpha * (p - b) for p, b in zip(pixel, base, strict=True))
+            for factor, ratio in artwork.TINT_TEXT:
+                self.assertGreaterEqual(
+                    artwork.contrast_ratio(colour, opacity * factor, shown), ratio,
+                    (pixel, alpha, factor))
+
+    def test_the_text_reads_on_every_pixel_in_both_schemes(self):
+        covers = ((1.0, 1.0, 1.0), (0.9, 0.5, 0.1), (0.2, 0.4, 0.8), (0.3, 0.1, 0.5),
+                  (0.02, 0.02, 0.03), (0.95, 0.9, 0.3))
+        for colour in covers:
+            pixels = [(0.1, 0.1, 0.1), (0.5, 0.5, 0.5), colour]
+            for base, text in (DARK, LIGHT):
+                alpha = artwork.tint_alpha(pixels, base, text)
+                self.assertLessEqual(alpha, artwork.TINT_MAX)
+                self.check_readable(pixels, base, text, alpha)
+                # And no fainter than it needs: 2% more fails somewhere, or it is the most.
+                if 0 < alpha < artwork.TINT_MAX:
+                    with self.assertRaises(AssertionError):
+                        self.check_readable(pixels, base, text, alpha + 0.02)
+
+    def test_a_cover_like_the_background_takes_the_most(self):
+        self.assertEqual(artwork.tint_alpha([(0.1, 0.1, 0.12)], *DARK), artwork.TINT_MAX)
+        self.assertEqual(artwork.tint_alpha([(0.97, 0.97, 0.98)], *LIGHT), artwork.TINT_MAX)
+        # A white cover under white text, a black one under dark text: far less.
+        self.assertLess(artwork.tint_alpha([(1.0, 1.0, 1.0)], *DARK), 0.3)
+        self.assertLess(artwork.tint_alpha([(0.0, 0.0, 0.0)], *LIGHT), 0.2)
+
+    def test_a_background_the_text_cannot_read_on_takes_none(self):
+        grey = ((0.5, 0.5, 0.5), ((1.0, 1.0, 1.0), 1.0))
+        self.assertEqual(artwork.tint_alpha([(0.5, 0.5, 0.5)], *grey), 0.0)
+        self.assertEqual(artwork.tint_alpha([], *DARK), artwork.TINT_MAX)
+
+    def test_the_samples(self):
+        size = 4
+        pixels = [(n / 16, n / 16, n / 16) for n in range(16)]
+        samples = artwork.field_samples(pixels, size, step=2)
+        self.assertEqual(samples[:4], [pixels[0], pixels[2], pixels[8], pixels[10]])
+        self.assertEqual(samples[-2:], [pixels[15], pixels[0]])   # the lightest, the darkest
+        self.assertEqual(artwork.field_samples([], size), [])
+
+    def test_a_field_keeps_its_tint_for_each_pair_of_colours(self):
+        field = artwork.Field(None, 0.2, [(0.9, 0.5, 0.1)])
+        self.assertFalse(field.has_tint(*DARK))
+        with mock.patch.object(artwork, 'tint_alpha', wraps=artwork.tint_alpha) as tint:
+            dark = field.tint_for(*DARK)
+            self.assertEqual(field.tint_for(*DARK), dark)
+            light = field.tint_for(*LIGHT)
+        self.assertEqual(tint.call_count, 2)
+        self.assertTrue(field.has_tint(*DARK))
+        self.assertNotEqual(dark, light)
+
+
+class TestFieldCache(unittest.TestCase):
+    """field_for(): a cover's field made once, in a thread, shared and kept."""
+
+    def setUp(self):
+        artwork._fields.clear()
+        self.addCleanup(artwork._fields.clear)
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+
+    def cover(self, name, colour=0x3366ccff):
+        pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 40, 40)
+        pixbuf.fill(colour)
+        path = os.path.join(self.directory.name, f'{name}.png')
+        pixbuf.savev(path, 'png', [], [])
+        return path
+
+    def test_made_once_and_shared(self):
+        path = self.cover('a')
+
+        async def run():
+            with mock.patch.object(artwork, 'load_field', wraps=artwork.load_field) as load:
+                first, second = await asyncio.gather(artwork.field_for(path),
+                                                     artwork.field_for(path))
+                again = await artwork.field_for(path, DARK)
+                self.assertEqual(load.call_count, 1)
+            return first, second, again
+
+        first, second, again = asyncio.run(run())
+        self.assertIs(first, second)
+        self.assertIs(first, again)
+        self.assertTrue(first.has_tint(*DARK))   # worked out in the thread
+        self.assertGreater(len(first.samples), 2)
+
+    def test_the_last_few_are_kept_and_a_missing_file_is_none(self):
+        paths = [self.cover(str(n), 0x102030ff + n * 0x10000) for n in
+                 range(artwork.FIELD_CACHE + 1)]
+
+        async def run():
+            for path in paths:
+                await artwork.field_for(path)
+            return await artwork.field_for(os.path.join(self.directory.name, 'none.png'))
+
+        self.assertIsNone(asyncio.run(run()))
+        self.assertEqual(len(artwork._fields), artwork.FIELD_CACHE)
+        self.assertNotIn(paths[0], artwork._fields)
+        self.assertIn(paths[-1], artwork._fields)
+
 if __name__ == '__main__':
     unittest.main()

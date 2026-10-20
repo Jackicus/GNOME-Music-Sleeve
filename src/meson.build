@@ -167,6 +167,7 @@ install_data(
   'widgets/__init__.py',
   'widgets/artist_row.py',
   'widgets/artwork.py',
+  'widgets/backdrop.py',
   'widgets/banner.py',
   'widgets/category_tile.py',
   'widgets/context_menu.py',

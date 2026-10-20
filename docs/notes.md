@@ -159,6 +159,24 @@ its "Performance pass" section.
   spliced only where it differs (#332) those are 10 ms and one row, 98 ms and ten rows, 19
   ms and two rows, 5 ms and none. A whole new queue is the same either way (183 ms, 205
   rows), as is the next entry playing (4 to 7 ms, one row).
+- Up Next with covers and History (#353), on the same 500-entry invented queue (each album's
+  entries their own artwork, on disk: the demo fetches nothing), 420x760, the headless
+  display, before (origin/main) and after run in turns, medians of five each: a whole new
+  queue 240 -> 255 ms (205 rows made and bound either way, a row now a cover too: 1 ms to
+  make), the next entry playing 14 -> 15 ms (one row); a scroll from the top to the bottom
+  at 4,000 px/s, work a frame mean 2.5 -> 4.0 ms, 90th percentile 3.7 -> 5.3 ms, 36 covers
+  decoded on the way (EntryArt asked once per artwork URL). The list makes three or four
+  rows more than it starts with on the way down (the same before), and with covers the two
+  frames that make the first of them took 28 to 33 ms (none over 16.7 ms before): with any
+  extra child in the row (a plain box in place of the cover) they took about 20 ms, and
+  with none under 17, so it is the rows' size, not the artwork (no decode, no request, a
+  plain picture: the same). Showing History on 499 entries played: 194 ms (205 rows made),
+  another entry playing while it shows 11 ms (one row added on top); scrolling it, nothing
+  over 16.7 ms. The sheet's tint under the lyrics (lyrics_test.py, the syllable fixture,
+  20 s, two runs each in turns): work a frame 1.66 -> 1.97 ms, CPU 10.2 -> 11.5% of a core,
+  nothing over 16.7 ms either way: the backdrop is drawn again with every frame the sweep
+  draws, as a 32 px texture stretched over the sheet. `artwork.tint_alpha()` on a field's
+  258 samples takes 3 to 14 ms, in the thread that makes the field.
 - Sections from two `Gtk.SliceListModel`s of one store in a `Gtk.FlattenListModel` (Up
   Next's first try): moving their common bound takes items out of one part and puts them
   into the other, so their rows are built again, and the list's focus item went to the

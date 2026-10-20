@@ -216,9 +216,9 @@ button.artist-link:hover > label {
 
 /* The row of the track playing (widgets/track_row.py and song_title.py, marked by the album,
    playlist, Songs and Search pages as the Player's item changes): its title bold, as Up
-   Next's is, and a play icon in place of its number, or over its thumbnail on libadwaita's
-   translucent on-screen-display wash (`osd`, which reads on any artwork) with the
-   thumbnail's corners. */
+   Next's is, and a play icon in place of its number, or over its thumbnail (Up Next's
+   cover too) on libadwaita's translucent on-screen-display wash (`osd`, which reads on any
+   artwork) with the thumbnail's corners. */
 .playing .track-title {
   font-weight: bold;
 }
@@ -436,6 +436,30 @@ button.release-card {
 .now-playing scale {
   margin: 0;
   padding: 0;
+}
+
+/* The sheet's background, under its content: the sheet's colour, which the backdrop also
+   takes as its `color` to know what it draws the artwork's tint over (widgets/backdrop.py).
+   The dimmed text at 70%, as the full-screen player's, which the tint keeps at AA
+   (artwork.TINT_TEXT); the lyric lines, large text, at libadwaita's dim opacity, at AA's
+   3:1 for large text. libadwaita's own dim opacity in high contrast, which has no tint. */
+.artwork-backdrop.tint {
+  background-color: var(--window-bg-color);
+  color: var(--window-bg-color);
+}
+
+.now-playing .dimmed {
+  opacity: 0.7;
+}
+
+.now-playing .lyric-line.dimmed {
+  opacity: var(--dim-opacity);
+}
+
+@media (prefers-contrast: more) {
+  .now-playing .dimmed {
+    opacity: var(--dim-opacity);
+  }
 }
 
 /* The lyrics' top and bottom edges fade out (widgets/lyrics.py draws the view through a
@@ -666,6 +690,8 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
   font-size: 1.1em;
 }
 
+/* Up Next and History (widgets/queue.py): rows of a cover and two lines, the section
+   headings (Playing Next, Autoplay) on the rows' text. */
 listview.queue-list {
   background: none;
   padding-bottom: 12px;
@@ -673,9 +699,13 @@ listview.queue-list {
 
 listview.queue-list > row {
   margin: 0 6px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   min-height: 24px;
   border-radius: 8px;
+}
+
+listview.queue-list > header > .queue-section {
+  margin: 12px 18px 4px;
 }
 
 /* Only the title: a Gtk.Inscription has the `label` CSS name too. */

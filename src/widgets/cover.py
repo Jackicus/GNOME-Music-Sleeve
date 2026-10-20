@@ -50,6 +50,11 @@ class Cover(Gtk.Overlay):
     size = GObject.Property(type=int, default=0, getter=_get_size, setter=_set_size,
                             nick='Size', blurb='The width and height, in pixels')
 
+    @property
+    def paths(self):
+        """The files set_paths() was given last (those not None or '')."""
+        return self._slot.paths
+
     def set_paths(self, *paths):
         """Show the first of these files that decodes (None and missing files are skipped).
         False when they are the paths shown already (nothing is asked for again: refresh()

@@ -32,9 +32,10 @@ The screenshots show an invented demo library.
 - Your playlists to manage: make new ones, rename and delete them, add and remove songs, and
   pick from the songs Apple Music suggests adding; make folders and move playlists into them,
   from a menu or by dragging them onto a folder in the sidebar.
-- A player bar (drop songs and playlists on it to queue them), and a Now Playing view with
-  the queue (remove songs from Up Next, clear it, and Autoplay's similar songs when it ends)
-  and the lyrics: lit word by word as
+- A player bar (drop songs and playlists on it to queue them), and a Now Playing view,
+  tinted by the song's artwork, with the queue (covers, the History of what played, remove
+  songs from Up Next, clear it, and Autoplay's similar songs when it ends) and the lyrics:
+  lit word by word as
   they are sung when Apple Music times them so, with background vocals, duets on two sides,
   and translations and pronunciations when the song has them.
 - A full-screen player (<kbd>F11</kbd>): the artwork, the controls and the lyrics over the

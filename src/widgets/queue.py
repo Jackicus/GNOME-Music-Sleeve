@@ -2,31 +2,46 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """AppleMusicQueueView: the Now Playing sheet's Up Next tab, the Player's queue from the
-entry playing on, with its edits.
+entry playing on, with its edits, and the History of what played before it.
 
-A Gtk.ListView over a Gtk.SliceListModel of player.queue (a Gio.ListStore of NowPlaying)
-that starts at the entry playing (slice_offset) and runs to the queue's end (slice_size), so
-a row at list position p is the queue's entry at the slice's offset plus p
-(queue_index_at()). The slice is given two sections by QueueSections (a GtkSectionModel): the
-entry playing and what the user queued after it, then, from the first entry autoplay added
-(NowPlaying.autoplay), the rest of the queue under an "Autoplay" header (the header-factory
-titles the second); the split (section_bounds()) is found again with every change of the
-queue or of the entry playing, the rows left as they are. The entry playing comes first,
-marked with a play icon in place of its number and a bold title. Rows are like a
-playlist's track rows (a number, the title with its explicit badge, the artist, the
-duration). Activating a row (a double click, or Enter) plays that entry
+Up Next is a Gtk.ListView over a Gtk.SliceListModel of player.queue (a Gio.ListStore of
+NowPlaying) that starts at the entry playing (slice_offset) and runs to the queue's end
+(slice_size), so a row at list position p is the queue's entry at the slice's offset plus p
+(queue_index_at()). The slice is given up to three sections by QueueSections (a
+GtkSectionModel): the entry playing; what the user queued after it, under a "Playing Next"
+header; and, from the first entry autoplay added (NowPlaying.autoplay), the rest of the queue
+under an "Autoplay" header (the header-factory titles them); the bounds (section_bounds())
+are found again with every change of the queue or of the entry playing, the rows left as
+they are. Each row shows the entry's cover (EntryArt finds it), its title (with the explicit
+badge), its artist and its duration; the entry playing has a play symbol over its cover and
+a bold title. Activating a row (a double click, or Enter) plays that entry
 (player.queue_jump). A right click, a long press or the Menu key opens a row's menu
 (widgets/context_menu.py: the entry's, without Play, with Remove from Up Next on an entry after
 the one playing while the queue may be edited: its context_queue_entry); Delete
 (shortcuts.QUEUE_REMOVE) on a focused row does the same, and the focus then goes to the row
-that took its place (or the one before, at the end). Above the list, Autoplay (a toggle of
-the `autoplay` setting; insensitive while MusicKit allows none, or repeat is on, when it
-would not start) and Clear (everything after the entry playing, with an Undo toast:
-app.undo-clear-up-next). An empty queue shows a compact status page. The list is named "Up
-Next" for assistive technology, each row by labels.track_label, described as playing or as
-autoplay's.
+that took its place (or the one before, at the end). Above the list, History (a toggle) at
+the start, and at the end Autoplay (a toggle of the `autoplay` setting; insensitive while
+MusicKit allows none, or repeat is on, when it would not start) and Clear (everything after
+the entry playing, with an Undo toast: app.undo-clear-up-next). An empty queue shows a compact
+status page. The list is named "Up Next" for assistive technology, each row by
+labels.track_label, described as playing or as autoplay's.
+
+History shows, in place of Up Next while its toggle is on, the queue's entries before the one
+playing (MusicKit's queue keeps them), the most recent first: a second Gtk.ListView over a
+HistoryModel, brought up to date (one splice of what differs) only while it shows; activating
+a row plays that entry again. Its rows are Up Next's, without Remove. The toggle goes off when
+the tab is left. Autoplay and Clear, Up Next's, are hidden meanwhile.
+
+Covers: the bridge gives each entry an artwork URL. EntryArt finds the file for each, once per
+URL, on disk (fetch_remote's thumbnail, the library's own thumbnail for the same artwork, or
+the cover the bar fetched) in a thread, and fetches the thumbnail of what is not there yet,
+a few at a time (never in the demo); it looks only at the URLs of rows still bound, at most
+every ART_DELAY_MS, so a fast scroll through a long queue asks for nothing it has passed. A
+row binds with the path known for its URL (a dictionary lookup) and its Cover decodes it as
+any row's does (artwork.ArtworkSlot: on map, after the frame, let go of on unmap).
 """
 
+import asyncio
 from gettext import gettext as _
 from gettext import pgettext as C_
 
@@ -34,12 +49,21 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from .. import shortcuts
 from ..actions import now_playing_track
-from ..player import format_time
+from ..backend import config, normalize
+from ..player import NowPlaying, format_time
+from ..remote import fetch_remote, on_disk, remote_art_path, sized_url
 from . import context_menu
 from .labels import track_label
+from .util import weak_method
 
 # The keys that remove the focused row's entry: the shortcut's, and the keypad's.
 REMOVE_KEYS = f'{shortcuts.QUEUE_REMOVE}|KP_Delete'
+# A row's cover, in px.
+ART_SIZE = 40
+# How often at most EntryArt looks for the covers the rows bound since its last look need,
+# and how many thumbnails it fetches at once.
+ART_DELAY_MS = 100
+ART_FETCHES = 4
 
 
 def slice_offset(queue_index):
@@ -56,16 +80,40 @@ def slice_size(offset):
 
 
 def section_bounds(entries, queue_index):
-    """(offset, split) of Up Next's two sections in `entries` (a sequence of NowPlaying), as
-    queue indices: the first from `offset` (the entry playing, or the top) up to `split`,
-    the first entry after the one playing that autoplay added (or the end); the second, the
-    Autoplay section, from `split` on."""
+    """(offset, first, split) of Up Next's sections in `entries` (a sequence of NowPlaying),
+    as queue indices: the slice from `offset` (the entry playing, or the top); the entry
+    playing alone, up to `first` (offset itself when nothing plays); Playing Next, from
+    `first` up to `split`, the first entry after the one playing that autoplay added (or the
+    end); the Autoplay section from `split` on."""
     offset = slice_offset(queue_index)
     count = len(entries)
-    for position in range(offset + (1 if queue_index >= 0 else 0), count):
+    first = min(offset + 1, count) if queue_index >= 0 else offset
+    first = max(first, offset)
+    for position in range(first, count):
         if entries[position].autoplay:
-            return offset, position
-    return offset, max(offset, count)
+            return offset, first, position
+    return offset, first, max(first, count)
+
+
+def section_at(position, count, bounds):
+    """(start, end) of the section holding list `position` of `count` items, the sections
+    divided at `bounds` (list positions, in order; those at 0 or past the end divide
+    nothing)."""
+    start = 0
+    for bound in bounds:
+        if bound >= count:
+            break
+        if position < bound:
+            return start, bound
+        start = max(start, bound)
+    return start, count
+
+
+def history_entries(queue, queue_index):
+    """The entries of `queue` (a Gio.ListModel) before the one at `queue_index`, the most
+    recent first: History's."""
+    return [queue.get_item(index) for index in range(min(queue_index, queue.get_n_items()) - 1,
+                                                     -1, -1)]
 
 
 class _Entries:
@@ -83,28 +131,29 @@ class _Entries:
 
 class QueueSections(GObject.Object, Gio.ListModel, Gtk.SectionModel):
     """A list model of NowPlaying (Up Next's slice of the queue, passed through as it is, its
-    changes too) in two sections: before `split` and from it on (set_split(), which tells the
-    list its headers changed). Two slices in a Gtk.FlattenListModel would give the sections
-    too, but every move of their common bound would take rows out of one and put them into
-    the other, building them again, and lose the list's focus."""
+    changes too) in sections divided at `bounds` (set_bounds(), which tells the list its
+    headers changed). Two slices in a Gtk.FlattenListModel would give the sections too, but
+    every move of their common bound would take rows out of one and put them into the other,
+    building them again, and lose the list's focus."""
 
     __gtype_name__ = 'AppleMusicQueueSections'
 
     def __init__(self, model):
         super().__init__()
         self._model = model
-        self._split = 0
+        self._bounds = ()
         model.connect('items-changed',
                       lambda _model, position, removed, added: self.items_changed(
                           position, removed, added))
 
     @property
-    def split(self):
-        return self._split
+    def bounds(self):
+        return self._bounds
 
-    def set_split(self, split):
-        if split != self._split:
-            self._split = split
+    def set_bounds(self, *bounds):
+        """Divide the items at these list positions (in order)."""
+        if bounds != self._bounds:
+            self._bounds = bounds
             count = self.get_n_items()
             if count:
                 self.sections_changed(0, count)
@@ -122,37 +171,193 @@ class QueueSections(GObject.Object, Gio.ListModel, Gtk.SectionModel):
         count = self._model.get_n_items()
         if position >= count:
             return count, GLib.MAXUINT32
-        if position < self._split:
-            return 0, min(self._split, count)
-        return min(self._split, count), count
+        return section_at(position, count, self._bounds)
+
+
+class HistoryModel(GObject.Object, Gio.ListModel):
+    """History's entries (NowPlaying), the most recent first, as update() last gave them,
+    changed by one splice of what differs (the entries alike at the start and the end, by
+    identity): the next entry playing adds one row at the top."""
+
+    __gtype_name__ = 'AppleMusicHistoryModel'
+
+    def __init__(self):
+        super().__init__()
+        self._items = []
+
+    def do_get_item_type(self):
+        return NowPlaying
+
+    def do_get_n_items(self):
+        return len(self._items)
+
+    def do_get_item(self, position):
+        return self._items[position] if 0 <= position < len(self._items) else None
+
+    def update(self, items):
+        old, new = self._items, list(items)
+        limit = min(len(old), len(new))
+        start = 0
+        while start < limit and old[start] is new[start]:
+            start += 1
+        end = 0
+        while end < limit - start and old[-1 - end] is new[-1 - end]:
+            end += 1
+        self._items = new
+        removed, added = len(old) - start - end, len(new) - start - end
+        if removed or added:
+            self.items_changed(start, removed, added)
+
+
+def art_candidates(url, cache_dir=None):
+    """The files that may hold the artwork at `url`, best first: the thumbnail fetch_remote()
+    keeps (what EntryArt fetches), the library's own thumbnail of the same artwork (the
+    sync's, named by its cover URL), the cover fetch_remote() keeps (the item playing's).
+    None for no URL."""
+    if not url:
+        return []
+    cache_dir = cache_dir or str(config.cache_dir())
+    cover_url = sized_url(url, normalize.ART_SIZES['cover'])
+    return [path for path in (remote_art_path(url, config.THUMB_SIZE),
+                              normalize.thumb_cache_path(cover_url, cache_dir) if cover_url
+                              else None,
+                              remote_art_path(url, config.COVER_SIZE)) if path]
+
+
+def find_art(urls, candidates=art_candidates, exists=on_disk):
+    """{url: the first of its candidates on disk} of those of `urls` that have one: in a
+    thread (it asks the file system)."""
+    found = {}
+    for url in urls:
+        path = next((path for path in candidates(url) if exists(path)), None)
+        if path:
+            found[url] = path
+    return found
+
+
+class EntryArt:
+    """The cover file of each of the queue's artwork URLs: found on disk, else fetched, once
+    per URL, for the rows bound. See the module.
+
+    paths(url) answers at once ((path,) or ()). want(url) notes a URL a row bound has no
+    path for; at most every ART_DELAY_MS, those still bound (`bound()`, the URLs of the rows
+    bound now) are looked for on disk in a thread (`find`), and those not there fetched
+    (`fetch`, an async function of the URL answering a path or None; None: never), ART_FETCHES
+    at a time; `on_found(url, path)` tells the view a file is there. A URL that has none is not
+    asked about again."""
+
+    def __init__(self, spawn, bound, on_found, fetch=None, find=find_art):
+        self._spawn = spawn
+        self._bound = bound
+        self._on_found = on_found
+        self._fetch = fetch
+        self._find = find
+        self._paths = {}      # url -> its file, or '' for none
+        self._asked = set()   # the URLs being looked for or fetched
+        self._wanted = {}     # the URLs noted since the last look, in order
+        self._source = 0
+        self._gate = None
+
+    def paths(self, url):
+        path = self._paths.get(url) if url else None
+        return (path,) if path else ()
+
+    def want(self, url):
+        if not url or url in self._paths or url in self._asked:
+            return
+        self._wanted[url] = None
+        if not self._source:
+            self._source = GLib.timeout_add(ART_DELAY_MS, self._look)
+
+    def pending(self):
+        """How many URLs are noted or being looked for: for tests."""
+        return len(self._wanted) + len(self._asked)
+
+    def _look(self):
+        self._source = 0
+        bound = self._bound()
+        urls = [url for url in self._wanted if url in bound]
+        self._wanted.clear()
+        if urls:
+            self._asked.update(urls)
+            self._spawn(self._resolve(urls))
+        return GLib.SOURCE_REMOVE
+
+    async def _resolve(self, urls):
+        try:
+            found = await asyncio.to_thread(self._find, urls)
+        except BaseException:
+            self._asked.difference_update(urls)
+            raise
+        for url in urls:
+            path = found.get(url)
+            if path:
+                self._found(url, path)
+        missing = [url for url in urls if url not in found]
+        if self._fetch is None:
+            for url in missing:
+                self._found(url, '')
+            return
+        if self._gate is None:
+            self._gate = asyncio.Semaphore(ART_FETCHES)
+        await asyncio.gather(*(self._fetch_one(url) for url in missing))
+
+    async def _fetch_one(self, url):
+        try:
+            async with self._gate:
+                path = await self._fetch(url)
+        except BaseException:
+            self._asked.discard(url)
+            raise
+        self._found(url, path or '')
+
+    def _found(self, url, path):
+        self._asked.discard(url)
+        self._paths[url] = path
+        if path:
+            self._on_found(url, path)
+
+
+async def fetch_thumbnail(url):
+    """The thumbnail of the artwork at `url`, fetched by remote.fetch_remote: its path, or
+    None."""
+    return await fetch_remote(url, config.THUMB_SIZE)
 
 
 class QueueRow(Gtk.Box):
-    """One queue entry: number or play icon, title (and its explicit badge) and artist,
-    duration. The entry, as a Track, is its `context_item` (its menu: context_menu), and
-    `context_queue_entry` its (index, id) in the queue while Up Next may take it out."""
+    """One queue entry: its cover (a play symbol over it while it plays), title (and its
+    explicit badge) and artist, duration. The entry, as a Track, is its `context_item` (its
+    menu: context_menu), and `context_queue_entry` its (index, id) in the queue while Up Next
+    may take it out (never in History)."""
 
     # The entry's menu is a queued one: no Play (activating the row plays it).
     context_queued = True
 
-    def __init__(self, view):
+    def __init__(self, view, history=False):
+        # The template module on first use: the rest of this one (section_bounds(),
+        # HistoryModel, EntryArt) imports without the app's compiled resource.
+        from .cover import Cover
+
         super().__init__(spacing=12)
         self.view = view  # the QueueView, as long-lived as the row
+        self.history = history
         self.list_item = None  # the Gtk.ListItem bound (its accessible description)
         self._entry = None  # the NowPlaying bound
-        self.number_label = Gtk.Inscription(min_chars=2, nat_chars=2, xalign=1,
-                                            valign=Gtk.Align.CENTER)
-        self.number_label.add_css_class('numeric')
-        self.number_label.add_css_class('dimmed')
-        self.playing_icon = Gtk.Image(icon_name='media-playback-start-symbolic',
-                                      valign=Gtk.Align.CENTER, visible=False,
-                                      accessible_role=Gtk.AccessibleRole.PRESENTATION)
-        self.playing_icon.add_css_class('accent')
-        marker = Gtk.Stack(hhomogeneous=True, valign=Gtk.Align.CENTER)
-        marker.add_named(self.number_label, 'number')
-        marker.add_named(self.playing_icon, 'playing')
-        self._marker = marker
-        self.append(marker)
+        self._current = False
+        self.cover = Cover(size=ART_SIZE, valign=Gtk.Align.CENTER)
+        self.cover.add_css_class('small')
+        # Over the cover while the entry plays, as a track row's (style.css's playing-scrim):
+        # shown and hidden by its opacity, which only redraws it (a child shown or hidden
+        # would lay the list out again).
+        self.playing_scrim = Gtk.Box(opacity=0, can_target=False,
+                                     accessible_role=Gtk.AccessibleRole.PRESENTATION)
+        self.playing_scrim.add_css_class('osd')
+        self.playing_scrim.add_css_class('playing-scrim')
+        self.playing_scrim.append(Gtk.Image(icon_name='media-playback-start-symbolic',
+                                            hexpand=True,
+                                            accessible_role=Gtk.AccessibleRole.PRESENTATION))
+        self.cover.add_overlay(self.playing_scrim)
+        self.append(self.cover)
 
         titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER,
                          hexpand=True)
@@ -197,14 +402,15 @@ class QueueRow(Gtk.Box):
     @property
     def context_queue_entry(self):
         """(queue index, id) of the entry bound while Up Next may take it out, else None."""
-        if self._entry is None or self.list_item is None:
+        if self._entry is None or self.list_item is None or self.history:
             return None
         return self.view.removable(self.list_item.get_position(), self._entry)
 
-    def bind(self, entry, position, current):
+    def bind(self, entry, current, paths):
+        """Show `entry`, its cover from `paths` (EntryArt.paths())."""
         self._entry = entry
-        self.number_label.set_text(str(position + 1))
-        self.title_label.set_label(entry.title or _('Unknown Title'))
+        self.cover.set_paths(*paths)
+        self.title_label.set_label(entry.title or self.view.unknown_title)
         self.explicit_badge.set_visible(entry.explicit)
         self.artist_label.set_text(entry.artist)
         self.artist_label.set_visible(bool(entry.artist))
@@ -214,13 +420,13 @@ class QueueRow(Gtk.Box):
 
     def unbind(self):
         self._entry = None
-
-    def set_number(self, position):
-        self.number_label.set_text(str(position + 1))
+        self.cover.set_paths()
 
     def set_current(self, current):
-        self.playing_icon.set_visible(current)  # a stack shows only a visible child
-        self._marker.set_visible_child_name('playing' if current else 'number')
+        if current == self._current:
+            return
+        self._current = current
+        self.playing_scrim.set_opacity(1 if current else 0)
         if current:
             self.add_css_class('current')
         else:
@@ -238,20 +444,35 @@ class QueueView(Gtk.Stack):
         self._player = None
         self._app = None
         self._active = False
-        self._rows = set()  # the QueueRows bound
+        self._rows = set()  # the QueueRows bound, Up Next's and History's
         self._slice = None  # the queue from the entry playing on
-        self.model = None  # the slice in its two sections (QueueSections)
+        self.model = None  # the slice in its sections (QueueSections)
+        self.history_model = HistoryModel()
+        self.art = None  # EntryArt, once there is an app
         self._refocus = None  # the list position to focus once a removal is in
         # Looked up once: rows are bound often.
         self._playing = _('Playing')
         self._autoplay_title = _('Autoplay')
+        # Translators: the heading over the songs queued after the one playing, in Up Next
+        self._playing_next = _('Playing Next')
+        self.unknown_title = _('Unknown Title')
 
         self.empty_page = Adw.StatusPage(icon_name='playlist-symbolic', title=_('Nothing Queued'),
                                          description=_('Play something to fill Up Next'))
         self.empty_page.add_css_class('compact')
         self.add_named(self.empty_page, 'empty')
 
-        # Above the list: Autoplay and Clear, at its end.
+        # Above the list: History at its start; Autoplay and Clear at its end.
+        self.history_button = Gtk.ToggleButton(icon_name='document-open-recent-symbolic',
+                                               tooltip_text=_('History'),
+                                               valign=Gtk.Align.CENTER)
+        self.history_button.add_css_class('flat')
+        self.history_button.add_css_class('circular')
+        self.history_button.connect('toggled', lambda _button: self._on_history_toggled())
+        self.history_title = Gtk.Label(label=_('History'), xalign=0, visible=False,
+                                       valign=Gtk.Align.CENTER,
+                                       accessible_role=Gtk.AccessibleRole.PRESENTATION)
+        self.history_title.add_css_class('heading')
         self.autoplay_button = Gtk.ToggleButton(icon_name='autoplay-symbolic',
                                                 tooltip_text=self._autoplay_title,
                                                 valign=Gtk.Align.CENTER)
@@ -261,8 +482,11 @@ class QueueView(Gtk.Stack):
                                        tooltip_text=_('Remove Everything After the Song Playing'))
         self.clear_button.add_css_class('flat')
         self.clear_button.connect('clicked', lambda _button: self._on_clear())
-        tools = Gtk.Box(spacing=6, halign=Gtk.Align.END)
+        tools = Gtk.Box(spacing=6)
         tools.add_css_class('queue-tools')
+        tools.append(self.history_button)
+        tools.append(self.history_title)
+        tools.append(Gtk.Box(hexpand=True))
         tools.append(self.autoplay_button)
         tools.append(self.clear_button)
 
@@ -288,17 +512,45 @@ class QueueView(Gtk.Stack):
         self.scrolled = Gtk.ScrolledWindow(child=self.list_view,
                                            hscrollbar_policy=Gtk.PolicyType.NEVER,
                                            vexpand=True)
+
+        history_factory = Gtk.SignalListItemFactory()
+        history_factory.connect('setup', self._on_history_setup)
+        history_factory.connect('bind', self._on_history_bind)
+        history_factory.connect('unbind', self._on_unbind)
+        self.history_view = Gtk.ListView(factory=history_factory,
+                                         model=Gtk.NoSelection(model=self.history_model),
+                                         tab_behavior=Gtk.ListTabBehavior.ITEM)
+        self.history_view.add_css_class('queue-list')
+        self.history_view.update_property([Gtk.AccessibleProperty.LABEL], [_('History')])
+        self.history_view.connect('activate', self._on_history_activate)
+        context_menu.attach(self.history_view)
+        self.history_scrolled = Gtk.ScrolledWindow(child=self.history_view,
+                                                   hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                                   vexpand=True)
+        self.history_empty = Adw.StatusPage(icon_name='document-open-recent-symbolic',
+                                            title=_('No History'),
+                                            description=_('Songs played before this one in '
+                                                          'the queue show here'))
+        self.history_empty.add_css_class('compact')
+
+        self.lists = Gtk.Stack(vhomogeneous=True, hhomogeneous=True, vexpand=True,
+                               transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.lists.add_named(self.scrolled, 'up-next')
+        self.lists.add_named(self.history_scrolled, 'history')
+        self.lists.add_named(self.history_empty, 'no-history')
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         page.append(tools)
-        page.append(self.scrolled)
+        page.append(self.lists)
         self.add_named(page, 'list')
 
     def set_player(self, player, app):
         self._player = player
         self._app = app
+        self.art = EntryArt(app.spawn, self._bound_urls, weak_method(self._on_art_found),
+                            fetch=None if getattr(app, 'demo', False) else fetch_thumbnail)
         queue = player.queue
         # The slice first: it follows the queue's changes before _on_items_changed moves
-        # the sections' split.
+        # the sections' bounds.
         self._slice = Gtk.SliceListModel(model=queue, offset=0, size=slice_size(0))
         self.model = QueueSections(self._slice)
         self.model.connect('items-changed', self._on_rows_changed)
@@ -313,16 +565,26 @@ class QueueView(Gtk.Stack):
         self._update_page()
 
     def set_active(self, active):
-        """Scroll to the entry playing when shown."""
+        """Scroll to the entry playing when shown; back to Up Next when left."""
         self._active = active
         if active:
             self._scroll_to_current()
+        else:
+            self.history_button.set_active(False)
+
+    @property
+    def history_shown(self):
+        return self.history_button.get_active()
 
     # -- the slice and its sections -------------------------------------------------------
 
     def queue_index_at(self, position):
-        """The queue index of the row at list `position`."""
+        """The queue index of the Up Next row at list `position`."""
         return self._slice.get_offset() + position
+
+    def history_index_at(self, position):
+        """The queue index of the History row at list `position`."""
+        return self._player.queue_index - 1 - position
 
     def removable(self, position, entry):
         """(queue index, id) of `entry`, the row at list `position`, when Up Next may take
@@ -335,10 +597,11 @@ class QueueView(Gtk.Stack):
         return index, entry.id
 
     def _update_bounds(self):
-        """The slice from the entry playing on, and where its Autoplay section begins."""
-        offset, split = section_bounds(_Entries(self._player.queue), self._player.queue_index)
+        """The slice from the entry playing on, and where its sections begin."""
+        offset, first, split = section_bounds(_Entries(self._player.queue),
+                                              self._player.queue_index)
         _set_slice(self._slice, offset, slice_size(offset))
-        self.model.set_split(split - offset)
+        self.model.set_bounds(first - offset, split - offset)
 
     def _update_page(self):
         self.set_visible_child_name('list' if self._player.queue.get_n_items() else 'empty')
@@ -356,12 +619,14 @@ class QueueView(Gtk.Stack):
         self.autoplay_button.set_tooltip_text(tooltip)
 
     def _on_items_changed(self):
-        """The queue changed: the slice and its sections, the page, the tools, and the entry playing
-        on top (a new queue with the same index number fires no index notify)."""
+        """The queue changed: the slice and its sections, the page, the tools, History, and
+        the entry playing on top (a new queue with the same index number fires no index
+        notify)."""
         self._update_bounds()
         self._update_page()
         self._update_tools()
         self._refresh_rows()
+        self._update_history()
         if self._active and self._refocus is None:
             self._scroll_to_current()
 
@@ -370,26 +635,56 @@ class QueueView(Gtk.Stack):
         self._update_bounds()
         self._update_tools()
         self._refresh_rows()
+        self._update_history()
         if self._active:
             self._scroll_to_current()
 
     def _refresh_rows(self):
-        """The rows bound, numbered and marked by where they are now (a row that moves is
-        not always bound again)."""
+        """The Up Next rows bound, marked by where they are now (a row that moves is not
+        always bound again)."""
         for row in self._rows:
-            if row.list_item is not None and row.entry is not None:
-                self._show(row, row.list_item.get_position())
-
-    def _show(self, row, position):
-        current = position == 0 and self._player.queue_index >= 0
-        row.set_number(position)
-        row.set_current(current)
-        self._describe(row, current)
+            if not row.history and row.list_item is not None and row.entry is not None:
+                current = row.list_item.get_position() == 0 and self._player.queue_index >= 0
+                row.set_current(current)
+                self._describe(row, current)
 
     def _scroll_to_current(self):
+        if self.history_shown:
+            return
         if (self._player is not None and self._player.queue_index >= 0
                 and self.model.get_n_items()):
             self.list_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
+
+    # -- History ---------------------------------------------------------------------------
+
+    def _on_history_toggled(self):
+        shown = self.history_shown
+        self.history_title.set_visible(shown)
+        self.autoplay_button.set_visible(not shown)
+        self.clear_button.set_visible(not shown)
+        if shown:
+            self._update_history()
+            if self.history_model.get_n_items():
+                self.history_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
+        else:
+            self.history_model.update(())  # nothing kept, or followed, while hidden
+            self.lists.set_visible_child_name('up-next')
+            self._scroll_to_current()
+
+    def _update_history(self):
+        """History's entries, while it shows."""
+        if self._player is None or not self.history_shown:
+            return
+        self.history_model.update(history_entries(self._player.queue, self._player.queue_index))
+        self.lists.set_visible_child_name('history' if self.history_model.get_n_items()
+                                          else 'no-history')
+
+    def _on_history_activate(self, _list_view, position):
+        if self._player is None:
+            return
+        index = self.history_index_at(position)
+        if index >= 0:
+            self._app.player_command(self._player.queue_jump(index))
 
     # -- rows --------------------------------------------------------------------------------
 
@@ -398,15 +693,30 @@ class QueueView(Gtk.Stack):
         row.list_item = list_item
         list_item.set_child(row)
 
-    def _on_bind(self, _factory, list_item):
-        position = list_item.get_position()
+    def _on_history_setup(self, _factory, list_item):
+        row = QueueRow(self, history=True)
+        row.list_item = list_item
+        list_item.set_child(row)
+
+    def _bind_row(self, list_item, current):
         row = list_item.get_child()
         self._rows.add(row)
         entry = list_item.get_item()
-        current = position == 0 and self._player.queue_index >= 0
-        row.bind(entry, position, current)
+        url = entry.artwork_url
+        paths = self.art.paths(url) if self.art is not None else ()
+        row.bind(entry, current, paths)
+        if not paths and self.art is not None:
+            self.art.want(url)
         list_item.set_accessible_label(track_label(entry, show_artist=True, show_album=False))
-        self._describe(row, current)
+        return row
+
+    def _on_bind(self, _factory, list_item):
+        current = list_item.get_position() == 0 and self._player.queue_index >= 0
+        self._describe(self._bind_row(list_item, current), current)
+
+    def _on_history_bind(self, _factory, list_item):
+        self._bind_row(list_item, False)
+        list_item.set_accessible_description('')
 
     def _describe(self, row, current):
         """The entry playing is described as such (its play icon is decoration), and one
@@ -421,17 +731,32 @@ class QueueView(Gtk.Stack):
         row.unbind()
         self._rows.discard(row)
 
+    def _bound_urls(self):
+        """The artwork URLs of the rows bound now (EntryArt looks only for these)."""
+        return {row.entry.artwork_url for row in self._rows if row.entry is not None}
+
+    def _on_art_found(self, url, path):
+        for row in self._rows:
+            if row.entry is not None and row.entry.artwork_url == url:
+                row.cover.set_paths(path)
+
     def _on_header_setup(self, _factory, header):
-        label = Gtk.Label(label=self._autoplay_title, xalign=0, visible=False)
+        label = Gtk.Label(xalign=0, visible=False)
         label.add_css_class('heading')
         label.add_css_class('queue-section')
         header.set_child(label)
 
     def _on_header_bind(self, _factory, header):
-        """The Autoplay section's header names it; the first section's shows nothing."""
+        """Playing Next's and Autoplay's sections are named by their headers; the entry
+        playing's shows nothing."""
         entry = header.get_item()
-        header.get_child().set_visible(header.get_start() > 0 and entry is not None
-                                       and entry.autoplay)
+        label = header.get_child()
+        playing = header.get_start() == 0 and self._player.queue_index >= 0
+        if entry is None or playing:
+            label.set_visible(False)
+            return
+        label.set_label(self._autoplay_title if entry.autoplay else self._playing_next)
+        label.set_visible(True)
 
     def _on_activate(self, _list_view, position):
         if self._player is None:
@@ -504,3 +829,4 @@ def _set_slice(model, offset, size):
     else:
         model.set_offset(offset)
         model.set_size(size)
+
