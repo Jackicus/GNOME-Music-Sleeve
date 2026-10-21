@@ -3,60 +3,228 @@
   <!-- SPDX-FileCopyrightText: 2026 Jack Tully -->
   <!-- The development build's icon: the release icon under a band of stripes.
        Keep it in step with io.github.jackicus.MusicSleeve.svg. -->
-  <!-- A record coming out of its sleeve, in GNOME's palette: a physical object, as the HIG
-       asks of an app icon, and one that says "music" without another player's mark. Both
-       objects stand on a darker side, so the icon sits among GNOME's own. -->
+  <!-- A dot-matrix display whose lit dots draw a double note, in GNOME's palette: a dark
+       panel, its unlit dots dim and its lit ones yellow to orange. A 14 by 14 grid without its
+       four corner dots, so it sits inside the panel's rounded corners. The note is the app's
+       own: an LED pattern on a dark panel, nothing like another player's mark. -->
   <defs>
-    <linearGradient id="sleeve" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#dc8add"/>
-      <stop offset="1" stop-color="#c061cb"/>
+    <linearGradient id="led" gradientUnits="userSpaceOnUse" x1="0" y1="14" x2="0" y2="114">
+      <stop offset="0" stop-color="#f8e45c"/>
+      <stop offset="1" stop-color="#ff7800"/>
     </linearGradient>
-    <linearGradient id="sleeve-side" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#9141ac"/>
-      <stop offset="1" stop-color="#813d9c"/>
-    </linearGradient>
-    <radialGradient id="record" cx="0.42" cy="0.36" r="0.72">
-      <stop offset="0" stop-color="#5e5c64"/>
-      <stop offset="0.55" stop-color="#3d3846"/>
-      <stop offset="1" stop-color="#241f31"/>
-    </radialGradient>
-  </defs>
-
-  <defs>
     <pattern id="stripes" width="14" height="14" patternUnits="userSpaceOnUse"
              patternTransform="rotate(45)">
       <rect width="14" height="14" fill="#e5a50a"/>
       <rect width="7" height="14" fill="#241f31"/>
     </pattern>
-    <clipPath id="sleeve-clip">
-      <rect x="6" y="42" width="70" height="70" rx="9"/>
+    <clipPath id="panel-clip">
+      <rect x="8" y="8" width="112" height="112" rx="16"/>
     </clipPath>
   </defs>
-
-  <!-- The record: its rim below, then its face, its grooves and its label. -->
-  <circle cx="84" cy="50" r="34" fill="#1a1622"/>
-  <circle cx="84" cy="46" r="34" fill="url(#record)"/>
-  <g fill="none" stroke="#77767b" stroke-opacity="0.45">
-    <circle cx="84" cy="46" r="29"/>
-    <circle cx="84" cy="46" r="24.5"/>
-    <circle cx="84" cy="46" r="20"/>
+  <!-- The panel, with a faint light edge so it holds its shape on a dark background. -->
+  <rect x="8" y="8" width="112" height="112" rx="16" fill="#241f31"/>
+  <rect x="8.5" y="8.5" width="111" height="111" rx="15.5" fill="none" stroke="#ffffff"
+        stroke-opacity="0.12"/>
+  <!-- The unlit dots, then the lit ones: the note. -->
+  <g fill="#3d3846">
+    <circle cx="22.54" cy="15.00" r="2.25"/>
+    <circle cx="30.08" cy="15.00" r="2.25"/>
+    <circle cx="37.62" cy="15.00" r="2.25"/>
+    <circle cx="45.15" cy="15.00" r="2.25"/>
+    <circle cx="52.69" cy="15.00" r="2.25"/>
+    <circle cx="60.23" cy="15.00" r="2.25"/>
+    <circle cx="67.77" cy="15.00" r="2.25"/>
+    <circle cx="75.31" cy="15.00" r="2.25"/>
+    <circle cx="82.85" cy="15.00" r="2.25"/>
+    <circle cx="90.38" cy="15.00" r="2.25"/>
+    <circle cx="97.92" cy="15.00" r="2.25"/>
+    <circle cx="105.46" cy="15.00" r="2.25"/>
+    <circle cx="15.00" cy="22.54" r="2.25"/>
+    <circle cx="22.54" cy="22.54" r="2.25"/>
+    <circle cx="30.08" cy="22.54" r="2.25"/>
+    <circle cx="37.62" cy="22.54" r="2.25"/>
+    <circle cx="45.15" cy="22.54" r="2.25"/>
+    <circle cx="52.69" cy="22.54" r="2.25"/>
+    <circle cx="60.23" cy="22.54" r="2.25"/>
+    <circle cx="67.77" cy="22.54" r="2.25"/>
+    <circle cx="75.31" cy="22.54" r="2.25"/>
+    <circle cx="82.85" cy="22.54" r="2.25"/>
+    <circle cx="90.38" cy="22.54" r="2.25"/>
+    <circle cx="97.92" cy="22.54" r="2.25"/>
+    <circle cx="105.46" cy="22.54" r="2.25"/>
+    <circle cx="113.00" cy="22.54" r="2.25"/>
+    <circle cx="15.00" cy="30.08" r="2.25"/>
+    <circle cx="22.54" cy="30.08" r="2.25"/>
+    <circle cx="30.08" cy="30.08" r="2.25"/>
+    <circle cx="37.62" cy="30.08" r="2.25"/>
+    <circle cx="45.15" cy="30.08" r="2.25"/>
+    <circle cx="52.69" cy="30.08" r="2.25"/>
+    <circle cx="105.46" cy="30.08" r="2.25"/>
+    <circle cx="113.00" cy="30.08" r="2.25"/>
+    <circle cx="15.00" cy="37.62" r="2.25"/>
+    <circle cx="22.54" cy="37.62" r="2.25"/>
+    <circle cx="30.08" cy="37.62" r="2.25"/>
+    <circle cx="37.62" cy="37.62" r="2.25"/>
+    <circle cx="45.15" cy="37.62" r="2.25"/>
+    <circle cx="105.46" cy="37.62" r="2.25"/>
+    <circle cx="113.00" cy="37.62" r="2.25"/>
+    <circle cx="15.00" cy="45.15" r="2.25"/>
+    <circle cx="22.54" cy="45.15" r="2.25"/>
+    <circle cx="30.08" cy="45.15" r="2.25"/>
+    <circle cx="37.62" cy="45.15" r="2.25"/>
+    <circle cx="45.15" cy="45.15" r="2.25"/>
+    <circle cx="60.23" cy="45.15" r="2.25"/>
+    <circle cx="67.77" cy="45.15" r="2.25"/>
+    <circle cx="75.31" cy="45.15" r="2.25"/>
+    <circle cx="82.85" cy="45.15" r="2.25"/>
+    <circle cx="90.38" cy="45.15" r="2.25"/>
+    <circle cx="105.46" cy="45.15" r="2.25"/>
+    <circle cx="113.00" cy="45.15" r="2.25"/>
+    <circle cx="15.00" cy="52.69" r="2.25"/>
+    <circle cx="22.54" cy="52.69" r="2.25"/>
+    <circle cx="30.08" cy="52.69" r="2.25"/>
+    <circle cx="37.62" cy="52.69" r="2.25"/>
+    <circle cx="45.15" cy="52.69" r="2.25"/>
+    <circle cx="60.23" cy="52.69" r="2.25"/>
+    <circle cx="67.77" cy="52.69" r="2.25"/>
+    <circle cx="75.31" cy="52.69" r="2.25"/>
+    <circle cx="82.85" cy="52.69" r="2.25"/>
+    <circle cx="90.38" cy="52.69" r="2.25"/>
+    <circle cx="105.46" cy="52.69" r="2.25"/>
+    <circle cx="113.00" cy="52.69" r="2.25"/>
+    <circle cx="15.00" cy="60.23" r="2.25"/>
+    <circle cx="22.54" cy="60.23" r="2.25"/>
+    <circle cx="30.08" cy="60.23" r="2.25"/>
+    <circle cx="37.62" cy="60.23" r="2.25"/>
+    <circle cx="45.15" cy="60.23" r="2.25"/>
+    <circle cx="60.23" cy="60.23" r="2.25"/>
+    <circle cx="67.77" cy="60.23" r="2.25"/>
+    <circle cx="75.31" cy="60.23" r="2.25"/>
+    <circle cx="82.85" cy="60.23" r="2.25"/>
+    <circle cx="90.38" cy="60.23" r="2.25"/>
+    <circle cx="105.46" cy="60.23" r="2.25"/>
+    <circle cx="113.00" cy="60.23" r="2.25"/>
+    <circle cx="15.00" cy="67.77" r="2.25"/>
+    <circle cx="22.54" cy="67.77" r="2.25"/>
+    <circle cx="30.08" cy="67.77" r="2.25"/>
+    <circle cx="37.62" cy="67.77" r="2.25"/>
+    <circle cx="45.15" cy="67.77" r="2.25"/>
+    <circle cx="60.23" cy="67.77" r="2.25"/>
+    <circle cx="67.77" cy="67.77" r="2.25"/>
+    <circle cx="75.31" cy="67.77" r="2.25"/>
+    <circle cx="82.85" cy="67.77" r="2.25"/>
+    <circle cx="90.38" cy="67.77" r="2.25"/>
+    <circle cx="105.46" cy="67.77" r="2.25"/>
+    <circle cx="113.00" cy="67.77" r="2.25"/>
+    <circle cx="15.00" cy="75.31" r="2.25"/>
+    <circle cx="22.54" cy="75.31" r="2.25"/>
+    <circle cx="30.08" cy="75.31" r="2.25"/>
+    <circle cx="37.62" cy="75.31" r="2.25"/>
+    <circle cx="45.15" cy="75.31" r="2.25"/>
+    <circle cx="60.23" cy="75.31" r="2.25"/>
+    <circle cx="67.77" cy="75.31" r="2.25"/>
+    <circle cx="75.31" cy="75.31" r="2.25"/>
+    <circle cx="105.46" cy="75.31" r="2.25"/>
+    <circle cx="113.00" cy="75.31" r="2.25"/>
+    <circle cx="15.00" cy="82.85" r="2.25"/>
+    <circle cx="22.54" cy="82.85" r="2.25"/>
+    <circle cx="30.08" cy="82.85" r="2.25"/>
+    <circle cx="60.23" cy="82.85" r="2.25"/>
+    <circle cx="67.77" cy="82.85" r="2.25"/>
+    <circle cx="105.46" cy="82.85" r="2.25"/>
+    <circle cx="113.00" cy="82.85" r="2.25"/>
+    <circle cx="15.00" cy="90.38" r="2.25"/>
+    <circle cx="22.54" cy="90.38" r="2.25"/>
+    <circle cx="60.23" cy="90.38" r="2.25"/>
+    <circle cx="67.77" cy="90.38" r="2.25"/>
+    <circle cx="97.92" cy="90.38" r="2.25"/>
+    <circle cx="105.46" cy="90.38" r="2.25"/>
+    <circle cx="113.00" cy="90.38" r="2.25"/>
+    <circle cx="15.00" cy="97.92" r="2.25"/>
+    <circle cx="22.54" cy="97.92" r="2.25"/>
+    <circle cx="52.69" cy="97.92" r="2.25"/>
+    <circle cx="60.23" cy="97.92" r="2.25"/>
+    <circle cx="67.77" cy="97.92" r="2.25"/>
+    <circle cx="75.31" cy="97.92" r="2.25"/>
+    <circle cx="82.85" cy="97.92" r="2.25"/>
+    <circle cx="90.38" cy="97.92" r="2.25"/>
+    <circle cx="97.92" cy="97.92" r="2.25"/>
+    <circle cx="105.46" cy="97.92" r="2.25"/>
+    <circle cx="113.00" cy="97.92" r="2.25"/>
+    <circle cx="15.00" cy="105.46" r="2.25"/>
+    <circle cx="22.54" cy="105.46" r="2.25"/>
+    <circle cx="30.08" cy="105.46" r="2.25"/>
+    <circle cx="37.62" cy="105.46" r="2.25"/>
+    <circle cx="45.15" cy="105.46" r="2.25"/>
+    <circle cx="52.69" cy="105.46" r="2.25"/>
+    <circle cx="60.23" cy="105.46" r="2.25"/>
+    <circle cx="67.77" cy="105.46" r="2.25"/>
+    <circle cx="75.31" cy="105.46" r="2.25"/>
+    <circle cx="82.85" cy="105.46" r="2.25"/>
+    <circle cx="90.38" cy="105.46" r="2.25"/>
+    <circle cx="97.92" cy="105.46" r="2.25"/>
+    <circle cx="105.46" cy="105.46" r="2.25"/>
+    <circle cx="113.00" cy="105.46" r="2.25"/>
+    <circle cx="22.54" cy="113.00" r="2.25"/>
+    <circle cx="30.08" cy="113.00" r="2.25"/>
+    <circle cx="37.62" cy="113.00" r="2.25"/>
+    <circle cx="45.15" cy="113.00" r="2.25"/>
+    <circle cx="52.69" cy="113.00" r="2.25"/>
+    <circle cx="60.23" cy="113.00" r="2.25"/>
+    <circle cx="67.77" cy="113.00" r="2.25"/>
+    <circle cx="75.31" cy="113.00" r="2.25"/>
+    <circle cx="82.85" cy="113.00" r="2.25"/>
+    <circle cx="90.38" cy="113.00" r="2.25"/>
+    <circle cx="97.92" cy="113.00" r="2.25"/>
+    <circle cx="105.46" cy="113.00" r="2.25"/>
   </g>
-  <circle cx="84" cy="46" r="12" fill="#ffbe6f"/>
-  <circle cx="84" cy="46" r="12" fill="none" stroke="#e66100" stroke-width="2"/>
-  <circle cx="84" cy="46" r="2.5" fill="#241f31"/>
-
-  <!-- The sleeve in front: its side below, then its face and a level meter across it. -->
-  <rect x="6" y="48" width="70" height="70" rx="9" fill="url(#sleeve-side)"/>
-  <rect x="6" y="42" width="70" height="70" rx="9" fill="url(#sleeve)"/>
-  <rect x="6.5" y="42.5" width="69" height="69" rx="8.5" fill="none" stroke="#ffffff"
-        stroke-opacity="0.3"/>
-  <!-- The development build's stripes, clipped to the sleeve so the silhouette is the same. -->
-  <g clip-path="url(#sleeve-clip)">
-    <rect x="6" y="96" width="70" height="16" fill="url(#stripes)" fill-opacity="0.95"/>
+  <g fill="url(#led)">
+    <circle cx="60.23" cy="30.08" r="2.95"/>
+    <circle cx="67.77" cy="30.08" r="2.95"/>
+    <circle cx="75.31" cy="30.08" r="2.95"/>
+    <circle cx="82.85" cy="30.08" r="2.95"/>
+    <circle cx="90.38" cy="30.08" r="2.95"/>
+    <circle cx="97.92" cy="30.08" r="2.95"/>
+    <circle cx="52.69" cy="37.62" r="2.95"/>
+    <circle cx="60.23" cy="37.62" r="2.95"/>
+    <circle cx="67.77" cy="37.62" r="2.95"/>
+    <circle cx="75.31" cy="37.62" r="2.95"/>
+    <circle cx="82.85" cy="37.62" r="2.95"/>
+    <circle cx="90.38" cy="37.62" r="2.95"/>
+    <circle cx="97.92" cy="37.62" r="2.95"/>
+    <circle cx="52.69" cy="45.15" r="2.95"/>
+    <circle cx="97.92" cy="45.15" r="2.95"/>
+    <circle cx="52.69" cy="52.69" r="2.95"/>
+    <circle cx="97.92" cy="52.69" r="2.95"/>
+    <circle cx="52.69" cy="60.23" r="2.95"/>
+    <circle cx="97.92" cy="60.23" r="2.95"/>
+    <circle cx="52.69" cy="67.77" r="2.95"/>
+    <circle cx="97.92" cy="67.77" r="2.95"/>
+    <circle cx="52.69" cy="75.31" r="2.95"/>
+    <circle cx="82.85" cy="75.31" r="2.95"/>
+    <circle cx="90.38" cy="75.31" r="2.95"/>
+    <circle cx="97.92" cy="75.31" r="2.95"/>
+    <circle cx="37.62" cy="82.85" r="2.95"/>
+    <circle cx="45.15" cy="82.85" r="2.95"/>
+    <circle cx="52.69" cy="82.85" r="2.95"/>
+    <circle cx="75.31" cy="82.85" r="2.95"/>
+    <circle cx="82.85" cy="82.85" r="2.95"/>
+    <circle cx="90.38" cy="82.85" r="2.95"/>
+    <circle cx="97.92" cy="82.85" r="2.95"/>
+    <circle cx="30.08" cy="90.38" r="2.95"/>
+    <circle cx="37.62" cy="90.38" r="2.95"/>
+    <circle cx="45.15" cy="90.38" r="2.95"/>
+    <circle cx="52.69" cy="90.38" r="2.95"/>
+    <circle cx="75.31" cy="90.38" r="2.95"/>
+    <circle cx="82.85" cy="90.38" r="2.95"/>
+    <circle cx="90.38" cy="90.38" r="2.95"/>
+    <circle cx="30.08" cy="97.92" r="2.95"/>
+    <circle cx="37.62" cy="97.92" r="2.95"/>
+    <circle cx="45.15" cy="97.92" r="2.95"/>
   </g>
-  <g fill="#ffffff" fill-opacity="0.92">
-    <rect x="27" y="65" width="7" height="24" rx="3.5"/>
-    <rect x="38" y="56" width="7" height="42" rx="3.5"/>
-    <rect x="49" y="61" width="7" height="32" rx="3.5"/>
+  <!-- The development build's stripes across the bottom rows, which the note leaves unlit,
+       clipped to the panel so the silhouette is the same. -->
+  <g clip-path="url(#panel-clip)">
+    <rect x="8" y="104" width="112" height="16" fill="url(#stripes)" fill-opacity="0.95"/>
   </g>
 </svg>
