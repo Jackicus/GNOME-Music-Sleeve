@@ -196,6 +196,20 @@ def submenu_labels(menu):
     return found
 
 
+def section_headings(menu):
+    """The headings of a menu's sections, nested ones too, in order."""
+    found = []
+    for position in range(menu.get_n_items()):
+        section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+        if section is None:
+            continue
+        label = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL)
+        if label is not None:
+            found.append(label.unpack())
+        found.extend(section_headings(section))
+    return found
+
+
 class MenuTest(unittest.TestCase):
     def test_library_album(self):
         self.assertEqual(names(build_menu(LIBRARY_ALBUM)), [
@@ -306,21 +320,92 @@ class MenuTest(unittest.TestCase):
             ('win.item-copy-link', ('song', 'i.song1'))])
         # A playlist's name is shown as it is: its underscores are not mnemonics.
         self.assertIn('work__focus', labels_of(menu))
-        # The top level's playlists, then each folder's in a section headed by its name (a
-        # section's header is plain text: no mnemonic), a folder inside another after that
-        # one's own playlists, headed by both names. No folder is a submenu.
+        # The top level's playlists, then each folder as a submenu of its name (no
+        # mnemonic) holding its own playlists, then its folders, as the sidebar nests them.
         listed = submenu_of(menu, 'Add to Pla_ylist')
         self.assertEqual(labels_of(listed), [
             'Road Trip', 'Untitled Playlist', 'work__focus',
-            'Evenings', 'Dusk', 'Evenings › Untitled Folder', 'Late', 'Ne_w Playlist…'])
-        self.assertEqual(names(section_of(listed, 'Evenings')), ['win.item-add-to-playlist'])
-        self.assertEqual(submenu_labels(menu), ['Add to Pla_ylist'])
+            'Evenings', 'Dusk', 'Untitled Folder', 'Late', 'Ne_w Playlist…'])
+        evenings = submenu_of(listed, 'Evenings')
+        self.assertEqual(labels_of(evenings), ['Dusk', 'Untitled Folder', 'Late'])
+        self.assertEqual(actions_of(submenu_of(evenings, 'Untitled Folder')),
+                         [('win.item-add-to-playlist', ('p.pl5', 'song', 'i.song1'))])
+        self.assertIsNone(section_of(listed, 'Evenings'))
+        self.assertEqual(submenu_labels(menu), ['Add to Pla_ylist', 'Evenings', 'Untitled Folder'])
         self.assertEqual(mnemonic_escaped('a_b__c'), 'a__b____c')
         # No playlists: the submenu has New Playlist… alone. A catalog track can be added to
         # the library.
         self.assertNotIn('win.item-add-to-playlist', names(build_menu(LIBRARY_TRACK)))
         self.assertIn('win.item-new-playlist', names(build_menu(LIBRARY_TRACK)))
         self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_TRACK)))
+
+    def test_add_to_playlist_nests_deeply_and_leaves_out_empty_folders(self):
+        # Folders inside folders, as deep as the sidebar has them; a folder whose playlists
+        # (at any depth) cannot take the songs is left out, as is one holding only the
+        # playlist whose songs these are.
+        playlists = [('p.fd1', 'A', [('p.fd2', 'B', [('p.fd3', 'C', [('p.pl1', 'Deep', None)]),
+                                                      ('p.fd4', 'Empty', [('p.fd5', 'Emptier', [])])
+                                                      ])]),
+                     ('p.fd6', 'Itself', [('p.fd7', 'Inside', [('p.pl9', 'Mine', None)])])]
+        mine = Item({'id': 'p.pl9', 'kind': 'playlist', 'title': 'Mine',
+                     'play': {'kind': 'playlist', 'id': 'p.pl9'}})
+        listed = submenu_of(build_menu(mine, playlists=playlists), 'Add to Pla_ylist')
+        self.assertEqual(submenu_labels(listed), ['A', 'B', 'C'])
+        deep = submenu_of(submenu_of(submenu_of(listed, 'A'), 'B'), 'C')
+        self.assertEqual(actions_of(deep),
+                         [('win.item-add-to-playlist', ('p.pl1', 'playlist', 'p.pl9'))])
+        self.assertEqual(labels_of(listed), ['A', 'B', 'C', 'Deep', 'Ne_w Playlist…'])
+
+    def test_add_to_playlist_falls_back_to_sections_on_a_shared_page(self):
+        # A Gtk.PopoverMenu names a submenu's page by its label and its own `main`: two
+        # folders of one name (at any depth), a folder named `main` or like another submenu
+        # of the menu (Move to Folder, in a translation that gives it no mnemonic: a
+        # folder's label has its underscores doubled, so never reads as one of the menu's
+        # mnemonic labels) would open another's page, so then every folder is a section
+        # headed by its name, as before folders nested.
+        labels = actions_module.action_labels()
+        unmarked = dict(labels, **{'item-move-to-folder': 'Move to Folder'})
+        self.enterContext(mock.patch.object(actions_module, 'action_labels',
+                                            lambda: unmarked))
+        dusk, dawn = ('p.pl2', 'Dusk', None), ('p.pl3', 'Dawn', None)
+        moves = (True, [('p.fd1', 'Evenings', True, [])])
+        cases = [
+            ([('p.fd1', '', [dusk]), ('p.fd2', '', [dawn])], None,
+             ['Untitled Folder', 'Untitled Folder']),
+            ([('p.fd1', 'Late', [dusk, ('p.fd2', 'Late', [dawn])])], None,
+             ['Late', 'Late › Late']),
+            ([('p.fd1', 'main', [dusk]), ('p.fd2', 'Evenings', [dawn])], None,
+             ['main', 'Evenings']),
+            ([('p.fd1', 'Move to Folder', [dusk]), ('p.fd2', 'Evenings', [dawn])], moves,
+             ['Move to Folder', 'Evenings']),
+        ]
+        for playlists, moved, headings in cases:
+            with self.subTest(headings=headings):
+                menu = build_menu(PLAYLIST, playlists=playlists, moves=moved)
+                listed = submenu_of(menu, 'Add to Pla_ylist')
+                self.assertEqual(submenu_labels(listed), [])
+                self.assertEqual(section_headings(listed), headings)
+                self.assertEqual([target[0] for action, target in actions_of(listed)
+                                  if action == 'win.item-add-to-playlist'],
+                                 ['p.pl2', 'p.pl3'])
+        # Labels that read alike but are not the same: a folder named like Add to
+        # Playlist (its underscore doubled), Move to Folder in a menu without it.
+        for title, moved in (('Add to Pla_ylist', moves), ('Move to Folder', None),
+                             ('Main', None)):
+            with self.subTest(title=title):
+                menu = build_menu(PLAYLIST, playlists=[('p.fd1', title, [dusk])], moves=moved)
+                labels = submenu_labels(menu)
+                self.assertEqual(labels[1], mnemonic_escaped(title))
+                self.assertTrue(actions_module.pages_distinct(labels), labels)
+        # The selection's menu has no other submenu: two folders of one name alone.
+        both = [('p.fd1', 'Late', [dusk]), ('p.fd2', 'Late', [dawn])]
+        menu = actions_module.playlist_submenu(both, None, action='selection.add-to-playlist')
+        self.assertEqual((submenu_labels(menu), section_headings(menu)), ([], ['Late', 'Late']))
+        menu = actions_module.playlist_submenu(both[:1], None, action='selection.add-to-playlist')
+        self.assertEqual(submenu_labels(menu), ['Late'])
+        self.assertTrue(actions_module.pages_distinct(['a', 'b']))
+        self.assertFalse(actions_module.pages_distinct(['a', 'a']))
+        self.assertFalse(actions_module.pages_distinct(['main']))
 
     def test_go_to_album_and_artist(self):
         song = Track({'id': 'i.song3', 'title': 'Undertow', 'artist': 'The Invented Band',
@@ -653,11 +738,13 @@ class MenuTest(unittest.TestCase):
         self.assertEqual(labels_of(submenu), ['_Top Level', 'Evenings › Late__Night',
                                               'Mornings', 'New _Folder…'])
         # A Gtk.PopoverMenu names a submenu's page by its label: with the same folders in
-        # Add to Playlist, still no two submenus of one label (test_context_menu opens them).
+        # Add to Playlist, nested there, still no two submenus of one label
+        # (test_context_menu opens them).
         both = build_menu(playlist, moves=moves, playlists=[
             ('p.fd1', 'Evenings', [('p.fd3', 'Late_Night', [('p.pl7', 'Owls', None)])]),
             ('p.fd2', 'Mornings', [('p.pl8', 'Larks', None)])])
-        self.assertEqual(submenu_labels(both), ['Add to Pla_ylist', 'Mov_e to Folder'])
+        self.assertEqual(submenu_labels(both), ['Add to Pla_ylist', 'Evenings', 'Late__Night',
+                                                'Mornings', 'Mov_e to Folder'])
         # Every level has mnemonics of its own (a popover shows one level at a time).
         for level in (set(labels_of(menu)) - set(labels_of(submenu)), labels_of(submenu)):
             letters = [label[label.index('_') + 1].lower() for label in level
@@ -2102,7 +2189,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.actions.playlists(),
                          [('p.fd1', 'Evenings', [('p.pl1', 'Road Trip', None)])])
         menu = self.actions.menu_for(LIBRARY_TRACK)
-        evenings = section_of(submenu_of(menu, 'Add to Pla_ylist'), 'Evenings')
+        evenings = submenu_of(submenu_of(menu, 'Add to Pla_ylist'), 'Evenings')
         self.assertEqual(actions_of(evenings),
                          [('win.item-add-to-playlist', ('p.pl1', 'song', 'i.song1'))])
 
