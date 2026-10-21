@@ -282,11 +282,12 @@ class SidebarController:
         if button is None or self._native_suffix:
             return button is not None
         if self._page_mode():
-            index = list(self._sidebar.get_sections()).index(self._playlist_section)
-            groups = [group for group in descendants(self._sidebar, Adw.PreferencesGroup)]
-            if len(groups) != self._sidebar.get_sections().get_n_items():
+            # The section's group, by its title (libadwaita escapes it as markup).
+            title = GLib.markup_escape_text(self._playlist_section.get_title())
+            group = next((group for group in descendants(self._sidebar, Adw.PreferencesGroup)
+                          if group.get_title() == title), None)
+            if group is None:
                 return False
-            group = groups[index]
             if group.get_header_suffix() is not button:
                 parent = button.get_parent()
                 if parent is not None:

@@ -1022,7 +1022,7 @@ class NewButtonTest(unittest.TestCase):
                           ('win.item-new-folder', ('folder', 'root'))])
 
     def test_at_the_end_of_the_heading_in_both_modes(self):
-        from tests.gtk import pump
+        from tests.gtk import pump, wait_for
 
         self.present()
         button = self.controller.new_button()
@@ -1038,16 +1038,21 @@ class NewButtonTest(unittest.TestCase):
         self.controller.update_playlists()
         self.controller._set_expanded('a', True)
         pump()
-        self.assertTrue(button.is_ancestor(self.heading()))
+        self.assertTrue(wait_for(lambda: button.is_ancestor(self.heading())))
         # The page mode: the section's group's header suffix; back, the heading's again.
         self.widget.set_mode(self.Adw.SidebarMode.PAGE)
-        pump()
-        groups = list(descendants(self.widget, self.Adw.PreferencesGroup))
-        self.assertIs(groups[-1].get_header_suffix(), button)
-        self.assertEqual(groups[-1].get_title(), 'Playlists')
+
+        def last_group():
+            groups = list(descendants(self.widget, self.Adw.PreferencesGroup))
+            return groups[-1] if groups else None
+
+        self.assertTrue(wait_for(lambda: last_group() is not None
+                                 and last_group().get_header_suffix() is button),
+                        last_group() and last_group().get_header_suffix())
+        self.assertEqual(last_group().get_title(), 'Playlists')
         self.widget.set_mode(self.Adw.SidebarMode.SIDEBAR)
-        pump()
-        self.assertTrue(button.is_ancestor(self.heading()))
+        self.assertTrue(wait_for(lambda: self.heading() is not None
+                                 and button.is_ancestor(self.heading())))
 
     def test_up_and_down_reach_it(self):
         from gi.repository import Gdk
