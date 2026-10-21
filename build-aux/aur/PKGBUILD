@@ -20,9 +20,11 @@ license=('GPL-2.0-or-later')
 depends=(
   'gdk-pixbuf2'
   'glib2'
+  'graphene'
   'gtk4'
   'hicolor-icon-theme'
   'libadwaita'
+  'pango'
   'python'
   'python-gobject'
 )
