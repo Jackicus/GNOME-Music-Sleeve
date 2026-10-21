@@ -142,10 +142,12 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   over the cover) or songs, and its list items' names start with the place
   (`labels.ranked()`). A row shows at most `ROW_LIMIT`
   tiles (`FIRST_TILES` at once, the rest over the next frames: `PagedRow.give_items()`, a
-  chart's songs too); See All (the whole shelf, as a grid) and the paging arrows show only when the row does
-  not show everything, the arrows only on a shelf wider than `ARROWS_MIN_WIDTH` (400sp, which
-  the shelf measures itself: shelves are made at run time, out of a page breakpoint's reach),
-  so the title has their room at 360 px. Anything unbounded gets a page of its own (See All),
+  chart's songs too); See All (the whole shelf, as a grid) and the paging arrows show only when
+  the row does not show everything, the arrows at any width: a row's scrolled window is
+  `hscrollbar-policy: external` (no scrollbar for the pointer to land on as it scrolls the
+  page; a touchpad, Shift and the wheel, a finger and the focus still scroll it), so they are
+  what shows that it scrolls, and a title they leave too little room goes onto a second line
+  (docs/decisions.md). Anything unbounded gets a page of its own (See All),
   since a `Gtk.GridView` cannot sit under a shelf in the same scrolled window. A search's shelf
   of one kind opens a page of its own instead of the grid (`make_page`, pages/search_all.py),
   a `widgets.search_list.SearchList` that pages on as it is scrolled (`search_pager.py`), as

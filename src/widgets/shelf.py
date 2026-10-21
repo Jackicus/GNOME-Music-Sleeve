@@ -28,27 +28,16 @@ MORE_TILES = 6
 # How long a click on a paging arrow takes to scroll the row, in milliseconds.
 PAGE_DURATION = 250
 
-# The paging arrows show only on a shelf wider than this, in sp (the unit of the pages'
-# `max-width: 400sp` breakpoints: pixels times the text scale). In a narrower window, a
-# phone's, which scrolls the row by touch, the title keeps their room: at 360 px they
-# truncated it.
-ARROWS_MIN_WIDTH = 400
-
-
-def text_scale(settings):
-    """The text scale factor that sp follows: the Xft DPI GTK is given, over 96 (1 when it is
-    not set)."""
-    dpi = settings.props.gtk_xft_dpi if settings is not None else 0
-    return dpi / (96 * 1024) if dpi > 0 else 1.0
-
 
 class PagedRow:
     """A shelf's row controls, for a widget with `scrolled_window` (scrolling sideways only),
     `previous_button`, `next_button`, `see_all_button`, `_see_all` (See All offered) and its
     row's view as `_row`: See All while the row does not show everything (`_truncated()`,
-    or wider than the window); the arrows while it overflows, on a shelf wider than
-    ARROWS_MIN_WIDTH, each sensitive while there is more that way; a click on one scrolls
-    a width and focuses the first item wholly shown.
+    or wider than the window); the arrows while it overflows, at any width (the row shows
+    no scrollbar: they are what shows that it scrolls), each sensitive while there is more
+    that way; a click on one scrolls a width and focuses the first item wholly shown. All
+    of it follows the row's horizontal adjustment, which the scrolled window keeps whatever
+    its scrollbar policy.
 
     give_items() makes the row's model: the first of the items at once and the rest a few
     a frame (its row makes a widget for each item up to rows_kept() as it gets it, whether it
@@ -101,15 +90,8 @@ class PagedRow:
         page = adjustment.get_page_size()
         overflows = page > 0 and upper - page > 1
         self.see_all_button.set_visible(self._see_all and (self._truncated() or overflows))
-        # The row's width, which is the shelf's (the page's, as a page breakpoint would
-        # measure it) and the allocation the adjustment's page follows: a new width is a new
-        # page, so this runs again. Not the shelf's own width, which is 0 while a ShelfColumn
-        # binds a kept shelf out of its page, back as wide with the adjustment unchanged; nor
-        # the adjustment's page, which leaves out the list's CSS padding.
-        row_width = self.scrolled_window.get_width()
-        arrows = overflows and row_width > ARROWS_MIN_WIDTH * text_scale(self.get_settings())
-        self.previous_button.set_visible(arrows)
-        self.next_button.set_visible(arrows)
+        self.previous_button.set_visible(overflows)
+        self.next_button.set_visible(overflows)
         self.previous_button.set_sensitive(value > 1)
         self.next_button.set_sensitive(value < upper - page - 1)
 
@@ -184,13 +166,12 @@ class RankedTile(Gtk.Overlay):
 class Shelf(PagedRow, Gtk.Box):
     """A shelf of Items (a library.ShelfModel, or any object with `key`, `title` and `items`,
     bound with bind_shelf()) as a row of tiles under its title, with paging arrows while the
-    row overflows (on a shelf wider than ARROWS_MIN_WIDTH) and a "See All" button
-    (`see-all`: offered, and shown when the row does not show everything: more items than
-    ROW_LIMIT, or wider than the window; always for an artist page's In Your Library, which
-    has a page of its own), which opens the shelf as a grid (window.open_shelf). Activating
-    a tile opens its item (window.open_item); a right click, a long press or the Menu key
-    opens its context menu (context_menu.py), and a tile drags (widgets/dnd.py: an album or
-    a playlist onto a sidebar playlist or the player bar).
+    row overflows and a "See All" button (`see-all`: offered, and shown when the row does
+    not show everything: more items than ROW_LIMIT, or wider than the window; always for an
+    artist page's In Your Library, which has a page of its own), which opens the shelf as a
+    grid (window.open_shelf). Activating a tile opens its item (window.open_item); a right
+    click, a long press or the Menu key opens its context menu (context_menu.py), and a tile
+    drags (widgets/dnd.py: an album or a playlist onto a sidebar playlist or the player bar).
 
     The row is a horizontal Gtk.ListView of the first ROW_LIMIT items (FIRST_TILES at once,
     the rest over the next frames: give_items()), the scrolled window's own child. It builds
@@ -207,7 +188,11 @@ class Shelf(PagedRow, Gtk.Box):
     Scrolling: the row's scrolled window scrolls only horizontally, and GtkScrolledWindow
     handles a scroll event only along an axis it can scroll, so a vertical wheel over the row
     goes on to the page's scrolled window, and a horizontal one (a touchpad, a tilting wheel,
-    Shift and the wheel) moves the row. A row that fits scrolls neither way.
+    Shift and the wheel) moves the row. The row shows no scrollbar (`hscrollbar-policy:
+    external`), which the pointer kept landing on as it scrolled the page; it still scrolls
+    by those, by a finger, and as the focus moves along it (the list view scrolls the item
+    focused into view), and the paging arrows, shown whenever it overflows, page it. A row
+    that fits scrolls neither way and shows no arrows.
 
     GtkBuilder builds some (search.blp): it calls __init__ without arguments and
     sets the properties after it, where a Python caller's are set before __init__'s body

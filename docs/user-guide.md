@@ -57,7 +57,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   The refresh button in the header bar, or <kbd>F5</kbd>, asks Apple Music for all of
   Home's shelves again at once. A recommendation that says why it is offered shows the
   reason under its title. <kbd>F5</kbd> refreshes New, Made for You, Radio, Charts and
-  Replay too, and the pages New's links open.
+  Replay too, and the pages New's links open. Shelves have no scrollbar: scroll one
+  sideways with the arrows beside its title, the touchpad, <kbd>Shift</kbd> and the mouse
+  wheel, or a finger, or move along it with the arrow keys.
 - **Replay: Your Year in Music**, under **More for You** at the end of Home and of **Made for
   You**, opens Apple Music Replay: the songs, artists and albums you played most this year,
   from your listening history. **Top Songs** is a numbered list (click a song to play the

@@ -3,9 +3,9 @@
 
 using Gtk 4.0;
 
-// A title row over a horizontal row of tiles that scrolls sideways. The page scrolls
-// vertically around it: the row's scrolled window never scrolls vertically, so a vertical
-// wheel over it goes on to the page's (see shelf.py).
+// A title row over a horizontal row of tiles that scrolls sideways, with no scrollbar: the
+// arrows page it. The page scrolls vertically around it: the row's scrolled window never
+// scrolls vertically, so a vertical wheel over it goes on to the page's (see shelf.py).
 template $AppleMusicShelf: Box {
   orientation: vertical;
 
@@ -25,8 +25,13 @@ template $AppleMusicShelf: Box {
       valign: center;
       hexpand: true;
 
+      // Onto a second line rather than cut short where the arrows and See All leave it
+      // too little room (a 360 px window).
       Label title_label {
         xalign: 0;
+        wrap: true;
+        wrap-mode: word_char;
+        lines: 2;
         ellipsize: end;
 
         styles [
@@ -45,9 +50,9 @@ template $AppleMusicShelf: Box {
       }
     }
 
-    // Page the row sideways, for a pointer without a sideways wheel: shown while the row
-    // overflows, except in a narrow window, where the title needs the room; each sensitive
-    // while there is more that way (shelf.py).
+    // Page the row sideways, for a pointer without a sideways wheel, the row showing no
+    // scrollbar: shown while the row overflows, each sensitive while there is more that
+    // way (shelf.py).
     Button previous_button {
       icon-name: "go-previous-symbolic";
       tooltip-text: _("Scroll Left");
@@ -91,8 +96,10 @@ template $AppleMusicShelf: Box {
     }
   }
 
+  // EXTERNAL: no scrollbar for the pointer to land on as it scrolls the page, but the row
+  // still scrolls (a touchpad, a tilting wheel, Shift and the wheel, a finger, the focus).
   ScrolledWindow scrolled_window {
-    hscrollbar-policy: automatic;
+    hscrollbar-policy: external;
     vscrollbar-policy: never;
 
     // Recycled like the grids: a Gtk.ListView as the scrolled window's own child. Its
