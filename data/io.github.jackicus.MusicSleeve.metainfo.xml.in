@@ -64,35 +64,35 @@
   <screenshots>
     <screenshot type="default" environment="gnome">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/home-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/albums-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/album-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/now-playing-light.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/home-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/albums-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/album-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.1.0/data/screenshots/now-playing-dark.png</image>
     </screenshot>
   </screenshots>
 
@@ -102,6 +102,31 @@
   </branding>
 
   <releases>
+    <release version="1.1.0" date="2026-10-21">
+      <description>
+        <p>
+          Select several songs at once, put Up Next in your own order, a mini player, your
+          year in Replay and your library's genres.
+        </p>
+        <ul>
+          <li>Select songs on Songs, an album or a playlist to play them next or later, add them to a playlist, or remove them from a playlist, your favourites or your library, all at once</li>
+          <li>Reorder Up Next by dragging, with Move Up and Move Down, or with Alt+Up and Alt+Down</li>
+          <li>A mini player, from the main menu or Ctrl+Shift+M: a small window with the artwork and the controls in place of the main one</li>
+          <li>Replay: the songs, artists and albums you played most this year, and each year's Replay playlist</li>
+          <li>A Genres view in the library, if you turn it on, and Genre and Year columns in the song tables</li>
+          <li>View Credits shows who performed, wrote and produced a song</li>
+          <li>Choose the streaming quality, 256 or 64 kbps, and, if you like, a notification when the song changes while the window is out of sight</li>
+          <li>New opens with the featured banners and ends with More to Explore's collections and pages; the charts narrow to a genre</li>
+          <li>Your playlists can be duplicated, sorted on their page and filled from Add Songs…; Songs has Play and Shuffle; a curator's playlist names its curator as a link and ends with Featured Artists and More By</li>
+          <li>An album not out yet says when it comes, plays the songs already out and can be pre-added</li>
+          <li>Move a playlist out of its folder to the top level, and a folder into another folder, from the menu or by dragging</li>
+          <li>Drag a song, an album, a playlist or a station into another app to give it the link</li>
+          <li>In a narrow window the player bar shows the artwork and the song first, and a radio show's page wears its banner</li>
+          <li>Catalogue playlists show their songs' artwork again</li>
+          <li>The song playing stays in the player bar, paused, if the player stops mid-song, and large libraries start, scroll and use memory more lightly</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.1" date="2026-10-20">
       <description>
         <p>
