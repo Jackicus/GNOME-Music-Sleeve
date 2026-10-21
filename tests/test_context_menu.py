@@ -4,7 +4,8 @@
 """The item menus as a Gtk.PopoverMenu shows them (applemusic.widgets.context_menu.popup over
 actions.build_menu): every submenu a page of its own, which its item opens. A PopoverMenu
 names each submenu's page by its label, so two submenus of one label share a page (issue
-423): the menus have none but Add to Playlist and Move to Folder."""
+423): Add to Playlist's folders are submenus only where every label is distinct, else
+headed sections (issue 554)."""
 
 import re
 import unittest
@@ -21,17 +22,23 @@ from gi.repository import Gio, GObject  # noqa: E402
 from applemusic.actions import build_menu  # noqa: E402
 from applemusic.library import Item  # noqa: E402
 
-# Invented: a playlist at the top level, and folders that hold playlists and a folder, which
-# both Add to Playlist and Move to Folder list.
+# Invented: a playlist at the top level, and folders that hold playlists and folders, three
+# deep, which both Add to Playlist and Move to Folder list.
 PLAYLIST = Item({'id': 'p.pl1', 'kind': 'playlist', 'title': 'Road Trip',
                  'play': {'kind': 'playlist', 'id': 'p.pl1'}})
 PLAYLISTS = [('p.fd1', 'Evenings', [('p.pl2', 'Dusk', None),
-                                    ('p.fd2', 'Late', [('p.pl3', 'Owl', None)])]),
+                                    ('p.fd2', 'Late', [('p.pl3', 'Owl', None),
+                                                       ('p.fd5', 'Later', [
+                                                           ('p.pl7', 'Bat', None)])])]),
              ('p.fd3', 'Untitled', [('p.pl4', 'Dawn', None)]),
-             ('p.fd4', 'Untitled', [('p.pl5', 'Noon', None)]),
+             ('p.fd4', 'Mornings', [('p.pl5', 'Noon', None)]),
              ('p.pl6', 'Main', None)]
-MOVES = (False, [('p.fd1', 'Evenings', True, [('p.fd2', 'Late', True, [])]),
-                 ('p.fd3', 'Untitled', True, []), ('p.fd4', 'Untitled', True, [])])
+MOVES = (False, [('p.fd1', 'Evenings', True, [('p.fd2', 'Late', True, [
+                     ('p.fd5', 'Later', True, [])])]),
+                 ('p.fd3', 'Untitled', True, []), ('p.fd4', 'Mornings', True, [])])
+# Two folders of one name: their submenus would share a page, so Add to Playlist lists
+# every folder as a headed section instead.
+COLLIDING = [*PLAYLISTS[:2], ('p.fd4', 'Untitled', [('p.pl5', 'Noon', None)]), PLAYLISTS[3]]
 TITLE_ROLE = 3  # GtkButtonRole's TITLE: a submenu's header, which goes back
 
 
@@ -46,7 +53,15 @@ def submenus(model, path=()):
     return found
 
 
-def entries(model):
+def label_of(model, path):
+    """The label, as the model has it (the name of its page), of the submenu at `path`
+    (submenus()'s)."""
+    for position in path[:-1]:
+        model = entries(model, raw=True)[position][1]
+    return entries(model, raw=True)[path[-1]][0]
+
+
+def entries(model, raw=False):
     """[(label, submenu or None)] of a menu model's items, its sections flattened, as one
     page of a PopoverMenu shows them here: the label as it reads (its mnemonic taken out),
     the items hidden while their action is disabled left out (the test's window has no
@@ -55,12 +70,12 @@ def entries(model):
     for position in range(model.get_n_items()):
         section = model.get_item_link(position, Gio.MENU_LINK_SECTION)
         if section is not None:
-            found.extend(entries(section))
+            found.extend(entries(section, raw))
             continue
         if model.get_item_attribute_value(position, 'hidden-when', None) is not None:
             continue
         label = model.get_item_attribute_value(position, 'label', None).unpack()
-        found.append((re.sub('_(.)', r'\1', label),
+        found.append((label if raw else re.sub('_(.)', r'\1', label),
                       model.get_item_link(position, Gio.MENU_LINK_SUBMENU)))
     return found
 
@@ -106,9 +121,26 @@ class PopoverTest(unittest.TestCase):
         return next(widget for widget in descendants(popover) if isinstance(widget, Gtk.Stack))
 
     def test_each_submenu_opens_its_own_items(self):
+        # Add to Playlist's folders nested, three deep, beside Move to Folder.
+        menu = build_menu(PLAYLIST, playlists=PLAYLISTS, moves=MOVES)
+        self.assertEqual(self.open_each(menu), [
+            'Add to Pla_ylist', 'Evenings', 'Late', 'Later', 'Untitled', 'Mornings',
+            'Mov_e to Folder'])
+
+    def test_colliding_labels_open_no_shared_page(self):
+        # Two Untitled folders: no folder is a submenu, each a section of Add to Playlist.
+        menu = build_menu(PLAYLIST, playlists=COLLIDING, moves=MOVES)
+        self.assertEqual(self.open_each(menu), ['Add to Pla_ylist', 'Mov_e to Folder'])
+        listed = submenus(menu)[0][1]
+        self.assertEqual([label for label, _submenu in entries(listed)],
+                         ['Main', 'Dusk', 'Owl', 'Bat', 'Dawn', 'Noon', 'New Playlist…'])
+
+    def open_each(self, menu):
+        """Opens every submenu of `menu` in a PopoverMenu, as clicks on the items leading to
+        it would, checks that each shows its own page with its own items, and answers the
+        submenus' labels (their pages' names), depth first."""
         from tests.gtk import pump
 
-        menu = build_menu(PLAYLIST, playlists=PLAYLISTS, moves=MOVES)
         stack = self.popup(menu)
         found = submenus(menu)
         self.assertTrue(found)
@@ -126,6 +158,8 @@ class PopoverTest(unittest.TestCase):
                 shown = [button.get_property('text')
                          for button in buttons(stack.get_visible_child())]
                 self.assertEqual(shown, [label for label, _submenu in entries(submenu)])
+                self.assertEqual(stack.get_visible_child_name(), label_of(menu, path))
+        return [label_of(menu, path) for path, _submenu in found]
 
     def test_a_widgets_own_section_ends_its_menu(self):
         # The player bar's Mini Player (its `context_extra`), after the item's own menu.

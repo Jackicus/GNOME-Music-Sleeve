@@ -49,7 +49,7 @@ changes, change it here, with the date. The plan they came from is in
 - **Folders made and playlists moved, at once** (2026-10-20). New Folder… (the main menu, a
   folder's and All Playlists' menus, a folder button beside each **+**) and Move to Folder (a
   playlist's menus: the folders it can go into in one list, a nested one named after both,
-  as "No folder is a submenu" below has it, ending in New Folder…, a folder holding it) are the keyboard's and the narrow layout's way; dragging a playlist's sidebar
+  as "Add to Playlist's folders are submenus" below has it, ending in New Folder…, a folder holding it) are the keyboard's and the narrow layout's way; dragging a playlist's sidebar
   row or tile onto a sidebar folder is the pointer's. A move is shown before Apple answers:
   `Library.hold()` remakes the tree from library.json's folders plus the changes held, so the
   sidebar splices only what moved, keeps its open folders and selection, and gives the moved
@@ -130,25 +130,35 @@ changes, change it here, with the date. The plan they came from is in
   another playlist's adds its songs too (its drag offers MOVE alone, which the row
   answers); on a folder it still moves. Albums dropped on All Playlists make a new playlist
   of their songs; playlists dropped there still move.
-- **No folder is a submenu** (2026-10-20, #423). A `Gtk.PopoverMenu` keeps each submenu as
-  a page of one `GtkStack` named by its label, and a submenu's item opens the page of that
-  name (GTK 4.20 to 4.22 alike, with no attribute to name it otherwise): two submenus of one
-  label share a page. A playlist's menu had a folder as a submenu in both Add to Playlist
-  and Move to Folder, so Add to Playlist › a folder could open Move to Folder's page and
-  move the playlist instead of adding its songs; two folders of one name (two Untitled
-  Folders) or one named `main` (the menu's own page) did the same. A label made unique
-  out of sight (markup, an invisible character) was refused: what the user reads and what
-  a screen reader says must be the name. So the two submenus with fixed labels are the
-  only ones, and inside them nothing is nested: Add to Playlist lists the top level's
-  playlists, then each folder's in a section headed by its name (a folder inside another
-  after that one's own playlists, headed "Evenings › Late Night"); Move to Folder is one
-  list of the folders it can go into, a folder inside another named so. This is also
-  what the GNOME HIG asks of menus (submenus sparingly, never nested deeper than one
-  level), and the headed sections are GTK's own (a section's label). Nested popovers
-  (`GTK_POPOVER_MENU_NESTED`, which has no stack) would keep the folders as submenus, but
-  cascade sideways, which no GNOME app's menus do and which does not fit 360 px.
-  tests/test_context_menu.py opens every submenu of a playlist's menu and checks that it
-  shows its own items.
+- **Add to Playlist's folders are submenus, while each has a page of its own**
+  (2026-10-21, #554; first #423). Add to Playlist lists the top level's playlists, then
+  each folder as a submenu of its name holding its own playlists and then its folders, as
+  deep as the sidebar nests them, New Playlist… last at the top; a folder with no playlist
+  that can take the songs, at any depth, is left out, and a playlist is never offered its
+  own songs. One long list with each folder a headed section (#423) ran off the screen
+  with many playlists. A `Gtk.PopoverMenu` keeps each submenu as a page of one `GtkStack`
+  named by its label, and a submenu's item opens the page of that name (GTK 4.20 to 4.22
+  alike, with no attribute to name it otherwise): two submenus of one label share a page,
+  so Add to Playlist › a folder could open Move to Folder's page and move the playlist
+  instead of adding its songs, and two Untitled Folders, or a folder named `main` (the
+  menu's own page), would open each other's. So the folders are submenus only when every
+  submenu label of the whole menu is distinct and none is `main` (`actions.pages_distinct`
+  over the folders' labels, Add to Playlist's, Move to Folder's); otherwise Add to
+  Playlist falls back to the headed sections (a folder inside another after that one's own
+  playlists, headed "Evenings › Late Night"), the selection mode's too. A label made
+  unique out of sight (markup, an invisible character) is still refused: what the user
+  reads and what a screen reader says must be the name. A folder's label has its
+  underscores doubled (no mnemonic), so it can match a fixed label only where a
+  translation gives that one no mnemonic. The HIG asks for submenus sparingly; a sliding
+  popover shows one level at a time with a header back, so the depth never cascades and
+  fits 360 px (nested popovers, `GTK_POPOVER_MENU_NESTED`, would cascade sideways, which
+  no GNOME app's menus do). **Move to Folder stays one list** of the folders it can go
+  into, a folder inside another named "Evenings › Late Night": a folder there is a place
+  to move to, not a list to look into, so a submenu would need a Move Here inside each,
+  every target one step further away; a library's folders are few beside its playlists;
+  and only Add to Playlist's submenus can then collide. tests/test_context_menu.py opens
+  every submenu of a playlist's menu in a real `Gtk.PopoverMenu` (folders three deep, and
+  two of one name) and checks that each opens its own page showing its own items.
 - **A sidebar row's menu is its page's** (2026-10-20). A playlist's, a folder's, Favourite
   Songs' and All Playlists' rows open the item actions' menu for their Item
   (`actions.build_menu`, through `menu_for`), the one their page's More Options and their

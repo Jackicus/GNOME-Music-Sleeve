@@ -121,10 +121,10 @@ Favourites alone: favourite_items()), Add to Library (not what the
 library holds already: a catalog album or playlist by Library.holds(), the test its page's
 In Library makes; Pre-Add to Library for an album not out yet: pre_adds()), Add to
 Playlist (a song's, a video's, an album's or a playlist's: the
-library's playlists that take songs, each folder's in a section headed by its name, a
-playlist not offered to itself, then New Playlist…), Move to Folder (a playlist's or
-folder's: Top Level, the folders it can go into in one list, then New Folder…:
-move_targets(); in neither is a folder a submenu: playlist_submenu()), Remove from
+library's playlists that take songs, each folder a submenu, or a section headed by its
+name where a submenu's page would not be its own: playlist_submenu(); a playlist not
+offered to itself, then New Playlist…), Move to Folder (a playlist's or folder's: Top
+Level, the folders it can go into in one list, then New Folder…: move_targets()), Remove from
 Playlist and, where it can go, Move Up and Move Down (a track shown in a playlist of the
 user's: `container`); Open in Browser, Copy Link (only an address anyone can open: not
 the web player's library routes; a library artist's is the catalog artist's page, which
@@ -934,18 +934,44 @@ def folder_path(titles):
     return path
 
 
-def playlist_submenu(entries, named, action=None):
+def submenu_labels(menu):
+    """The labels of every submenu in a Gio.MenuModel, nested ones and those in its sections
+    too, as a Gtk.PopoverMenu names their pages (the label, mnemonic underscores and all)."""
+    found = []
+    for position in range(menu.get_n_items()):
+        submenu = menu.get_item_link(position, Gio.MENU_LINK_SUBMENU)
+        if submenu is not None:
+            label = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL, None)
+            found.append(label.unpack() if label is not None else '')
+        for linked in (submenu, menu.get_item_link(position, Gio.MENU_LINK_SECTION)):
+            if linked is not None:
+                found.extend(submenu_labels(linked))
+    return found
+
+
+def pages_distinct(labels):
+    """Whether submenus of these labels each get a page of their own in a Gtk.PopoverMenu,
+    which names a submenu's page by its label and its own first page `main`: no two alike,
+    none `main`."""
+    labels = list(labels)
+    return len(set(labels)) == len(labels) and 'main' not in labels
+
+
+def playlist_submenu(entries, named, action=None, taken=()):
     """The Add to Playlist items for `entries` ((id, title, children), as
     ItemActions.playlists() lists them), adding the song or video `named` ((kind, id)), or
     an album's or a playlist's songs, to the playlist chosen: the top level's playlists,
-    then each folder's in a section headed by its name (folder_path()), a folder inside
-    another after that one's own playlists. No folder is a submenu: a Gtk.PopoverMenu names
-    a submenu's page by its label, and two of one name (a folder in Move to Folder too, two
-    Untitled Folders) would open one page (docs/decisions.md). A playlist is not offered its
-    own songs (nor a folder holding only it). With `action` (a full action name that takes
-    the playlist's id, "s": a selection's Add to Playlist), each item runs that instead;
-    `named` is then only what is not offered (('playlist', id), or None)."""
-    menu = Gio.Menu()
+    then each folder as a submenu of its name holding its own playlists and then its
+    folders, as the sidebar nests them. A Gtk.PopoverMenu names a submenu's page by its
+    label, so the folders are submenus only when every submenu label of the menu would be
+    distinct (pages_distinct()): the folders' and `taken`, the labels of the menu's other
+    submenus (Add to Playlist's own, Move to Folder's). Otherwise (two Untitled Folders, a
+    folder named `main` or like another submenu) each folder's playlists are a section
+    headed by its name (folder_path()), a folder inside another after that one's own
+    playlists (docs/decisions.md). A playlist is not offered its own songs, nor a folder
+    holding only it. With `action` (a full action name that takes the playlist's id, "s": a
+    selection's Add to Playlist), each item runs that instead; `named` is then only what is
+    not offered (('playlist', id), or None)."""
 
     def item_for(entry_id, title):
         label = mnemonic_escaped(title or _('Untitled Playlist'))
@@ -956,22 +982,47 @@ def playlist_submenu(entries, named, action=None):
         item.set_action_and_target_value(action, GLib.Variant('s', entry_id))
         return item
 
-    def add(entries, path):
-        section = Gio.Menu()
-        folders = []
+    def offered(entries):
+        """entries without the playlist `named` and the folders left holding nothing."""
+        kept = []
         for entry_id, title, children in entries:
             if children is not None:
-                folders.append((children, (*path, title)))
+                inside = offered(children)
+                if inside:
+                    kept.append((entry_id, title, inside))
             elif named is None or tuple(named) != ('playlist', entry_id):
+                kept.append((entry_id, title, None))
+        return kept
+
+    def nest(entries):
+        menu = Gio.Menu()
+        for entry_id, title, children in entries:
+            if children is None:
+                menu.append_item(item_for(entry_id, title))
+        for _entry_id, title, children in entries:
+            if children is not None:
+                menu.append_submenu(mnemonic_escaped(title or _('Untitled Folder')),
+                                    nest(children))
+        return menu
+
+    def flat(entries, path, menu):
+        section = Gio.Menu()
+        for entry_id, title, children in entries:
+            if children is None:
                 section.append_item(item_for(entry_id, title))
         if section.get_n_items():
             # A section's header is plain text, not a mnemonic label: the name as it is.
             menu.append_section(folder_path(path) if path else None, section)
-        for children, inside in folders:
-            add(children, inside)
+        for _entry_id, title, children in entries:
+            if children is not None:
+                flat(children, (*path, title), menu)
+        return menu
 
-    add(entries, ())
-    return menu
+    entries = offered(entries)
+    nested = nest(entries)
+    if pages_distinct([*taken, *submenu_labels(nested)]):
+        return nested
+    return flat(entries, (), Gio.Menu())
 
 
 def settle_delays(kind, folder_id):
@@ -1022,7 +1073,8 @@ def folder_items(entries, named, path=(), menu=None):
     """The Move to Folder items for `entries` (move_targets()'s), moving the playlist or
     folder `named` ((kind, id)), in one list in the sidebar's order: each folder it can go
     into, one inside another named with the folders holding it (folder_path()). No folder
-    is a submenu, as in Add to Playlist (playlist_submenu())."""
+    is a submenu: each is a place to move to, not a list to look into, and in one list
+    every folder is a step away (docs/decisions.md)."""
     menu = Gio.Menu() if menu is None else menu
     for folder_id, title, movable, children in entries:
         inside = (*path, title)
@@ -1131,19 +1183,25 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if library_target(obj) is not None and removable is None and not held:
         keep.append_item(menu_item('item-add-to-library', target,
                                    pre_add_label() if pre_adds(obj) else None))
+    labels = action_labels()
+    moved = move_submenu(moves, named) if moves is not None else None
     if playlist_song(obj) or adds_songs(obj):
-        # The playlists that take songs, folders as sections, then New Playlist…, one
+        # The playlists that take songs, folders as submenus (or as sections where a
+        # submenu's page would not be its own: playlist_submenu()), then New Playlist…, one
         # holding this song (an album's or a playlist's songs).
+        taken = [labels['item-add-to-playlist']]
+        if moved is not None:
+            taken += [labels['item-move-to-folder'], *submenu_labels(moved)]
         submenu = Gio.Menu()
-        listed = playlist_submenu(playlists, named)
+        listed = playlist_submenu(playlists, named, taken=taken)
         if listed.get_n_items():
             submenu.append_section(None, listed)
         created = Gio.Menu()
         created.append_item(menu_item('item-new-playlist', target))
         submenu.append_section(None, created)
-        keep.append_submenu(action_labels()['item-add-to-playlist'], submenu)
-    if moves is not None:
-        keep.append_submenu(action_labels()['item-move-to-folder'], move_submenu(moves, named))
+        keep.append_submenu(labels['item-add-to-playlist'], submenu)
+    if moved is not None:
+        keep.append_submenu(labels['item-move-to-folder'], moved)
     for item in move_items(container, obj) if reorder else ():
         keep.append_item(item)
     removed = entry_target(container, obj)

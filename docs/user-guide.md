@@ -332,7 +332,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   folder moved into another folder, or made inside one, takes about a minute to reach Apple's
   listing, and so your other devices.
 - **Add to Playlist** lists your playlists that take songs: those at the top level, then
-  each folder's under the folder's name. In an album's or a playlist's menu (on its tile,
+  each folder, which opens to its own playlists and folders (were two folders to share a
+  name, each folder's playlists are listed under its name instead). In an album's or a playlist's menu (on its tile,
   or **More Options** on its page) it adds all its songs, in order, to the playlist you
   choose; **New Playlist…**
   at its end makes one of them, named after the album or playlist. One message says how many
