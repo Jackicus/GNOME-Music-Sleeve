@@ -24,34 +24,44 @@ The screenshots show an invented demo library.
 
 ## What it does
 
-- Your library: Recently Added, Artists, Albums, Songs, Music Videos and Made for You,
-  with your playlists and playlist folders in the sidebar. Your favourites carry a heart
-  (Favourites Only shows them alone), and the library's lists and a playlist's songs filter
-  as you type.
+- Your library: Recently Added, Artists, Albums, Songs (with Play and Shuffle), Music
+  Videos and Made for You, and Genres if you turn it on, with your playlists and playlist
+  folders in the sidebar. Your favourites carry a heart (Favourites Only shows them alone),
+  the library's lists and a playlist's songs filter as you type, and song tables can show
+  each song's genre and year.
 - Home, New, Charts, Radio and Search, with a page for every album and playlist, and artist
   pages laid out as Apple Music's: the artist's wide banner where Apple has one, the latest
-  release, top songs, albums, radio shows, About and similar artists. An album's page ends
-  with its release date, its other versions, music videos and more by the artist, a
-  curator's playlist with its featured artists and more by the curator, linked; Search
-  remembers what you opened from it and lists every result with See All.
+  release, top songs, albums, radio shows, About and similar artists. New opens with
+  Apple's featured banners and ends with More to Explore's collections and pages; the
+  charts narrow to a genre. An album's page ends with its release date, its other
+  versions, music videos and more by the artist, and an album not out yet says when it
+  comes and can be pre-added; a curator's playlist ends with its featured artists and more
+  by the curator, linked; Search remembers what you opened from it and lists every result
+  with See All. Replay shows the songs, artists and albums you played most this year.
 - Menus on songs, albums, playlists and artists, as each allows: Add to Library or Remove
-  from Library, Favourite, Suggest Less, Create Station, and Add to Playlist, for a whole
-  album or playlist too.
-- Your playlists to manage: make new ones, rename and delete them, add, remove and reorder
-  songs, and pick from the songs Apple Music suggests adding; make folders and move
+  from Library, Favourite, Suggest Less, Create Station, View Credits, and Add to Playlist,
+  for a whole album or playlist too. Select several songs to play, add or remove them at
+  once.
+- Your playlists to manage: make new ones, rename, duplicate and delete them, add songs
+  from your library or Apple Music's catalogue, remove and reorder them, sort what a page
+  shows, and pick from the songs Apple Music suggests adding; make folders and move
   playlists and folders into them or out to the top level, from a menu or by dragging them
   onto a folder in the sidebar.
 - A player bar (drop songs and playlists on it to queue them; the last song you played is
   there, paused, when the app starts), and a Now Playing view, tinted by the song's artwork,
-  with the queue (covers, the History of what played, remove songs from Up Next, clear it,
-  and Autoplay's similar songs when it ends) and the lyrics: lit word by word as they are
-  sung when Apple Music times them so, with background vocals, duets on two sides, and
-  translations and pronunciations when the song has them.
+  with the queue (covers, the History of what played, reorder or remove songs in Up Next,
+  clear it, and Autoplay's similar songs when it ends) and the lyrics: lit word by word as
+  they are sung when Apple Music times them so, with background vocals, duets on two sides,
+  and translations and pronunciations when the song has them.
 - A full-screen player (<kbd>F11</kbd>): the artwork, the controls and the lyrics over the
-  artwork's own colours.
-- GNOME's media controls (MPRIS) and the keyboard's media keys.
+  artwork's own colours; and a mini player (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>),
+  a small window with the artwork and the controls.
+- GNOME's media controls (MPRIS) and the keyboard's media keys; a notification when the
+  song changes while the window is out of sight, if you turn it on; a choice of streaming
+  quality, 256 or 64 kbps.
 - Your library in the Activities overview's search: an album, artist, playlist or song
-  typed there opens, or plays, from the results.
+  typed there opens, or plays, from the results. Drag a song, an album, a playlist or a
+  station into another app to give it its music.apple.com link.
 - If you turn it on in Preferences, what you are listening to shows on your Discord
   profile.
 - Light and dark styles; the window adapts down to 360 px wide.
@@ -90,7 +100,7 @@ sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3
     meson gettext                                                                             # Fedora 44+
 sudo apt install libgtk-4-dev libadwaita-1-dev python3-gi python-gi-dev meson gettext        # Ubuntu 26.04
 
-tar xf music-sleeve-1.0.1.tar.xz && cd music-sleeve-1.0.1
+tar xf music-sleeve-1.1.0.tar.xz && cd music-sleeve-1.1.0
 meson setup _build --prefix=/usr
 meson compile -C _build
 sudo meson install -C _build --skip-subprojects

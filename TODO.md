@@ -1,6 +1,6 @@
 # TODO
 
-What is left, as of 2026-10-20. Music Sleeve (`io.github.jackicus.MusicSleeve`) is released:
+What is left, as of 2026-10-21. Music Sleeve (`io.github.jackicus.MusicSleeve`) is released:
 [v0.9.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.9.0), the first
 release, v0.10.0, which adds Discord rich presence, v0.11.0, the GNOME HIG pass, artist pages
 in Apple Music's structure and Go to Album and Go to Artist, v0.12.0, playlist management,
@@ -12,12 +12,18 @@ Music's own apps (Charts, Apple's Radio page, an album's release footer and shel
 and radio shows, Search's See All and Recently Searched, favourites and Date Added, filters,
 Create Station, Suggest Less, Remove from Library, playlist folders and reordering, Add to
 Playlist for albums and playlists, drag and drop, a fuller Up Next with History and Autoplay,
-the last session restored, live radio, any Chromium-based browser with Widevine), and
-[v1.0.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.0.1), the latest:
-fixes for what the audit found in 1.0.0 (sign-out, the restored session, Up Next's Undo and
-Autoplay, the library's upgrade, You Might Also Like, the focus after a filter).
-What the audit found for later is the
-[After v1.0.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/5) milestone. A
+the last session restored, live radio, any Chromium-based browser with Widevine),
+[v1.0.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.0.1), fixes for what
+the audit found in 1.0.0 (sign-out, the restored session, Up Next's Undo and Autoplay, the
+library's upgrade, You Might Also Like, the focus after a filter), and
+[v1.1.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.0), the latest: what
+the audit left for the
+[After v1.0.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/5) milestone
+(selection mode, Up Next's reordering, a mini player, Replay, a Genres view and Genre and Year
+columns, View Credits, streaming quality, song-change notifications, New's banners and More to
+Explore, the charts by genre, drags out as links, a playlist's Duplicate, Sort By and Add
+Songs…, pre-release albums, folder moves to the top level and into folders) and a lazy
+Songs store. A
 release is a tag and a GitHub release (`docs/release.md`); why the app is built the way it
 is, is in `docs/decisions.md`.
 
@@ -28,8 +34,6 @@ is, is in `docs/decisions.md`.
       ready (set the `# Maintainer:` contact, `updpkgsums && makepkg --printsrcinfo > .SRCINFO`,
       `makepkg -si` to try it, then push to aur.archlinux.org with the maintainer's account;
       README's install section changes then).
-- [ ] [#153](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/153) (Later): a lazy Songs
-      model, about 21 MB on a large library. Only if memory turns out to matter on a real one.
 - [ ] [#320](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/320): the playback
       position in fractions of a second from the page, so the lyrics' words light on time
       (the estimate from MusicKit's whole seconds runs about 130 ms behind).
@@ -39,10 +43,9 @@ is, is in `docs/decisions.md`.
 - [ ] Build and run the Flatpak in GNOME Builder (the manifest in `build-aux/flatpak/` has
       never been built: no GNOME 50 runtime on the development machine). It can reach a
       native or Flatpak Discord's socket; that is untested too.
-- [ ] The [After v1.0.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/5)
-      milestone: what the parity audit and the v1.0.0 work left for later (Up Next's
-      reordering, selection mode, credits, a mini player, Replay, a Genres view, the
-      folder moves still switched off (#389), and the rest).
+- [ ] The [After v1.1.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/7)
+      milestone: [#541](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/541), the
+      pages step of `scripts/bench.py` leaving 4 to 7 MB behind, over its 5 MB target.
 - [ ] Translations: the strings are ready (`po/`), no languages yet.
 - [ ] The internal names that still say Apple Music, none of them user-visible: the
       `applemusic` Python package, the `AppleMusic*` GType names, the `APPLE_MUSIC_*`
