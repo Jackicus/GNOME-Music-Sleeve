@@ -185,11 +185,15 @@ class ShelfTest(PageTestCase):
             await self.turn()
         focus = self.window.get_focus()
         self.assertTrue(await self.until(lambda: adjustment.get_value() > 0))
-        found, bounds = focus.compute_bounds(shelf.scrolled_window)
-        self.assertTrue(found)
-        self.assertGreaterEqual(bounds.get_x(), 0)
-        self.assertLessEqual(bounds.get_x() + bounds.get_width(),
-                             shelf.scrolled_window.get_width())
+
+        def in_view():
+            # Within a few pixels: GTK's own margins around a row differ by theme.
+            found, bounds = focus.compute_bounds(shelf.scrolled_window)
+            return (found and bounds.get_x() > -4
+                    and bounds.get_x() + bounds.get_width()
+                    < shelf.scrolled_window.get_width() + 4)
+
+        self.assertTrue(await self.until_frames(shelf.list_view, in_view))
 
     async def test_the_arrows_follow_the_ends_of_the_row(self):
         shelf = await self.shown(model('ends', 40), width=600)
