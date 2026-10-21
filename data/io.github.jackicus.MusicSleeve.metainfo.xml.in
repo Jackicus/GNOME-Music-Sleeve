@@ -64,35 +64,35 @@
   <screenshots>
     <screenshot type="default" environment="gnome">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/home-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/albums-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/album-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-light.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/now-playing-light.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Home: your heavy rotation and what you played recently, a song playing below</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/home-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Your albums in a grid, sorted the way you choose, a heart on your favourites</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/albums-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>An album's page, with its first song playing</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/album-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung</caption>
-      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-dark.png</image>
+      <image type="source" width="1100" height="760">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.2.0/data/screenshots/now-playing-dark.png</image>
     </screenshot>
   </screenshots>
 
@@ -102,6 +102,20 @@
   </branding>
 
   <releases>
+    <release version="1.2.0" date="2026-10-21">
+      <description>
+        <p>
+          A new icon, an easier way to make playlists, and folders in Add to Playlist.
+        </p>
+        <ul>
+          <li>A new app icon: a double note lit on a dot-matrix panel</li>
+          <li>A + on the sidebar's Playlists heading makes a new playlist or folder</li>
+          <li>One dialog makes and edits a playlist: its name, a description over several lines, its folder, and whether it shows on your profile and in search; Rename… on a playlist is now Edit Details…</li>
+          <li>Add to Playlist shows each folder as a submenu, nested as in the sidebar</li>
+          <li>The rows of Home, New and an artist's page show no scrollbar, so scrolling the page no longer catches on them; their arrows page them at any window width</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-10-21">
       <description>
         <p>
