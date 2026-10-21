@@ -2,7 +2,8 @@
 #
 # The AUR package's source, kept in the app's repository (build-aux/aur/). After any change:
 #   updpkgsums && makepkg --printsrcinfo > .SRCINFO
-# The checksum is SKIP until the tag v$pkgver exists on GitHub: updpkgsums fills it in then.
+# The source is the GitHub release's `meson dist` tarball, so updpkgsums needs the release.
+# .github/workflows/package.yml builds this file into the package attached to each release.
 #
 # The app's modules install under /usr/share/music-sleeve, outside site-packages, byte-compiled
 # for the Python that built the package; Arch's rebuilds for a new Python leave them alone.
@@ -19,9 +20,11 @@ license=('GPL-2.0-or-later')
 depends=(
   'gdk-pixbuf2'
   'glib2'
+  'graphene'
   'gtk4'
   'hicolor-icon-theme'
   'libadwaita'
+  'pango'
   'python'
   'python-gobject'
 )
@@ -32,15 +35,14 @@ makedepends=(
 checkdepends=(
   'appstream'
   'desktop-file-utils'
+  'python-cairo'  # scripts/demo_library.py draws the invented library's covers for the tests
 )
 optdepends=('google-chrome: the playback engine (its Widevine plays the protected streams)')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
-
-_srcname="music-sleeve-$pkgver"
+source=("$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.xz")
+sha256sums=('a97bc654ee710c207020bab6e48672d86239da2b99563585b3181689cd298136')
 
 build() {
-  arch-meson "$_srcname" build
+  arch-meson "$pkgname-$pkgver" build
   meson compile -C build
 }
 
