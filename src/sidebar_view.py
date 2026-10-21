@@ -253,8 +253,7 @@ class SidebarController:
         heading_keys.connect('key-pressed', self._on_heading_key)
         self._sidebar.add_controller(heading_keys)
         # A change to the items can make the headings again: the button put back at once.
-        self._sidebar.get_items().connect('items-changed',
-                                          lambda *_args: self._place_new_button())
+        self._sidebar.get_items().connect('items-changed', self._on_items_changed)
 
     # -- the Playlists heading's New button ----------------------------------------------
 
@@ -300,6 +299,12 @@ class SidebarController:
         row = self._heading_row()
         header = row.get_header() if row is not None else None
         return place_header_suffix(header, self._playlist_section.get_title(), button)
+
+    def _on_items_changed(self, *_args):
+        """The items changed: the button put back on the heading, while the sidebar is in a
+        window (not while it is taken apart, which empties its items)."""
+        if self._sidebar.get_root() is not None and not self._sidebar.in_destruction():
+            self._place_new_button()
 
     def _heading_row(self):
         """The row of the Playlists section's first item (the one its heading is above)."""
