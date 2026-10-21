@@ -739,7 +739,7 @@ class DetailPageTest(PageTestCase):
         # their Pango context shows.
         from gi.repository import Gdk, Gtk
 
-        from applemusic.widgets.shelf import text_scale
+        from applemusic.pages.detail import text_scale
 
         provider = Gtk.CssProvider()
         provider.load_from_resource('/io/github/jackicus/MusicSleeve/style.css')
@@ -753,7 +753,7 @@ class DetailPageTest(PageTestCase):
         self.assertTrue(await self.until(
             lambda: self.window.root_box.get_pango_context().get_font_description()
             .get_family() == 'Adwaita Sans'), 'the font setting applied')
-        scale = text_scale(self.gtk_settings)  # the breakpoints are in sp
+        scale = text_scale()  # the breakpoints are in sp
         narrow = 650 * scale
         for kind in ('album', 'playlist', 'catalog album'):
             for width in (360, round(600 * scale) + 1, round(narrow) + 1):

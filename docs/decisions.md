@@ -576,6 +576,17 @@ changes, change it here, with the date. The plan they came from is in
   own scrolled views turn their soft shadows into a line there; elsewhere that line is not
   drawn, the fade saying the same. The mask is drawn again with every frame the view draws,
   a word's sweep included: within the runs' spread (docs/notes.md) (#356).
+- **Shelves show no scrollbar; their arrows page them** (2026-10-21, #555). A shelf's row
+  (a `Shelf`'s, a `SongShelf`'s) is `hscrollbar-policy: external`, as the lyrics are: the
+  overlay scrollbar under each row caught the pointer as a mouse wheel scrolled the page
+  past it. The row still scrolls sideways with a touchpad, a tilting wheel, Shift and the
+  wheel, a finger, and as the focus moves along it; a vertical wheel still goes on to the
+  page. The previous and next arrows beside the title, which follow the row's adjustment,
+  are what shows that a row scrolls, so they show whenever it overflows, at any width: the
+  400sp floor that kept them out of a narrow window (for the title's room, a phone being
+  scrolled by touch) went, since a narrow desktop window with a mouse had no other way along
+  the row. A title the arrows and See All leave too little room goes onto a second line
+  rather than being cut short.
 - **Not possible through the web player** (2026-10-20, #358). The music plays in Apple's web
   player, through MusicKit JS, so what MusicKit JS and music.apple.com cannot do is out of
   reach, and a later audit need not suggest it again. Sound: MusicKit JS streams AAC at 64 or

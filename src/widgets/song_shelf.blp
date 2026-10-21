@@ -17,8 +17,13 @@ template $AppleMusicSongShelf: Box {
       "shelf-header",
     ]
 
+    // Onto a second line rather than cut short where the arrows and See All leave it
+    // too little room (a 360 px window).
     Label title_label {
       xalign: 0;
+      wrap: true;
+      wrap-mode: word_char;
+      lines: 2;
       valign: center;
       hexpand: true;
       ellipsize: end;
@@ -28,7 +33,7 @@ template $AppleMusicSongShelf: Box {
       ]
     }
 
-    // As a shelf's (shelf.blp): shown while the grid overflows, in a window wide enough.
+    // As a shelf's (shelf.blp): shown while the grid overflows.
     Button previous_button {
       icon-name: "go-previous-symbolic";
       tooltip-text: _("Scroll Left");
@@ -70,8 +75,9 @@ template $AppleMusicSongShelf: Box {
     }
   }
 
+  // As a shelf's: no scrollbar, the grid still scrolls.
   ScrolledWindow scrolled_window {
-    hscrollbar-policy: automatic;
+    hscrollbar-policy: external;
     vscrollbar-policy: never;
 
     // A horizontal Gtk.GridView: its "columns" are rows, so three of them lay the songs

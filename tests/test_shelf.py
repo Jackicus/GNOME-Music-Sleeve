@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """widgets/shelf.py: a Shelf follows its shelf and offers See All and the paging arrows only
-when the row does not show everything (no arrows in a narrow window); a ShelfColumn keeps the
+when the row does not show everything (at any width: the row shows no scrollbar, and still
+scrolls sideways and to the focus); a ShelfColumn keeps the
 widgets of the shelves it keeps, and never shows a shelf twice while it binds the rest a frame
 apart, each in its form (a grid of songs for a chart's Top Songs); a chart's shelves number
 their tiles and songs."""
@@ -133,41 +134,80 @@ class ShelfTest(PageTestCase):
         self.assertTrue(await self.until(lambda: gc.collect() is not None
                                          and made[0]() is None))
 
-    async def test_a_narrow_row_leaves_the_arrows_out_for_its_title(self):
-        from gi.repository import Gtk
-
-        from applemusic.widgets.shelf import ARROWS_MIN_WIDTH, text_scale
-
+    async def test_a_narrow_row_keeps_its_arrows_and_its_whole_title(self):
+        # The row shows no scrollbar, so the arrows show at 360 px too; the title goes onto
+        # a second line rather than being cut short.
         shelf = await self.shown(model('narrow', 40, title='Invented Rotations'), width=360)
-        scale = text_scale(shelf.get_settings())
         adjustment = shelf.scrolled_window.get_hadjustment()
-        self.assertLessEqual(shelf.get_width(), ARROWS_MIN_WIDTH * scale)
         self.assertGreater(adjustment.get_upper(), adjustment.get_page_size())  # overflows
         self.assertTrue(shelf.see_all_button.get_visible())
-        self.assertFalse(shelf.previous_button.get_visible())
-        self.assertFalse(shelf.next_button.get_visible())
-        # The title has the room the arrows would have taken: all it asks for, here.
-        title = shelf.title_label
-        self.assertGreaterEqual(title.get_width(),
-                                title.measure(Gtk.Orientation.HORIZONTAL, -1)[1])
-
-    async def test_a_row_a_little_wider_keeps_its_arrows(self):
-        from gi.repository import Gdk, Gtk
-
-        from applemusic.widgets.shelf import ARROWS_MIN_WIDTH, text_scale
-
-        # The app's stylesheet, whose padding on the row takes 30 px off its adjustment's page.
-        provider = Gtk.CssProvider()
-        provider.load_from_resource('/io/github/jackicus/MusicSleeve/style.css')
-        display = Gdk.Display.get_default()
-        Gtk.StyleContext.add_provider_for_display(display, provider,
-                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        self.addCleanup(Gtk.StyleContext.remove_provider_for_display, display, provider)
-        width = round(ARROWS_MIN_WIDTH * text_scale(Gtk.Settings.get_default())) + 20
-        shelf = await self.shown(model('wider', 40), width=width)
-        self.assertEqual(shelf.get_width(), width)  # the list's padding not taken off
         self.assertTrue(shelf.previous_button.get_visible())
         self.assertTrue(shelf.next_button.get_visible())
+        self.assertFalse(shelf.title_label.get_layout().is_ellipsized())
+
+    async def test_the_row_shows_no_scrollbar_but_scrolls(self):
+        # EXTERNAL, not NEVER: the scrollbar the pointer kept landing on is gone, the row
+        # still scrolls sideways (a touchpad, Shift and the wheel), and a vertical wheel
+        # goes on to the page.
+        from gi.repository import Gtk
+
+        shelf = await self.shown(model('wheel', 40))
+        scrolled = shelf.scrolled_window
+        self.assertEqual(scrolled.get_policy(), (Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.NEVER))
+        self.assertFalse(scrolled.get_hscrollbar().get_mapped())
+        adjustment = scrolled.get_hadjustment()
+        scroll = next(controller for controller in scrolled.observe_controllers()
+                      if isinstance(controller, Gtk.EventControllerScroll)
+                      and controller.get_propagation_phase() == Gtk.PropagationPhase.BUBBLE)
+        self.assertFalse(scroll.emit('scroll', 0, 3))  # vertical: the page's
+        self.assertEqual(adjustment.get_value(), 0)
+        self.assertTrue(scroll.emit('scroll', 3, 0))
+        self.assertTrue(await self.until(lambda: adjustment.get_value() > 0))
+        self.assertTrue(shelf.previous_button.get_sensitive())
+
+    def test_a_grid_of_songs_shows_no_scrollbar_either(self):
+        from gi.repository import Gtk
+
+        from applemusic.widgets.song_shelf import SongShelf
+
+        self.assertEqual(SongShelf().scrolled_window.get_policy(),
+                         (Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.NEVER))
+
+    async def test_the_focus_moving_along_the_row_scrolls_it(self):
+        from gi.repository import Gtk
+
+        shelf = await self.shown(model('focus', 20), width=600)
+        adjustment = shelf.scrolled_window.get_hadjustment()
+        shelf.list_view.scroll_to(0, Gtk.ListScrollFlags.FOCUS, None)
+        shelf.list_view.grab_focus()
+        for _ in range(8):
+            self.assertTrue(shelf.list_view.child_focus(Gtk.DirectionType.RIGHT))
+            await self.turn()
+        focus = self.window.get_focus()
+        self.assertTrue(await self.until(lambda: adjustment.get_value() > 0))
+
+        def in_view():
+            # Within a few pixels: GTK's own margins around a row differ by theme.
+            found, bounds = focus.compute_bounds(shelf.scrolled_window)
+            return (found and bounds.get_x() > -4
+                    and bounds.get_x() + bounds.get_width()
+                    < shelf.scrolled_window.get_width() + 4)
+
+        self.assertTrue(await self.until_frames(shelf.list_view, in_view))
+
+    async def test_the_arrows_follow_the_ends_of_the_row(self):
+        shelf = await self.shown(model('ends', 40), width=600)
+        adjustment = shelf.scrolled_window.get_hadjustment()
+        self.assertTrue(await self.until_frames(
+            shelf.list_view, lambda: shelf._growing is None))
+        self.assertFalse(shelf.previous_button.get_sensitive())
+        self.assertTrue(shelf.next_button.get_sensitive())
+        adjustment.set_value(adjustment.get_upper() - adjustment.get_page_size())
+        self.assertTrue(shelf.previous_button.get_sensitive())
+        self.assertFalse(shelf.next_button.get_sensitive())
+        adjustment.set_value(adjustment.get_upper() / 2)
+        self.assertTrue(shelf.previous_button.get_sensitive())
+        self.assertTrue(shelf.next_button.get_sensitive())
 
     async def test_a_shelf_rebound_out_of_the_page_shows_its_arrows_once_back(self):
         # Home's first shelf: a ShelfColumn moves a kept widget into place, so it is
@@ -194,19 +234,6 @@ class ShelfTest(PageTestCase):
             (adjustment.get_page_size(), adjustment.get_upper()))
         self.assertTrue(shelf.previous_button.get_visible())
         self.assertTrue(shelf.next_button.get_visible())
-
-    def test_text_scale_follows_the_xft_dpi(self):
-        from types import SimpleNamespace
-
-        from applemusic.widgets.shelf import text_scale
-
-        def settings(dpi):
-            return SimpleNamespace(props=SimpleNamespace(gtk_xft_dpi=dpi))
-
-        self.assertEqual(text_scale(settings(96 * 1024)), 1.0)
-        self.assertEqual(text_scale(settings(144 * 1024)), 1.5)
-        self.assertEqual(text_scale(settings(-1)), 1.0)  # not set
-        self.assertEqual(text_scale(None), 1.0)
 
     async def test_see_all_follows_the_items(self):
         shelf_model = model('growing', 1)
