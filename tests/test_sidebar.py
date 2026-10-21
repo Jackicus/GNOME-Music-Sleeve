@@ -1042,14 +1042,15 @@ class NewButtonTest(unittest.TestCase):
         # The page mode: the section's group's header suffix; back, the heading's again.
         self.widget.set_mode(self.Adw.SidebarMode.PAGE)
 
-        def last_group():
-            groups = list(descendants(self.widget, self.Adw.PreferencesGroup))
-            return groups[-1] if groups else None
+        def playlists_group():
+            # By its title: libadwaita 1.10 adds groups of its own (the sidebar's prefix
+            # and suffix).
+            return next((group for group in descendants(self.widget, self.Adw.PreferencesGroup)
+                         if group.get_title() == 'Playlists'), None)
 
-        self.assertTrue(wait_for(lambda: last_group() is not None
-                                 and last_group().get_header_suffix() is button),
-                        last_group() and last_group().get_header_suffix())
-        self.assertEqual(last_group().get_title(), 'Playlists')
+        self.assertTrue(wait_for(lambda: playlists_group() is not None
+                                 and playlists_group().get_header_suffix() is button),
+                        playlists_group() and playlists_group().get_header_suffix())
         self.widget.set_mode(self.Adw.SidebarMode.SIDEBAR)
         self.assertTrue(wait_for(lambda: self.heading() is not None
                                  and button.is_ancestor(self.heading())))
