@@ -7,10 +7,12 @@ changes, change it here, with the date. The plan they came from is in
 ## Product
 
 - **Distribution: native first** (2026-09-27). Releases are `meson install` and an AUR package
-  (`build-aux/aur/PKGBUILD`). The Flatpak manifest is for development only: from the sandbox,
-  the app runs the host's Chrome through `flatpak-spawn --host`. Flathub is out of scope: it
-  would refuse an app that depends on the host's Chrome. (It was also out of scope while the
-  app carried Apple's name; that half no longer applies, but the Chrome dependency still does.)
+  (`build-aux/aur/PKGBUILD`); until the AUR takes it, the package that PKGBUILD builds is
+  attached to each GitHub release (2026-10-21, #547). The Flatpak manifest is for development
+  only: from the sandbox, the app runs the host's Chrome through `flatpak-spawn --host`.
+  Flathub is out of scope: it would refuse an app that depends on the host's Chrome. (It was
+  also out of scope while the app carried Apple's name; that half no longer applies, but the
+  Chrome dependency still does.)
 - **A profile of its own** (2026-09-27). The app's Chrome uses its own profile
   (`$XDG_DATA_HOME/apple-music/chrome`, the development build `chrome-devel`), so it never
   fights another Chrome, such as the GNOME Shell extension's, over a profile lock. The cost is

@@ -51,8 +51,10 @@ paths:
   URLs, on `main` between releases and pinned to the tag at a release (docs/release.md):
   renaming or removing a screenshot breaks the metainfo of any build that names it. Screenshots
   come from the demo library only (the `screenshots` skill).
-- `build-aux/aur/PKGBUILD` is the AUR package's source. After any change to it:
-  `updpkgsums && makepkg --printsrcinfo > .SRCINFO`. Test it without installing the package.
+- `build-aux/aur/PKGBUILD` is the AUR package's source and the recipe for the Arch package
+  attached to each release (`.github/workflows/package.yml`, which also builds it on a pull
+  request that touches it). Its source is the release's `meson dist` tarball. After any change
+  to it: `updpkgsums && makepkg --printsrcinfo > .SRCINFO`. Test it without installing it.
   Its modules are byte-compiled for the Python that built it (outside site-packages, which
   Arch's Python rebuilds cover), so each Python minor release needs a pkgrel bump.
 - `build-aux/flatpak/*.Devel.json` is for development only (why in its `x-comment`) and has
@@ -65,7 +67,8 @@ paths:
   pacman line too. It has no Chrome, and the tests need none (tests.md).
 - Nothing installed (the launcher, the desktop file, the PKGBUILD, the Flatpak manifest) sets
   `APPLE_MUSIC_DEBUG_PORT`: it opens the signed-in session to every local program (engine.md).
-- Release steps (version, metainfo release notes, tag, tarball, AUR) are in docs/release.md.
+- Release steps (version, metainfo release notes, tag, tarball, Arch package, AUR) are in
+  docs/release.md.
 - **Apple's marks.** The app is Music Sleeve, with an icon of its own (`docs/decisions.md`,
   #145). Apple's guidelines for third parties allow no use of their logos, icons or artwork at
   all, and no imitation of them, and no Apple trademark as or as part of a product name;

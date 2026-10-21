@@ -1,0 +1,103 @@
+# Builds build-aux/aur/PKGBUILD into the Arch package attached to each GitHub release
+# (music-sleeve-<version>-<pkgrel>-any.pkg.tar.zst), in an Arch Linux container as an
+# unprivileged user, as makepkg requires, with the PKGBUILD's check() and namcap.
+#
+# - A published release: builds that release and attaches the package to it.
+# - By hand (workflow_dispatch) with a tag: the same for an existing release, with the
+#   PKGBUILD of the branch it runs on (after a pkgrel bump, say).
+# - A pull request that touches the PKGBUILD or this file: builds the PKGBUILD as it stands,
+#   checksum included, and uploads the package as a workflow artifact, not to a release.
+#
+# For a release, the tarball is the release's own, checked against its .sha256sum, and its
+# checksum replaces the PKGBUILD's: the PKGBUILD at the tag cannot name the checksum of a
+# tarball made after it (docs/release.md).
+name: Package
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - build-aux/aur/**
+      - .github/workflows/package.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release to build and attach the package to (v1.1.0, say)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: makepkg (Arch Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: archlinux:latest
+    env:
+      LANG: C.UTF-8
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Install makepkg's tools
+        run: pacman -Syu --noconfirm --needed base-devel git github-cli namcap
+
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Install the PKGBUILD's dependencies
+        working-directory: build-aux/aur
+        run: |
+          source ./PKGBUILD
+          pacman -S --noconfirm --needed "${depends[@]}" "${makedepends[@]}" "${checkdepends[@]}"
+
+      - name: Make the build directory
+        run: |
+          useradd --create-home builder
+          mkdir /home/builder/pkg
+          cp build-aux/aur/PKGBUILD /home/builder/pkg/
+
+      - name: Take the release's tarball
+        if: env.TAG != ''
+        working-directory: /home/builder/pkg
+        run: |
+          source ./PKGBUILD
+          if [ "$TAG" != "v$pkgver" ]; then
+            echo "The PKGBUILD's pkgver is $pkgver, not ${TAG#v}: bump it first" >&2
+            exit 1
+          fi
+          gh release download "$TAG" -p "$pkgname-$pkgver.tar.xz" -p "$pkgname-$pkgver.tar.xz.sha256sum"
+          sha256sum -c "$pkgname-$pkgver.tar.xz.sha256sum"
+          sum=$(cut -d ' ' -f 1 "$pkgname-$pkgver.tar.xz.sha256sum")
+          sed -i "s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
+          rm "$pkgname-$pkgver.tar.xz.sha256sum"
+
+      - name: Build and check the package
+        working-directory: /home/builder/pkg
+        run: |
+          chown -R builder: .
+          su builder -c 'makepkg --noconfirm'
+          ls -l ./*.pkg.tar.zst
+
+      - name: Lint with namcap
+        working-directory: /home/builder/pkg
+        run: namcap PKGBUILD ./*.pkg.tar.zst
+
+      - name: Attach the package to the release
+        if: env.TAG != ''
+        working-directory: /home/builder/pkg
+        run: gh release upload "$TAG" ./*.pkg.tar.zst --clobber
+
+      - name: Upload the package as an artifact
+        if: env.TAG == ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: arch-package
+          path: /home/builder/pkg/*.pkg.tar.zst

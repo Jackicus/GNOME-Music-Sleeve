@@ -1,11 +1,12 @@
 # Releasing and packaging
 
-Releases are native: `meson install` with the release profile. **For now a release is a git
-tag and a GitHub release, and nothing else** — the AUR package is not published yet, so people
-install by building from source or by running `makepkg -si` over `build-aux/aur/PKGBUILD`
-themselves. Publishing to the AUR is a later step, whenever the maintainer is ready for it
-(#206). The Flatpak manifest is for development only, and Flathub is out of scope
-(`docs/decisions.md`).
+Releases are native: `meson install` with the release profile. **A release is a git tag and a
+GitHub release** with two things attached: the `meson dist` tarball, and the Arch package
+built from it (`music-sleeve-<version>-<pkgrel>-any.pkg.tar.zst`), which
+`.github/workflows/package.yml` builds from `build-aux/aur/PKGBUILD` and attaches once the
+release is published. Arch users install that with `pacman -U`; others build the tarball. The
+AUR package is not published yet (#206: AUR sign-ups are closed for now). The Flatpak
+manifest is for development only, and Flathub is out of scope (`docs/decisions.md`).
 
 An agent may carry out a release end to end once the owner has said to release, and that
 includes the tag and the GitHub release. The exception is the AUR upload, which needs the
@@ -37,12 +38,20 @@ new version instead.
    apply to tags. Once anyone has installed it the tag is fixed: never move or delete it.
 8. Publish the GitHub release for that tag (`gh release create`), with the metainfo's notes as
    the body and `meson dist -C build`'s tarball attached. **This is the release.**
-9. Later, when the AUR is wanted: update the PKGBUILD (`pkgver`, `pkgrel=1`), `updpkgsums`
-   (it fills in the checksum once the tag exists), `makepkg --printsrcinfo > .SRCINFO`, and set
-   the `# Maintainer:` line to the contact to be public there. Test it as below. Publishing
-   itself needs an AUR account and an SSH key registered with aur.archlinux.org, so it is the
-   maintainer's to do; README's install section says "until it is published there" until
-   then.
+9. Before the tag, bump the PKGBUILD's `pkgver` and reset `pkgrel=1`. The checksum cannot be
+   right yet, since the tarball does not exist: the Package workflow takes the release's own
+   tarball, checks it against its `.sha256sum`, and builds with that checksum.
+10. Watch the Package workflow that publishing starts (`gh run list -w Package`); it ends by
+   attaching the `.pkg.tar.zst` to the release. If it fails, fix the PKGBUILD on `main` and
+   run it by hand for the tag: `gh workflow run package.yml -f tag=v<version>`.
+11. After the release, on `main`: `updpkgsums && makepkg --printsrcinfo > .SRCINFO` in
+   `build-aux/aur`, so the PKGBUILD names the released tarball's checksum (the AUR needs it).
+   When the AUR is wanted, set the `# Maintainer:` line to the contact to be public there;
+   publishing needs an AUR account and an SSH key registered with aur.archlinux.org, so it is
+   the maintainer's to do.
+12. A rebuild of a released version (a `pkgrel` bump after a Python minor release) is the
+   same workflow run by hand with that version's tag: `--clobber` replaces a package of the
+   same name, and a new `pkgrel` is a new file beside the old one, which can be deleted.
 
 ## Installing from source
 
@@ -76,11 +85,12 @@ skipped at -1. Only stale files are compiled again, so development installs stay
   `build/meson-dist/`, and builds and tests the tarball with the build directory's options, so
   it needs `blueprint-compiler` installed or the network for the wrap.
 - Test a tarball in a temporary directory with its own `--prefix`.
-- Test the PKGBUILD in a temporary copy: make a `git archive --prefix=music-sleeve-<version>/`
-  tarball named as its source (makepkg then skips the download) and run `makepkg` there without
-  `-i`: build and check it, don't install it. Without `blueprint-compiler` installed, use
-  `makepkg --nodeps` with a `blueprint-compiler` shim on PATH that runs
-  `subprojects/blueprint-compiler/blueprint-compiler.py`.
+- The Package workflow builds the PKGBUILD as it stands on every pull request that touches it,
+  and uploads the package as a workflow artifact. Locally, test it in a temporary copy: run
+  `makepkg` there without `-i` (build and check it, don't install it); it downloads the
+  release tarball itself. Without `blueprint-compiler` installed, use `makepkg --nodeps` with
+  a `blueprint-compiler` shim on PATH that answers `--version` with 0.22 or newer and
+  otherwise runs `subprojects/blueprint-compiler/blueprint-compiler.py`.
 - The PKGBUILD's `check()` runs `meson test`: the unit tests (Meson's `unit` suite, whose
   widget tests skip without a display) and the desktop file, metainfo and schema validation.
 

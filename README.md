@@ -15,120 +15,86 @@ Not affiliated with Apple. Apple Music is a trademark of Apple Inc.
 The screenshots show an invented demo library.
 
 > [!IMPORTANT]
-> The app plays music through **Google Chrome**, or another Chromium-based browser that
-> has Widevine. Apple Music's streams are protected with Widevine DRM, which Google Chrome
-> ships and plain Chromium lacks, and Apple offers no public streaming API. The app starts
-> Chrome on a private profile, shows music.apple.com in it and drives Apple's own player
-> there. Chrome opens a window once, for you to sign in, and runs hidden after that; the
-> sound comes out of Chrome, so your system's per-app volume lists it as Chrome.
+> Music plays through **Google Chrome**. Apple Music's streams are protected with Widevine
+> DRM, which Chrome ships and plain Chromium lacks, so the app runs Apple's own web player in
+> a hidden Chrome on a private profile. Chrome opens a window once, for you to sign in.
 
-## What it does
+## Features
 
-- Your library: Recently Added, Artists, Albums, Songs (with Play and Shuffle), Music
-  Videos and Made for You, and Genres if you turn it on, with your playlists and playlist
-  folders in the sidebar. Your favourites carry a heart (Favourites Only shows them alone),
-  the library's lists and a playlist's songs filter as you type, and song tables can show
-  each song's genre and year.
-- Home, New, Charts, Radio and Search, with a page for every album and playlist, and artist
-  pages laid out as Apple Music's: the artist's wide banner where Apple has one, the latest
-  release, top songs, albums, radio shows, About and similar artists. New opens with
-  Apple's featured banners and ends with More to Explore's collections and pages; the
-  charts narrow to a genre. An album's page ends with its release date, its other
-  versions, music videos and more by the artist, and an album not out yet says when it
-  comes and can be pre-added; a curator's playlist ends with its featured artists and more
-  by the curator, linked; Search remembers what you opened from it and lists every result
-  with See All. Replay shows the songs, artists and albums you played most this year.
-- Menus on songs, albums, playlists and artists, as each allows: Add to Library or Remove
-  from Library, Favourite, Suggest Less, Create Station, View Credits, and Add to Playlist,
-  for a whole album or playlist too. Select several songs to play, add or remove them at
-  once.
-- Your playlists to manage: make new ones, rename, duplicate and delete them, add songs
-  from your library or Apple Music's catalogue, remove and reorder them, sort what a page
-  shows, and pick from the songs Apple Music suggests adding; make folders and move
-  playlists and folders into them or out to the top level, from a menu or by dragging them
-  onto a folder in the sidebar.
-- A player bar (drop songs and playlists on it to queue them; the last song you played is
-  there, paused, when the app starts), and a Now Playing view, tinted by the song's artwork,
-  with the queue (covers, the History of what played, reorder or remove songs in Up Next,
-  clear it, and Autoplay's similar songs when it ends) and the lyrics: lit word by word as
-  they are sung when Apple Music times them so, with background vocals, duets on two sides,
-  and translations and pronunciations when the song has them.
-- A full-screen player (<kbd>F11</kbd>): the artwork, the controls and the lyrics over the
-  artwork's own colours; and a mini player (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>),
-  a small window with the artwork and the controls.
-- GNOME's media controls (MPRIS) and the keyboard's media keys; a notification when the
-  song changes while the window is out of sight, if you turn it on; a choice of streaming
-  quality, 256 or 64 kbps.
-- Your library in the Activities overview's search: an album, artist, playlist or song
-  typed there opens, or plays, from the results. Drag a song, an album, a playlist or a
-  station into another app to give it its music.apple.com link.
-- If you turn it on in Preferences, what you are listening to shows on your Discord
-  profile.
-- Light and dark styles; the window adapts down to 360 px wide.
+- **Your library**: Recently Added, Artists, Albums, Songs, Music Videos, Made for You and
+  Genres, with your playlists and folders in the sidebar. Favourites, filtering as you type,
+  and selecting several songs at once.
+- **Apple Music's catalogue**: Home, New, Charts, Radio, Search and Replay, with full album,
+  playlist and artist pages.
+- **Playlists**: create, rename, duplicate, delete, reorder, and organise into folders by
+  dragging them in the sidebar.
+- **Now Playing**: the queue and History, Autoplay, and lyrics lit word by word as they are
+  sung, with duets, translations and pronunciations. A full-screen player (<kbd>F11</kbd>)
+  and a mini player (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>).
+- **Part of GNOME**: media keys and media controls (MPRIS), results in the Activities
+  search, light and dark styles, and a window that adapts down to phone width.
+- Optional: song notifications, and what you are playing on your Discord profile.
 
-What it does not do: Lossless, Dolby Atmos, an equaliser, crossfade or Sound Check,
-offline listening or downloads, Apple Music Sing, and collaborative or smart playlists (it
-plays through Apple's web player, which has none of them); music videos with a picture (they
-play as audio). The whole list, with the reasons, is in the
-[user guide](docs/user-guide.md#known-limitations).
+Not supported, because Apple's web player lacks them: Lossless, Dolby Atmos, offline
+downloads, Apple Music Sing, and smart or collaborative playlists. Music videos play as audio.
+The full list is in the [user guide](docs/user-guide.md#known-limitations).
 
 ## Requirements
 
 - An Apple Music subscription.
-- Google Chrome, found as `google-chrome-stable`, `google-chrome` or
-  `/opt/google/chrome/chrome`. Without it, the app tries Microsoft Edge, Brave, Vivaldi and
-  Chromium (not their snaps), and Preferences › Engine › Browser › Browser program can name
-  another command. Any of them plays only with Widevine, which the app checks when the engine
-  starts; only Google Chrome is tested.
-- GTK 4.20, libadwaita 1.9, GLib 2.84, Python 3.12 and PyGObject 3.50, or newer: the
-  libraries of GNOME 50. Any distribution that ships them will do. Fedora 44, Ubuntu 26.04,
-  Arch Linux and openSUSE Tumbleweed do; Debian 13 and Ubuntu 24.04 are too old.
-- To build it: Meson 1.2, gettext and `blueprint-compiler` 0.22 or newer. When the
-  installed `blueprint-compiler` is missing or older (Fedora 44 and Ubuntu 26.04 ship an
-  older one), Meson downloads its own during setup.
+- Google Chrome. Microsoft Edge, Brave, Vivaldi or Chromium also work if they have Widevine
+  (not their snaps), and Preferences can name another browser. Only Chrome is tested.
+- GNOME 50's libraries or newer: GTK 4.20, libadwaita 1.9, GLib 2.84, Python 3.12 and
+  PyGObject 3.50. Fedora 44, Ubuntu 26.04, Arch Linux and openSUSE Tumbleweed have them.
 
 ## Install
 
-There is no distribution package yet. Build from the
-[latest release](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/latest)'s
-tarball, or from a clone of the repository.
+### Arch Linux and derivatives
+
+Download `music-sleeve-…-any.pkg.tar.zst` from the
+[latest release](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/latest), then:
 
 ```bash
-# The build dependencies, by distribution:
-sudo pacman -S --needed gtk4 libadwaita python-gobject meson blueprint-compiler gettext     # Arch
-sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3-gobject-devel \
-    meson gettext                                                                             # Fedora 44+
-sudo apt install libgtk-4-dev libadwaita-1-dev python3-gi python-gi-dev meson gettext        # Ubuntu 26.04
+sudo pacman -U ~/Downloads/music-sleeve-*-any.pkg.tar.zst
+```
 
-tar xf music-sleeve-1.1.0.tar.xz && cd music-sleeve-1.1.0
+Google Chrome is in the AUR as `google-chrome`. To uninstall: `sudo pacman -R music-sleeve`.
+
+### Other distributions
+
+Build the [latest release](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/latest)'s
+`music-sleeve-….tar.xz` with Meson. Install the build dependencies first:
+
+```bash
+sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3-gobject-devel meson gettext  # Fedora
+sudo apt install libgtk-4-dev libadwaita-1-dev python3-gi python-gi-dev meson gettext                         # Ubuntu
+```
+
+Then build and install it:
+
+```bash
+tar xf music-sleeve-*.tar.xz && cd music-sleeve-*/
 meson setup _build --prefix=/usr
 meson compile -C _build
 sudo meson install -C _build --skip-subprojects
 ```
 
-To uninstall: `sudo ninja -C _build uninstall`, then `sudo rm -r /usr/share/music-sleeve`
-for the byte-compiled modules. On Arch Linux, `build-aux/aur/PKGBUILD` is the AUR package's
-source, `music-sleeve`; until it is published there, `makepkg -si` in that directory builds
-and installs it. Google Chrome is in the AUR as `google-chrome`.
+To uninstall: `sudo ninja -C _build uninstall && sudo rm -r /usr/share/music-sleeve`.
 
 ## First run
 
-1. Start Music Sleeve. The sidebar ends with a **Sign In** button.
-2. Click it. A Chrome window opens on music.apple.com: sign in there with your Apple Account,
-   as you would in a browser. The app never sees the password.
-3. Once you are signed in, the window closes, Chrome carries on hidden and the app syncs your
-   library. A banner shows the progress.
+Start Music Sleeve and click **Sign In** at the bottom of the sidebar. A Chrome window opens
+on music.apple.com: sign in there (the app never sees your password). The window then closes,
+Chrome carries on hidden, and your library syncs.
 
-From then on the app starts Chrome by itself. <kbd>Ctrl</kbd>+<kbd>?</kbd> lists the keyboard
-shortcuts. The [user guide](docs/user-guide.md) covers the rest: refreshing the library,
-playing in the background, troubleshooting, privacy, and where your data lives and how to
-remove it.
+<kbd>Ctrl</kbd>+<kbd>?</kbd> lists the keyboard shortcuts. The [user guide](docs/user-guide.md)
+covers the rest, including troubleshooting, privacy, and where your data is kept.
 
 ## Contributing
 
 [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build and run the app on an invented
-library without Chrome or an account, the conventions, and how to translate it.
-[docs/architecture.md](docs/architecture.md) describes how it is put together.
+library, without Chrome or an account, and how to translate it.
+[docs/architecture.md](docs/architecture.md) describes how it fits together.
 
 ## License
 
