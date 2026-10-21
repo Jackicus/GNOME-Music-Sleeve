@@ -33,6 +33,7 @@ makedepends=(
 checkdepends=(
   'appstream'
   'desktop-file-utils'
+  'python-cairo'  # scripts/demo_library.py draws the invented library's covers for the tests
 )
 optdepends=('google-chrome: the playback engine (its Widevine plays the protected streams)')
 source=("$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.xz")

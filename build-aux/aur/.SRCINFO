@@ -7,6 +7,7 @@ pkgbase = music-sleeve
 	license = GPL-2.0-or-later
 	checkdepends = appstream
 	checkdepends = desktop-file-utils
+	checkdepends = python-cairo
 	makedepends = blueprint-compiler
 	makedepends = meson
 	depends = gdk-pixbuf2
