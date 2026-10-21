@@ -6,7 +6,8 @@
 # - By hand (workflow_dispatch) with a tag: the same for an existing release, with the
 #   PKGBUILD of the branch it runs on (after a pkgrel bump, say).
 # - A pull request that touches the PKGBUILD or this file: builds the PKGBUILD as it stands,
-#   checksum included, and uploads the package as a workflow artifact, not to a release.
+#   checksum included, and uploads the package as a workflow artifact, not to a release. When
+#   its pkgver has no release yet (a release's own pull request), the source is the checkout's.
 #
 # For a release, the tarball is the release's own, checked against its .sha256sum, and its
 # checksum replaces the PKGBUILD's: the PKGBUILD at the tag cannot name the checksum of a
@@ -78,6 +79,19 @@ jobs:
           sum=$(cut -d ' ' -f 1 "$pkgname-$pkgver.tar.xz.sha256sum")
           sed -i "s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
           rm "$pkgname-$pkgver.tar.xz.sha256sum"
+
+      - name: Take the checkout's source for a version not yet released
+        if: env.TAG == ''
+        working-directory: /home/builder/pkg
+        run: |
+          source ./PKGBUILD
+          if ! gh release view "v$pkgver" > /dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" config --global --add safe.directory "$GITHUB_WORKSPACE"
+            git -C "$GITHUB_WORKSPACE" archive --prefix="$pkgname-$pkgver/" HEAD \
+              | xz > "$pkgname-$pkgver.tar.xz"
+            sum=$(sha256sum "$pkgname-$pkgver.tar.xz" | cut -d ' ' -f 1)
+            sed -i "s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
+          fi
 
       - name: Build and check the package
         working-directory: /home/builder/pkg
