@@ -2689,7 +2689,10 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
         shelf('music-videos', 'Music Videos', [
             brief(video, subtitle=str(video['year'])) for video in videos
             if video['subtitle'] == name])
-        picks = [track for track, _album in rnd.sample(tracks, min(12, len(tracks)))]
+        # A catalog playlist's rows carry their own thumbnails, as item() names them: here,
+        # each song's album's.
+        picks = [dict(track, thumb=album['thumb'])
+                 for track, album in rnd.sample(tracks, min(12, len(tracks)))]
         artist_playlists = [
             collection(f'pl.demo{index:02d}1', 'playlist', f'{name} Essentials',
                        f'Apple Music {genre}', None, picks, index * 5 + 1),

@@ -476,18 +476,21 @@ def download_art(urls, cache_dir, workers=8, progress=None, cancelled=None, gene
     if not todo:
         return counts
     import concurrent.futures
-    for folder in ('art', 'thumb'):
-        if not store.make_dirs(os.path.join(cache_dir, folder), root=cache_dir,
-                               generation=generation):
+    folders = {os.path.dirname(os.path.abspath(p)) for p in todo}
+    for folder in sorted(f for f in folders if store.inside(f, cache_dir, or_root=True)):
+        if not store.make_dirs(folder, root=cache_dir, generation=generation):
             raise store.CacheGone(cache_dir)
-    # The covers first, the thumbnails after: a thumbnail is scaled from its
-    # cover when that is on disk, and fetched only when it is not.
+    # The covers first, the thumbnails after: a thumbnail in <cache>/thumb/ is scaled from
+    # its cover when that is on disk, and fetched only when it is not. Anything else (a
+    # cover, or what item() placed in remote-art/, rows' thumbnails among it) is fetched to
+    # the very path it was given, which is the one the item reads.
     covers = {p: u for p, u in todo.items() if not _is_thumb_path(p, cache_dir)}
     thumbs = {p: u for p, u in todo.items() if _is_thumb_path(p, cache_dir)}
     done = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for batch, fetch in (
-                (covers, lambda p, u: cache_artwork(u, cache_dir, generation=generation)),
+                (covers, lambda p, u: cache_artwork(u, cache_dir, dest_path=p,
+                                                    generation=generation)),
                 (thumbs, lambda p, u: cache_thumbnail(u, cache_dir, p, generation=generation))):
             if cancelled and cancelled():
                 raise Cancelled('artwork')
