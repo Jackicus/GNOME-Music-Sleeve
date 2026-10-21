@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 import http.server
+import io
 import json
 import os
 import shutil
@@ -1865,6 +1866,44 @@ class TestRemoteArtItems(unittest.TestCase):
         self.assertEqual(item['groups'][0]['entries'][0]['thumb'], row_thumb)
         self.assertEqual(placed, {item['art']: cover, item['thumb']: thumb_url,
                                   row_thumb: art_urls[row_thumb]})
+
+    def test_downloads_land_where_the_item_points(self):
+        # #538: a catalog playlist's rows read their thumbnails from remote-art/, so that is
+        # where item()'s download writes them (not art/, under the same name), and the
+        # library's prune, which knows nothing of them, leaves them alone.
+        raw = {'id': 'pl.two', 'type': 'playlists',
+               'attributes': {'name': 'Mix', 'artwork': {'url': 'https://p/{w}x{h}bb.jpg'}}}
+        tracks = [{'id': str(n), 'type': 'songs',
+                   'attributes': {'name': f'Song {n}',
+                                  'artwork': {'url': f'https://t{n}/{{w}}x{{h}}bb.jpg'}}}
+                  for n in range(3)]
+        art_urls = {}
+        item = normalize.normalize_playlist(raw, self.tmp_dir, tracks=tracks, art_urls=art_urls)
+        placed = normalize.place_in_remote_art(item, art_urls, self.tmp_dir)
+        fetched = []
+
+        class Answer(io.BytesIO):
+            status = 200
+
+        def urlopen(request, timeout=None):
+            fetched.append(request.full_url)
+            return Answer(b'image')
+
+        with mock.patch('urllib.request.urlopen', urlopen):
+            normalize.download_item_art(item, self.tmp_dir, placed)
+        remote = os.path.join(self.tmp_dir, 'remote-art')
+        rows = [entry['thumb'] for entry in item['groups'][0]['entries']]
+        self.assertEqual(len(rows), 3)
+        for path in rows + [item['art'], item['thumb']]:
+            self.assertEqual(os.path.dirname(path), remote)
+            self.assertTrue(os.path.isfile(path), path)
+        self.assertEqual(sorted(fetched), sorted(placed.values()))
+        for folder in ('art', 'thumb'):
+            self.assertEqual(os.listdir(os.path.join(self.tmp_dir, folder))
+                             if os.path.isdir(os.path.join(self.tmp_dir, folder)) else [], [])
+        normalize.prune_art({'sections': {}}, self.tmp_dir)
+        for path in rows + [item['art'], item['thumb']]:
+            self.assertTrue(os.path.isfile(path), path)
 
 
 class TestOtherCaches(unittest.TestCase):
