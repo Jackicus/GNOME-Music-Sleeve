@@ -94,6 +94,27 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(self.selection.ordered(list(reversed(shown))), [shown[4], shown[0]])
         self.assertEqual(Selection().ordered(shown), [])
 
+    def test_a_key_knows_an_entry_and_its_track_as_one(self):
+        """The Songs table selects among SongEntries while its rows bind their Tracks: by
+        library.song_key(), either selects the song, and ordered() answers what is shown."""
+        from applemusic.library import SongEntry, song_key, song_track
+
+        entries = [SongEntry({'id': f'i.e{n}', 'title': f'Song {n}'},
+                             (None, 0, {'kind': 'song', 'id': f'i.e{n}'}, None))
+                   for n in range(5)]
+        tracks = [song_track(entry) for entry in entries]
+        selection = Selection(song_key)
+        selection.toggle(tracks[3])  # a click on a row
+        self.assertTrue(selection.has(entries[3]))
+        selection.extend(entries, tracks[1])  # a Shift+click, the list's entries shown
+        self.assertEqual(selection.ordered(entries), entries[1:4])
+        self.assertEqual(selection.ordered(tracks), tracks[1:4])
+        self.assertTrue(selection.keep(entries[2:]))  # a filter left out the first
+        self.assertEqual(selection.count, 2)
+        selection.select_all(entries)
+        self.assertTrue(all(selection.has(track) for track in tracks))
+        self.assertEqual(selection.count, 5)
+
 
 class PicksTest(unittest.TestCase):
     """Add Songs…'s picks: songs from the library's list and a search's, each once by its

@@ -8,8 +8,9 @@ actions' ask_add_songs()).
 
 Songs are picked from one of two lists, as the Search page's toggle chooses where it looks:
 Your Library, every song the library holds (Library.songs, built first when no page has
-asked for it yet) narrowed by what is typed (filter_bar.text_filter(): the title, the artist
-and the album, as the Songs filter matches), and Apple Music, the catalogue's songs for what
+asked for it yet) narrowed by what is typed (library.songs_matching() over the Songs store's
+SongEntries: the title, the artist and the album, as the Songs filter matches; their words
+folded a few frames at a time the first time), and Apple Music, the catalogue's songs for what
 is typed (Engine.search of kind 'songs', a page at a time as the list is scrolled:
 search_pager.SearchPager in a PickList, widgets/search_list.py's SearchList with rows of its
 own). A click or Enter on a song picks it or unpicks it: its check box, "Selected" in its
@@ -33,11 +34,11 @@ from gettext import ngettext
 
 from gi.repository import Adw, Gtk
 
-from ..library import Item, Track, fold
+from ..library import (Item, SongModel, Track, apply_diff, fold, narrows, prepare_search_keys,
+                       songs_matching)
 from ..search_pager import SearchPager
 from ..selection import Picks
 from ..widgets.engine_status import EngineStatus
-from ..widgets.filter_bar import text_filter
 from ..widgets.labels import track_label
 from ..widgets.search_list import PagerFooter, ResultRow, SearchList
 from ..widgets.selection_mode import selection_words
@@ -137,6 +138,20 @@ class PickList(SearchList):
             _describe(list_item, picked)
 
 
+class LibraryMatches(SongModel):
+    """The library's songs the dialog lists: a SongModel, pending (get_pending(), as a
+    Gtk.FilterListModel's) while the songs' words are folded for a text."""
+
+    __gtype_name__ = 'AppleMusicAddSongsMatches'
+
+    def __init__(self, entries=()):
+        super().__init__(entries)
+        self.pending = None  # the task folding the words, while it runs
+
+    def get_pending(self):
+        return self.pending is not None
+
+
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/add_songs.ui')
 class AddSongsDialog(Adw.Dialog):
     """Add Songs… (see the module): `done(objects)` gets the songs picked, in order."""
@@ -175,11 +190,10 @@ class AddSongsDialog(Adw.Dialog):
             'demo': _('Search Apple Music for songs of the demo’s invented catalogue'),
         })
 
-        # The library's songs, narrowed by what is typed (filtered a little at a time, so a
-        # big library never holds a frame).
-        self._text_filter = text_filter()
-        self._library_model = Gtk.FilterListModel(model=self._library.songs,
-                                                  filter=self._text_filter, incremental=True)
+        # The library's songs, narrowed by what is typed (their words folded a few frames
+        # at a time, so a big library never holds a frame), made Tracks as they are bound.
+        self._library_model = LibraryMatches(self._library.songs.entries)
+        self._matched = ('', None)  # the folded text the list shows the matches of, and them
         factory = Gtk.SignalListItemFactory()
         # Weakly (widgets/util.py): a bound method would keep every closed dialog alive.
         connect_weak(factory, 'setup', self._on_setup)
@@ -189,7 +203,8 @@ class AddSongsDialog(Adw.Dialog):
         self.library_view.set_model(Gtk.NoSelection(model=self._library_model))
         connect_weak(self.library_view, 'activate', self._on_library_activate)
         connect_weak(self._library_model, 'items-changed', self._on_library_changed)
-        connect_weak(self._library_model, 'notify::pending', self._on_library_changed)
+        self._store_handler = connect_weak(self._library.songs, 'items-changed',
+                                           self._on_songs_changed)
 
         self.catalog_list.set_picks(self.picks)
         connect_weak(self.catalog_list, 'item-activated', self._on_catalog_activated)
@@ -236,7 +251,7 @@ class AddSongsDialog(Adw.Dialog):
         if term == self.term:
             return
         self.term = term
-        self._text_filter.set_search(fold(term) or None)
+        self._match()
         if self.scope == CATALOG:
             self._search_catalog()
         else:
@@ -295,6 +310,43 @@ class AddSongsDialog(Adw.Dialog):
             self._topped = pager
             self.catalog_list.list_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
         self._show_scope()
+
+    def _match(self):
+        """The library's list for what is typed: every song for nothing, else the songs it
+        matches (the fewest changes to the list), once their words are folded."""
+        search = fold(self.term)
+        self._stop_matching()
+        entries = self._library.songs.entries
+        if not search:
+            self._show_matches('', entries)
+            return
+        shown, matches = self._matched
+        within = matches if matches is not None and narrows(shown, search) else None
+        if within is None and any(entry._search_key is None for entry in entries[-1:]):
+            self._library_model.pending = self._app.spawn(self._match_later(search, entries))
+            self._show_scope()
+            return
+        self._show_matches(search, songs_matching(entries, search, within))
+
+    async def _match_later(self, search, entries):
+        await prepare_search_keys(entries)
+        self._library_model.pending = None
+        self._show_matches(search, songs_matching(entries, search))
+
+    def _show_matches(self, search, matches):
+        self._matched = (search, matches if search else None)
+        apply_diff(self._library_model, matches, list(self._library_model.entries))
+        self._show_scope()
+
+    def _stop_matching(self):
+        task, self._library_model.pending = self._library_model.pending, None
+        if task is not None:
+            task.cancel()
+
+    def _on_songs_changed(self, *_args):
+        """The Songs store changed (built, a sync): the list again, from all of them."""
+        self._matched = ('', None)
+        self._match()
 
     def _on_library_changed(self, *_args):
         if self._songs_handler is not None and self._library.songs_ready:
@@ -416,6 +468,10 @@ class AddSongsDialog(Adw.Dialog):
     def _on_closed(self):
         self._engine_status.unwatch()
         self._pager_stop()
+        self._stop_matching()
+        if self._store_handler is not None:
+            self._library.songs.disconnect(self._store_handler)
+            self._store_handler = None
         if self._songs_handler is not None:
             self._library.disconnect(self._songs_handler)
             self._songs_handler = None

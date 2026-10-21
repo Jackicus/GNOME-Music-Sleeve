@@ -45,7 +45,10 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   `_()` in bind (look strings up once; the model's `count-label` is made once), no costly
   children in widgets made by the hundred (a tile makes an `Adw.Avatar` only for an artist,
   its play symbol only for a music video; its tooltip is worked out on `query-tooltip`),
-  and fixed column widths (`fixed-width` plus `expand`) in tables.
+  and fixed column widths (`fixed-width` plus `expand`) in tables. A part most rows never
+  show (TrackRow's and SongTitle's check box, play icon, explicit badge, artist line) is
+  made the first time a row shows it (`track_row.check_box()` and the others): a list view
+  keeps 200 rows, each widget about 3 KB.
 - Nothing in a recycled row may change size when its artwork arrives or goes: a `Gtk.Picture`
   whose paintable changes intrinsic size relayouts the whole list, and so does a child shown or
   hidden. Show `artwork.empty(size)` for no texture and fade the placeholder icon instead.

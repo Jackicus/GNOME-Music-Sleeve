@@ -5,8 +5,12 @@
 as you type.
 
 The chain is library.songs → the songs in the chosen column's order (library.SongOrder) → those
-matching the filter → a Gio.ListStore of the rows shown → Gtk.NoSelection →
-Gtk.ColumnView. Ordering and filtering happen in Python rather than in a Gtk.SortListModel and
+matching the filter → a library.SongModel of the rows shown → Gtk.NoSelection →
+Gtk.ColumnView. Every list of it holds the songs as library.SongEntry objects, which the
+Songs store keeps for 40,000 songs where it would cost 23 MB as Tracks: the rows' model
+makes a Track only for a row the view binds (SongEntry.track()).
+
+Ordering and filtering happen in Python rather than in a Gtk.SortListModel and
 Gtk.FilterListModel because GTK's are slow over Python objects; measured on 30,000 songs
 (scripts/demo_library.py --albums 2500):
 
@@ -67,7 +71,8 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import song_columns
 from ..discography import PLAY_LIMIT
-from ..library import SongOrder, Track, apply_diff
+from ..library import (SongModel, SongOrder, Track, apply_diff, narrows, song_key,
+                       song_tracks)
 from ..widgets import context_menu, track_links
 from ..widgets.filter_bar import FilterBar
 from ..widgets.selection_mode import SelectionMode, row_description
@@ -130,13 +135,6 @@ def play_target(tracks, shuffle=False, limit=PLAY_LIMIT, sample=random.sample):
             if len(ids) >= limit:
                 break
     return {'kind': 'songs', 'id': ','.join(ids)} if ids else None
-
-
-def narrows(old, new):
-    """Whether everything the folded filter text `new` matches matched `old` too, so that
-    only `old`'s matches need testing again: `old` is part of `new` (a key typed, at the end
-    or anywhere), and was some text (no text matched everything without a test)."""
-    return bool(old) and old in new
 
 
 def songs_state(total, library_state, songs_ready, song_count, syncing=False):
@@ -215,7 +213,8 @@ class SongsPage(Adw.NavigationPage):
         # Filter, the batch actions in a bar under the table.
         self.selection_mode = SelectionMode(self, self.header_bar, self.toolbar,
                                             self.column_view, self._selectable,
-                                            self._focus_table)
+                                            self._focus_table, key=song_key,
+                                            objects=song_tracks)
         self.selection_mode.set_header_title(self._header_title)
         self.selection_mode.set_context(None, library=True)
         self.header_bar.pack_end(self.selection_mode.select_button)
@@ -296,7 +295,7 @@ class SongsPage(Adw.NavigationPage):
             self._fixed[column] = column.get_fixed_width()
             connect_weak(column, 'notify::fixed-width', self._on_fixed_width)
 
-        self._rows = Gio.ListStore(item_type=Track)
+        self._rows = SongModel()
         # The rows a filter brings back, a few a frame (_show()).
         self._grow = GrowBack(self.column_view, self._replace_rows, GROW_ROWS)
         self.column_view.set_model(Gtk.NoSelection(model=self._rows))
@@ -449,13 +448,13 @@ class SongsPage(Adw.NavigationPage):
         sorter = self.column_view.get_sorter()
         key = self._columns.get(sorter.get_primary_sort_column())
         if key is None:
-            self._ordered = list(self._library.songs)
+            self._ordered = list(self._library.songs.entries)
         else:
             if self._order is None:
                 # A new order over new songs: its keys are made a few thousand tracks at a
                 # time with frames between (SongOrder.prepare), then this runs again. Sorting
                 # by a column whose keys exist (a header click) is immediate.
-                self._order = SongOrder(self._library.songs)
+                self._order = SongOrder(self._library.songs.entries)
                 self._prepare_task = app().spawn(self._prepare(self._order, key))
                 return
             descending = sorter.get_primary_sort_order() == Gtk.SortType.DESCENDING
@@ -531,7 +530,7 @@ class SongsPage(Adw.NavigationPage):
         if 0 < old < rows_kept(self.column_view):  # not the first rows: the page's first build
             shown = self._shown
             if self._grow.pending:  # the rows an earlier growth has given so far
-                shown = [self._rows.get_item(position) for position in range(old)]
+                shown = list(self._rows.entries)
             if self._grow.start(shown, tracks):
                 self._shown = tracks
                 if tracks:

@@ -4,7 +4,8 @@
 """A track list's selection mode (docs/decisions.md), as GNOME Music and Files have one: the
 Songs table, an album's and a playlist's songs (Favourite Songs' too).
 
-    mode = SelectionMode(page, header_bar, toolbar_view, view, shown, focus_return)
+    mode = SelectionMode(page, header_bar, toolbar_view, view, shown, focus_return,
+                         key=None, objects=None)
     header_bar.pack_end(mode.select_button); header_bar.pack_end(mode.cancel_button)
     mode.set_header_title(header_title); mode.set_filter_bar(filter_bar)
     mode.set_available(has_tracks)        # Select shown; no tracks leaves the mode
@@ -36,6 +37,10 @@ so is Remove from Library… beside Remove from Playlist or Remove from Favourit
 (_layout()). They are a `selection` action group on the page. The count is announced as it
 changes. A row's look is the page's: a check box in the
 row (`.selection-mode`), "Selected" in its description, both from selection.has().
+
+`shown()` answers what the list shows, in order: its Tracks, or for the Songs table its
+SongEntries, which `key` (library.song_key) knows as their rows' Tracks are known and
+`objects(entries)` makes the Tracks the batch actions and a drag take.
 
 The page holds this object, which holds the page's widgets it made, the view and the
 selection; it holds the page only weakly (its hooks through weak_method()), and every child's
@@ -81,14 +86,17 @@ def count_title(count):
 
 class SelectionMode(GObject.Object):
     """The selection mode of a page's track list: see the module. `shown()` answers the
-    Tracks the list shows, in order; `focus_return(track)` puts the focus on track's row (or
-    the first) and answers whether it could, as a filter bar's does."""
+    tracks the list shows, in order; `focus_return(track)` puts the focus on track's row (or
+    the first) and answers whether it could, as a filter bar's does; `key` and `objects`, for
+    a list of SongEntries (the module)."""
 
     __gtype_name__ = 'AppleMusicSelectionMode'
 
-    def __init__(self, page, header_bar, toolbar, view, shown, focus_return):
+    def __init__(self, page, header_bar, toolbar, view, shown, focus_return, key=None,
+                 objects=None):
         super().__init__()
-        self.selection = Selection()
+        self.selection = Selection(key)
+        self._objects = objects if objects is not None else list
         self._header_bar = header_bar
         self._view = view
         self._shown = weak_method(shown)
@@ -282,7 +290,7 @@ class SelectionMode(GObject.Object):
         shown, when obj is in it; None (obj alone) otherwise."""
         if not self.active or not self.selection.has(obj):
             return None
-        return self.selection.ordered(self._shown() or ())
+        return self._objects(self.selection.ordered(self._shown() or ()))
 
     # -- the selection's changes -------------------------------------------------------------
 
@@ -377,7 +385,7 @@ class SelectionMode(GObject.Object):
     def _chosen(self):
         """The selected tracks in the order shown, and the window's item actions; the mode
         left (an action of the bar ends it, its toast saying what happened)."""
-        tracks = self.selection.ordered(self._shown() or ())
+        tracks = self._objects(self.selection.ordered(self._shown() or ()))
         actions = getattr(self._view.get_root(), 'item_actions', None)
         self.leave()
         return tracks, actions

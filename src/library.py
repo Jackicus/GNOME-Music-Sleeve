@@ -6,7 +6,9 @@
 library.json holds the Item and Track shapes src/backend/README.md describes. Library.load()
 parses it in a thread and wraps it on the main thread in batches, so pages fill while frames
 keep painting. Items become Item objects in one Gio.ListStore per section; an Item's `groups`
-and the Songs store are wrapped only when first asked for. SongOrder sorts the Songs table.
+are wrapped only when first asked for, and the Songs store (`songs`, a SongModel) holds a
+SongEntry per song, which makes its Track (its album's own) only when a view asks for it.
+SongOrder sorts the Songs table.
 GLib, GObject and Gio only, no GTK, so the model works in tests without a display.
 
 Besides the README's shape, library.json may hold `folders`, the user's playlist folders (an
@@ -442,11 +444,176 @@ class Track(GObject.Object):
         """Title, artist and album as search_key() joins them: what the Songs filter and a
         playlist's look for a folded search in. Made on first use and kept."""
         if self._search_key is None:
-            raw = self.raw
-            self._search_key = search_key(_text(raw.get('title')) or '',
-                                          _text(raw.get('artist')) or '',
-                                          _text(raw.get('album')) or '')
+            self._search_key = track_search_key(self.raw)
         return self._search_key
+
+
+def track_search_key(raw):
+    """A track's title, artist and album (its dict's, or its TrackRecord's) as search_key()
+    joins them."""
+    return search_key(_text(raw.get('title')) or '', _text(raw.get('artist')) or '',
+                      _text(raw.get('album')) or '')
+
+
+class SongEntry:
+    """A song of the Songs store (Library.songs) as it is held: `raw`, the TrackRecord (a
+    loose song's dict) its Track wraps, `source`, where the Track is (the album Item, the
+    number of its group, the group's play target and the album's thumbnail: one tuple for a
+    group's songs; no Item for a loose song), and `place`, its place in that group. About 80
+    bytes, where a Track costs 560 (its GObject, its wrapper, the wrapper's dict, its place
+    in its Group's store): the store holds 40,000 of these, and the albums' groups are
+    wrapped only for the songs a view shows (track()).
+
+    It reads as a Track does where every song is read (`raw`, `id`, `title`, `artist`,
+    `album`, `search_key`, made once and kept): the Songs page sorts and filters these, the
+    Search page and the search provider look through them, and Library.is_favourite() takes
+    one. track() is the album's own Track of it (Item.groups: wrapped then, the album's songs
+    all at once, as its page wraps them), so a song is one Track wherever it shows; a loose
+    song has a Track of its own, made once.
+    """
+
+    __slots__ = ('raw', 'source', 'place', '_search_key', '_track')
+
+    def __init__(self, raw, source, place=0):
+        self.raw = raw
+        self.source = source  # (album Item or None, group number, play, thumb)
+        self.place = place  # in the group's entries (not the Track's `index`, its queue's)
+        self._search_key = None
+        self._track = None
+
+    @property
+    def id(self):
+        return _text(self.raw.get('id')) or None
+
+    @property
+    def title(self):
+        return _text(self.raw.get('title')) or ''
+
+    @property
+    def artist(self):
+        return _text(self.raw.get('artist')) or ''
+
+    @property
+    def album(self):
+        return _text(self.raw.get('album')) or ''
+
+    @property
+    def search_key(self):
+        if self._search_key is None:
+            self._search_key = track_search_key(self.raw)
+        return self._search_key
+
+    def track(self):
+        """The song's Track: its album's (wrapping the album's groups the first time), or
+        its own, made once, for a loose song or for one whose album's groups have changed
+        since the store was filled (the next fill makes it a new entry)."""
+        if self._track is not None:
+            return self._track
+        item, group, play, thumb = self.source
+        if item is not None:
+            groups = item.groups
+            if group < len(groups):
+                entries = groups[group].entries
+                if self.place < entries.get_n_items():
+                    track = entries.get_item(self.place)
+                    if track.raw is self.raw:
+                        return track
+        self._track = Track(self.raw, play, thumb)
+        self._track._search_key = self._search_key
+        return self._track
+
+    def __repr__(self):
+        return f'<SongEntry {self.id}>'
+
+
+def song_track(song):
+    """The Track of a song as a SongModel holds it: a SongEntry's track(), or a Track itself
+    (a model may be given Tracks: a test's stand-ins)."""
+    return song if isinstance(song, Track) else song.track()
+
+
+def song_tracks(songs):
+    """song_track() of each of `songs`, in order."""
+    return [song_track(song) for song in songs]
+
+
+def song_key(song):
+    """What a list of songs that may hold SongEntries and their Tracks knows a song by: its
+    raw dict's identity, the same for an entry and its Track (selection.Selection's `key` on
+    the Songs page)."""
+    return id(song.raw)
+
+
+def narrows(old, new):
+    """Whether everything the folded filter text `new` matches matched `old` too, so that
+    only `old`'s matches need testing again: `old` is part of `new` (a key typed, at the end
+    or anywhere), and was some text (no text matched everything without a test)."""
+    return bool(old) and old in new
+
+
+def songs_matching(songs, search, within=None):
+    """The songs (SongEntries or Tracks) whose search_key holds `search`, folded (fold()),
+    in their order; none for no search. `within`, the matches of a text `search` holds
+    (narrows()), are the only songs that can match: only they are tested."""
+    if not search:
+        return []
+    return [song for song in (songs if within is None else within)
+            if search in song.search_key]
+
+
+async def prepare_search_keys(songs, step=1000):
+    """Make every song's search_key (each keeps its own) a STEP at a time, with a pause for a
+    frame (yield_to_frames) every FRAME_BUDGET: 40,000 songs' words take 60 ms to fold."""
+    paused = time.monotonic()
+    for start in range(0, len(songs), step):
+        for song in songs[start:start + step]:
+            song.search_key  # noqa: B018  (made and kept)
+        if time.monotonic() - paused > FRAME_BUDGET:
+            await yield_to_frames()
+            paused = time.monotonic()
+
+
+class SongModel(GObject.Object, Gio.ListModel):
+    """A list model of Tracks held as SongEntries (`entries`, in order; Tracks may be among
+    them), each wrapped in its Track only when a view asks for that item (song_track()), so
+    a list of 40,000 songs makes Tracks for the rows it shows. splice() changes it as a
+    Gio.ListStore's does (apply_diff() takes it), with the entries; find() looks for a
+    Track or an entry by song_key().
+
+    Library.songs is one, the Songs page's rows another, and the Search page's and Add
+    Songs…'s matches others: GLib and Gio only, the item type Track."""
+
+    __gtype_name__ = 'AppleMusicSongModel'
+
+    def __init__(self, entries=()):
+        super().__init__()
+        self.entries = list(entries)
+
+    def do_get_item_type(self):
+        return Track.__gtype__
+
+    def do_get_n_items(self):
+        return len(self.entries)
+
+    def do_get_item(self, position):
+        if position < len(self.entries):
+            return song_track(self.entries[position])
+        return None
+
+    def splice(self, position, removed, entries):
+        """Remove `removed` entries at `position` and put `entries` there (items-changed)."""
+        entries = list(entries)
+        self.entries[position:position + removed] = entries
+        self.items_changed(position, removed, len(entries))
+
+    def find(self, song):
+        """(True, its position) for the Track or entry `song`, else (False, 0), as
+        Gio.ListStore.find() answers."""
+        key = song_key(song)
+        for position, entry in enumerate(self.entries):
+            if entry is song or id(entry.raw) == key:
+                return True, position
+        return False, 0
 
 
 # One library object a drag carries (ItemRefs): its `kind` ('song', 'video', 'album',
@@ -1399,14 +1566,14 @@ class Library(GObject.Object):
         self._genres_wanted = False  # genres() was called: every load brings it up to date
         self.shelves = []
         self.batch_size = BATCH_SIZE
-        self._songs = Gio.ListStore(item_type=Track)
+        self._songs = SongModel()
         self._songs_wanted = False  # build_songs() was called: every load() refills the store
         self._song_count = 0
         self._index = {}  # (kind, id) -> Item
         self._favourites = None  # the Favourite Songs playlist, found by each load
         self._favourite_ids = frozenset()  # library.json's favourites, and the app's changes
         self._loose = []  # sections.songs: the loose songs' Track dicts
-        self._loose_tracks = {}  # id -> Track, for the loose songs wrapped so far
+        self._loose_entries = {}  # id -> SongEntry, for the loose songs in the Songs store
         self._tree = PlaylistTree()
         self._folders = []  # library.json's `folders`, as the last load read them
         self._changes = []  # TreeChanges held ahead of Apple's listing (hold())
@@ -1426,11 +1593,14 @@ class Library(GObject.Object):
     @property
     def songs(self):
         """The Songs store: every album's tracks, then the loose songs (sections.songs),
-        deduplicated by id, in album order.
+        deduplicated by id, in album order, as a SongModel: SongEntries (`songs.entries`),
+        each made a Track only when it is asked for, so the albums' groups are not wrapped
+        for it and 40,000 songs cost 3 MB, not 23.
 
         It stays empty until build_songs() fills it (`songs-ready`); from then on every load()
-        and reload() brings it up to date with the fewest changes (apply_diff), so the views
-        over it keep the rows of the songs still there.
+        and reload() brings it up to date with the fewest changes (apply_diff), a song whose
+        TrackRecord and group are the same keeping its entry (and so its Track), so the
+        views over it keep the rows of the songs still there.
         """
         return self._songs
 
@@ -1953,7 +2123,7 @@ class Library(GObject.Object):
         self._loose = _entries(sections.get('songs'))
         self._song_ids = None
         if not keep:
-            self._loose_tracks = {}
+            self._loose_entries = {}
         self.shelves = shelves
         self._tree = tree
         self._index = index
@@ -2055,83 +2225,76 @@ class Library(GObject.Object):
         self._paused = time.monotonic()
 
     async def _fill_songs(self, generation):
-        seen = set()
-        tracks = []
+        """Bring the Songs store to the albums' tracks and the loose songs: SongEntries made
+        from the albums' raw groups (not their Groups, which stay unwrapped), a song whose
+        TrackRecord and group's play target and thumbnail are the ones an entry of the store
+        holds keeping that entry."""
         started = time.monotonic()
-        for item in list(self.albums):
-            for group in item.groups:
-                for track in group.entries:
-                    track_id = track.raw.get('id')  # not the property: 40,000 reads
-                    if track_id not in seen:
-                        seen.add(track_id)
-                        tracks.append(track)
+        old_entries = self._songs.entries
+        kept = {}  # id(raw) -> the store's entry for it
+        for start in range(0, len(old_entries), 5000):
+            for entry in old_entries[start:start + 5000]:
+                kept[id(entry.raw)] = entry
             if time.monotonic() - self._paused > FRAME_BUDGET:
                 await self._pause(generation)
-        # The loose songs after the albums', by id; a loose song wrapped before keeps its Track
+        seen = set()
+        entries = []
+        for item in list(self.albums):
+            raw_item = item.raw
+            # An album's tracks draw the album's cover, as its Groups' Tracks do.
+            thumb = item.thumb if _text(raw_item.get('kind')) == 'album' else None
+            for number, group in enumerate(_dicts(raw_item.get('groups'))):
+                source = (item, number, group.get('play') or {}, thumb)
+                for place, raw in enumerate(_entries(group.get('entries'))):
+                    track_id = raw.get('id')
+                    if track_id in seen:
+                        continue
+                    seen.add(track_id)
+                    entry = kept.get(id(raw))
+                    if (entry is None or entry.raw is not raw or isinstance(entry, Track)
+                            or entry.place != place or entry.source != source):
+                        entry = SongEntry(raw, source, place)
+                    entries.append(entry)
+            if time.monotonic() - self._paused > FRAME_BUDGET:
+                await self._pause(generation)
+        # The loose songs after the albums', by id; a loose song held before keeps its entry
         # while its dict is the same, and the dict it holds replaces the new, equal one.
-        loose_tracks = {}
+        loose_entries = {}
         for position, raw in enumerate(self._loose):
             track_id = _text(raw.get('id'))
             if not track_id or track_id in seen:
                 continue
             seen.add(track_id)
-            track = self._loose_tracks.get(track_id)
-            if track is None or track.raw != raw:
-                track = Track(raw, {'kind': 'song', 'id': track_id})
+            entry = self._loose_entries.get(track_id)
+            if entry is None or entry.raw != raw:
+                entry = SongEntry(raw, (None, 0, {'kind': 'song', 'id': track_id}, None))
             else:
-                self._loose[position] = track.raw
-            loose_tracks[track_id] = track
-            tracks.append(track)
-        self._loose_tracks = loose_tracks
-        wrapped = time.monotonic()
-        count = len(tracks)
-        # The store brought to `tracks` with the fewest changes, so that the views over it
+                self._loose[position] = entry.raw
+            loose_entries[track_id] = entry
+            entries.append(entry)
+        self._loose_entries = loose_entries
+        del kept, seen
+        listed = time.monotonic()
+        count = len(entries)
+        # The store brought to `entries` with the fewest changes, so that the views over it
         # (Songs, Search) keep their rows: most syncs change a few songs, or none. The diff
-        # (up to 13 ms over 40,000 songs, splices included) and letting go of the list (the
-        # last reference to most Track wrappers: 8 ms) each get a frame of their own.
-        same = await self._same_start(self._songs, tracks, generation)
-        if same < len(tracks) or same < self._songs.get_n_items():
-            old = tracks[:same] + await self._read_store(self._songs, same, generation)
+        # (up to 13 ms over 40,000 songs, splices included) gets a frame of its own, and so
+        # does letting go of what it replaced.
+        if len(entries) != len(old_entries) or any(
+                new is not old for new, old in zip(entries, old_entries, strict=True)):
+            old = list(old_entries)
             await self._pause(generation)
-            apply_diff(self._songs, tracks, old)
+            apply_diff(self._songs, entries, old)
             spliced = time.monotonic()
             await self._pause(generation)
-            del old, tracks, seen
+            del old, entries
         else:
             spliced = time.monotonic()
         if not self.songs_ready:
             self.songs_ready = True
-        log.debug('Songs built in %.0f ms: %d songs (wrapped in %.0f ms, spliced in %.0f ms: '
+        log.debug('Songs built in %.0f ms: %d songs (listed in %.0f ms, spliced in %.0f ms: '
                   "the views' sort and rows)", (time.monotonic() - started) * 1000, count,
-                  (wrapped - started) * 1000, (spliced - wrapped) * 1000)
-
-    async def _same_start(self, store, items, generation):
-        """How many of the store's first items are the objects `items` starts with.
-
-        Reading a store from Python costs about a microsecond an item (40 ms for 40,000 songs),
-        so it is read with a pause for a frame every FRAME_BUDGET, and without keeping a list
-        of what it holds: a Track's wrapper that no Python reference holds goes (its state
-        stays with the object), and 40,000 of them are 2.4 MB."""
-        count = min(store.get_n_items(), len(items))
-        for start in range(0, count, 1000):
-            for position in range(start, min(start + 1000, count)):
-                if store.get_item(position) is not items[position]:
-                    return position
-            if time.monotonic() - self._paused > FRAME_BUDGET:
-                await self._pause(generation)
-        return count
-
-    async def _read_store(self, store, start, generation):
-        """The store's items from position `start` on, as a list, read with a pause for a
-        frame every FRAME_BUDGET."""
-        items = []
-        count = store.get_n_items()
-        for batch in range(start, count, 1000):
-            items.extend(store.get_item(position)
-                         for position in range(batch, min(batch + 1000, count)))
-            if time.monotonic() - self._paused > FRAME_BUDGET:
-                await self._pause(generation)
-        return items
+                  (listed - started) * 1000, (spliced - listed) * 1000)
 
     def _check(self, generation):
         if generation != self._generation:

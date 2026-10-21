@@ -1880,6 +1880,70 @@ class TestBuildSongs(unittest.TestCase):
         self.assertTrue(all(a is b for a, b in zip(kept, before[:12] + before[15:24] + before[27:],
                                                    strict=True)))
 
+    def test_the_store_wraps_an_album_only_for_a_song_asked_for(self):
+        """The Songs store holds SongEntries: building it wraps no album's groups, and a
+        song asked for is its album's own Track (the album's songs wrapped then)."""
+        from applemusic.library import SongEntry
+
+        library = load(self.cache)
+        songs = build_songs(library)
+        self.assertTrue(all(isinstance(entry, SongEntry) for entry in songs.entries))
+        self.assertTrue(all(item._groups is None for item in library.albums))
+        self.assertEqual([entry.id for entry in songs.entries], self.ids)
+        self.assertEqual(songs.entries[4].title, 'Song i.4')
+        track = songs.get_item(4)  # l.a1's second song
+        second = library.by_id('album', 'l.a1')
+        self.assertIs(track, second.groups[0].entries.get_item(1))
+        self.assertIs(songs.get_item(4), track)
+        self.assertEqual([item.id for item in library.albums if item._groups is not None],
+                         ['l.a1'])
+        self.assertEqual(track.play, {'kind': 'album', 'id': 'l.a1'})
+        self.assertEqual(track.index, 1)
+        # A reload that leaves the songs as they were keeps every entry.
+        entries = list(songs.entries)
+        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.cache}):
+            asyncio.run(library.reload())
+        self.assertTrue(all(a is b for a, b in zip(songs.entries, entries, strict=True)))
+
+    def test_an_entry_reads_as_its_track_does(self):
+        from applemusic.library import (SongEntry, SongModel, song_key, song_track,
+                                        song_tracks)
+
+        raw = TrackRecord(track('i.1', 'Lantern', 0))
+        play = {'kind': 'song', 'id': 'i.1'}
+        entry = SongEntry(raw, (None, 0, play, '/thumb/one.jpg'))
+        own = song_track(entry)
+        self.assertIsInstance(own, Track)
+        self.assertIs(song_track(entry), own)  # a loose song's Track is made once
+        self.assertIs(song_track(own), own)
+        self.assertEqual((entry.id, entry.title, entry.artist, entry.album),
+                         (own.id, own.title, own.artist, own.album))
+        self.assertEqual(entry.search_key, own.search_key)
+        self.assertEqual((own.play, own.thumb), (play, '/thumb/one.jpg'))
+        self.assertEqual(song_key(entry), song_key(own))
+        self.assertEqual(song_tracks([entry, own]), [own, own])
+        model = SongModel([SongEntry(TrackRecord(track('i.0', 'Ember', 0)), (None, 0, {}, None)),
+                           entry])
+        self.assertEqual(model.find(own), (True, 1))
+        self.assertEqual(model.find(Track({'id': 'i.9'})), (False, 0))
+        self.assertIs(model.get_item(1), own)
+        self.assertIsNone(model.get_item(2))
+
+    def test_songs_matching_tests_only_what_a_shorter_text_matched(self):
+        from applemusic.library import narrows, prepare_search_keys, songs_matching
+
+        songs = [Track(track(f'i.{n}', title, n))
+                 for n, title in enumerate(('Harbour Lights', 'Harbour', 'Lanterns'))]
+        asyncio.run(prepare_search_keys(songs, step=2))
+        self.assertTrue(all(song._search_key is not None for song in songs))
+        self.assertEqual(songs_matching(songs, ''), [])
+        found = songs_matching(songs, 'harb')
+        self.assertEqual(found, songs[:2])
+        self.assertTrue(narrows('harb', 'harbour l'))
+        self.assertFalse(narrows('', 'harbour'))
+        self.assertEqual(songs_matching(songs, 'harbour l', within=found), songs[:1])
+        self.assertEqual(songs_matching(songs, 'lantern', within=found), [])
+
     def test_nothing_to_load_is_ready_and_empty(self):
         library = Library()
         load(tempfile.gettempdir() + '/no-such-apple-music-cache', library)

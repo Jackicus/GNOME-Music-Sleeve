@@ -260,7 +260,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   the lists stay `Gtk.NoSelection` with `single-click-activate`, and the page's activate asks
   `selection_mode.activated(track)` first (a Ctrl+click or Shift+click, read from the
   keyboard's modifiers, enters the mode; in it a click toggles). The selection is a
-  `selection.Selection` of Track objects: a bind reads `has(track)` (O(1)) into the row's
+  `selection.Selection` of Track objects (the Songs table's keyed by `library.song_key`, its
+  list being the store's SongEntries, which `objects` makes Tracks for the batch actions and
+  a drag): a bind reads `has(track)` (O(1)) into the row's
   check box (`set_selected()`: TrackRow's, SongTitle's) and its description
   (`selection_mode.row_description()`), and the page marks its bound rows again on the
   selection's `changed`. The page gives it the tracks shown (`shown`, in order), calls

@@ -6,6 +6,7 @@ the header over a playlist's table (TrackTableHeader); is_playing(), how the pag
 row of the track playing."""
 
 from gettext import gettext as _
+from gettext import pgettext as C_
 
 from gi.repository import Gtk
 
@@ -55,6 +56,44 @@ def _word(key):
         # tooltip and description (it cannot be played).
         _words['unreleased'] = _('Not yet released')
     return _words[key]
+
+
+# The parts of a row that most rows never show, made the first time one does (a view keeps
+# 200 rows, each about 3 KB a widget): the selection mode's check box, the play icon over the
+# thumbnail, the explicit badge, the artist's line. Each is made as the template had it.
+
+def check_box():
+    """The selection mode's check box at a row's start: the row's, not a control of its own
+    (a click or a key on the row toggles it; the row's description says it)."""
+    return Gtk.CheckButton(valign=Gtk.Align.CENTER, can_focus=False, can_target=False,
+                           accessible_role=Gtk.AccessibleRole.PRESENTATION,
+                           css_classes=['selection-mode'])
+
+
+def playing_scrim():
+    """The play icon laid over a thumbnail while its track is the one playing, shown by its
+    opacity (an overlay: nothing in the row changes size)."""
+    scrim = Gtk.Box(opacity=0, can_target=False, css_classes=['osd', 'playing-scrim'],
+                    accessible_role=Gtk.AccessibleRole.PRESENTATION)
+    scrim.append(Gtk.Image(icon_name='media-playback-start-symbolic', hexpand=True,
+                           accessible_role=Gtk.AccessibleRole.PRESENTATION))
+    return scrim
+
+
+def explicit_badge():
+    """The "E" after an explicit song's title."""
+    # Translators: the badge marking a song with explicit lyrics, as Apple Music shows it
+    badge = Gtk.Label(label=C_('explicit badge', 'E'), tooltip_text=_('Explicit'),
+                      valign=Gtk.Align.CENTER, css_classes=['caption', 'explicit-badge'])
+    badge.update_property([Gtk.AccessibleProperty.LABEL], [_('Explicit')])
+    return badge
+
+
+def artist_line():
+    """The dimmed line of the artist under a title: an Inscription, sized by its one line
+    rather than its text."""
+    return Gtk.Inscription(xalign=0, text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END,
+                           css_classes=['caption', 'dimmed'])
 
 
 def playing_description():
@@ -147,15 +186,20 @@ class TrackRow(Gtk.Box):
     number_stack = Gtk.Template.Child()
     number_label = Gtk.Template.Child()
     cover_slot = Gtk.Template.Child()
-    check = Gtk.Template.Child()
     cover = Gtk.Template.Child()
-    playing_scrim = Gtk.Template.Child()
     columns = Gtk.Template.Child()
+    text_box = Gtk.Template.Child()
+    title_box = Gtk.Template.Child()
     title_label = Gtk.Template.Child()
-    explicit_badge = Gtk.Template.Child()
-    artist_label = Gtk.Template.Child()
     favourite_icon = Gtk.Template.Child()
     duration_label = Gtk.Template.Child()
+
+    # Made the first time the row shows them (the check box, the play icon over the
+    # thumbnail, the badge, the artist's line: check_box() and the others), then kept.
+    _check = None
+    _scrim = None
+    _badge = None
+    _artist = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -175,6 +219,41 @@ class TrackRow(Gtk.Box):
     def context_item(self):
         """The Track shown, for its context menu and its drag (widgets/context_menu.py)."""
         return self._track
+
+    @property
+    def check(self):
+        """The selection mode's check box, at the row's start (hidden out of the mode)."""
+        if self._check is None:
+            self._check = check_box()
+            self._check.set_visible(False)
+            self.prepend(self._check)
+        return self._check
+
+    @property
+    def playing_scrim(self):
+        """The play icon over a playlist row's thumbnail, shown by its opacity."""
+        if self._scrim is None:
+            self._scrim = playing_scrim()
+            self.cover_slot.add_overlay(self._scrim)
+        return self._scrim
+
+    @property
+    def explicit_badge(self):
+        if self._badge is None:
+            self._badge = explicit_badge()
+            self._badge.set_visible(False)
+            self.title_box.append(self._badge)
+        return self._badge
+
+    @property
+    def artist_label(self):
+        """The artist's line under the title (a playlist's list, an album track by someone
+        else)."""
+        if self._artist is None:
+            self._artist = artist_line()
+            self._artist.set_visible(False)
+            self.text_box.append(self._artist)
+        return self._artist
 
     @property
     def playing(self):
@@ -202,9 +281,11 @@ class TrackRow(Gtk.Box):
             self.cover.set_paths(track.thumb)
             show_artist = bool(track.artist) and not table
         self.title_label.set_text(track.title)
-        self.explicit_badge.set_visible(track.explicit)
-        self.artist_label.set_visible(show_artist)
-        self.artist_label.set_text(track.artist if show_artist else None)
+        if track.explicit or self._badge is not None:
+            self.explicit_badge.set_visible(track.explicit)
+        if show_artist or self._artist is not None:
+            self.artist_label.set_visible(show_artist)
+            self.artist_label.set_text(track.artist if show_artist else None)
         if table:
             self.artist_link.show(track)
             self.album_link.show(track)
@@ -236,6 +317,8 @@ class TrackRow(Gtk.Box):
         lays the list out again, which the mode's start and end do once."""
         selecting = bool(selecting)
         selected = selecting and bool(selected)
+        if not selecting and self._check is None:
+            return
         if selecting != self._selecting:
             self._selecting = selecting
             self.check.set_visible(selecting)
@@ -258,7 +341,8 @@ class TrackRow(Gtk.Box):
             return
         self._playing = playing
         self.number_stack.set_visible_child_name('playing' if playing else 'number')
-        self.playing_scrim.set_opacity(1 if playing else 0)
+        if playing or self._scrim is not None:
+            self.playing_scrim.set_opacity(1 if playing else 0)
         if playing:
             self.add_css_class('playing')
         else:

@@ -301,10 +301,7 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   over 0.13.0's in the issue's measurement: the favourites and dates the model holds since
   library.json version 3). Explained, not reduced: the headroom is small, and the lazy Songs
   model below is the largest saving known.
-- Not done, about 21 MB more: a lazy Songs model, a `Gio.ListModel` over the track records
-  that wraps a `Track` only for the rows GTK asks for, instead of 40,000 Tracks and three
-  stores. It changes the type of `library.songs` and moves Search's library song filter into
-  Python; with it, the per-Track `search_key` could go too.
+- The lazy Songs model: done (issue 527), below.
 - Video thumbnails by their shorter edge (2026-10-20, issue 383): a video's thumbnail asked
   in a 569x320 box rather than 320x320 is 569x320 where it was 320x180. On the skill's
   library (`--videos 1000`), the demo's 1,000 video thumbnails went from 7.2 KB to 16.1 KB
@@ -330,6 +327,46 @@ is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anony
   its genre and year inscriptions only the first time it shows them: made in every row,
   Favourite Songs' first visit took 121 ms against 98, made lazily 101-110 (it was 98-144
   before, the one switch near the 100 ms target).
+
+### The lazy Songs store and the slowest switch (2026-10-21, issue 527)
+
+Headless on build/demo-big (the skill's library) at 1100x760 with Genres on, benches of
+three runs alternating with origin/main (5052bea), two rounds each: anonymous memory after
+every page browsed twice 250-253 MB before (median 252), 226-229 after (median 228);
+the longest first switch, Favourite Songs', 105-111 ms before, 77-91 after. What each part
+saved, measured page by page with `gc.collect()` and `malloc_trim(0)` after each visit:
+
+- **The Songs store held 40,000 Tracks**: 22.6 MB, about 560 bytes a song (the GObject, its
+  Python wrapper and the wrapper's dict, its place in its Group's store and the Songs
+  store's), and building it wrapped every album's groups. It is a `SongModel` of
+  `SongEntry` objects now (a slotted object of the TrackRecord, where its Track is and its
+  search key: about 80 bytes), made from the albums' raw groups; a Track is made when a
+  view asks for an item, the album's own (its groups wrapped then). The Songs page sorts
+  and filters the entries, its rows a SongModel of them; Search's Your Library and Add
+  Songs… match them in Python (`songs_matching()`), the search provider ranks them, and
+  each wraps only what it shows. The Songs page's first visit added 56.8 MB before, 37
+  after, 199 of the 3,000 albums wrapped for its 205 rows; the songs are built and painted
+  in 670 ms where they took 1,020-1,070.
+- **A row's parts most rows never show**: the selection mode's check box, the play icon
+  over the thumbnail, the explicit badge, the artist's line under the title, about 3 KB a
+  widget, made in every TrackRow and SongTitle and kept by the 200 rows a list view keeps.
+  Made the first time a row shows one: the Songs table's rows 19.4 MB to 15.4 (24 widgets a
+  row to 18), a playlist row's first setup about a third quicker.
+- **Favourite Songs' first build bound every row twice**: its rows were made and bound as
+  the list's, then the table's breakpoint applied at the first layout and bound them all
+  again as the table's (making each list row's artist line on the way). The page assumes the
+  table from the content pane's width before its first layout (`detail.expects_table()`)
+  and checks the breakpoint at its first paint. Its first switch 103-110 ms to 77-89
+  (cProfile: the rows' setup 35 ms to 23, the table's rebind 7 ms gone); an album opens in
+  37-38 ms where it took 41.
+- Not reduced, and in both builds: about one bench run in six reads 14-18 MB more after
+  browsing (origin/main 270 once, this 243-246), with the same pages, rows, wrapped albums
+  and garbage collector counts alive and nothing more after `gc.collect()`: memory the
+  process holds, not objects. The medians above leave those runs in.
+- Songs scrolled 40,000 px at 4,000 px/s: 5.2 ms of work a frame before (longest 9.0), 4.6
+  after (12.6), none over 16.7. Typing "the night" into its filter: a refilter's median 32 ms
+  before, 23 after, the longest 78 and 48. The pages step (three measured rounds): +3.1 and
+  +4.1 MB before, +3.8 and +7.3 after (the second in a run of the 14 MB above).
 
 ### What a page visit leaves behind (2026-10-20)
 

@@ -6,25 +6,11 @@ using Gtk 4.0;
 // One track of an album or playlist (widgets/track_row.py). Everything but the title (and a
 // table's links) is a Gtk.Inscription, sized by its characters or lines rather than its text,
 // so a recycled row is rebound without being measured again; the title is a one-line label,
-// so the explicit badge follows its text.
+// so the explicit badge follows its text. The parts most rows never show are made by
+// track_row.py the first time one does: the selection mode's check box at the start, the
+// play icon over the thumbnail, the explicit badge, the artist's line under the title.
 template $AppleMusicTrackRow: Box {
   spacing: 12;
-
-  // In the list's selection mode (widgets/selection_mode.py): whether the row is selected.
-  // The row's, not a control of its own: a click or a key on the row toggles it, and the
-  // row's description says it ("Selected"). Shown only in the mode, which lays the list out
-  // once as it starts and ends, never as rows are rebound.
-  CheckButton check {
-    valign: center;
-    visible: false;
-    can-focus: false;
-    can-target: false;
-    accessible-role: presentation;
-
-    styles [
-      "selection-mode",
-    ]
-  }
 
   // Albums: the track number, in a column as wide as two digits, and three when there is
   // room (a box set's hundredth track); a play icon in its place while the track is the one
@@ -75,24 +61,6 @@ template $AppleMusicTrackRow: Box {
         "small",
       ]
     };
-
-    [overlay]
-    Box playing_scrim {
-      opacity: 0;
-      can-target: false;
-      accessible-role: presentation;
-
-      styles [
-        "osd",
-        "playing-scrim",
-      ]
-
-      Image {
-        icon-name: "media-playback-start-symbolic";
-        hexpand: true;
-        accessible-role: presentation;
-      }
-    }
   }
 
   // The title (and, in a list, the artist under it); in a table the artist and the album
@@ -102,12 +70,12 @@ template $AppleMusicTrackRow: Box {
     spacing: 12;
     hexpand: true;
 
-    Box {
+    Box text_box {
       orientation: vertical;
       valign: center;
       hexpand: true;
 
-      Box {
+      Box title_box {
         spacing: 6;
 
         Label title_label {
@@ -119,35 +87,6 @@ template $AppleMusicTrackRow: Box {
             "track-title",
           ]
         }
-
-        Label explicit_badge {
-          // Translators: the badge marking a song with explicit lyrics, as Apple Music shows it
-          label: C_("explicit badge", "E");
-          tooltip-text: _("Explicit");
-          valign: center;
-          visible: false;
-
-          accessibility {
-            label: _("Explicit");
-          }
-
-          styles [
-            "caption",
-            "explicit-badge",
-          ]
-        }
-      }
-
-      // Playlists, and album tracks by someone other than the album's artist.
-      Inscription artist_label {
-        xalign: 0;
-        text-overflow: ellipsize_end;
-        visible: false;
-
-        styles [
-          "caption",
-          "dimmed",
-        ]
       }
     }
   }

@@ -7,10 +7,11 @@ Two modes, an Adw.ToggleGroup beside the entry: Apple Music, which searches the 
 through the engine (suggestions as you type, shelves of results on Enter, Apple's browse
 categories before anything is typed, Top Charts first: pages/charts.py), and Your Library,
 which filters the library's cached models as you type (Gtk.FilterListModel over the albums,
-artists, playlists and songs) and works with the engine down. Its results are in Apple's
-order: Top Results (the artists, albums and playlists whose title is or begins with the
-text: top_results()) as cards, Songs, Artists, Albums, Playlists. The entry has no title over
-it: it names the page.
+artists and playlists; the songs in Python, library.songs_matching() over the Songs store's
+SongEntries, so that only the songs listed become Tracks) and works with the engine down.
+Its results are in Apple's order: Top Results (the artists, albums and playlists whose title
+is or begins with the text: top_results()) as cards, Songs, Artists, Albums, Playlists. The
+entry has no title over it: it names the page.
 
 Apple Music's results are of every kind, or of the one the filter beside the entry names
 (FILTER_KEYS, a Gtk.DropDown: there are too many kinds for a toggle group at 360 px): every
@@ -41,7 +42,8 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from ..backend import api
 from ..backend.errors import EngineError
-from ..library import Item, Track, fold
+from ..library import (Item, SongModel, Track, apply_diff, fold, narrows,
+                       songs_matching)
 from ..remote import (fetch_items_art, fetch_shelf_art, fetch_thumb, needs_thumb, remote_item,
                       remote_items, remote_shelves)
 from ..search_pager import SearchPager
@@ -50,7 +52,6 @@ from ..widgets import context_menu
 from ..widgets.category_tile import CategoryTile
 from ..widgets.cover import Cover
 from ..widgets.engine_status import EngineStatus
-from ..widgets.filter_bar import text_filter
 from ..widgets.shelf import Shelf, ShelfColumn  # Shelf is $AppleMusicShelf in the template
 from ..widgets.labels import accessible_label, flow_child, named_list_factory, track_label
 from ..widgets.search_list import SearchList  # noqa: F401  $AppleMusicSearchList
@@ -169,14 +170,6 @@ def _item_filter():
     for string_filter in filters:
         any_filter.append(string_filter)
     return any_filter, filters
-
-
-def _song_filter():
-    """One Gtk.StringFilter over a Track's folded search key (title, artist and album, as the
-    Songs page's filter matches them: widgets/filter_bar.text_filter(); the search is folded
-    too, so the filter need not fold): one pass with one Python call per song, rather than
-    three filters over three properties."""
-    return text_filter()
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/search.ui')
@@ -308,11 +301,13 @@ class SearchPage(Adw.NavigationPage):
         self._top_idle = 0
         self.top_shelf.bind_shelf(LibraryShelf('top', _('Top Results'), self._top))
         connect_weak(self.top_shelf.list_view, 'activate', self._on_shelf_activated)
-        self._song_filter = _song_filter()
-        self._songs = Gtk.FilterListModel(model=None, filter=self._song_filter)
-        connect_weak(self._songs, 'items-changed', self._on_library_results_changed)
-        self._library_models.append((self._songs, library.songs))
-        self._songs_shown = Gtk.SliceListModel(model=self._songs, offset=0, size=SONG_LIMIT)
+        # The songs whose title, artist or album holds the text (folded, as the Songs page's
+        # filter matches them), tested in Python over the Songs store's entries: the first
+        # SONG_LIMIT of them listed, made Tracks as they are bound.
+        self._song_matches = []
+        self._song_search = None  # (the folded text, its matches) while the songs stay
+        self._songs_idle = 0
+        self._songs_shown = SongModel()
         factory = Gtk.SignalListItemFactory()
         connect_weak(factory, 'setup', self._on_song_setup)
         connect_weak(factory, 'bind', self._on_song_bind)
@@ -327,6 +322,7 @@ class SearchPage(Adw.NavigationPage):
         self._handlers = MappedHandlers(self)
         self._handlers.add(library, 'notify::state', self._on_library_results_changed)
         self._handlers.add(library, 'notify::songs-ready', self._on_library_results_changed)
+        self._handlers.add(library.songs, 'items-changed', self._on_songs_changed)
         for store in (library.artists, library.albums, library.playlists):
             self._handlers.add(store, 'items-changed', self._on_titles_changed)
         self._playing = PlayingMark(getattr(app(), 'player', None))
@@ -369,6 +365,7 @@ class SearchPage(Adw.NavigationPage):
     def do_map(self):
         Adw.NavigationPage.do_map(self)
         self._titles = None  # the stores may have changed while hidden
+        self._song_search = None  # and the songs
         if self._recent is not None:
             app().spawn(self._recent.load())  # read once, and again after a Clear Cache
         if self._stale():
@@ -630,7 +627,7 @@ class SearchPage(Adw.NavigationPage):
             app().spawn(self._library.build_songs())
         self._filtering = True  # each filter's change would show the state again
         try:
-            self._song_filter.set_search(fold(text))
+            self._match_songs(text)
             for string_filter in self._item_filters:
                 string_filter.set_search(text)
             for model, store in self._library_models:
@@ -645,6 +642,36 @@ class SearchPage(Adw.NavigationPage):
         if self.mode == 'library' and self.get_mapped() and not self._filtering:
             self._update_library_state(top=False)
             self._update_top_later()
+
+    def _match_songs(self, text):
+        """The library's songs for the text: the matches kept, the first SONG_LIMIT listed
+        (the fewest changes, so the rows still shown stay). A longer text tests only what
+        the text before matched."""
+        search = fold(text) if text else ''
+        before = self._song_search
+        within = before[1] if before is not None and narrows(before[0], search) else None
+        if before is not None and before[0] == search:
+            matches = before[1]
+        else:
+            matches = songs_matching(self._library.songs.entries, search, within)
+        self._song_search = (search, matches) if search else None
+        self._song_matches = matches
+        shown = self._songs_shown
+        apply_diff(shown, matches[:SONG_LIMIT], list(shown.entries))
+
+    def _on_songs_changed(self, *_args):
+        """The Songs store changed (built, a sync): the songs matched again, once its
+        changes are over."""
+        self._song_search = None
+        if not self._songs_idle:
+            self._songs_idle = GLib.idle_add(weak_method(self._match_songs_idle))
+
+    def _match_songs_idle(self):
+        self._songs_idle = 0
+        if self.mode == 'library' and self.get_mapped():
+            self._match_songs(self.text)
+            self._on_library_results_changed()
+        return GLib.SOURCE_REMOVE
 
     def _on_titles_changed(self, *_args):
         """A store's Items changed (a sync): its titles are made again, once its splices
@@ -689,7 +716,7 @@ class SearchPage(Adw.NavigationPage):
             count = widget.shelf.items.get_n_items()
             widget.set_visible(count > 0)
             counts.append(count)
-        songs = self._songs.get_n_items()
+        songs = len(self._song_matches)
         self.songs_box.set_visible(songs > 0)
         self.songs_count_label.set_label(
             ngettext('{count} song', '{count} songs', songs).format(count=f'{songs:n}'))

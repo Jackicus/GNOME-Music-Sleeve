@@ -63,12 +63,20 @@ them before changing either. What matters most:
 - Lazy parts: an Item's `groups` are wrapped on first access; `songs` stays empty until
   `await library.build_songs()` (the Songs page asks), then `songs-ready`, and from then on
   every load and reload brings it up to date with the fewest splices; `song_count()` counts
-  without building. `genres()` (the Genres page asks) makes its store of genre Items
-  (`genre_items()`: kind 'genre', one a genre the albums have, by name) at its first call,
-  and from then on every load brings it up to date (`apply_diff`, a reload keeping the
-  Items).
-- `SongOrder` sorts the Songs table in Python: each column's keys are computed once per track
-  (a text column's as ranks of its collated texts) and kept in integer arrays.
+  without building. `songs` is a `SongModel` of `SongEntry` objects (`songs.entries`: the
+  TrackRecord, where its Track is, and its search key: 80 bytes a song where a Track is
+  560), made from the albums' raw groups; a Track is made only when a view asks for an item
+  (`song_track()`: the album's own, its groups wrapped then), so code that goes through
+  every song (the Songs page's order and filter, Search, Add Songs…, the search provider)
+  reads the entries (`raw`, `id`, `title`, `search_key`; `songs_matching()`) and wraps
+  only what it shows. A fill keeps an entry whose record and group are the same. Never
+  iterate `library.songs` as a list model: that wraps every album. `genres()` (the Genres
+  page asks) makes its store of genre Items (`genre_items()`: kind 'genre', one a genre the
+  albums have, by name) at its first call, and from then on every load brings it up to
+  date (`apply_diff`, a reload keeping the Items).
+- `SongOrder` sorts the Songs table in Python (over the store's entries, or Tracks): each
+  column's keys are computed once per song (a text column's as ranks of its collated texts)
+  and kept in integer arrays.
   `await order.prepare(column)` computes them, and every track's `search_key`, in frame-sized
   steps; `tracks(column, descending)` then only sorts. The Songs page makes a new SongOrder
   whenever the Songs store changes.
