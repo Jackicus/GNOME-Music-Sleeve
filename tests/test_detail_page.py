@@ -1946,7 +1946,7 @@ class ArtistWordsTest(PageTestCase):
         self.assertIsNone(artist_catalog_id(Item({'id': 'l.art_abc', 'kind': 'artist'})))
 
 
-# Pure logic, but it imports a page module, whose templates need the built gresource
+# Pure logic, but it imports a module whose templates need the built gresource
 # (absent from `meson test` on a dist tarball without a display): skip like the widget tests.
 @requires_gtk
 class ExpectsTableTest(unittest.TestCase):

@@ -8,6 +8,7 @@ Every title here is invented."""
 
 import unittest
 
+from tests.gtk import requires_gtk
 from tests.page_harness import PageTestCase, find_all
 
 from applemusic.backend.errors import EngineError
@@ -26,6 +27,9 @@ def songs_answer(*titles):
                          'items': [song(n, title) for n, title in enumerate(titles)]}]}
 
 
+# Pure logic, but it imports a module whose templates need the built gresource
+# (absent from `meson test` on a dist tarball without a display): skip like the widget tests.
+@requires_gtk
 class WordsTest(unittest.TestCase):
     def test_the_header_bars_subtitle(self):
         from applemusic.dialogs.add_songs import picked_text, track_subtitle

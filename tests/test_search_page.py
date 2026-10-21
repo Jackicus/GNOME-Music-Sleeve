@@ -16,7 +16,7 @@ from applemusic.backend.errors import EngineError
 from applemusic.library import Item
 
 
-# Pure logic, but it imports a page module, whose templates need the built gresource
+# Pure logic, but it imports a module whose templates need the built gresource
 # (absent from `meson test` on a dist tarball without a display): skip like the widget tests.
 @requires_gtk
 class TopResultsTest(unittest.TestCase):
