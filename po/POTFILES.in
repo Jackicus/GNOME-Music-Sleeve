@@ -13,6 +13,7 @@ src/dialogs/add_songs.blp
 src/dialogs/credits.py
 src/dialogs/credits.blp
 src/dialogs/playlist.py
+src/dialogs/playlist.blp
 src/dialogs/preferences.py
 src/dialogs/preferences.blp
 src/dialogs/shortcuts.py
@@ -27,6 +28,7 @@ src/search_provider.py
 src/player_bar.py
 src/player_bar.blp
 src/sections.py
+src/sidebar_view.py
 src/song_columns.py
 src/shortcuts.py
 src/pages/__init__.py

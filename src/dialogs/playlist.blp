@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-FileCopyrightText: 2026 Jack Tully
+
+using Gtk 4.0;
+using Adw 1;
+
+// A playlist's details, for a new playlist and for Edit Details… (dialogs/playlist.py): its
+// name, its description, the folder it is in, and whether it is public. Cancel and the
+// confirming button in the header bar, as GNOME's dialogs that make or change something.
+template $AppleMusicPlaylistDialog: Adw.Dialog {
+  content-width: 420;
+  focus-widget: name_row;
+  default-widget: confirm_button;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      show-start-title-buttons: false;
+      show-end-title-buttons: false;
+
+      [start]
+      Button cancel_button {
+        label: _("_Cancel");
+        use-underline: true;
+      }
+
+      [end]
+      Button confirm_button {
+        use-underline: true;
+
+        styles [
+          "suggested-action",
+        ]
+      }
+    }
+
+    content: Adw.PreferencesPage {
+      Adw.PreferencesGroup {
+        Adw.EntryRow name_row {
+          title: _("Name");
+          activates-default: true;
+        }
+      }
+
+      Adw.PreferencesGroup {
+        title: _("Description");
+
+        ScrolledWindow description_scroll {
+          hscrollbar-policy: never;
+          propagate-natural-height: true;
+          min-content-height: 96;
+          max-content-height: 200;
+
+          styles [
+            "card",
+            "playlist-description",
+          ]
+
+          child: TextView description_view {
+            wrap-mode: word_char;
+            accepts-tab: false;
+            top-margin: 12;
+            bottom-margin: 12;
+            left-margin: 12;
+            right-margin: 12;
+
+            accessibility {
+              label: _("Description");
+            }
+          };
+        }
+      }
+
+      Adw.PreferencesGroup {
+        Adw.ComboRow folder_row {
+          title: _("Folder");
+        }
+
+        Adw.SwitchRow public_row {
+          title: _("Show on My Profile and in Search");
+          subtitle: _("Anyone can see it on your Apple Music profile");
+        }
+      }
+    };
+  };
+}

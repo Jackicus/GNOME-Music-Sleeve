@@ -20,6 +20,7 @@ rows' accessible names and indentation.
     sidebar.write_expanded()          # the expanded folders written now (the window closing)
     sidebar.show_drop_target(key)     # key's row marked as a drop's target (None: no mark)
     sidebar.popup_menu(key)           # key's row's context menu, opened beside the row
+    sidebar.new_button()              # the Playlists heading's New button (a Gtk.MenuButton)
 
 The first sections are fixed items; the Playlists section is bound to a store of SidebarEntry
 (sidebar.py): its two destinations, then the library's folders and playlists. The window shows
@@ -59,6 +60,19 @@ on the focused row, under it. AdwSidebar's own menu (a section's menu-model, fil
 setup-menu) is not used: a section's model leaves Menu and Shift+F10 dead (they need a model
 on the whole sidebar), and they would open the selected row's menu, not the focused one's.
 
+The Playlists heading ends with a New button (`list-add-symbolic`, named "New Playlist or
+Folder"), a Gtk.MenuButton whose menu is New Playlist… and New Folder…, both at the top level
+(actions.new_items(ROOT_FOLDER)): AdwSidebar 1.9 has no suffix for a section's heading
+(libadwaita 1.10's AdwSidebarSection:suffix, used where it exists), so the controller puts
+one there itself whenever update_rows() runs, or the sidebar's items change: in the page
+mode as the section's AdwPreferencesGroup's header suffix (Tab reaches it, before the
+section's rows), in the sidebar mode as a page of the heading's Gtk.Stack (the heading and
+the button: place_header_suffix()), which libadwaita makes again whenever it updates the
+headers. There a list's Up and Down move between its rows and pass over a heading, so the
+controller takes them on the rows on either side of it: Down from the row before the
+heading, and Up from the section's first row, go to the button; Down and Up from it, to
+those rows (header_step()).
+
 Nesting: a nested item's row carries a style class for its depth (sidebar.depth_class(),
 `depth-1` to `depth-3`), which style.css indents, set with the rows' accessible names and
 levels by update_rows() whenever the rows can have changed (a reload's splices, a folder
@@ -67,11 +81,12 @@ opened or closed, the switch between the sidebar and page modes, which builds ne
 
 import logging
 import time
+from gettext import gettext as _
 
-from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango
 
 from . import sections, shortcuts
-from .actions import new_playlist_refs
+from .actions import new_items, new_playlist_refs
 from .library import ROOT_FOLDER, ItemRefs
 from .sections import ALL_PLAYLISTS, FAVOURITE_SONGS, HOME, PLAYLISTS_SECTION
 from .sidebar import (DEPTH_CLASSES, SidebarEntry, SidebarItem, depth_class, is_shown,
@@ -89,6 +104,52 @@ EXPANDED_WRITE_DELAY_MS = 1000
 # laid out (a fresh window, a mode change building new rows).
 REVEAL_RETRY_MS = 50
 REVEAL_TRIES = 60
+# The name of the Stack page the controller adds to a heading for its suffix (sidebar mode).
+SUFFIXED_PAGE = 'title-suffixed'
+
+
+def header_step(focus, before, first, button, down):
+    """Where Up (`down` False) or Down moves the focus around the Playlists heading in the
+    sidebar mode, where the list's own keys pass over it: from `before` (the last row shown
+    above the heading, or None) Down goes to the heading's `button`, and from it to `first`
+    (the section's first row); Up the other way. None for any other key and focus (the
+    list moves as it does)."""
+    if down:
+        steps = {before: button, button: first}
+    else:
+        steps = {first: button, button: before}
+    if focus is None:
+        return None
+    return steps.get(focus)
+
+
+def place_header_suffix(header, title, suffix):
+    """Put `suffix` at the end of a sidebar-mode section heading (`header`, AdwSidebar
+    1.9's Gtk.Stack of the title Label and a separator): a page of its own, a box of a
+    heading label of `title` and the suffix, shown in place of the title. False when the
+    heading is not the shape this knows (nothing changed). The suffix is taken from wherever
+    it was."""
+    if not isinstance(header, Gtk.Stack):
+        return False
+    page = header.get_child_by_name(SUFFIXED_PAGE)
+    if page is None:
+        if header.get_child_by_name('title') is None:
+            return False
+        page = Gtk.Box(css_classes=['header-suffixed'])
+        page.append(Gtk.Label(label=title, xalign=0, hexpand=True,
+                              ellipsize=Pango.EllipsizeMode.END, css_classes=['heading']))
+        header.add_named(page, SUFFIXED_PAGE)
+    if suffix.get_parent() is not page:
+        parent = suffix.get_parent()
+        if isinstance(parent, Gtk.Box):
+            parent.remove(suffix)
+        elif isinstance(parent, Adw.PreferencesGroup):
+            parent.set_header_suffix(None)
+        elif parent is not None:
+            suffix.unparent()
+        page.append(suffix)
+    header.set_visible_child(page)
+    return True
 
 
 class SidebarController:
@@ -111,6 +172,8 @@ class SidebarController:
         self._spring = None  # the timeout that will open the folder a drag hovers over
         self._reveal = None  # the idle scrolling the selected row into view, and its tries
         self._feedback = dnd.DropFeedback()  # the drop target's row marked, the auto-scroll
+        self._new_button = None  # the Playlists heading's New button, made by _build()
+        self._native_suffix = False  # whether libadwaita places it (AdwSidebarSection:suffix)
         self._build()
         self.update_playlists()
 
@@ -141,6 +204,7 @@ class SidebarController:
                         self._settings.connect('changed::' + destination.setting,
                                                self._on_offered_changed, destination)
             self._sidebar.append(section)
+        self._build_new_button()
 
         self._sidebar.connect('notify::selected-item', self._on_selected_item)
         # The page mode (the collapsed layout) builds new rows: named and indented again
@@ -183,6 +247,85 @@ class SidebarController:
             Gtk.ShortcutTrigger.parse_string(context_menu.MENU_KEYS),
             Gtk.CallbackAction.new(lambda _widget, _args: self._on_menu_key())))
         self._sidebar.add_controller(menu_keys)
+        # Up and Down around the Playlists heading's New button (sidebar mode): in the
+        # capture phase, before the list's own move-cursor passes over the heading.
+        heading_keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        heading_keys.connect('key-pressed', self._on_heading_key)
+        self._sidebar.add_controller(heading_keys)
+        # A change to the items can make the headings again: the button put back at once.
+        self._sidebar.get_items().connect('items-changed',
+                                          lambda *_args: self._place_new_button())
+
+    # -- the Playlists heading's New button ----------------------------------------------
+
+    def _build_new_button(self):
+        """The New button (see the module): a section suffix where libadwaita has them,
+        else placed by _place_new_button()."""
+        menu = Gio.Menu()
+        for item in new_items(ROOT_FOLDER):
+            menu.append_item(item)
+        self._new_button = Gtk.MenuButton(
+            icon_name='list-add-symbolic', menu_model=menu, valign=Gtk.Align.CENTER,
+            tooltip_text=_('New Playlist or Folder'), css_classes=['flat', 'heading-suffix'])
+        if hasattr(self._playlist_section, 'set_suffix'):  # libadwaita 1.10
+            self._playlist_section.set_suffix(self._new_button)
+            self._native_suffix = True
+
+    def new_button(self):
+        """The Playlists heading's New button."""
+        return self._new_button
+
+    def _place_new_button(self):
+        """Put the New button at the end of the Playlists heading, the mode's: the page
+        mode's group's header suffix, or the sidebar mode's heading (place_header_suffix()).
+        True when it is there."""
+        button = self._new_button
+        if button is None or self._native_suffix:
+            return button is not None
+        if self._page_mode():
+            index = list(self._sidebar.get_sections()).index(self._playlist_section)
+            groups = [group for group in descendants(self._sidebar, Adw.PreferencesGroup)]
+            if len(groups) != self._sidebar.get_sections().get_n_items():
+                return False
+            group = groups[index]
+            if group.get_header_suffix() is not button:
+                parent = button.get_parent()
+                if parent is not None:
+                    if isinstance(parent, Gtk.Box):
+                        parent.remove(button)
+                    else:
+                        button.unparent()
+                group.set_header_suffix(button)
+            return True
+        row = self._heading_row()
+        header = row.get_header() if row is not None else None
+        return place_header_suffix(header, self._playlist_section.get_title(), button)
+
+    def _heading_row(self):
+        """The row of the Playlists section's first item (the one its heading is above)."""
+        item = self._playlist_section.get_item(0)
+        return self.row(item.get_index()) if item is not None else None
+
+    def _on_heading_key(self, _controller, keyval, _keycode, state):
+        """Up or Down to, from or past the New button in the sidebar mode (header_step())."""
+        if (self._new_button is None or self._page_mode()
+                or keyval not in (Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_KP_Up, Gdk.KEY_KP_Down)
+                or state & Gtk.accelerator_get_default_mod_mask()):
+            return False
+        focus = self._window.get_focus()
+        rows = self.rows()
+        first = self._heading_row()
+        if first is None or not rows or not self._new_button.get_mapped():
+            return False
+        if focus is not None and focus is not self._new_button and focus.is_ancestor(
+                self._new_button):
+            focus = self._new_button
+        index = rows.index(first)
+        before = next((row for row in reversed(rows[:index])
+                       if row.get_visible() and row.get_child_visible()), None)
+        target = header_step(focus, before, first, self._new_button,
+                             keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down))
+        return target is not None and target.grab_focus()
 
     # -- what the sidebar has ------------------------------------------------------------
 
@@ -777,4 +920,5 @@ class SidebarController:
                     row.add_css_class(name)
                 else:
                     row.remove_css_class(name)
+        self._place_new_button()
         return GLib.SOURCE_REMOVE

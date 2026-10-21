@@ -951,5 +951,130 @@ class ContextMenuTest(unittest.TestCase):
         self.assertFalse(self.controller._on_menu_key())
 
 
+
+class HeaderStepTest(unittest.TestCase):
+    """Up and Down around the Playlists heading's New button, in the sidebar mode."""
+
+    def test_the_steps(self):
+        from applemusic.sidebar_view import header_step
+
+        before, first, button, other = object(), object(), object(), object()
+        self.assertIs(header_step(before, before, first, button, down=True), button)
+        self.assertIs(header_step(button, before, first, button, down=True), first)
+        self.assertIs(header_step(first, before, first, button, down=False), button)
+        self.assertIs(header_step(button, before, first, button, down=False), before)
+        # Anywhere else the list moves as it does.
+        self.assertIsNone(header_step(other, before, first, button, down=True))
+        self.assertIsNone(header_step(first, before, first, button, down=True))
+        self.assertIsNone(header_step(None, before, first, button, down=True))
+        self.assertIsNone(header_step(None, None, first, button, down=False))
+
+
+@requires_gtk
+class NewButtonTest(unittest.TestCase):
+    """The Playlists heading ends with the New button (New Playlist…, New Folder…, at the
+    top level), in both modes and through the changes that make the headings again; Up and
+    Down reach it in the sidebar mode."""
+
+    def setUp(self):
+        from gi.repository import Adw, Gio, Gtk
+
+        from applemusic.sidebar_view import SidebarController
+        from tests.gtk import SCHEMA_ID
+
+        self.Adw, self.Gtk = Adw, Gtk
+        self.settings = Gio.Settings.new(SCHEMA_ID)
+        self.settings.set_strv('expanded-folders', [])
+        self.library = StubLibrary(deep_tree())
+        self.widget = Adw.Sidebar()
+        self.stub_window = StubWindow()
+        self.controller = SidebarController(self.stub_window, self.widget, self.library,
+                                            self.settings, item_actions=None)
+
+    def tearDown(self):
+        self.controller.write_expanded()
+        self.settings.reset('expanded-folders')
+
+    def present(self):
+        from tests.gtk import wait_for
+
+        window = self.Gtk.Window(child=self.widget, default_width=300, default_height=900)
+        self.addCleanup(window.destroy)
+        window.present()
+        self.assertTrue(wait_for(lambda: all(row.get_width() > 0 for row in self.controller.rows()
+                                             if row.get_child_visible() and row.get_visible())))
+        self.stub_window.get_focus = window.get_focus
+        return window
+
+    def heading(self):
+        """The Playlists heading's Stack (sidebar mode)."""
+        row = self.controller.row(self.controller.item_for(ALL_PLAYLISTS).get_index())
+        return row.get_header()
+
+    def test_the_button_and_its_menu(self):
+        from tests.test_actions import actions_of
+
+        button = self.controller.new_button()
+        self.assertEqual(button.get_tooltip_text(), 'New Playlist or Folder')
+        self.assertEqual(button.get_icon_name(), 'list-add-symbolic')
+        self.assertEqual(actions_of(button.get_menu_model()),
+                         [('win.item-new-playlist', ('folder', 'root')),
+                          ('win.item-new-folder', ('folder', 'root'))])
+
+    def test_at_the_end_of_the_heading_in_both_modes(self):
+        from tests.gtk import pump
+
+        self.present()
+        button = self.controller.new_button()
+        heading = self.heading()
+        self.assertTrue(button.is_ancestor(heading))
+        shown = heading.get_visible_child()
+        labels = [child.get_label() for child in children(shown)
+                  if isinstance(child, self.Gtk.Label)]
+        self.assertEqual(labels, ['Playlists'])  # the title, then the button
+        self.assertIs(shown.get_last_child(), button)
+        # A reload's splices and a folder opened make the headings again: still there.
+        self.library.tree = deep_tree('Zed')
+        self.controller.update_playlists()
+        self.controller._set_expanded('a', True)
+        pump()
+        self.assertTrue(button.is_ancestor(self.heading()))
+        # The page mode: the section's group's header suffix; back, the heading's again.
+        self.widget.set_mode(self.Adw.SidebarMode.PAGE)
+        pump()
+        groups = list(descendants(self.widget, self.Adw.PreferencesGroup))
+        self.assertIs(groups[-1].get_header_suffix(), button)
+        self.assertEqual(groups[-1].get_title(), 'Playlists')
+        self.widget.set_mode(self.Adw.SidebarMode.SIDEBAR)
+        pump()
+        self.assertTrue(button.is_ancestor(self.heading()))
+
+    def test_up_and_down_reach_it(self):
+        from gi.repository import Gdk
+
+        self.present()
+        button = self.controller.new_button()
+        first = self.controller.row(self.controller.item_for(ALL_PLAYLISTS).get_index())
+        rows = self.controller.rows()
+        before = [row for row in rows[:rows.index(first)] if row.get_visible()][-1]
+
+        def key(keyval):
+            return self.controller._on_heading_key(None, keyval, 0, 0)
+
+        before.grab_focus()
+        self.assertTrue(key(Gdk.KEY_Down))
+        self.assertTrue(self.stub_window.get_focus().is_ancestor(button))
+        self.assertTrue(key(Gdk.KEY_Down))
+        self.assertIs(self.stub_window.get_focus(), first)
+        self.assertTrue(key(Gdk.KEY_Up))
+        self.assertTrue(self.stub_window.get_focus().is_ancestor(button))
+        self.assertTrue(key(Gdk.KEY_Up))
+        self.assertIs(self.stub_window.get_focus(), before)
+        self.assertFalse(key(Gdk.KEY_Up))  # elsewhere: the list's own move
+        # Not in the page mode, where Tab reaches it.
+        self.widget.set_mode(self.Adw.SidebarMode.PAGE)
+        self.assertFalse(key(Gdk.KEY_Down))
+
+
 if __name__ == '__main__':
     unittest.main()

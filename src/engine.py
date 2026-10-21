@@ -65,8 +65,8 @@ UI awaits.
     await engine.catalog_url('album', library_id)   # its music.apple.com page, or None
     await engine.add_to_playlist(playlist_id, song_id)   # kind='video' for a music video
     await engine.add_tracks_to_playlist(playlist_id, [(kind, id)…])   # how many, in batches
-    await engine.create_playlist(name, description, [(kind, id)…], folder_id)   # its id
-    await engine.edit_playlist(playlist_id, name=None, description=None)
+    await engine.create_playlist(name, description, [(kind, id)…], folder_id, public)   # its id
+    await engine.edit_playlist(playlist_id, name=None, description=None, public=None)
     await engine.delete_playlist(playlist_id)
     await engine.remove_from_playlist(playlist_id, track_id, index)   # that one entry
     await engine.remove_playlist_entries(playlist_id, shown, positions)   # several, in one
@@ -1948,11 +1948,13 @@ class Engine(GObject.Object):
     # The writes music.apple.com's web player makes to the account's playlists and folders,
     # through the bridge (src/backend/README.md has the requests and what Apple answered).
 
-    async def create_playlist(self, name, description='', tracks=(), folder_id=None):
+    async def create_playlist(self, name, description='', tracks=(), folder_id=None,
+                              public=False):
         """A new library playlist named `name` (POST /v1/me/library/playlists), with the
         songs and music videos `tracks` ((kind, id) pairs, as add_to_playlist takes them) in
         it (the first api.PLAYLIST_BATCH with it, the rest added after: _add_entries), in
-        the folder `folder_id` (None or 'root': the top level). Answers its id. Apple
+        the folder `folder_id` (None or 'root': the top level), shown on the account's
+        profile and in search when `public` (Apple's isPublic). Answers its id. Apple
         lists a new playlist only seconds later (6.5 s once: src/backend/README.md)."""
         name = str(name or '').strip()
         if not name:
@@ -1961,6 +1963,8 @@ class Engine(GObject.Object):
         attributes = {'name': name}
         if description:
             attributes['description'] = str(description)
+        if public:
+            attributes['isPublic'] = True
         client = await self._require_signed_in('make playlists')
         first, rest = entries[:api.PLAYLIST_BATCH], entries[api.PLAYLIST_BATCH:]
         answer = await client.bridge('createPlaylist', attributes, first,
@@ -1972,8 +1976,9 @@ class Engine(GObject.Object):
             await self._add_entries(client, str(new_id), rest, added=len(first))
         return str(new_id)
 
-    async def edit_playlist(self, playlist_id, name=None, description=None):
-        """A library playlist's name, its description, or both (PATCH
+    async def edit_playlist(self, playlist_id, name=None, description=None, public=None):
+        """A library playlist's name, its description, whether it is public (shown on the
+        account's profile and in search: Apple's isPublic), or any of them (PATCH
         /v1/me/library/playlists/<id>); None leaves one as it is, '' clears the
         description. A name cannot be empty."""
         attributes = {}
@@ -1983,6 +1988,8 @@ class Engine(GObject.Object):
                 raise EngineError('usage', 'a playlist needs a name')
         if description is not None:
             attributes['description'] = str(description)
+        if public is not None:
+            attributes['isPublic'] = bool(public)
         playlist_id = _library_playlist(playlist_id)
         if not attributes:
             return

@@ -81,8 +81,12 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   New Playlist (`list-add-symbolic`) and New Folder (`folder-new-symbolic`) in the header
   bar, and a folder's page its More Options menu (`pages.add_folder_buttons()`); their tiles
   drag onto the sidebar's folders (every `GridPage`'s and `Shelf`'s tiles are drag
-  sources: an album or a playlist onto a sidebar playlist, its songs added, or the bar). The playlists' dialogs (the name, the confirmation
-  before a delete) are `dialogs/playlist.py`'s, presented by the item actions, and Add
+  sources: an album or a playlist onto a sidebar playlist, its songs added, or the bar). The playlists' dialogs are `dialogs/playlist.py`'s, presented by
+  the item actions: `PlaylistDialog` (an `Adw.Dialog`) for every New Playlist… and a
+  playlist's Edit Details… (`item-rename`; `actions.Details`, `folder_choices()`,
+  `playlist_changes()`: the name, description, folder and `isPublic`; no cover, which Apple
+  takes from no web client), a folder's `NameDialog` and the confirmation before a delete;
+  the sidebar's Playlists heading ends with a New button (sidebar.md). Add
   Songs… is `dialogs/add_songs.py`'s `AddSongsDialog` (the library's songs and a search's,
   `selection.Picks`, one write); Delete on a playlist's focused song is
   `DetailPage.remove_focused()` (`keyboard.remove_key()`, `ItemActions.remove_entries()`).

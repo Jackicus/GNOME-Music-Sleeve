@@ -108,7 +108,11 @@ list and the script together.
    from a grid a second Escape goes back. On Songs, Shift+Tab from the table reaches Shuffle,
    then Play: Space or Enter on either plays the songs the table shows (shuffled, or in
    their order).
-7. F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
+7. The sidebar's Playlists heading ends with a New button, named "New Playlist or Folder":
+   Down from the row above the heading reaches it (Tab in the narrow layout's page mode),
+   Space opens its menu (New Playlist…, New Folder…), Escape closes it with the focus back
+   on the button, and Down moves on to All Playlists, Up back.
+   F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
    it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
    Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
    buttons, Escape closes it. Ctrl+? lists every shortcut. A page's Sort By or Sort and
@@ -117,10 +121,11 @@ list and the script together.
 8. With a dialog open over the window, Alt+Left, Ctrl+F, Ctrl+1 to 3, Ctrl+Shift+N,
    Ctrl+Shift+L, Ctrl+Shift+U, Space, Ctrl+N, Ctrl+L and Ctrl+Up leave the page behind it
    alone (and open no other dialog).
-9. A playlist's Rename… (and New Playlist…, Ctrl+N) opens its dialog with the cursor in the
-   name;
-   Tab reaches the description and the buttons, Enter renames (or creates), and Escape
-   closes it with nothing changed. Remove from Library… asks first, with Cancel the default
+9. A playlist's Edit Details… (and New Playlist…, Ctrl+N) opens the playlist dialog with
+   the cursor in the name; Tab moves to the description, the folder and the Show on My
+   Profile and in Search switch, Enter in the name saves (or creates; Create is off while
+   the name is blank), and Escape closes it with nothing changed. A folder's Rename… opens
+   its name dialog, the cursor in the name. Remove from Library… asks first, with Cancel the default
    and Remove destructive (Escape closes the question, nothing removed); Delete Playlist…
    asks the same way, which the script does not walk.
 10. F11 with nothing playing does nothing. With an item playing it shows the full-screen

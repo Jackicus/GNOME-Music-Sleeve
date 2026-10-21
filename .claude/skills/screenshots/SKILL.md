@@ -45,10 +45,12 @@ What to shoot: $ARGUMENTS
      `--open playlist:pl.demo001 --scroll 700`); `--focus` focuses the page's first tile or
      row with its focus ring (a music video's play symbol); `--setting KEY=VALUE` sets a setting first
      (`--setting more-suggestions=true` shows twelve suggestions);
-   - the main menu: `--main-menu` (with `--sidebar` at a narrow `--size`);
+   - the main menu: `--main-menu` (with `--sidebar` at a narrow `--size`); the sidebar's
+     Playlists heading's **+** menu: `--new-menu` (the same);
    - the playlists' menus and dialogs: `--more-options` (the page's More Options menu),
      `--sidebar-menu playlist:first|folder:first|all-playlists`, and
-     `--dialog new-playlist|rename|delete` for the playlist or folder the page shows;
+     `--dialog new-playlist|rename|delete` for the playlist or folder the page shows (a
+     playlist's rename is its Edit Details…, the playlist dialog);
      `--dialog remove-from-library` for the item the page shows (else the first album).
    Dark is the default; add `--light`, and `--rtl` for a right-to-left layout (a mirrored
    window, its strings still English). Sizes: the default (1100x760), `--size 400x700`, and

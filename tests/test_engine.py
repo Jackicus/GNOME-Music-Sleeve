@@ -2749,6 +2749,9 @@ class PlaylistWriteTest(EngineFixture):
         await self.engine.edit_playlist('p.new', name='Renamed')
         await self.engine.edit_playlist('p.new', description='')
         await self.engine.edit_playlist('p.new')  # nothing to change: nothing sent
+        await self.engine.edit_playlist('p.new', public=True)
+        await self.engine.edit_playlist('p.new', name='Shown', public=False)
+        await self.engine.create_playlist('Public', public=True)
         await self.engine.delete_playlist('p.new')
         self.assertEqual(self.page.bridge_calls, [
             ('createPlaylist', {'name': 'Night Drive', 'description': 'Late'},
@@ -2758,6 +2761,9 @@ class PlaylistWriteTest(EngineFixture):
             ('createPlaylist', {'name': 'Empty'}, [], None),
             ('updatePlaylist', 'p.new', {'name': 'Renamed'}),
             ('updatePlaylist', 'p.new', {'description': ''}),
+            ('updatePlaylist', 'p.new', {'isPublic': True}),
+            ('updatePlaylist', 'p.new', {'name': 'Shown', 'isPublic': False}),
+            ('createPlaylist', {'name': 'Public', 'isPublic': True}, [], None),
             ('deletePlaylist', 'p.new')])
 
     async def test_a_new_playlist_of_many_songs_gets_the_rest_after(self):

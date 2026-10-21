@@ -27,7 +27,7 @@ from applemusic.backend import config
 from applemusic.backend import normalize as backend
 from applemusic.backend.errors import EngineError
 from applemusic.engine import Engine
-from applemusic.library import EDITABLE, FAVOURITES, REMOVABLE, ROOT_FOLDER, Library
+from applemusic.library import EDITABLE, FAVOURITES, PUBLIC, REMOVABLE, ROOT_FOLDER, Item, Library
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
 
@@ -192,10 +192,12 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([entry['id'] for entry in stand_in['groups'][0]['entries']],
                          ['i.def456'])
         # Playlists, with Favourite Songs flagged as the demo flags it, from Apple's tag, and
-        # as neither editable (canEdit false) nor removable (canDelete false); the editable
-        # ones carry no attributes.
-        flagged = [p['id'] for p in sections['playlists'] if p.get('attributes')]
-        self.assertEqual(flagged, ['p.favs0'])
+        # as neither editable (canEdit false) nor removable (canDelete false); a public one
+        # as public (isPublic); the other editable ones carry no attributes.
+        flagged = {p['id']: p['attributes'] for p in sections['playlists']
+                   if p.get('attributes')}
+        self.assertEqual(list(flagged), ['p.pl456', 'p.favs0'])
+        self.assertEqual(flagged['p.pl456'], {PUBLIC: True})
         self.assertEqual(next(p for p in sections['playlists'] if p['id'] == 'p.favs0')
                          ['attributes'], {FAVOURITES: True, EDITABLE: False, REMOVABLE: False})
         self.assertTrue(all(p['groups'][0]['entries'] for p in sections['playlists']))
@@ -935,6 +937,22 @@ class ReloadTest(unittest.TestCase):
         self.assertIs(self.library.albums.get_item(0), first)
         asyncio.run(self.library.load())
         self.assertIsNot(self.library.albums.get_item(0), first)
+
+
+class FlagTest(unittest.TestCase):
+    """What a playlist's Item carries of Apple's flags (flag_favourites)."""
+
+    def test_a_public_playlist_is_flagged(self):
+        item = {'id': 'p.pl1', 'kind': 'playlist'}
+        app_sync.flag_favourites(item, {'attributes': {'isPublic': True, 'canEdit': True}})
+        self.assertEqual(item['attributes'], {PUBLIC: True})
+        self.assertTrue(Item(item).public)
+        # Private (or not said): nothing, as for an editable playlist.
+        for attributes in ({'isPublic': False}, {}):
+            item = {'id': 'p.pl2', 'kind': 'playlist'}
+            app_sync.flag_favourites(item, {'attributes': attributes})
+            self.assertNotIn('attributes', item)
+            self.assertFalse(Item(item).public)
 
 
 class WhenToSyncTest(unittest.TestCase):

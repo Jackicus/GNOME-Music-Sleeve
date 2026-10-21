@@ -159,6 +159,32 @@ changes, change it here, with the date. The plan they came from is in
   and only Add to Playlist's submenus can then collide. tests/test_context_menu.py opens
   every submenu of a playlist's menu in a real `Gtk.PopoverMenu` (folders three deep, and
   two of one name) and checks that each opens its own page showing its own items.
+- **One dialog makes and edits a playlist; a New button on the Playlists heading**
+  (2026-10-21, #556). Making a playlist had no visible way in the sidebar, and editing one
+  was Rename… in an alert. The Playlists heading now ends with a **+** (a menu of New
+  Playlist… and New Folder…, both at the top level), as Apple Music's and GNOME's sidebars
+  offer an add button beside a group's title. libadwaita 1.9 has no suffix for an
+  `AdwSidebar` section's heading (1.10 adds `AdwSidebarSection:suffix`, which the controller
+  uses where it exists), so the controller puts the button there itself: the page mode's
+  section is an `AdwPreferencesGroup`, whose public header suffix takes it; the sidebar mode's
+  heading is a `Gtk.Stack` that libadwaita makes again whenever it updates the list's
+  headers, so the controller adds a page to it (the title and the button) after every change
+  that can remake it. A list's Up and Down pass over a heading, so the controller takes them
+  on the rows beside it; Tab reaches it in the page mode. Every New Playlist… (the +, Ctrl+N,
+  a folder's, Add to Playlist's, a selection's, a drop on All Playlists) opens one
+  `Adw.Dialog`, which a playlist's **Edit Details…** (the menus' Rename… before) opens filled
+  in: the name, the description (several lines: Apple keeps up to 2,000 characters), the
+  folder (Top Level and the folders, as Move to Folder names them; on Edit Details… a new
+  folder moves it, with Move to Folder's toast and Undo) and **Show on My Profile and in
+  Search** (Apple's `isPublic`). Those are what music.apple.com's own playlist form has
+  (title, description, the "make public" check box), read in its code: there is no cover
+  image there, and none anywhere Apple's web API or MusicKit JS reaches. A PATCH of a
+  library playlist's `artwork` is answered 204 and ignored (checked live on a playlist made
+  for it and deleted after, 2026-10-21), the API's create request documents only a name, a
+  description and the tracks and parent, and a cover is set only in Apple's own apps, so the
+  dialog has no image (`src/backend/README.md`). A folder keeps its name-only alert. Edit
+  Details… writes only what changed: the name, description and `isPublic` in one PATCH, then
+  the move; nothing changed, nothing is written.
 - **A sidebar row's menu is its page's** (2026-10-20). A playlist's, a folder's, Favourite
   Songs' and All Playlists' rows open the item actions' menu for their Item
   (`actions.build_menu`, through `menu_for`), the one their page's More Options and their
@@ -175,8 +201,8 @@ changes, change it here, with the date. The plan they came from is in
   divider above each, as Files separates its sidebar's groups. libadwaita draws that divider
   only above an untitled section, so `src/style.css` draws it on a titled section's header
   (`.navigation-sidebar > .header:not(.first)`, a background line), in the separator's colour,
-  inset and spacing; no Python touches AdwSidebar's widgets, and nothing in the rule depends
-  on what libadwaita puts inside the header (1.9 and 1.10 differ there). The first section
+  inset and spacing; nothing in the rule depends on what libadwaita puts inside the header
+  (1.9 and 1.10 differ there; the Playlists heading's **+** is the controller's, above). The first section
   (Search, Home, New, Radio) stays untitled with no divider; the narrow layout's page mode,
   whose sections are boxed lists, has none.
 - **Playlists in Apple Music's order** (2026-10-03). Apple's API lists a folder's contents in
