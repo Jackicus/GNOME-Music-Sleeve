@@ -897,19 +897,24 @@ changes, change it here, with the date. The plan they came from is in
   `Keywords=` (so the app is still found by searching for "apple music"), and strings like
   "Sign in to Apple Music" — always less prominent than the app's own name. The full rule is in
   `.claude/rules/packaging.md` (#145).
-- **An icon of the app's own** (2026-09-30). A record coming out of its sleeve, in GNOME's
-  palette: the old icon was a red rounded square with a white double note, near enough to Apple
-  Music's own logo to confuse users and to invite a complaint. Apple's guidelines for third
-  parties allow no use of their logos or icons at all, and Flathub requires an icon distinct
-  enough to carry the project's own identity. The symbolic icon is the record alone: at 16 px
-  the sleeve behind it only muddies the silhouette. The development build's icon is the same
-  artwork under a band of stripes, and the metainfo's brand colours follow it.
+- **An icon of the app's own** (2026-09-30, redrawn 2026-10-21, #552). A dot-matrix display
+  whose lit dots draw a double note: a dark panel, unlit dots dim, lit ones yellow to orange, a
+  14 by 14 grid without its four corner dots so it sits inside the panel's rounded corners;
+  flat, with no darker side under it. The first icon of all was a red rounded square with a
+  white double note, near enough to Apple Music's own logo to confuse users and to invite a
+  complaint; Apple's guidelines for third parties allow no use of their logos or icons at all,
+  and Flathub requires an icon distinct enough to carry the project's own identity. So the note
+  came back only as an LED pattern on a dark panel, nothing like a white note on red (the record
+  and sleeve drawn in between is in git). The symbolic icon is the note alone as a pixel
+  silhouette on 2 px cells: at 16 px the panel and its dots only blur. The development build's
+  icon is the same under a band of stripes across the bottom rows, which the note leaves unlit,
+  and the metainfo's brand colours follow the icon.
 - **The accent is the user's** (2026-09-30). The app sets no accent of its own: libadwaita
   hands it whichever of GNOME's accent colours the user chose in Settings, and everything
   tinted (the Play button, the seek slider, the filled heart, links) follows. It had been
-  pinned first to Apple Music's red, then to the new icon's purple; both were wrong for the
+  pinned first to Apple Music's red, then to an older icon's purple; both were wrong for the
   same reason, that a GNOME app wears the user's colour, not its own. The metainfo's
-  `<branding>` stays purple and keeps following the icon: that marks the app in a software
+  `<branding>` keeps following the icon (its orange): that marks the app in a software
   centre, where it sits among other apps, and is not the user's choice to make (#195).
 
 - **An item reaches MPRIS once** (2026-09-30). A new item's Metadata and Can*s wait for its
