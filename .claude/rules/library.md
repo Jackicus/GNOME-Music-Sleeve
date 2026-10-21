@@ -95,7 +95,9 @@ them before changing either. What matters most:
   (`apply_changes()`, pure), folder Items and stores kept, and `playlists-changed` emitted;
   `release()` drops one (Apple refused: back as the file has it). A reload keeps a change
   until the file shows it (`change_settled()`) or `PENDING_HOLD` passes; a load forgets them
-  all. `PlaylistTree.can_move()` refuses a folder into itself or inside itself, a move to
+  all. A folder's move carries the folder's entries as shown (`TreeChange.entries`): Apple
+  lists a folder moved into another nowhere for most of a minute, and a reload whose file
+  lacks it puts it back from them. `PlaylistTree.can_move()` refuses a folder into itself or inside itself, a move to
   where it is, the top level and Favourite Songs.
 - A playlist's songs in a new order: `Item.reorder(order)` (positions in the list shown)
   changes the one group in place, the same Group and Tracks, each moved Track given a new

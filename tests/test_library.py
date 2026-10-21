@@ -27,7 +27,8 @@ from applemusic import library as library_module
 from applemusic.library import (PENDING_HOLD, ROOT_FOLDER, SECTIONS, Group, Item, ItemRefs,
                                 Library, PlaylistTree, Ref, SongOrder, Track, TrackRecord,
                                 TreeChange, apply_changes, change_settled, drop_index,
-                                entries_without, fold, folder_of, item_ref, moved, order_for,
+                                entries_without, fold, folder_entries, folder_of, item_ref,
+                                moved, order_for,
                                 parse, paused_gc, reorder_entries, track_ref)
 
 
@@ -1346,6 +1347,27 @@ class TestTreeChanges(unittest.TestCase):
         self.assertEqual(shape(self.tree(changes=[TreeChange.create('c', 'X', 'gone')])),
                          shape(self.tree()))
 
+    def test_a_moved_folder_the_file_lists_nowhere(self):
+        # Apple stops listing a folder where it was before it lists it in its new folder:
+        # the change's entries put it back, with what is in it.
+        self.assertEqual([raw['id'] for raw in folder_entries(self.FOLDERS, 'a')], ['a', 'b'])
+        self.assertEqual(folder_entries(self.FOLDERS, 'gone'), ())
+        folders = [folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['p1']), folder('c', [])]
+        move = TreeChange.move('folder', 'b', 'c')
+        self.assertEqual(shape(self.tree(folders, [move])), [  # no entries: skipped
+            ('folder', 'a', 0, []), ('playlist', 'p1', 1, ['a']), ('folder', 'c', 0, []),
+            ('playlist', 'p2', 0, []), ('playlist', 'p3', 0, [])])
+        move.entries = folder_entries(self.FOLDERS, 'b')
+        self.assertEqual(shape(self.tree(folders, [move])), [
+            ('folder', 'a', 0, []), ('playlist', 'p1', 1, ['a']), ('folder', 'c', 0, []),
+            ('folder', 'b', 1, ['c']), ('playlist', 'p2', 2, ['c', 'b']),
+            ('playlist', 'p3', 0, [])])
+        # The file's own entry wins whenever it has the folder.
+        listed = [folder('root', ['f:a', 'f:b', 'f:c', 'p2', 'p3']), folder('a', ['p1']),
+                  folder('b', []), folder('c', [])]
+        self.assertIn(('folder', 'b', 1, ['c']), shape(self.tree(listed, [move])))
+        self.assertIn(('playlist', 'p2', 0, []), shape(self.tree(listed, [move])))
+
     def test_without_a_root_entry(self):
         folders = [folder('a', ['p1'], parent=None)]
         moved = self.tree(folders, [TreeChange.move('playlist', 'p1', ROOT_FOLDER)])
@@ -1445,6 +1467,38 @@ class TestTreeChanges(unittest.TestCase):
             self.assertFalse(library.hold(TreeChange.create('c', 'Again', ROOT_FOLDER)))
             library.release(created)
             self.assertIsNone(library.by_id('folder', 'c'))
+
+    def test_a_folder_moved_into_a_folder_survives_a_sync_that_lists_it_nowhere(self):
+        raw = [{'id': f'p{n}', 'kind': 'playlist', 'title': f'P{n}',
+                'play': {'kind': 'playlist', 'id': f'p{n}'}, 'groups': []} for n in (1, 2, 3)]
+        start = [folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['f:b', 'p1']),
+                 folder('b', ['p2'], parent='a'), folder('c', [])]
+        library = Library()
+        with tempfile.TemporaryDirectory() as cache:
+            def reload(folders):
+                write_library(cache, [], playlists=raw, folders=folders)
+                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+                    asyncio.run(library.reload())
+
+            write_library(cache, [], playlists=raw, folders=start)
+            load(cache, library)
+            folder_b = library.by_id('folder', 'b')
+            move = TreeChange.move('folder', 'b', 'c')
+            self.assertTrue(library.hold(move))
+            self.assertEqual([item.id for item in library.folder_items('c')], ['b'])
+            # Gone from a, not yet listed in c: still shown in c, holding p2.
+            reload([folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['p1']), folder('c', [])])
+            self.assertEqual(library.pending_changes(), [move])
+            self.assertEqual([item.id for item in library.folder_items('c')], ['b'])
+            self.assertEqual([item.id for item in library.folder_items('b')], ['p2'])
+            self.assertIs(library.by_id('folder', 'b'), folder_b)
+            self.assertEqual([item.id for item in library.folder_items(ROOT_FOLDER)],
+                             ['a', 'c', 'p3'])
+            # Listed there: settled.
+            reload([folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['p1']),
+                    folder('c', ['f:b']), folder('b', ['p2'], parent='c')])
+            self.assertEqual(library.pending_changes(), [])
+            self.assertEqual([item.id for item in library.folder_items('c')], ['b'])
 
     def test_an_expired_change_gives_way_and_a_load_forgets_them(self):
         raw = [{'id': 'p1', 'kind': 'playlist', 'title': 'P1',

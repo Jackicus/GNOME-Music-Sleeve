@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""src/backend/api.py: library ids, endpoints, resource types, pages, Apple's error answers and
-the languages lyrics are asked in."""
+"""src/backend/api.py: library ids, endpoints, resource types, pages, Apple's error answers,
+the languages lyrics are asked in and the folder moves Apple takes."""
 
 import unittest
+from unittest import mock
 
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
@@ -260,6 +261,27 @@ class LyricsLanguagesTest(unittest.TestCase):
     def test_no_language_is_english(self):
         for name in ('C', 'C.UTF-8', 'POSIX', '', None, '123'):
             self.assertEqual(lyrics_languages(name), {'lyrics': 'en', 'script': 'en-Latn'}, name)
+
+
+
+class FolderMoveTest(unittest.TestCase):
+    """can_move_to_folder(): the moves Apple was seen to take (2026-10-03, 2026-10-21)."""
+
+    def test_every_playlist_and_folder_move(self):
+        for kind in ('playlist', 'folder'):
+            for folder_id in ('p.fd1', None, '', 'root', 'p.playlistsroot'):
+                self.assertTrue(api.can_move_to_folder(kind, folder_id), (kind, folder_id))
+        self.assertFalse(api.can_move_to_folder('album', 'p.fd1'))
+
+    def test_a_move_switched_off(self):
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', False):
+            self.assertFalse(api.can_move_to_folder('playlist', 'root'))
+            self.assertFalse(api.can_move_to_folder('playlist', None))
+            self.assertTrue(api.can_move_to_folder('playlist', 'p.fd1'))
+            self.assertFalse(api.can_move_to_folder('folder', 'p.playlistsroot'))
+        with mock.patch.object(api, 'MOVE_FOLDERS', False):
+            self.assertFalse(api.can_move_to_folder('folder', 'p.fd1'))
+            self.assertTrue(api.can_move_to_folder('playlist', 'root'))
 
 
 if __name__ == '__main__':

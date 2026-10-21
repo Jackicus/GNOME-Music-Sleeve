@@ -2939,38 +2939,45 @@ class PlaylistWriteTest(EngineFixture):
             ('createFolder', {'name': 'Top'}, None),
             ('moveToFolder', 'library-playlists', 'p.1', 'p.fdnew')])
 
-    async def test_the_unconfirmed_moves_wait_for_their_switch(self):
+    async def test_the_top_level_and_folder_moves(self):
         await self.up()
-        for coro in (self.engine.move_to_folder('playlist', 'p.1', 'root'),
-                     self.engine.move_to_folder('playlist', 'p.1', None),
-                     self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-        # Switched on: the top level is Apple's root folder; a folder moves as a folder.
-        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True), \
-                mock.patch.object(api, 'MOVE_FOLDERS', True):
-            await self.engine.move_to_folder('playlist', 'p.1', 'root')
-            await self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')
+        # The top level is Apple's root folder; a folder moves as a folder.
+        await self.engine.move_to_folder('playlist', 'p.1', 'root')
+        await self.engine.move_to_folder('playlist', 'p.1', None)
+        await self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')
+        await self.engine.move_to_folder('folder', 'p.fd2', 'root')
         self.assertEqual(self.page.bridge_calls, [
             ('moveToFolder', 'library-playlists', 'p.1', 'p.playlistsroot'),
-            ('moveToFolder', 'library-playlist-folders', 'p.fd2', 'p.fd1')])
+            ('moveToFolder', 'library-playlists', 'p.1', 'p.playlistsroot'),
+            ('moveToFolder', 'library-playlist-folders', 'p.fd2', 'p.fd1'),
+            ('moveToFolder', 'library-playlist-folders', 'p.fd2', 'p.playlistsroot')])
 
-    async def test_what_the_folder_writes_refuse(self):
+    async def test_a_move_switched_off_is_refused(self):
         await self.up()
-        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True), \
-                mock.patch.object(api, 'MOVE_FOLDERS', True):
-            for coro in (self.engine.create_folder('  '),
-                         self.engine.create_folder('X', '1000000001'),
-                         self.engine.move_to_folder('playlist', 'pl.u-catalog', 'p.fd1'),
-                         self.engine.move_to_folder('album', 'l.1', 'p.fd1'),
-                         self.engine.move_to_folder('folder', 'root', 'p.fd1'),
-                         self.engine.move_to_folder('folder', 'p.fd1', 'p.fd1'),
-                         self.engine.move_to_folder('playlist', 'p.1', 'l.notafolder')):
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', False), \
+                mock.patch.object(api, 'MOVE_FOLDERS', False):
+            for coro in (self.engine.move_to_folder('playlist', 'p.1', 'root'),
+                         self.engine.move_to_folder('playlist', 'p.1', None),
+                         self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')):
                 with self.assertRaises(EngineError) as raised:
                     await coro
                 self.assertEqual(raised.exception.code, 'usage')
+            await self.engine.move_to_folder('playlist', 'p.1', 'p.fd1')  # always on
+        self.assertEqual(self.page.bridge_calls,
+                         [('moveToFolder', 'library-playlists', 'p.1', 'p.fd1')])
+
+    async def test_what_the_folder_writes_refuse(self):
+        await self.up()
+        for coro in (self.engine.create_folder('  '),
+                     self.engine.create_folder('X', '1000000001'),
+                     self.engine.move_to_folder('playlist', 'pl.u-catalog', 'p.fd1'),
+                     self.engine.move_to_folder('album', 'l.1', 'p.fd1'),
+                     self.engine.move_to_folder('folder', 'root', 'p.fd1'),
+                     self.engine.move_to_folder('folder', 'p.fd1', 'p.fd1'),
+                     self.engine.move_to_folder('playlist', 'p.1', 'l.notafolder')):
+            with self.assertRaises(EngineError) as raised:
+                await coro
+            self.assertEqual(raised.exception.code, 'usage')
         self.assertEqual(self.page.bridge_calls, [])
         self.page.bridge_answers['createFolder'] = {'ok': True}
         with self.assertRaises(EngineError) as raised:

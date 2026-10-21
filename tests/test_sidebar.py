@@ -649,7 +649,7 @@ class DragDropTest(unittest.TestCase):
         self.assertEqual(action(self.index('folder:a'), p1), 0)  # where it is
         self.assertEqual(action(self.index('playlist:p2'), p1), copy)  # p1's songs added
         self.assertEqual(action(self.index('playlist:p1'), p1), 0)  # not to itself
-        self.assertEqual(action(self.index(ALL_PLAYLISTS), p1), 0)  # the top level: gated
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), p1), move)  # to the top level
         self.assertEqual(action(self.index(HOME), p1), 0)
         song = ItemRefs([Ref('song', 'i.s1', 'Song')])
         self.assertEqual(action(self.index('playlist:p2'), song), copy)
@@ -673,19 +673,22 @@ class DragDropTest(unittest.TestCase):
         mixed = ItemRefs([Ref('song', 'i.s1', 'Song'), Ref('playlist', 'p1', 'P')])
         self.assertEqual(action(self.index(ALL_PLAYLISTS), mixed), 0)
         self.assertEqual(action(self.index('folder:c'), None), 0)  # from elsewhere
-        # A folder waits for api.MOVE_FOLDERS; then never into itself or what is inside it.
+        # A folder into another, never into itself or what is inside it.
         folder_a = self.refs('folder:a')
-        self.assertEqual(action(self.index('folder:c'), folder_a), 0)
+        self.assertEqual(action(self.index('folder:c'), folder_a), move)
+        self.assertEqual(action(self.index('folder:b'), folder_a), 0)
+        self.assertEqual(action(self.index('folder:a'), folder_a), 0)
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), folder_a), 0)  # where it is
+        self.assertEqual(action(self.index(ALL_PLAYLISTS), self.refs('folder:b')), move)
         from unittest import mock
 
         from applemusic.backend import api
 
-        with mock.patch.object(api, 'MOVE_FOLDERS', True), \
-                mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True):
-            self.assertEqual(action(self.index('folder:c'), folder_a), move)
-            self.assertEqual(action(self.index('folder:b'), folder_a), 0)
-            self.assertEqual(action(self.index('folder:a'), folder_a), 0)
-            self.assertEqual(action(self.index(ALL_PLAYLISTS), p1), move)
+        # A move switched off in api is taken nowhere.
+        with mock.patch.object(api, 'MOVE_FOLDERS', False), \
+                mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', False):
+            self.assertEqual(action(self.index('folder:c'), folder_a), 0)
+            self.assertEqual(action(self.index(ALL_PLAYLISTS), p1), 0)
 
     def test_drop_enter_marks_the_row_and_drop_hands_it_over(self):
         self.dnd._set_current(self.refs('playlist:p2'))
@@ -766,8 +769,12 @@ class DragDropTest(unittest.TestCase):
         refs, icon = self.controller._drag_source(x, y)
         self.assertEqual([ref.id for ref in refs], ['p1'])
         self.assertIs(icon, row)
-        # Not a fixed item, not Favourite Songs, not a folder while folders cannot move.
-        for key in (ALL_PLAYLISTS, HOME, 'folder:a'):
+        # A folder too; not a fixed item, nor Favourite Songs.
+        (x, y), row = self.middle_of('folder:a')
+        refs, icon = self.controller._drag_source(x, y)
+        self.assertEqual([(ref.kind, ref.id) for ref in refs], [('folder', 'a')])
+        self.assertIs(icon, row)
+        for key in (ALL_PLAYLISTS, HOME):
             self.assertIsNone(self.controller._drag_source(*self.middle_of(key)[0]), key)
         self.assertIsNone(self.controller._drag_source(-50, -50))
 

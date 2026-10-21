@@ -67,14 +67,12 @@ LIBRARY_ROUTES = {
 }
 LIBRARY_TWIN_ENDPOINT = '/v1/catalog/{storefront}'
 
-# The New page: the editorial groupings behind music.apple.com's own (the request it makes,
-# less its field selections and `format[resources]=map`, which flattens the answer).
 # The playlist-folder moves Apple is known to take (src/backend/README.md): a playlist into a
-# folder (checked on 2026-10-03). A move to the top level (into Apple's root folder) and a
-# folder into another folder are not confirmed yet: the app offers neither, and the engine
-# refuses them, until they are switched on here.
-MOVE_TO_TOP_LEVEL = False
-MOVE_FOLDERS = False
+# folder (checked on 2026-10-03), and out of its folder to the top level (into Apple's root
+# folder) and a folder into another folder or out to the top level (2026-10-21). A move
+# switched off here is offered nowhere, and the engine refuses it.
+MOVE_TO_TOP_LEVEL = True
+MOVE_FOLDERS = True
 # The id the library calls the top level of the folders (library.ROOT_FOLDER), and Apple's.
 ROOT_FOLDER = 'root'
 APPLE_ROOT_FOLDER = 'p.playlistsroot'
@@ -84,6 +82,8 @@ APPLE_ROOT_FOLDER = 'p.playlistsroot'
 # sends an album's tracks in one request.
 PLAYLIST_BATCH = 100
 
+# The New page: the editorial groupings behind music.apple.com's own (the request it makes,
+# less its field selections and `format[resources]=map`, which flattens the answer).
 BROWSE_ENDPOINT = '/v1/editorial/{storefront}/groupings'
 BROWSE_PARAMS = {'name': 'music', 'platform': 'web', 'extend': 'editorialArtwork'}
 # The Radio page: the grouping behind music.apple.com's own Radio page, asked as New's is, with

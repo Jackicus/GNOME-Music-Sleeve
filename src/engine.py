@@ -2149,7 +2149,9 @@ class Engine(GObject.Object):
 
     async def create_folder(self, name, folder_id=None):
         """A new playlist folder named `name` (POST /v1/me/library/playlist-folders), in the
-        folder `folder_id` (None or 'root': the top level). Answers its id."""
+        folder `folder_id` (None or 'root': the top level; else a `parent` relationship,
+        which Apple honours). Answers its id. Apple lists one at the top level seconds
+        later, one inside a folder about a minute later."""
         name = str(name or '').strip()
         if not name:
             raise EngineError('usage', 'a folder needs a name')
@@ -2165,9 +2167,10 @@ class Engine(GObject.Object):
         """A library playlist (`kind` 'playlist') or folder ('folder') into the folder
         `folder_id` (None or 'root': the top level, Apple's root folder), as the web player
         moves one (PUT /v1/me/library/playlists/<id>/parent, or playlist-folders/<id>/parent
-        for a folder). Only the moves Apple is known to take (api.can_move_to_folder: a
-        playlist into a folder); anything else is EngineError('usage'), as is a folder into
-        itself."""
+        for a folder). Only the moves Apple is known to take (api.can_move_to_folder: all of
+        these, as long as its switches are on); anything else is EngineError('usage'), as is
+        a folder into itself. Apple lists a folder in its new folder about a minute later
+        (src/backend/README.md), a playlist or a folder at the top level within seconds."""
         if kind == 'folder':
             item_id = _folder(item_id)
             if item_id is None:

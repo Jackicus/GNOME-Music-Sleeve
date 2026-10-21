@@ -146,9 +146,10 @@ sync that follows starts once Apple's read of the item answers 404 (wait_removed
 
 After a playlist or folder was made, renamed or deleted, the window leaves the pages of what
 is gone (Window.leave), the sidebar shows a new name at once, and the library follows Apple's
-listing once it shows the change (wait_listed: a new playlist takes seconds to be listed),
-through the playlists pass of a sync (sync.py). A track added or removed has its playlist
-fetched again, then read into library.json by a playlists pass that reads its tracks
+listing once it shows the change (wait_listed: a new playlist takes seconds to be listed, a
+folder made in or moved into a folder about a minute), through the playlists pass of a sync
+(sync.py). A track added or removed has its playlist fetched again, then read into
+library.json by a playlists pass that reads its tracks
 (playlist_order.sync_tracks()); before either, and before a playlist is deleted, its order
 still to be written is (PlaylistOrder.flush()).
 The menus of the player's queue (the item playing's in the Now Playing sheet and the player
@@ -192,8 +193,14 @@ MOVE_TARGET = GLib.VariantType.new('(ssii)')
 
 # After a playlist write, how long to wait before each look at Apple's listing, in seconds,
 # until it shows the change: a new playlist was listed 4 to 6.5 s after it was made, a
-# rename or a deletion within a second (2026-10-03). Then the library follows regardless.
+# rename or a deletion within a second (2026-10-03); a playlist moved into a folder or out
+# to the top level, and a folder out to the top level, 3 to 6 s after (2026-10-21). Then the
+# library follows regardless.
 SETTLE_DELAYS = (0.5, 1, 1, 1, 2, 2, 3, 3)
+# The same for a folder made in a folder or moved into one: Apple lists it there only about
+# a minute later (59 and 61 s, 2026-10-21), having stopped listing a moved one where it was
+# within 6 s. So the sync that follows waits for it, up to a minute and a half.
+FOLDER_SETTLE_DELAYS = SETTLE_DELAYS + (5,) * 15
 
 # After a removal from the library, how long to wait before each look at Apple's library
 # read of the item, in seconds, until it answers 404: a song's did within 2 s, an album's
@@ -967,6 +974,16 @@ def playlist_submenu(entries, named, action=None):
     return menu
 
 
+def settle_delays(kind, folder_id):
+    """How long to look for a playlist or folder (`kind`) made in or moved into the folder
+    folder_id (ROOT_FOLDER: the top level) in Apple's listing: FOLDER_SETTLE_DELAYS for a
+    folder into a folder, which Apple lists there only about a minute later, else
+    SETTLE_DELAYS."""
+    if kind == 'folder' and folder_id not in (None, '', ROOT_FOLDER):
+        return FOLDER_SETTLE_DELAYS
+    return SETTLE_DELAYS
+
+
 def move_targets(tree, obj):
     """Where obj, a playlist or folder of the library.PlaylistTree `tree`, can be moved, for
     Move to Folder: (top_level, entries), `top_level` whether it can go to the top level and
@@ -975,7 +992,7 @@ def move_targets(tree, obj):
     entries of the folders inside it. obj itself, and so whatever is inside it, is left out,
     as is a folder that is neither a target nor holds one. None when obj cannot be moved at
     all: not in the tree, Favourite Songs, the top level itself, or a kind of move Apple is
-    not known to take (api.can_move_to_folder: a folder, while MOVE_FOLDERS is off)."""
+    not known to take (api.can_move_to_folder: a folder, were MOVE_FOLDERS switched off)."""
     if not isinstance(obj, Item) or obj.kind not in ('playlist', 'folder') or tree is None:
         return None
     node = tree.node(obj.kind, obj.id)
@@ -1027,7 +1044,7 @@ def move_submenu(moves, named):
         top = Gio.Menu()
         top.append_item(menu_item('item-move-to-folder',
                                   GLib.Variant('(sss)', (ROOT_FOLDER, *named)),
-                                  label=_('Top Level')))
+                                  label=_('_Top Level')))
         submenu.append_section(None, top)
     listed = folder_items(entries, named)
     if listed.get_n_items():
@@ -2468,7 +2485,8 @@ class ItemActions:
                                GLib.Variant('(sss)', (previous, obj.kind, obj.id)))
             else:
                 self.app.toast(message)
-            await self._follow_listing(folder_id, obj.id, obj.title)
+            await self._follow_listing(folder_id, obj.id, obj.title,
+                                       settle_delays(obj.kind, folder_id))
             return True
 
         return self.app.spawn(run())
@@ -2514,7 +2532,8 @@ class ItemActions:
                 task = self.move_to_folder(holding, new_id)
                 if task is not None:
                     await asyncio.wait([task])
-            await self._follow_listing(parent_id, new_id, name)
+            await self._follow_listing(parent_id, new_id, name,
+                                       settle_delays('folder', parent_id))
             return True
 
         return self.app.spawn(run())
@@ -2599,24 +2618,25 @@ class ItemActions:
             stack.extend(child.children)
         return found
 
-    async def _follow_listing(self, folder_id, item_id, name):
+    async def _follow_listing(self, folder_id, item_id, name, delays=None):
         """After a playlist write: wait until Apple lists it (wait_listed), then bring the
         library up to date with the playlists pass of a sync, and wait for that."""
-        await self.wait_listed(folder_id, item_id, name)
+        await self.wait_listed(folder_id, item_id, name, delays)
         task = self.app.start_sync(playlists=True)
         if task is not None:
             await asyncio.wait([task])
 
-    async def wait_listed(self, folder_id, item_id, name):
+    async def wait_listed(self, folder_id, item_id, name, delays=None):
         """Wait until Apple lists the playlist or folder item_id in the folder folder_id
-        under `name` (None: not at all), looking again after each of SETTLE_DELAYS. True
-        once it does; False when it never did, or the engine could not say. Right after a
-        deletion Apple can answer for the folder with nothing at all (a 404, or an empty
-        list) while it still holds other things: for `name` None, an empty answer counts
-        only when the folder held nothing else."""
+        under `name` (None: not at all), looking again after each of `delays` (None:
+        SETTLE_DELAYS; settle_delays() picks them). True once it does; False when it never
+        did, or the engine could not say. Right after a deletion Apple can answer for the
+        folder with
+        nothing at all (a 404, or an empty list) while it still holds other things: for
+        `name` None, an empty answer counts only when the folder held nothing else."""
         node = self.library.playlist_tree().folder(folder_id)
         others = node is not None and any(child.id != item_id for child in node.children)
-        for delay in SETTLE_DELAYS:
+        for delay in SETTLE_DELAYS if delays is None else delays:
             await asyncio.sleep(delay)
             try:
                 children = await self.engine.folder_children(folder_id)
