@@ -294,6 +294,48 @@ class SongTitleTest(WidgetTestCase):
         self.assertTrue(placed)
         self.assertLess(bounds.get_x(), 32 + 12 + 1)  # right after the thumbnail and spacing
 
+    def test_the_parts_a_cell_seldom_shows_are_made_when_it_first_does(self):
+        """A view keeps 200 rows: the check box, the play icon, the badge and the artist's
+        line are made only for a cell that shows them, in their places, and kept."""
+        from applemusic.library import Track
+        from applemusic.widgets.song_title import SongTitle
+        from applemusic.widgets.track_row import TrackRow
+
+        cell = SongTitle()
+        cell.bind(Track({'id': 'i.1', 'title': 'Invented Song', 'artist': 'Invented Artist'}))
+        cell.set_selected(False)
+        cell.set_playing(False)
+        self.assertEqual((cell._check, cell._scrim, cell._badge, cell._artist),
+                         (None, None, None, None))
+        cell.bind(Track({'id': 'i.2', 'title': 'Explicit Song', 'explicit': True,
+                         'artist': 'Invented Artist'}), playing=True, stacked=True)
+        cell.set_selected(True, True)
+        self.assertIs(cell.get_first_child(), cell.check)
+        self.assertTrue(cell.check.get_visible() and cell.check.get_active())
+        self.assertIs(cell.playing_scrim.get_parent(), cell.cover_overlay)
+        self.assertEqual(cell.playing_scrim.get_opacity(), 1)
+        self.assertIs(cell.explicit_badge.get_prev_sibling(), cell.label)
+        self.assertTrue(cell.explicit_badge.get_visible())
+        self.assertEqual(cell.artist_label.get_text(), 'Invented Artist')
+        cell.bind(Track({'id': 'i.3', 'title': 'Clean Song'}))
+        self.assertFalse(cell.explicit_badge.get_visible())
+        self.assertEqual(cell.playing_scrim.get_opacity(), 0)
+
+        row = TrackRow()
+        row.bind(Track({'id': 'i.1', 'title': 'Invented Song', 'trackNumber': 1}),
+                 album_artist='')
+        row.set_selected(False)
+        self.assertEqual((row._check, row._scrim, row._badge, row._artist),
+                         (None, None, None, None))
+        row.bind(Track({'id': 'i.2', 'title': 'Song', 'explicit': True, 'artist': 'Guest'}),
+                 playing=True)
+        row.set_selected(True)
+        self.assertIs(row.get_first_child(), row.check)
+        self.assertIs(row.playing_scrim.get_parent(), row.cover_slot)
+        self.assertIs(row.explicit_badge.get_prev_sibling(), row.title_label)
+        self.assertIs(row.artist_label.get_prev_sibling(), row.title_box)
+        self.assertTrue(row.artist_label.get_visible())
+
     def test_freed(self):
         from applemusic.library import Track
         from applemusic.widgets.song_title import SongTitle

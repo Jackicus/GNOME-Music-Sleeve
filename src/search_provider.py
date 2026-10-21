@@ -28,7 +28,8 @@ search (a song whose search_key does), case and accents folded (library.fold), t
 as the Shell splits what is typed, and ranked by rank(): the title that is the search, then
 one starting with it, then one holding it, then a subtitle match, each in the store's order.
 Songs come from the Songs store only once it is built (library.songs_ready: the Songs or
-the Search page asked); a search never builds it, which takes a second on a big library.
+the Search page asked); a search never builds it, which takes a second on a big library. Its
+SongEntries are looked through, and only the songs answered are made Tracks.
 The stores are scanned SCAN_STEP items at a time with a yield to the frame clock between,
 so a window open meanwhile keeps painting.
 
@@ -43,7 +44,7 @@ from gettext import gettext as _
 
 from gi.repository import Gio, GLib
 
-from .library import Track, fold, yield_to_frames
+from .library import Track, fold, song_track, yield_to_frames
 
 log = logging.getLogger(__name__)
 
@@ -135,8 +136,8 @@ def item_rank(item, terms):
 
 
 def song_rank(track, terms):
-    """rank() for a Track, by its search_key: the folded title, then the artist and the
-    album on lines of their own."""
+    """rank() for a Track (or a SongEntry of the Songs store), by its search_key: the folded
+    title, then the artist and the album on lines of their own."""
     title, _separator, rest = track.search_key.partition('\n')
     return rank(title, rest, terms)
 
@@ -302,6 +303,8 @@ class SearchProvider:
                     continue
                 matches = await self._scan(store, kind, terms)
                 for score, position, obj in matches[:RESULTS_PER_KIND]:
+                    if kind == 'song':
+                        obj = song_track(obj)
                     identifier = result_id(kind, obj.id)
                     found[identifier] = obj
                     ranked.append((score, order, position, identifier))
@@ -314,18 +317,20 @@ class SearchProvider:
         if library is None:
             return None
         if kind == 'song':
-            return library.songs if library.songs_ready else None
+            return library.songs.entries if library.songs_ready else None
         return getattr(library, kind + 's', None)
 
     async def _scan(self, store, kind, terms):
         """A store's matches as (rank, position, object), best first, the frame clock given
-        its turn every SCAN_STEP items (a store that changes meanwhile is read as it is)."""
+        its turn every SCAN_STEP items (a store that changes meanwhile is read as it is). The
+        songs' store is the Songs store's list of SongEntries."""
         matches = []
         position = 0
-        while position < store.get_n_items():
+        listed = isinstance(store, list)
+        while position < (len(store) if listed else store.get_n_items()):
             if position and position % SCAN_STEP == 0:
                 await yield_to_frames()
-            obj = store.get_item(position)
+            obj = store[position] if listed else store.get_item(position)
             if obj is not None:
                 score = song_rank(obj, terms) if kind == 'song' else item_rank(obj, terms)
                 if score is not None:
@@ -365,7 +370,8 @@ class SearchProvider:
             return library.by_id(kind, item_id)
         if not library.songs_ready:
             return None
-        return next((track for track in library.songs if track.id == item_id), None)
+        return next((song_track(song) for song in library.songs.entries if song.id == item_id),
+                    None)
 
     def activate(self, identifier):
         """Open what `identifier` names: the window presented (built, with the engine's

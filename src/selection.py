@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """Which tracks of a list are selected, in a track list's selection mode (docs/decisions.md):
-a set of the Track objects themselves, not a Gtk.MultiSelection's positions.
+the Track objects themselves (or what `key` knows them by), not a Gtk.MultiSelection's
+positions.
 
-    selection = Selection()
+    selection = Selection(key=None)
     selection.start()                     # the mode on (`active`), nothing selected
     selection.toggle(track)               # selected or not; the anchor of a range
     selection.extend(shown, track)        # from the anchor to track, in `shown`'s order
@@ -20,7 +21,10 @@ select nothing, `Gtk.NoSelection`); a Gtk.MultiSelection keeps positions, which 
 table's and a playlist's filters replace at every key (inserted, then the old removed: the
 rows recycled), so the selection would go with each; and its Select All would take a detail
 page's hero and footer rows. A Library reload keeps its Track objects, so they are stable
-keys, and a song a playlist holds twice is two Tracks, each selected by itself.
+keys, and a song a playlist holds twice is two Tracks, each selected by itself. The Songs
+table's list holds the library's songs as SongEntries and binds their Tracks to its rows:
+its Selection's `key` is library.song_key, which knows an entry and its Track as one song,
+so that Select All of 40,000 songs makes no Track.
 
 `changed` is emitted after every change of the selected set or of `active`.
 
@@ -42,7 +46,12 @@ from .library import track_ref
 
 
 class Selection(GObject.Object):
-    """The selected tracks of one list: see the module."""
+    """The selected tracks of one list: see the module. `changed` after every change.
+
+    `key(obj)`, when given, is what a track is selected by (by default the object itself):
+    the Songs table's list holds SongEntries and its rows their Tracks, both known by
+    library.song_key(); ordered() answers the elements of `shown`, whichever of the two
+    selected them."""
 
     __gtype_name__ = 'AppleMusicSelection'
 
@@ -50,11 +59,12 @@ class Selection(GObject.Object):
         'changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
-    def __init__(self):
+    def __init__(self, key=None):
         super().__init__()
+        self._key = key if key is not None else _itself
         self._active = False
-        self._selected = set()
-        self._anchor = None  # the track a Shift range starts from: the last toggled
+        self._selected = {}  # key -> the track selected
+        self._anchor = None  # the key of the track a Shift range starts from: the last toggled
 
     @GObject.Property(type=bool, default=False, flags=GObject.ParamFlags.READABLE)
     def active(self):
@@ -68,7 +78,7 @@ class Selection(GObject.Object):
 
     def has(self, track):
         """Whether track is selected."""
-        return track in self._selected
+        return self._key(track) in self._selected
 
     def start(self):
         """Turn the mode on, nothing selected (nothing when it is on already)."""
@@ -94,11 +104,12 @@ class Selection(GObject.Object):
         """Select track, or unselect it when it is selected; it is the anchor of the next
         range either way. The mode is turned on first when it is off."""
         self.start()
-        if track in self._selected:
-            self._selected.discard(track)
+        key = self._key(track)
+        if key in self._selected:
+            del self._selected[key]
         else:
-            self._selected.add(track)
-        self._anchor = track
+            self._selected[key] = track
+        self._anchor = key
         self.emit('changed')
 
     def extend(self, shown, track):
@@ -108,19 +119,22 @@ class Selection(GObject.Object):
         again. Nothing for a track not shown."""
         self.start()
         tracks = list(shown)
-        if track not in tracks:
+        keys = [self._key(element) for element in tracks]
+        key = self._key(track)
+        if key not in keys:
             return
-        if self._anchor is None or self._anchor not in tracks:
-            self._anchor = track
-        start, end = tracks.index(self._anchor), tracks.index(track)
+        if self._anchor is None or self._anchor not in keys:
+            self._anchor = key
+        start, end = keys.index(self._anchor), keys.index(key)
         low, high = min(start, end), max(start, end)
-        self._selected.update(tracks[low:high + 1])
+        self._selected.update(zip(keys[low:high + 1], tracks[low:high + 1], strict=True))
         self.emit('changed')
 
     def select_all(self, shown):
         """Select every track shown (the mode turned on first)."""
         self.start()
-        self._selected = set(shown)
+        key = self._key
+        self._selected = {key(element): element for element in shown}
         self.emit('changed')
 
     def select_none(self):
@@ -137,21 +151,28 @@ class Selection(GObject.Object):
         changed the selection."""
         if not self._selected:
             return False
-        kept = self._selected.intersection(shown)
+        key = self._key
+        kept = {key(element) for element in shown}.intersection(self._selected)
         if len(kept) == len(self._selected):
             return False
-        self._selected = kept
+        self._selected = {name: track for name, track in self._selected.items()
+                          if name in kept}
         if self._anchor is not None and self._anchor not in kept:
             self._anchor = None
         self.emit('changed')
         return True
 
     def ordered(self, shown):
-        """The selected tracks in `shown`'s order."""
+        """The selected tracks in `shown`'s order: the elements of `shown` selected."""
         selected = self._selected
         if not selected:
             return []
-        return [track for track in shown if track in selected]
+        key = self._key
+        return [element for element in shown if key(element) in selected]
+
+
+def _itself(obj):
+    return obj
 
 
 class Picks(GObject.Object):

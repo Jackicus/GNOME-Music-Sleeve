@@ -446,7 +446,9 @@ class SongsPageTest(PageTestCase):
             mode.key('toggle', song)
         # What the filter hides leaves the selection, and an action never reaches it.
         page.set_filter('Song 0001')
-        self.assertEqual(mode.selection.ordered(page._matches), [songs[1]])
+        # The table's own list holds the songs as SongEntries, each the same song as its row.
+        from applemusic.library import song_tracks
+        self.assertEqual(song_tracks(mode.selection.ordered(page._matches)), [songs[1]])
         self.assertEqual(mode.selection.count, 1)
         page.set_filter('')
         self.assertEqual(mode.selection.count, 1)

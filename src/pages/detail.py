@@ -135,6 +135,24 @@ REVEAL_FRAMES = 10
 # row about 1.5 ms to make, bind and lay out (twelve made frames of 17-21 ms).
 GROW_TRACKS = 5
 
+# The width from which a playlist's tracks are a table: detail.blp's table_breakpoint.
+TABLE_WIDTH = 720  # sp
+
+
+def expects_table(width, text_scale=1.0):
+    """Whether a page `width` px wide will be past the table's breakpoint (TABLE_WIDTH sp,
+    an sp being `text_scale` px): what the page assumes before its first layout, so that its
+    rows are bound once, as the table has them (the breakpoint applies only as the page is
+    laid out, after the rows it shows first are bound)."""
+    return bool(width) and width > 0 and width >= TABLE_WIDTH * text_scale
+
+
+def text_scale():
+    """px to an sp: the text scale factor (gtk-xft-dpi over 96 dpi), as a breakpoint's sp."""
+    settings = Gtk.Settings.get_default()
+    dpi = settings.get_property('gtk-xft-dpi') if settings is not None else 0
+    return dpi / (96 * 1024) if dpi and dpi > 0 else 1.0
+
 # A playlist's Sort By, the order its page shows (never the playlist's own: Duplicate, Play
 # and a reorder keep that): key -> (its menu label, the Track properties compared in turn;
 # none, the playlist's order). Labels are looked up when a page is built; their mnemonics
@@ -590,6 +608,13 @@ class DetailPage(Adw.NavigationPage):
         self._table_headers = set()  # the table's headers bound: room for the check boxes
         connect_weak(self.table_breakpoint, 'apply', self._on_table_apply)
         connect_weak(self.table_breakpoint, 'unapply', self._on_table_unapply)
+        # Told from the content pane's width before the first layout (expects_table()); the
+        # first paint puts it right if that was wrong (_on_painted).
+        window = app().get_active_window() if app() is not None else None
+        content_width = getattr(window, 'content_width', None)
+        self._table = expects_table(content_width() if content_width is not None else 0,
+                                    text_scale())
+        self._table_checked = False
         connect_weak(self.play_button, 'clicked', self._on_play_clicked)
         connect_weak(self.shuffle_button, 'clicked', self._on_shuffle_clicked)
         connect_weak(self.add_button, 'clicked', self._on_add_clicked)
@@ -2118,7 +2143,12 @@ class DetailPage(Adw.NavigationPage):
             show_notes(self, self.item.title, self.item.summary or '')
 
     def _on_painted(self, _clock):
-        """More under the notes, while they are cut to their three lines."""
+        """More under the notes, while they are cut to their three lines; at the first paint,
+        the table as its breakpoint has it (the page assumed it before: expects_table())."""
+        if not self._table_checked:
+            self._table_checked = True
+            current = self.get_child().get_current_breakpoint()
+            self.table = current is self.table_breakpoint
         layout = self.summary_label.get_layout()
         cut = self.summary_label.get_mapped() and layout is not None and layout.is_ellipsized()
         if cut != self.more_notes_button.get_visible():

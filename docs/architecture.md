@@ -86,7 +86,8 @@ touches widgets.
   shared by both), where the table has room for them.
   Songs, an album's and a playlist's songs select several in a selection mode
   (`widgets/selection_mode.py` over `selection.py`'s `Selection`, a set of the Track objects
-  the lists' binds read; the lists themselves select nothing), whose bar runs the item
+  the lists' binds read, the Songs table's by `library.song_key`; the lists themselves
+  select nothing), whose bar runs the item
   actions on them all (`queue_objects()`, `add_items_to_playlist()`, `remove_entries()`,
   Favourite Songs' `remove_favourites()`, `ask_remove_from_library()`). Home shows the library's shelves and Recently Played (`Engine.recently_played()`,
   through `home.py`'s pure parts: the kept answer at once, Apple's again once it is a minute

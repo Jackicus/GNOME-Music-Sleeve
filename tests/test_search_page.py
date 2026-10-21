@@ -206,6 +206,29 @@ class SearchPageTest(PageTestCase):
         self.app.player.track = None
         self.assertFalse(any(item.get_child().playing for item in page._bound_songs))
 
+    async def test_your_library_songs_are_matched_in_python_and_follow_the_store(self):
+        """The Songs store's songs matching the text, the first SONG_LIMIT listed, and
+        matched again when the store changes (a sync) while the page shows them."""
+        from applemusic.library import Track
+        from applemusic.pages.search import SONG_LIMIT
+
+        page = await self.search_page()
+        self.library.songs_ready = True
+        self.library.songs.splice(0, 0, [
+            Track(dict(track('l.album001', n), title=f'Tide {n}')) for n in range(SONG_LIMIT + 5)])
+        page.set_mode('library')
+        self.type(page, 'tide')
+        self.assertEqual(len(page._song_matches), SONG_LIMIT + 5)
+        self.assertEqual(page._songs_shown.get_n_items(), SONG_LIMIT)
+        self.assertTrue(page.songs_see_all_button.get_visible())
+        self.assertEqual(page.songs_count_label.get_label(), f'{SONG_LIMIT + 5} songs')
+        self.type(page, 'tide 1')  # narrowed: only the matches before are tested
+        self.assertEqual([song.title for song in page._song_matches],
+                         ['Tide 1'] + [f'Tide {n}' for n in range(10, 20)])
+        self.library.songs.splice(0, 0, [Track(dict(track('l.album002', 0), title='Tide 1b'))])
+        self.assertTrue(await self.until(lambda: len(page._song_matches) == 12))
+        self.assertEqual(page._songs_shown.get_item(0).title, 'Tide 1b')
+
     async def test_your_library_lists_top_results_songs_artists_albums_playlists(self):
         from applemusic.library import Track
 

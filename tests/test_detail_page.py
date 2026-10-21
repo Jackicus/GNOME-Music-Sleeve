@@ -484,6 +484,20 @@ class DetailPageTest(PageTestCase):
             self.assertTrue(row.artist_label.get_visible())
             self.assertFalse(row.columns.get_homogeneous())
 
+    async def test_a_page_known_to_be_wide_binds_its_rows_once_as_the_table(self):
+        # Told before its first layout that it will be a table (expects_table(), from the
+        # window's content width), the page binds its rows as the table has them: none made
+        # the list's line of the artist, as a row bound as the list and then rebound would.
+        with mock.patch('applemusic.pages.detail.expects_table', return_value=True):
+            page = await self.push(self.page(album(1, tracks=3, kind='playlist')))
+        self.assertTrue(await self.until(lambda: page.table and len(page._bound) == 3))
+        rows = [item.get_child().track_row for item in page._bound]
+        self.assertTrue(all(row._artist is None and row.artist_link.get_visible()
+                            for row in rows))
+        # Assumed wrongly, the first paint puts it right (_on_painted): the window is wide.
+        self.assertTrue(await self.until(lambda: page._table_checked))
+        self.assertTrue(page.table)
+
     async def test_a_tables_genre_and_year_columns(self):
         # The optional columns (song_columns.py), chosen in Sort By as on Songs (the
         # song-columns setting both follow): the rows' genre and year, the header's titles,
@@ -1929,6 +1943,16 @@ class ArtistWordsTest(PageTestCase):
         self.assertEqual(artist_catalog_id(Item({'id': 'l.art001', 'kind': 'artist',
                                                  'catalogId': '43'})), '43')
         self.assertIsNone(artist_catalog_id(Item({'id': 'l.art_abc', 'kind': 'artist'})))
+
+
+class ExpectsTableTest(unittest.TestCase):
+    def test_the_table_is_assumed_from_the_width_before_the_first_layout(self):
+        from applemusic.pages.detail import TABLE_WIDTH, expects_table
+
+        self.assertTrue(expects_table(TABLE_WIDTH))
+        self.assertFalse(expects_table(TABLE_WIDTH - 1))
+        self.assertFalse(expects_table(1000, text_scale=1.5))  # 720sp is 1080 px there
+        self.assertFalse(expects_table(0))  # no width known: as a narrow page
 
 
 if __name__ == '__main__':
