@@ -38,8 +38,9 @@ new version instead.
    apply to tags. Once anyone has installed it the tag is fixed: never move or delete it.
 8. Publish the GitHub release for that tag (`gh release create`), with the metainfo's notes as
    the body and `meson dist -C build`'s tarball attached. **This is the release.**
-9. Before the tag, bump the PKGBUILD's `pkgver` and reset `pkgrel=1`. The checksum cannot be
-   right yet, since the tarball does not exist: the Package workflow takes the release's own
+9. Before the tag, bump the PKGBUILD's `pkgver`, reset `pkgrel=1` and set `sha256sums=('SKIP')`
+   (then `.SRCINFO`): the tarball does not exist yet. On the release's pull request the
+   Package workflow builds the checkout's own source; on the release it takes the release's
    tarball, checks it against its `.sha256sum`, and builds with that checksum.
 10. Watch the Package workflow that publishing starts (`gh run list -w Package`); it ends by
    attaching the `.pkg.tar.zst` to the release. If it fails, fix the PKGBUILD on `main` and

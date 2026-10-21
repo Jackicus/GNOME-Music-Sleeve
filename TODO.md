@@ -15,16 +15,19 @@ Playlist for albums and playlists, drag and drop, a fuller Up Next with History 
 the last session restored, live radio, any Chromium-based browser with Widevine),
 [v1.0.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.0.1), fixes for what
 the audit found in 1.0.0 (sign-out, the restored session, Up Next's Undo and Autoplay, the
-library's upgrade, You Might Also Like, the focus after a filter), and
-[v1.1.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.0), the latest: what
+library's upgrade, You Might Also Like, the focus after a filter),
+[v1.1.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.0): what
 the audit left for the
 [After v1.0.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/5) milestone
 (selection mode, Up Next's reordering, a mini player, Replay, a Genres view and Genre and Year
 columns, View Credits, streaming quality, song-change notifications, New's banners and More to
 Explore, the charts by genre, drags out as links, a playlist's Duplicate, Sort By and Add
 Songs…, pre-release albums, folder moves to the top level and into folders) and a lazy
-Songs store. A
-release is a tag and a GitHub release (`docs/release.md`); why the app is built the way it
+Songs store, and
+[v1.1.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.1), the latest: a
+fix for 1.1.0 aborting once the desktop described its actions (#546), and the first release
+with an Arch package attached. A release is a tag and a GitHub release with the tarball and
+the Arch package (`docs/release.md`); why the app is built the way it
 is, is in `docs/decisions.md`.
 
 ## Open
