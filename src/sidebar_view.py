@@ -42,9 +42,8 @@ songs adds its songs to it (COPY, or MOVE from a sidebar row, whose drag offers 
 else; actions.drop); songs, music videos and albums dropped on All Playlists make a new
 playlist of them, named in New Playlist's dialog (COPY, actions.drop_new_playlist); a
 playlist (or a folder) dropped on a folder goes into it, and on All Playlists to the top
-level (MOVE, actions.drop_into_folder), as far as api.can_move_to_folder() allows (#389:
-the top level and a folder into a folder are switched off), unless that is where it is, or
-a folder would go into itself (refused: 0). The row a drop
+level (MOVE, actions.drop_into_folder), as far as api.can_move_to_folder() allows, unless
+that is where it is, or a folder would go into itself (refused: 0). The row a drop
 would go to is highlighted (DropFeedback), the sidebar scrolls while the pointer is near
 its top or bottom edge, and a closed folder the drag hovers over opens after a moment
 (SPRING_DELAY_MS), so what is inside can take the drop. The playlists' and folders' own

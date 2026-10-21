@@ -89,7 +89,9 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 Found in music.apple.com's own code (its `requestCreateNewPlaylist`,
 `requestUpdatePlaylist`, `requestRemoveFromPlaylist`, `requestUpdatePlaylistTracks`,
 `requestMoveToFolder` and `requestDeleteFromLibrary`) and checked against a real account on
-2026-10-03, on playlists and folders made for the check and deleted after it:
+2026-10-03, on playlists and folders made for the check and deleted after it; the moves to
+the top level, the folder moves and a folder made inside another on 2026-10-21, the same
+way, the listings read past MusicKit's cache (`apiFresh`) once a second:
 
 | Request | Apple's answer |
 |---|---|
@@ -98,10 +100,10 @@ Found in music.apple.com's own code (its `requestCreateNewPlaylist`,
 | `DELETE /v1/me/library/playlists/<id>/tracks?ids[library-songs]=<id>&mode=all` | 204: every entry of that song goes. The tracks of a library playlist are `library-songs` (or `library-music-videos`) by the song's own `i.` id, and carry no id of the entry |
 | `PUT /v1/me/library/playlists/<id>/tracks` `{data: [{id, type}]}` | 204: the list replaced whole, in that order (the web player's reorder: `Engine.reorder_playlist()`); one entry of a song held twice is removed so. Checked on a playlist of three songs; one of about 500, how soon the tracks read shows the new order, and whether an entry Apple cannot play survives it are not checked yet |
 | `DELETE /v1/me/library/playlists/<id>` | 204. A playlist is still listed for minutes after, nameless (`api.is_deleted`), and a second DELETE is a 500 |
-| `PUT /v1/me/library/playlists/<id>/parent` `{data: [{id: <folder>, type: 'library-playlist-folders'}]}` | 204: moved into the folder (Move to Folder, a drop on a sidebar folder) |
-| `PUT /v1/me/library/playlists/<id>/parent` with Apple's root folder, `p.playlistsroot` | Not checked yet: the app does not offer it (`api.MOVE_TO_TOP_LEVEL` off) |
-| `PUT /v1/me/library/playlist-folders/<id>/parent` (the same body) | Not checked yet: the app does not offer it (`api.MOVE_FOLDERS` off) |
-| `POST /v1/me/library/playlist-folders` `{attributes: {name}}` | 201 with the folder (New Folder…; the web player makes none). With `relationships: {parent: {data: [{id, type: 'library-playlist-folders'}]}}` for a folder inside another: not checked yet |
+| `PUT /v1/me/library/playlists/<id>/parent` `{data: [{id: <folder>, type: 'library-playlist-folders'}]}` | 204, no body: moved into the folder (Move to Folder, a drop on a sidebar folder). Listed in the folder, and gone from the top level, 5 s later (2026-10-21) |
+| `PUT /v1/me/library/playlists/<id>/parent` with Apple's root folder, `p.playlistsroot` | 204, no body: out of its folder to the top level (Top Level, a drop on All Playlists; `api.MOVE_TO_TOP_LEVEL`). Listed at the top level, and gone from the folder, 5.2 s later (2026-10-21) |
+| `PUT /v1/me/library/playlist-folders/<id>/parent` (the same body) | 204, no body: the folder, with what it holds, into the folder (`api.MOVE_FOLDERS`), or with `p.playlistsroot` to the top level. To the top level: listed there, and gone from its folder, 3.3 to 4.9 s later. Into a folder: gone from the top level 5.5 s later, but listed in the new folder only 59 s later, so for most of a minute Apple lists it nowhere (2026-10-21): `actions.FOLDER_SETTLE_DELAYS`, `TreeChange.entries` |
+| `POST /v1/me/library/playlist-folders` `{attributes: {name}}` | 201 with the folder, `{data: [{id, type, href, attributes: {canDelete, canEdit, dateAdded, name}}]}` (New Folder…; the web player makes none); listed at the top level 5.8 s later. With `relationships: {parent: {data: [{id, type: 'library-playlist-folders'}]}}`, a folder inside another: the same 201, and the parent honoured (a read with `include=parent` names it at once), but listed in it only 61 s later (2026-10-21) |
 | `PATCH /v1/me/library/playlist-folders/<id>` `{attributes: {name}}` | 204, although Apple lists every folder with `canEdit` false |
 | `DELETE /v1/me/library/playlist-folders/<id>` | 204, the folder and what is in it gone; but playlists deleted with their folder stayed listed, nameless, for more than half an hour, where one deleted by itself left the listing within minutes: `Engine.delete_folder()` deletes the contents first |
 

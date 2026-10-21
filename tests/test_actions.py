@@ -636,22 +636,22 @@ class MenuTest(unittest.TestCase):
             {'id': 'p.fd3', 'title': 'Late_Night', 'parent': 'p.fd1', 'children': []},
             {'id': 'p.fd2', 'title': 'Mornings', 'parent': 'root', 'children': []}], playlists)
         playlist, evenings = playlists[0], tree.folder('p.fd1').item
-        # Its own folder is no target, but holds one; the top level is not offered while
-        # Apple is not known to take it (api.MOVE_TO_TOP_LEVEL).
+        # Its own folder is no target, but holds one; the top level is, out of its folder.
         moves = move_targets(tree, playlist)
-        self.assertEqual(moves, (False, [('p.fd1', 'Evenings', False,
-                                          [('p.fd3', 'Late_Night', True, [])]),
-                                         ('p.fd2', 'Mornings', True, [])]))
+        self.assertEqual(moves, (True, [('p.fd1', 'Evenings', False,
+                                         [('p.fd3', 'Late_Night', True, [])]),
+                                        ('p.fd2', 'Mornings', True, [])]))
         menu = build_menu(playlist, moves=moves)
         submenu = submenu_of(menu, 'Mov_e to Folder')
         self.assertEqual(actions_of(submenu), [
+            ('win.item-move-to-folder', ('root', 'playlist', 'p.pl1')),  # Top Level
             ('win.item-move-to-folder', ('p.fd3', 'playlist', 'p.pl1')),
             ('win.item-move-to-folder', ('p.fd2', 'playlist', 'p.pl1')),
             ('win.item-move-to-folder', ('', 'playlist', 'p.pl1'))])  # New Folder…
         # One list: a folder inside another named with the one holding it (its own folder,
         # Evenings, not offered), underscores no mnemonics; no folder is a submenu.
-        self.assertEqual(labels_of(submenu), ['Evenings › Late__Night', 'Mornings',
-                                              'New _Folder…'])
+        self.assertEqual(labels_of(submenu), ['_Top Level', 'Evenings › Late__Night',
+                                              'Mornings', 'New _Folder…'])
         # A Gtk.PopoverMenu names a submenu's page by its label: with the same folders in
         # Add to Playlist, still no two submenus of one label (test_context_menu opens them).
         both = build_menu(playlist, moves=moves, playlists=[
@@ -663,24 +663,42 @@ class MenuTest(unittest.TestCase):
             letters = [label[label.index('_') + 1].lower() for label in level
                        if '_' in label and '__' not in label]
             self.assertEqual(len(letters), len(set(letters)), level)
-        # Apple's own playlist at the top level: every folder; Favourite Songs: never.
+        # Apple's own playlist at the top level: every folder, not the top level it is at;
+        # Favourite Songs: never.
+        self.assertEqual(move_targets(tree, playlists[1])[0], False)
         self.assertEqual(move_targets(tree, playlists[1])[1][1][:3], ('p.fd2', 'Mornings', True))
         self.assertIsNone(move_targets(tree, playlists[2]))
         self.assertIsNone(move_targets(tree, LIBRARY_ALBUM))
         self.assertIsNone(move_targets(tree, tree.root.item))
-        self.assertIsNone(move_targets(tree, evenings))  # folders wait for api.MOVE_FOLDERS
-        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True), \
-                mock.patch.object(api, 'MOVE_FOLDERS', True):
-            top, entries = move_targets(tree, playlist)
-            self.assertTrue(top)
-            moved = submenu_of(build_menu(playlist, moves=(top, entries)), 'Mov_e to Folder')
-            self.assertEqual(actions_of(moved)[0],
-                             ('win.item-move-to-folder', ('root', 'playlist', 'p.pl1')))
-            self.assertEqual(labels_of(moved)[0], 'Top Level')
-            # A folder: not into itself or what is inside it, nor the top level it is at.
-            self.assertEqual(move_targets(tree, evenings),
-                             (False, [('p.fd2', 'Mornings', True, [])]))
-            self.assertEqual(move_targets(tree, tree.folder('p.fd3').item)[0], True)
+        # A folder: not into itself or what is inside it, nor the top level it is at; one
+        # inside a folder to the top level too, and Move to Folder in its menu.
+        self.assertEqual(move_targets(tree, evenings),
+                         (False, [('p.fd2', 'Mornings', True, [])]))
+        late = tree.folder('p.fd3').item
+        self.assertEqual(move_targets(tree, late), (True, [('p.fd2', 'Mornings', True, [])]))
+        folder_menu = submenu_of(build_menu(late, moves=move_targets(tree, late)),
+                                 'Mov_e to Folder')
+        self.assertEqual(actions_of(folder_menu), [
+            ('win.item-move-to-folder', ('root', 'folder', 'p.fd3')),
+            ('win.item-move-to-folder', ('p.fd2', 'folder', 'p.fd3')),
+            ('win.item-move-to-folder', ('', 'folder', 'p.fd3'))])
+        # A move switched off in api is offered nowhere: no Top Level, no folder moved.
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', False), \
+                mock.patch.object(api, 'MOVE_FOLDERS', False):
+            self.assertEqual(move_targets(tree, playlist)[0], False)
+            moved = submenu_of(build_menu(playlist, moves=move_targets(tree, playlist)),
+                               'Mov_e to Folder')
+            self.assertNotIn('_Top Level', labels_of(moved))
+            self.assertIsNone(move_targets(tree, evenings))
+
+    def test_how_long_a_change_is_looked_for(self):
+        # A folder into a folder: past the minute Apple took to list one there.
+        delays = actions_module.settle_delays('folder', 'p.fd1')
+        self.assertIs(delays, actions_module.FOLDER_SETTLE_DELAYS)
+        self.assertGreater(sum(delays), 75)
+        for kind, folder_id in (('folder', 'root'), ('playlist', 'p.fd1'), ('playlist', 'root')):
+            self.assertIs(actions_module.settle_delays(kind, folder_id),
+                          actions_module.SETTLE_DELAYS)
 
     def test_main_menu_starts_with_new_playlist_and_folder(self):
         # New Playlist… is the window's win.new-playlist, whose key (Ctrl+N) the menu shows.
@@ -2073,9 +2091,9 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.confirms = []  # (heading, body, confirm, done) per confirmation
         self.actions.ask_name = lambda *args: self.asked.append(args)
         self.actions.ask_confirm = lambda *args: self.confirms.append(args)
-        delays = actions_module.SETTLE_DELAYS
-        actions_module.SETTLE_DELAYS = (0, 0, 0)
-        self.addCleanup(setattr, actions_module, 'SETTLE_DELAYS', delays)
+        for name in ('SETTLE_DELAYS', 'FOLDER_SETTLE_DELAYS'):
+            self.addCleanup(setattr, actions_module, name, getattr(actions_module, name))
+            setattr(actions_module, name, (0, 0, 0))
         self.actions.playlist_order.settle = (0,)
 
 
@@ -2458,23 +2476,60 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_moves_that_are_not_offered_are_refused(self):
         await self.run_action('item-move-to-folder', 'p.fd1', 'playlist', 'p.pl1')  # there
-        await self.run_action('item-move-to-folder', 'root', 'playlist', 'p.pl1')  # gated
-        await self.run_action('item-move-to-folder', 'p.fd2', 'folder', 'p.fd1')  # gated
         await self.run_action('item-move-to-folder', 'p.fd1', 'playlist', 'p.fav')
+        await self.run_action('item-move-to-folder', 'p.fd1', 'folder', 'p.fd1')  # itself
+        await self.run_action('item-move-to-folder', 'root', 'folder', 'p.fd1')  # there
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.app.toasts, ['This cannot be moved there'] * 4)
-        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', True):
+        # A move switched off in api is refused too.
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', False), \
+                mock.patch.object(api, 'MOVE_FOLDERS', False):
             await self.run_action('item-move-to-folder', 'root', 'playlist', 'p.pl1')
+            await self.run_action('item-move-to-folder', 'p.fd2', 'folder', 'p.fd1')
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.app.toasts, ['This cannot be moved there'] * 6)
+
+    async def test_a_playlist_to_the_top_level(self):
+        await self.run_action('item-move-to-folder', 'root', 'playlist', 'p.pl1')
         self.assertEqual(self.writes(), [('move_to_folder', 'playlist', 'p.pl1', 'root')])
-        self.assertEqual(self.app.toasts[-1], 'Moved “Road Trip” to the top level')
+        self.assertEqual(self.parent_of('playlist', 'p.pl1'), 'root')
+        self.assertEqual(self.app.toasts, ['Moved “Road Trip” to the top level'])
+        self.assertEqual(self.app.buttons, [('Undo', 'win.item-move-to-folder',
+                                             ('p.fd1', 'playlist', 'p.pl1'))])
+        # Looked for at the top level as long as a playlist is, then the sync.
+        self.assertEqual(self.app.engine.calls.count(('folder_children', 'root')), 3)
+        self.assertEqual(self.app.syncs, ['playlists'])
+
+    async def test_a_folder_into_a_folder_and_out(self):
+        actions_module.FOLDER_SETTLE_DELAYS = (0,) * 5
+        await self.run_action('item-move-to-folder', 'p.fd1', 'folder', 'p.fd2')
+        self.assertEqual(self.writes(), [('move_to_folder', 'folder', 'p.fd2', 'p.fd1')])
+        self.assertEqual(self.parent_of('folder', 'p.fd2'), 'p.fd1')
+        self.assertEqual(self.app.toasts, ['Moved “Mornings” to “Evenings”'])
+        self.assertEqual(self.app.buttons[-1], ('Undo', 'win.item-move-to-folder',
+                                                ('root', 'folder', 'p.fd2')))
+        # Apple lists a folder in a folder only about a minute later: looked for longer.
+        self.assertEqual(self.app.engine.calls.count(('folder_children', 'p.fd1')), 5)
+        # Undo: back out to the top level, looked for there as a playlist is.
+        await self.run_action('item-move-to-folder', 'root', 'folder', 'p.fd2')
+        self.assertEqual(self.writes()[-1], ('move_to_folder', 'folder', 'p.fd2', 'root'))
+        self.assertEqual(self.parent_of('folder', 'p.fd2'), 'root')
+        self.assertEqual(self.app.engine.calls.count(('folder_children', 'root')), 3)
+        self.assertEqual(self.app.syncs, ['playlists', 'playlists'])
 
     async def test_dropping_playlists_on_a_folder(self):
         refs = ItemRefs.for_objects([self.app.playlist])
         self.assertTrue(self.actions.can_move_refs(refs, 'p.fd2'))
         self.assertFalse(self.actions.can_move_refs(refs, 'p.fd1'))  # where it is
-        self.assertFalse(self.actions.can_move_refs(refs, 'root'))  # not confirmed yet
-        self.assertFalse(self.actions.can_move_refs(ItemRefs.for_objects([self.folder]),
-                                                    'p.fd2'))
+        self.assertTrue(self.actions.can_move_refs(refs, 'root'))  # out to the top level
+        folder = ItemRefs.for_objects([self.folder])
+        self.assertTrue(self.actions.can_move_refs(folder, 'p.fd2'))  # a folder into one
+        self.assertFalse(self.actions.can_move_refs(folder, 'root'))  # where it is
+        self.assertFalse(self.actions.can_move_refs(folder, self.folder.id))  # itself
+        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', False), \
+                mock.patch.object(api, 'MOVE_FOLDERS', False):
+            self.assertFalse(self.actions.can_move_refs(refs, 'root'))
+            self.assertFalse(self.actions.can_move_refs(folder, 'p.fd2'))
         self.assertFalse(self.actions.can_move_refs(ItemRefs.for_objects([LIBRARY_TRACK]),
                                                     'p.fd2'))
         self.assertFalse(self.actions.can_move_refs(ItemRefs.for_objects([self.app.favourites]),
@@ -2486,6 +2541,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.writes(), [('move_to_folder', 'playlist', 'p.pl1', 'p.fd2')])
 
     async def test_new_folder(self):
+        actions_module.FOLDER_SETTLE_DELAYS = (0,) * 5
         await self.run_action('item-new-folder', 'folder', 'p.fd1')
         heading, confirm, name, description, done = self.asked[0]
         self.assertEqual((heading, confirm, name, description),
@@ -2498,7 +2554,8 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.library.by_id('folder', 'p.fdnew').title, 'Box')
         self.assertEqual(self.window.selected, ['folder:p.fdnew'])
         self.assertEqual(self.app.toasts, ['Created “Box”'])
-        self.assertIn(('folder_children', 'p.fd1'), self.app.engine.calls)
+        # Apple lists a folder made in a folder only about a minute later: looked for longer.
+        self.assertEqual(self.app.engine.calls.count(('folder_children', 'p.fd1')), 5)
         # At the top level, from the main menu or All Playlists.
         await self.run_action('item-new-folder', 'folder', 'root')
         self.asked[1][4]('Top', None)
@@ -2702,8 +2759,8 @@ class RemoveFromLibraryTest(unittest.IsolatedAsyncioTestCase):
         self.actions = ItemActions(self.window, self.app)
         self.confirms = []  # (heading, body, confirm, done) per confirmation
         self.actions.ask_confirm = lambda *args: self.confirms.append(args)
-        for name, value in (('SETTLE_DELAYS', (0, 0, 0)), ('REMOVAL_DELAYS', (0, 0, 0)),
-                            ('LISTING_LAG', 0)):
+        for name, value in (('SETTLE_DELAYS', (0, 0, 0)), ('FOLDER_SETTLE_DELAYS', (0, 0, 0)),
+                            ('REMOVAL_DELAYS', (0, 0, 0)), ('LISTING_LAG', 0)):
             self.addCleanup(setattr, actions_module, name, getattr(actions_module, name))
             setattr(actions_module, name, value)
 
@@ -2857,8 +2914,8 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
         self.asked = []
         self.actions.ask_confirm = lambda *args: self.confirms.append(args)
         self.actions.ask_name = lambda *args: self.asked.append(args)
-        for name, value in (('SETTLE_DELAYS', (0, 0, 0)), ('REMOVAL_DELAYS', (0, 0, 0)),
-                            ('LISTING_LAG', 0)):
+        for name, value in (('SETTLE_DELAYS', (0, 0, 0)), ('FOLDER_SETTLE_DELAYS', (0, 0, 0)),
+                            ('REMOVAL_DELAYS', (0, 0, 0)), ('LISTING_LAG', 0)):
             self.addCleanup(setattr, actions_module, name, getattr(actions_module, name))
             setattr(actions_module, name, value)
 

@@ -1956,11 +1956,16 @@ async def walkthrough(window):
           [button.get_tooltip_text() for button in new_folder] == ['New Folder'],
           ([button.get_tooltip_text() for button in new_folder], describe(window.get_focus())))
     found = None
+    folder_movable = False
     for _step in range(8):  # past Favourite Songs and the folders, to a playlist
         found = context_menu.find(grid.grid_view, window.get_focus())
-        if found is not None and window.item_actions.move_targets(found[1]) is not None:
+        movable = found is not None and window.item_actions.move_targets(found[1]) is not None
+        if movable and found[1].kind == 'folder':
+            folder_movable = True
+        if movable and found[1].kind == 'playlist':
             break
         await key(window, 'Right', 0.3)
+    check('Arrows pass folder tiles that can be moved, too', folder_movable)
     check('Arrows reach a playlist tile that can be moved',
           found is not None and found[1].kind == 'playlist', describe(window.get_focus()))
     await key(window, 'Menu', 0.6)

@@ -1341,9 +1341,13 @@ class TreeChange:
     (Library.hold()): `op` 'move' (the playlist or folder of `kind` and `id` into the folder
     `folder_id`, ROOT_FOLDER for the top level) or 'create' (a new folder `id` called
     `title`, in `folder_id`). `expires` is when Apple's listing wins regardless (_now()
-    seconds)."""
+    seconds). A folder's move carries `entries`, library.json's entries of the folder and
+    of the folders inside it as they were when it moved (Library.hold() fills them in):
+    Apple stops listing a folder where it was seconds after a move into another folder,
+    but lists it in its new folder only about a minute later, and a sync in between finds
+    it nowhere."""
 
-    __slots__ = ('op', 'kind', 'id', 'folder_id', 'title', 'expires')
+    __slots__ = ('op', 'kind', 'id', 'folder_id', 'title', 'expires', 'entries')
 
     def __init__(self, op, kind, item_id, folder_id, title='', hold=None):
         self.op = op
@@ -1352,6 +1356,7 @@ class TreeChange:
         self.folder_id = folder_id or ROOT_FOLDER
         self.title = title
         self.expires = _now() + (PENDING_HOLD if hold is None else hold)
+        self.entries = ()
 
     @classmethod
     def move(cls, kind, item_id, folder_id):
@@ -1394,6 +1399,24 @@ def folder_of(folders, kind, item_id):
     return ROOT_FOLDER
 
 
+def folder_entries(folders, folder_id):
+    """The entries of `folders` (library.json's) for the folder folder_id and every folder
+    inside it, the folder's first, as copies; none when the folder is not there."""
+    by_id = {_text(raw.get('id')): raw for raw in _dicts(folders)}
+    found = []
+    queue = [folder_id]
+    seen = set()
+    while queue:
+        raw = by_id.get(queue.pop(0))
+        if raw is None or _text(raw.get('id')) in seen:
+            continue
+        seen.add(_text(raw.get('id')))
+        found.append(dict(raw, children=list(_dicts(raw.get('children')))))
+        queue.extend(_text(child.get('id')) for child in _dicts(raw.get('children'))
+                     if child.get('kind') == 'folder')
+    return tuple(found)
+
+
 def change_settled(folders, change):
     """Whether library.json's `folders` shows the TreeChange already: the item listed in
     its new folder, the folder created."""
@@ -1406,9 +1429,11 @@ def apply_changes(folders, changes):
     """library.json's `folders` with the TreeChanges applied, in order, as a new list (the
     one given is left alone): a moved playlist or folder taken out of every folder's
     children and added to its new folder's (a folder's own `parent` follows), a created
-    folder added with no children. A change naming a folder the list lacks is skipped.
-    PlaylistTree orders each folder's contents by title, so where a child goes in its list
-    does not matter."""
+    folder added with no children. A moved folder the list lacks (a sync while Apple
+    listed it nowhere) is put back from the change's `entries`, with the folders inside it
+    that the list lacks too; failing that the change is skipped, as is one into a folder
+    the list lacks. PlaylistTree orders each folder's contents by title, so where a child
+    goes in its list does not matter."""
     if not changes:
         return list(_dicts(folders))
     result = _with_root(folders)
@@ -1425,7 +1450,14 @@ def apply_changes(folders, changes):
             result.append(entry)
             by_id[change.id] = entry
         elif change.kind == 'folder' and change.id not in by_id:
-            continue
+            for raw in change.entries:
+                entry_id = _text(raw.get('id'))
+                if entry_id and entry_id not in by_id:
+                    entry = dict(raw, children=list(_dicts(raw.get('children'))))
+                    result.append(entry)
+                    by_id[entry_id] = entry
+            if change.id not in by_id:
+                continue
         for raw in result:
             raw['children'] = [child for child in raw['children']
                                if (child.get('kind'), _text(child.get('id')))
@@ -1696,8 +1728,9 @@ class Library(GObject.Object):
         keeping the folder Items and stores, and `playlists-changed` emitted (the sidebar
         moves what moved, its selection and open folders kept). Every reload() goes on
         showing it until library.json does (change_settled()) or it expires (PENDING_HOLD);
-        load() forgets every change. False, and nothing held, for a move the tree refuses
-        (PlaylistTree.can_move()) or a folder created twice."""
+        a folder's move keeps the folder as shown now (TreeChange.entries), for a reload
+        whose file lists it nowhere. load() forgets every change. False, and nothing held,
+        for a move the tree refuses (PlaylistTree.can_move()) or a folder created twice."""
         if change.op == 'move' and not self._tree.can_move(change.kind, change.id,
                                                           change.folder_id):
             return False
@@ -1705,6 +1738,10 @@ class Library(GObject.Object):
                                       or self._tree.folder(change.folder_id) is None):
             return False
         if change.op == 'move':
+            if change.kind == 'folder':
+                # The folder as shown now, for a reload whose file lists it nowhere.
+                change.entries = folder_entries(apply_changes(self._folders, self._changes),
+                                                change.id)
             # A later move of the same item (Undo) replaces the one before: the two would
             # never both be listed.
             self._changes = [held for held in self._changes

@@ -131,10 +131,12 @@ list and the script together.
     size and the focus back where it was. Now Playing's Fullscreen button shows it too, and F11
     leaves it, back on that button. The script walks this after step 5.
 11. On All Playlists the header bar has New Playlist and New Folder, each named. A playlist's
-    tile (Ctrl+2, then the arrows) opens its menu with Menu or Shift+F10: Move to Folder
-    lists the folders it can go into by name, in one list (a folder inside another named
-    after both), then New Folder…, a new folder holding it. A move is confirmed by a toast (with Undo), which a
-    screen reader hears; dragging a playlist onto a sidebar folder does the same by pointer.
+    or a folder's tile (Ctrl+2, then the arrows) opens its menu with Menu or Shift+F10: Move
+    to Folder lists Top Level when it is in a folder, the folders it can go into by name, in
+    one list (a folder inside another named after both), then New Folder…, a new folder
+    holding it. A move is confirmed by a toast (with Undo), which a screen reader hears;
+    dragging a playlist or folder onto a sidebar folder (or All Playlists, the top level)
+    does the same by pointer.
     The other drops have their keys too: Play Later and Play Next in a menu are what a drop
     on the player bar does, Add to Playlist › New Playlist… what songs dropped on All
     Playlists do, and an album's or playlist's Add to Playlist what its tile dropped on a

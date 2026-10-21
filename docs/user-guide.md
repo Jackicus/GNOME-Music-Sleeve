@@ -320,13 +320,17 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - Playlist folders: **New Folder…** is in the main menu, in a folder's menu (a folder inside
   it) and in All Playlists' menu, and is the folder button beside the **+** of All Playlists
   and of a folder's page. A playlist's menu (in the sidebar, on its tile, or **More Options**
-  on its page) has **Move to Folder**: the folders it can go into, in one list (a folder
-  inside another is named after both, "Evenings › Late Night"), and **New Folder…**, a new
-  folder beside it with the playlist inside. Or drag the playlist's row in the sidebar, or its
-  tile in All Playlists or a folder's page, onto a folder in the sidebar: the folder lights
-  up when it can take it, a closed folder opens when you hold the drag over it, and the
-  sidebar scrolls when you drag near its top or bottom. The playlist moves at once; if Apple
-  refuses, it goes back and the app says why. The toast after a move has **Undo**.
+  on its page), and a folder's, has **Move to Folder**: **Top Level** (out of every folder),
+  the folders it can go into, in one list (a folder inside another is named after both,
+  "Evenings › Late Night"), and **New Folder…**, a new folder beside it with the playlist or
+  folder inside. Or drag the playlist's or folder's row in the sidebar, or its tile in All
+  Playlists or a folder's page, onto a folder in the sidebar, or onto **All Playlists** for
+  the top level: the row lights up when it can take it, a closed folder opens when you hold
+  the drag over it, and the sidebar scrolls when you drag near its top or bottom. A folder
+  moves with everything in it, never into itself or a folder inside it. It moves at once; if
+  Apple refuses, it goes back and the app says why. The toast after a move has **Undo**. A
+  folder moved into another folder, or made inside one, takes about a minute to reach Apple's
+  listing, and so your other devices.
 - **Add to Playlist** lists your playlists that take songs: those at the top level, then
   each folder's under the folder's name. In an album's or a playlist's menu (on its tile,
   or **More Options** on its page) it adds all its songs, in order, to the playlist you
@@ -426,9 +430,6 @@ Other limits:
   minutes listened or milestones. Whether Apple answers for a past year, and how it lists the
   years, has not been checked against a real account yet: a year it gives nothing for shows
   only its Replay playlist.
-- A playlist moves into a folder, but not yet out of every folder to the top level, and a
-  folder does not move into another folder: Apple's service has not been seen to take those
-  moves from the app yet, so it does not offer them. Apple's own apps can.
 - One Apple Account per build: a release install and a development build each have their own
   Chrome profile, cache and sign-in, so each is signed in and synced on its own.
 - The account's name next to the avatar is read from Apple's web page and may stay

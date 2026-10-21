@@ -58,9 +58,14 @@ changes, change it here, with the date. The plan they came from is in
   Apple answers with its id (no id, nothing to show), its page selected as a new playlist's is.
   The sidebar highlights the folder a drop goes into and draws no insertion line, since Apple
   orders each folder by title: where in it a drop lands means nothing. Moving to the top level
-  and a folder into another are written and tested but switched off (`api.MOVE_TO_TOP_LEVEL`,
-  `api.MOVE_FOLDERS`) until Apple has been seen to take them: the app offers no move Apple may
-  refuse, and the user guide's Known limitations says so. Drags are the app's own: one type,
+  (Top Level, a drop on All Playlists) and a folder into another or out to the top level were
+  switched on once Apple had been seen to take them (2026-10-21; `api.MOVE_TO_TOP_LEVEL`,
+  `api.MOVE_FOLDERS` stay as the switches, so the app never offers a move Apple may refuse).
+  Apple lists a folder in its new folder only about a minute after a move or a New Folder…
+  inside a folder, having stopped listing a moved one where it was within seconds: the sync
+  that follows waits for it (`actions.FOLDER_SETTLE_DELAYS`), and a held folder move keeps the
+  folder's entries (`TreeChange.entries`), so a sync in between, finding it nowhere, does not
+  take it and its playlists out of the sidebar. Drags are the app's own: one type,
   `library.ItemRefs`, and drop targets decide from the drag in progress
   (`widgets.dnd.current()`), so drags from other applications are not taken.
 - **Drags carry links outward** (2026-10-20). Every drag source also offers its objects'
@@ -106,7 +111,7 @@ changes, change it here, with the date. The plan they came from is in
   own rows' drags are moves within it, #361), and the bar shows only while something plays. Songs, music videos and albums (their songs)
   dropped on All Playlists make a new playlist of them, through New Playlist's dialog with the first one's title
   filled in (a name made up without asking would need a rename), and its page is shown once
-  Apple lists it; playlists dropped there still move to the top level (switched off, above).
+  Apple lists it; playlists and folders dropped there move to the top level (above).
   A drag carries its objects as well as their Refs (`ItemRefs.objects`), since a Ref names a
   song by the id a playlist takes, not the catalog id MusicKit queues it by.
 - **Add to Playlist for albums and playlists** (2026-10-20). As on every Apple client, an
