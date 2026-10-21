@@ -461,7 +461,7 @@ async def filter_far_down(window, page, name):
 
 
 def first_playlist():
-    """The library's first playlist of the user's: one with Rename…."""
+    """The library's first playlist of the user's: one with Edit Details…."""
     return next(node.item for node in app.library.playlist_tree().flat
                 if node.kind == 'playlist' and node.item.editable)
 
@@ -1070,6 +1070,72 @@ async def song_columns_step(window):
     app.settings.reset('song-columns')
     await asyncio.sleep(0.4)
     check('Off again, the column goes', not songs.genre_column.get_visible())
+
+
+def sidebar_title(window, widget):
+    """The title of the sidebar item whose row is (or holds) widget, in either mode, or ''."""
+    rows = window._sidebar.rows()
+    for index, row in enumerate(rows):
+        if widget is not None and (widget is row or widget.is_ancestor(row)):
+            return window.sidebar.get_items().get_item(index).get_title()
+    return ''
+
+
+async def new_button_step(window):
+    """The Playlists heading's New button: named, reached from the rows by Down in the
+    sidebar mode (and Down past it), by Tab in the page mode, Space opening its menu (New
+    Playlist…, New Folder…), Escape closing it with the focus back on the button."""
+    print("-- the Playlists heading's New button")
+    sidebar = window._sidebar
+    button = sidebar.new_button()
+    check('it is named "New Playlist or Folder"',
+          button is not None and button.get_tooltip_text() == 'New Playlist or Folder')
+    if button is None:
+        return
+    page_mode = window.sidebar.get_mode() == Adw.SidebarMode.PAGE
+    window.select_page('made-for-you')
+    await asyncio.sleep(0.6)
+    await key(window, '<primary>1', 0.6)
+    above = window.get_focus()
+    check('Ctrl+1 puts the focus on Made for You, the row above the heading',
+          sidebar_title(window, above) == 'Made for You', sidebar_title(window, above))
+    if page_mode:
+        await key(window, 'Tab', 0.3)
+        check('Tab moves on to the New button (the page mode)',
+              inside(window.get_focus(), button), describe(window.get_focus()))
+    else:
+        await key(window, 'Down', 0.3)
+        check('Down moves to the New button (the sidebar mode)',
+              inside(window.get_focus(), button), describe(window.get_focus()))
+    focus = window.get_focus()
+    await key(window, 'space', 0.6)
+    shown = [each for each in harness.popovers(button) if isinstance(each, Gtk.PopoverMenu)
+             and each.get_visible()]
+    if not shown and keyboard is None and inside(focus, button):
+        button.popup()  # GtkButton's own key binding, which the emulation cannot reach
+        await asyncio.sleep(0.6)
+        shown = [each for each in harness.popovers(button)
+                 if isinstance(each, Gtk.PopoverMenu) and each.get_visible()]
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check('Space opens its menu: New Playlist…, New Folder…',
+          labels == ['Ne_w Playlist…', 'New _Folder…'], labels)
+    await key(window, 'Escape', 0.4)
+    if keyboard is None:
+        for each in shown:
+            each.popdown()
+        await asyncio.sleep(0.4)
+    check('Escape closes it, the focus back on the button',
+          not any(each.get_visible() for each in shown)
+          and inside(window.get_focus(), button), describe(window.get_focus()))
+    if not page_mode:
+        await key(window, 'Down', 0.3)
+        check('Down moves on to All Playlists',
+              sidebar_title(window, window.get_focus()) == 'All Playlists',
+              sidebar_title(window, window.get_focus()))
+        await key(window, 'Up', 0.3)
+        await key(window, 'Up', 0.3)
+        check('Up, Up goes back to Made for You', window.get_focus() is above,
+              sidebar_title(window, window.get_focus()))
 
 
 async def walkthrough(window):
@@ -1906,6 +1972,7 @@ async def walkthrough(window):
         await key(window, 'Escape', 0.6)
         check('Escape goes back to Home', window.navigation_view.get_visible_page() is home,
               window.navigation_view.get_visible_page())
+    await new_button_step(window)
     print('-- folders')
     tree = app.library.playlist_tree()
     folder = next(node for node in tree.flat if node.kind == 'folder' and node.children)
@@ -2029,50 +2096,76 @@ async def walkthrough(window):
         await key(shown.get_root(), 'Escape', 0)
         await until(lambda: dialog_shown(window, Adw.ShortcutsDialog) is None)
         check('Escape closes it', dialog_shown(window, Adw.ShortcutsDialog) is None)
-    print("-- a playlist's name dialog")
-    from applemusic.dialogs.playlist import NameDialog
+    print('-- the playlist dialog')
+    from applemusic.dialogs.playlist import NameDialog, PlaylistDialog
 
     playlist = first_playlist()
     target = GLib.Variant('(ss)', ('playlist', playlist.id))
     window.activate_action('win.item-rename', target)
     await asyncio.sleep(0.8)
-    shown = dialog_shown(window, NameDialog)
-    check('Rename… opens the name dialog', shown is not None)
+    shown = dialog_shown(window, PlaylistDialog)
+    check('Edit Details… opens the playlist dialog', shown is not None
+          and shown.get_title() == 'Edit Details')
     if shown is not None:
         toplevel = shown.get_root()
         check('the name has the focus', inside(toplevel.get_focus(), shown.name_row),
               describe(toplevel.get_focus()))
-        # Rename refuses in the demo: recorded here, without the toast (which would take
-        # the next Escape).
+        await key(toplevel, 'Tab', 0.3)
+        check('Tab moves to the description', inside(toplevel.get_focus(),
+                                                     shown.description_view),
+              describe(toplevel.get_focus()))
+        await key(toplevel, 'Tab', 0.3)
+        check('Tab moves on to the folder', inside(toplevel.get_focus(), shown.folder_row),
+              describe(toplevel.get_focus()))
+        await key(toplevel, 'Tab', 0.3)
+        check('then to the switch: shown on the profile and in search',
+              inside(toplevel.get_focus(), shown.public_row), describe(toplevel.get_focus()))
+        shown.name_row.grab_focus()
+        # Edit Details refuses in the demo: recorded here, without the toast (which would
+        # take the next Escape).
         refused = []
         app.refuse_in_demo = lambda: refused.append(True) or True
         await type_into(toplevel.get_focus(), 'Invented Name')
         await key(toplevel, 'Return', 0)
         await until(lambda: refused)
         del app.refuse_in_demo
-        check('Enter in it renames', refused == [True], refused)
-        await until(lambda: dialog_shown(window, NameDialog) is None)
-        check('and closes it', dialog_shown(window, NameDialog) is None)
+        check('Enter in the name saves', refused == [True], refused)
+        await until(lambda: dialog_shown(window, PlaylistDialog) is None)
+        check('and closes it', dialog_shown(window, PlaylistDialog) is None)
         window.activate_action('win.item-rename', target)
         await asyncio.sleep(0.8)
-        shown = dialog_shown(window, NameDialog)
+        shown = dialog_shown(window, PlaylistDialog)
         if shown is not None:
             await key(shown.get_root(), 'Escape', 0)
-        await until(lambda: dialog_shown(window, NameDialog) is None)
-        check('Escape closes it, nothing renamed',
-              dialog_shown(window, NameDialog) is None and playlist.title != 'Invented Name')
+        await until(lambda: dialog_shown(window, PlaylistDialog) is None)
+        check('Escape closes it, nothing changed',
+              dialog_shown(window, PlaylistDialog) is None and playlist.title != 'Invented Name')
     await until(window.is_active)  # the keyboard back on the window, the dialog gone
     await key(window, '<primary>n', 0.8)
-    await until(lambda: dialog_shown(window, NameDialog) is not None)
-    shown = dialog_shown(window, NameDialog)
-    check('Ctrl+N opens New Playlist, the name with the focus',
-          shown is not None and shown.get_heading() == 'New Playlist'
-          and inside(shown.get_root().get_focus(), shown.name_row),
+    await until(lambda: dialog_shown(window, PlaylistDialog) is not None)
+    shown = dialog_shown(window, PlaylistDialog)
+    check('Ctrl+N opens New Playlist, the name with the focus, Create off while it is blank',
+          shown is not None and shown.get_title() == 'New Playlist'
+          and inside(shown.get_root().get_focus(), shown.name_row)
+          and not shown.confirm_button.get_sensitive(),
           describe(shown.get_root().get_focus()) if shown is not None else None)
+    if shown is not None:
+        await key(shown.get_root(), 'Escape', 0)
+    await until(lambda: dialog_shown(window, PlaylistDialog) is None)
+    check('Escape closes it', dialog_shown(window, PlaylistDialog) is None)
+    await until(window.is_active)
+    folder = next(node.item for node in app.library.playlist_tree().flat
+                  if node.kind == 'folder')
+    window.activate_action('win.item-rename', GLib.Variant('(ss)', ('folder', folder.id)))
+    await asyncio.sleep(0.8)
+    shown = dialog_shown(window, NameDialog)
+    check("A folder's Rename… opens the name dialog, the name with the focus",
+          shown is not None and inside(shown.get_root().get_focus(), shown.name_row))
     if shown is not None:
         await key(shown.get_root(), 'Escape', 0)
     await until(lambda: dialog_shown(window, NameDialog) is None)
     check('Escape closes it', dialog_shown(window, NameDialog) is None)
+    await until(window.is_active)
     print('-- the confirmation before Remove from Library')
     album = app.library.albums.get_item(0)
     window.activate_action('win.item-remove-from-library',
@@ -2628,12 +2721,19 @@ async def names(window):
     window.activate_action('win.item-rename',
                            GLib.Variant('(ss)', ('playlist', first_playlist().id)))
     await asyncio.sleep(1.0)
-    total += await unnamed('Rename Playlist')
-    from applemusic.dialogs.playlist import NameDialog
+    total += await unnamed('Edit Details')
+    from applemusic.dialogs.playlist import PlaylistDialog
 
-    renamed = dialog_shown(window, NameDialog)
-    if renamed is not None:
-        renamed.force_close()
+    edited = dialog_shown(window, PlaylistDialog)
+    if edited is not None:
+        edited.folder_row.activate()  # its list of folders open: each named
+        await asyncio.sleep(0.8)
+        total += await unnamed('Edit Details, its folders')
+        for popover in [each for toplevel in Gtk.Window.list_toplevels()
+                        for each in descendants(toplevel) if isinstance(each, Gtk.Popover)]:
+            popover.popdown()
+        await asyncio.sleep(0.3)
+        edited.force_close()
         await asyncio.sleep(0.5)
     from applemusic.dialogs.add_songs import AddSongsDialog
 

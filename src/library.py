@@ -107,6 +107,11 @@ EDITABLE = 'canEdit'
 # library (Apple's canDelete, which the sync copies there when it is false).
 REMOVABLE = 'canDelete'
 
+# The key in a playlist's raw `attributes` that is true when it is public: shown on the
+# account's profile and in search (Apple's isPublic, which the sync copies there when it is
+# true). The playlist dialog shows it, and Edit Details… changes it.
+PUBLIC = 'isPublic'
+
 # The kinds of Item Library.holds() answers for: what has an Add button on its page.
 HELD_KINDS = ('album', 'playlist')
 
@@ -961,6 +966,13 @@ class Item(GObject.Object):
         if not isinstance(attributes, dict):
             return True
         return attributes.get(FAVOURITES) is not True and attributes.get(EDITABLE) is not False
+
+    @property
+    def public(self):
+        """Whether this playlist is public, shown on the account's profile and in search:
+        attributes.isPublic in the raw Item (PUBLIC)."""
+        attributes = self.raw.get('attributes')
+        return isinstance(attributes, dict) and attributes.get(PUBLIC) is True
 
     @property
     def groups(self):

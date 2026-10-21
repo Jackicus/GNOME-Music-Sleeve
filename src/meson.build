@@ -29,6 +29,7 @@ foreach blueprint : files(
     'pages/songs.blp',
     'dialogs/add_songs.blp',
     'dialogs/credits.blp',
+    'dialogs/playlist.blp',
     'dialogs/preferences.blp',
     'dialogs/signin.blp',
     'player_bar.blp',

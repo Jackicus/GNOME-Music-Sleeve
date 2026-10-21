@@ -1495,6 +1495,50 @@ class DialogLifetimeTest(WidgetTestCase):
         del dialog  # the test's own reference
         await self.assert_freed(ref)
 
+    async def test_playlist_dialog(self):
+        from applemusic.actions import Details
+        from applemusic.dialogs.playlist import DESCRIPTION_LIMIT, PlaylistDialog
+
+        answers = []
+        folders = [('root', 'Top Level'), ('p.fd1', 'Evenings')]
+        dialog = PlaylistDialog('Edit Details', '_Save',
+                                Details('Road Trip', 'Long drives', 'p.fd1', False), folders,
+                                answers.append)
+        self.assertEqual(dialog.get_title(), 'Edit Details')
+        self.assertEqual(dialog.confirm_button.get_label(), '_Save')
+        self.assertEqual(dialog.details(), Details('Road Trip', 'Long drives', 'p.fd1', False))
+        dialog.name_row.set_text('  ')  # its handler, connected weakly, still runs
+        self.assertFalse(dialog.confirm_button.get_sensitive())  # no blank name
+        dialog.confirm_button.emit('clicked')
+        self.assertEqual(answers, [])
+        dialog.name_row.set_text(' Night Drive ')
+        self.assertTrue(dialog.confirm_button.get_sensitive())
+        dialog.description_view.get_buffer().set_text('Late\nwith the windows down')
+        dialog.folder_row.set_selected(0)
+        dialog.public_row.set_active(True)
+        dialog.present(self.window)
+        self.assertTrue(await self.until(dialog.get_mapped))
+        dialog.confirm_button.emit('clicked')  # answers and closes
+        self.assertEqual(answers, [Details('Night Drive', 'Late\nwith the windows down', 'root',
+                                           True)])
+        ref = dialog.weak_ref()
+        del dialog
+        self.assertTrue(await self.until(lambda: ref() is None or not ref().get_mapped()))
+        await self.assert_freed(ref)
+
+        # A new playlist: no folder row without choices, a description cut to Apple's limit.
+        dialog = PlaylistDialog('New Playlist', '_Create', None, None, answers.append)
+        self.assertFalse(dialog.folder_row.get_visible())
+        self.assertFalse(dialog.confirm_button.get_sensitive())
+        dialog.name_row.set_text('Fresh')
+        dialog.description_view.get_buffer().set_text('x' * (DESCRIPTION_LIMIT + 5))
+        self.assertEqual(dialog.details(), Details('Fresh', 'x' * DESCRIPTION_LIMIT, 'root',
+                                                   False))
+        ref = await self.presented_and_closed(dialog)  # Escape: no answer
+        del dialog
+        self.assertEqual(len(answers), 1)
+        await self.assert_freed(ref)
+
     async def closed(self, dialog):
         """A dialog presented already (by the code under test), closed as Escape would: a
         GObject weak reference to it."""

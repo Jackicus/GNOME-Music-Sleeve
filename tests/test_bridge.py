@@ -1616,6 +1616,29 @@ class BridgeTest(unittest.TestCase):
 
     @scenario("""
         mk.writeStatus = 201;
+        mk.writeBody = JSON.stringify({data: [{id: 'p.new2', type: 'library-playlists'}]});
+        await bridge.createPlaylist({name: 'Shown', isPublic: true}, [], null);
+        mk.writeStatus = 204;
+        mk.writeBody = '';
+        await bridge.updatePlaylist('p.pl1', {isPublic: true});
+        await bridge.updatePlaylist('p.pl1', {isPublic: false});
+        return {calls: mk.calls};
+    """)
+    def test_a_public_playlist(self, value):
+        # As the web player asks: `with=shared` when the write makes it public, and only then.
+        playlists = '/v1/me/library/playlists'
+        self.assertEqual(value['calls'][:3], [
+            ['request', playlists, {'params': {'with': 'shared'}, 'method': 'POST',
+                                    'body': {'attributes': {'name': 'Shown',
+                                                            'isPublic': True}}}],
+            ['request', f'{playlists}/p.pl1', {'params': {'with': 'shared'}, 'method': 'PATCH',
+                                               'body': {'attributes': {'isPublic': True}}}],
+            ['request', f'{playlists}/p.pl1', {'params': {}, 'method': 'PATCH',
+                                               'body': {'attributes': {'isPublic': False}}}],
+        ])
+
+    @scenario("""
+        mk.writeStatus = 201;
         mk.writeBody = JSON.stringify({data: [{id: 'p.fdnew', type: 'library-playlist-folders'}]});
         const inside = await bridge.createFolder({name: 'Box'}, 'p.fd1');
         const top = await bridge.createFolder({name: 'Top'}, null);

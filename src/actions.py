@@ -17,13 +17,15 @@ actions, the menus that offer them, and what a drop on the sidebar or the player
     actions.drop_new_playlist(refs)        # songs dropped on All Playlists: a new playlist
     actions.queue_drop(refs, next_up=False)   # dropped on the player bar: queued
     actions.move_to_folder(obj, folder_id) # a playlist (or folder) into a folder, at once
-    actions.new_folder(parent_id)          # a folder named in a dialog ('root': top level)
+    actions.new_folder(parent_id, name)    # a folder made in parent_id ('root': top level)
     actions.move_in_playlist(playlist, 3, 1)   # its 4th song 2nd (playlist_order.py)
     actions.queue_objects(tracks, later=False)  # a selection's Play Next (or Later)
     actions.remove_entries(playlist, tracks)    # a selection's Remove from Playlist, Undo
     actions.remove_favourites(tracks)           # Favourite Songs' Remove from Favourites, Undo
     actions.ask_remove_from_library(tracks)     # one confirmation, then all of them
     actions.new_playlist_of(tracks)             # New Playlist… holding them
+    actions.ask_new_playlist(folder_id=ROOT_FOLDER)   # New Playlist's dialog, made empty
+    actions.edit_details(playlist, before, after)     # Edit Details… confirmed: what changed
     actions.duplicate(playlist)                 # a copy, "<name> Copy", beside it, shown
     actions.ask_add_songs(playlist)             # Add Songs…: songs picked, added in one write
 
@@ -56,10 +58,13 @@ the engine's read of them), in order, in batches, with one toast that counts the
 add is not made twice while it runs. The playlists' own, each through a dialog
 (dialogs/playlist.py, dialogs/add_songs.py) but Duplicate:
 
-    item-new-playlist    a playlist named in a dialog: holding the song or video of the
+    item-new-playlist    a playlist made in the playlist dialog (its name, description,
+                         folder and whether it is public): holding the song or video of the
                          target (an album's or a playlist's songs, named after it), or in
                          the folder it names ('folder', 'root': the top level)
-    item-rename          a playlist's name and description, or a folder's name
+    item-rename          a playlist's Edit Details… (the playlist dialog, filled in: its
+                         name, description, folder and whether it is public), or a folder's
+                         Rename… (its name)
     item-delete          a playlist, or a folder with what is in it, once a dialog confirms
     item-new-folder      a folder named in a dialog, in the folder the target names
                          ('folder', 'root': the top level)
@@ -129,8 +134,8 @@ Playlist and, where it can go, Move Up and Move Down (a track shown in a playlis
 user's: `container`); Open in Browser, Copy Link (only an address anyone can open: not
 the web player's library routes; a library artist's is the catalog artist's page, which
 the engine finds through their songs); Add Songs… (a playlist of the user's: adds_to()),
-Duplicate (a library playlist: duplicates()), Rename… and Delete Playlist… or Delete
-Folder… (a playlist of the user's, Item.editable; a folder of theirs),
+Duplicate (a library playlist: duplicates()), Edit Details… and Delete Playlist… (a
+playlist of the user's, Item.editable) or Rename… and Delete Folder… (a folder of theirs),
 Remove from Library… (what the library holds: removal_target; a playlist of Apple's, which
 cannot be deleted as the user's own are; a catalog album or playlist held, as the library's
 own it was found as, Library.held_item()); a folder's menu starts with New Playlist… and New
@@ -167,7 +172,7 @@ opened: tests build the menus and run the actions with a stand-in window, app an
 
 import asyncio
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from gettext import gettext as _
 from gettext import ngettext
 from urllib.parse import urlsplit
@@ -178,8 +183,8 @@ from . import related
 from .backend import api
 from .backend.errors import EngineError
 from .backend.api import is_library_id
-from .library import (REMOVABLE, ROOT_FOLDER, TRACK_KINDS, TRACK_REF_KINDS, Item, ItemRefs,
-                      Track, TreeChange, entries_without, track_ref)
+from .library import (PUBLIC, REMOVABLE, ROOT_FOLDER, TRACK_KINDS, TRACK_REF_KINDS, Item,
+                      ItemRefs, Track, TreeChange, entries_without, track_ref)
 from .playlist_order import PlaylistOrder, refresh_playlist, sync_tracks
 
 log = logging.getLogger(__name__)
@@ -287,9 +292,93 @@ def pre_add_label():
     return _('Pre-_Add to Library')
 
 
+# A playlist's details as the playlist dialog (dialogs/playlist.py) shows them: its name,
+# its description, the id of the folder it is in (ROOT_FOLDER: the top level) and whether
+# it is public.
+Details = namedtuple('Details', 'name description folder public',
+                     defaults=('', '', ROOT_FOLDER, False))
+
+
+def playlist_changes(before, after):
+    """What an edit changed, from the Details the dialog opened with to those confirmed:
+    {name, description, public, folder}, each only when it differs (the name compared
+    stripped). Empty when nothing did."""
+    changed = {}
+    name = (after.name or '').strip()
+    if name and name != (before.name or '').strip():
+        changed['name'] = name
+    if (after.description or '') != (before.description or ''):
+        changed['description'] = after.description or ''
+    if bool(after.public) != bool(before.public):
+        changed['public'] = bool(after.public)
+    if (after.folder or ROOT_FOLDER) != (before.folder or ROOT_FOLDER):
+        changed['folder'] = after.folder or ROOT_FOLDER
+    return changed
+
+
+def folder_choices(tree, obj=None):
+    """The folders a playlist can be put in, for the playlist dialog's Folder row:
+    [(folder id, label)], Top Level (ROOT_FOLDER) first, then the folders in the sidebar's
+    order, one inside another named with the folders holding it (folder_path(): "Evenings ›
+    Late Night"). For a new playlist (obj None) every folder; for the playlist obj, the one
+    it is in and those Move to Folder offers (move_targets()), or None when it cannot be
+    moved at all (no row then)."""
+    if obj is not None and move_targets(tree, obj) is None:
+        return None
+    parent = None
+    if obj is not None:
+        node = tree.node(obj.kind, obj.id)
+        parent = node.parent.id if node.parent is not None else ROOT_FOLDER
+
+    def takes(folder_id):
+        return (obj is None or folder_id == parent
+                or (tree.can_move(obj.kind, obj.id, folder_id)
+                    and api.can_move_to_folder(obj.kind, folder_id)))
+
+    choices = [(ROOT_FOLDER, _('Top Level'))] if takes(ROOT_FOLDER) else []
+
+    def walk(node, path):
+        for child in node.children:
+            if child.kind != 'folder' or (obj is not None and child.item is obj):
+                continue
+            inside = (*path, child.item.title)
+            if takes(child.id):
+                choices.append((child.id, folder_path(inside)))
+            walk(child, inside)
+
+    if tree is not None:
+        walk(tree.root, ())
+    return choices
+
+
+def item_changes(item, written):
+    """The changes to merge into a playlist's Item after Engine.edit_playlist wrote
+    `written` ({name, description, public}, any of them): its title, summary and the
+    attributes' isPublic (library.PUBLIC), as a sync would read them."""
+    merged = {}
+    if 'name' in written:
+        merged['title'] = written['name']
+    if 'description' in written:
+        merged['summary'] = written['description']
+    if 'public' in written:
+        attributes = dict(item.raw.get('attributes') or {})
+        if written['public']:
+            attributes[PUBLIC] = True
+        else:
+            attributes.pop(PUBLIC, None)
+        merged['attributes'] = attributes
+    return merged
+
+
 def delete_label(kind):
     """Delete's label for a playlist, or for a folder (kind 'folder')."""
     return _('_Delete Folder…') if kind == 'folder' else action_labels()['item-delete']
+
+
+def rename_label(kind):
+    """item-rename's label: Edit Details… for a playlist (its name, description, folder and
+    whether it is public, in the playlist dialog), Rename… for a folder (kind 'folder')."""
+    return action_labels()['item-rename'] if kind == 'folder' else _('Edit De_tails…')
 
 
 def _synthetic(item_id):
@@ -784,8 +873,9 @@ def duplicate_name(name):
 
 
 def manage_items(obj):
-    """Add Songs… (a playlist of the user's), Duplicate (a library playlist), then Rename…
-    and Delete Playlist… (or Delete Folder…) for obj, when it is manageable."""
+    """Add Songs… (a playlist of the user's), Duplicate (a library playlist), then Edit
+    Details… and Delete Playlist… (or Rename… and Delete Folder…) for obj, when it is
+    manageable."""
     target = GLib.Variant('(ss)', (obj.kind, obj.id)) if describe(obj) is not None else None
     items = []
     if adds_to(obj):
@@ -793,7 +883,7 @@ def manage_items(obj):
     if duplicates(obj):
         items.append(menu_item('item-duplicate', target))
     if is_manageable(obj):
-        items += [menu_item('item-rename', target),
+        items += [menu_item('item-rename', target, label=rename_label(obj.kind)),
                   menu_item('item-delete', target, label=delete_label(obj.kind))]
     return items
 
@@ -2015,14 +2105,11 @@ class ItemActions:
         return self._run(self._send_queue, (commands, later), message, ensure=False)
 
     def new_playlist_of(self, objects):
-        """New Playlist… for a selection: a playlist named in a dialog holding the songs and
-        music videos `objects` in their order (create_playlist(objects=…)), shown once made.
-        The dialog."""
+        """New Playlist… for a selection: a playlist made in the playlist dialog holding the
+        songs and music videos `objects` in their order (create_playlist(objects=…)), shown
+        once made. The dialog."""
         objects = list(objects)
-        return self.ask_name(
-            _('New Playlist'), _('_Create'), '', '',
-            lambda name, description: self.create_playlist(name, description, objects=objects,
-                                                           show=True))
+        return self.ask_new_playlist(objects=objects, show=True)
 
     def remove_entries(self, playlist, tracks):
         """A selection's Remove from Playlist, or Delete on a song (DetailPage's
@@ -2278,7 +2365,7 @@ class ItemActions:
 
     def drop_new_playlist(self, refs):
         """Songs, music videos or albums (a library.ItemRefs of nothing else) dropped on
-        All Playlists: New Playlist's dialog, the name filled in with the first one's title,
+        All Playlists: the playlist dialog, the name filled in with the first one's title,
         makes a playlist holding them all, an album's songs (create_playlist()), whose page
         is then shown. False when the drop is refused (new_playlist_refs())."""
         if not new_playlist_refs(refs):
@@ -2289,11 +2376,8 @@ class ItemActions:
             title, objects = (name if len(tracks) == 1 else ''), None
         else:
             title, objects = '', self._ref_objects(refs)
-        self.ask_name(
-            _('New Playlist'), _('_Create'), name, '',
-            lambda name, description: self.create_playlist(name, description, tracks or (),
-                                                           None, title, show=True,
-                                                           objects=objects))
+        self.ask_new_playlist(name, tracks=tracks or (), title=title, show=True,
+                              objects=objects)
         return True
 
     def drop_into_folder(self, folder_id, refs):
@@ -2310,14 +2394,39 @@ class ItemActions:
     # -- managing playlists and folders ------------------------------------------------------
 
     def ask_name(self, heading, confirm, name='', description=None, done=None):
-        """The name dialog over the window (dialogs/playlist.py's NameDialog): `name` and
-        `description` filled in (None: no description to edit); done(name, description) when
-        it is confirmed. The dialog."""
+        """The name dialog over the window (dialogs/playlist.py's NameDialog), a folder's:
+        `name` filled in; done(name, description) when it is confirmed. The dialog."""
         from .dialogs.playlist import NameDialog
 
         dialog = NameDialog(heading, confirm, name, description, done)
         dialog.present(self.window)
         return dialog
+
+    def ask_playlist(self, heading, confirm, details, folders, done):
+        """The playlist dialog over the window (dialogs/playlist.py's PlaylistDialog), opened
+        with `details` (a Details), `folders` the Folder row's choices (folder_choices();
+        None: no row); done(details) when it is confirmed. The dialog."""
+        from .dialogs.playlist import PlaylistDialog
+
+        dialog = PlaylistDialog(heading, confirm, details, folders, done)
+        dialog.present(self.window)
+        return dialog
+
+    def ask_new_playlist(self, name='', folder_id=ROOT_FOLDER, **create):
+        """New Playlist's dialog: `name` filled in, in the folder folder_id (ROOT_FOLDER: the
+        top level; any folder can be chosen in it). Once confirmed the playlist is made as
+        the dialog says, with create_playlist()'s other arguments `create` (tracks, title,
+        show, objects). The dialog."""
+        folders = folder_choices(self.library.playlist_tree())
+        if folder_id not in {choice for choice, _label in folders}:
+            folder_id = ROOT_FOLDER
+
+        def done(details):
+            return self.create_playlist(details.name, details.description, folder_id=details.folder,
+                                 public=details.public, **create)
+
+        return self.ask_playlist(_('New Playlist'), _('_Create'),
+                                 Details(name or '', '', folder_id, False), folders, done)
 
     def ask_confirm(self, heading, body, confirm, done):
         """The confirmation before something is deleted, over the window
@@ -2327,34 +2436,27 @@ class ItemActions:
         return confirm_dialog(self.window, heading, body, confirm, done)
 
     def _on_new_playlist(self, _action, parameter):
-        """A new playlist, named in a dialog: in the folder the target names, or holding the
-        song or video it names, or the songs of the album or playlist it names (the name
-        filled in with its title)."""
+        """A new playlist, made in the playlist dialog: in the folder the target names, or
+        holding the song or video it names, or the songs of the album or playlist it names
+        (the name filled in with its title)."""
         obj, kind, item_id = self._unpack(parameter)
         if kind in SOURCE_KINDS:
             source = self._source(obj, kind, item_id)
-            return self.ask_name(
-                _('New Playlist'), _('_Create'), str(source.raw.get('title') or ''), '',
-                lambda name, description: self.create_playlist(name, description,
-                                                               objects=[source]))
+            return self.ask_new_playlist(str(source.raw.get('title') or ''), objects=[source])
         if kind == 'folder':
-            tracks, folder_id, title = (), item_id, ''
-        else:
-            track = playlist_track(obj) if obj is not None else None
-            tracks = (track or (kind, item_id),)
-            folder_id, title = None, obj.title if obj is not None else ''
-        return self.ask_name(
-            _('New Playlist'), _('_Create'), '', '',
-            lambda name, description: self.create_playlist(name, description, tracks,
-                                                           folder_id, title))
+            return self.ask_new_playlist(folder_id=item_id or ROOT_FOLDER)
+        track = playlist_track(obj) if obj is not None else None
+        return self.ask_new_playlist(tracks=(track or (kind, item_id),),
+                                     title=obj.title if obj is not None else '')
 
     def create_playlist(self, name, description='', tracks=(), folder_id=None, title='',
-                        show=False, objects=None):
-        """Make the playlist (Engine.create_playlist), confirm with a toast and follow Apple's
-        listing; one made empty (New Playlist), or with `show`, is then shown. `objects`:
-        albums, playlists or tracks whose songs it holds in place of `tracks`
-        (tracks_of()), counted in the toast; with none to add no playlist is made. The
-        task, or None."""
+                        show=False, objects=None, public=False):
+        """Make the playlist (Engine.create_playlist), in the folder folder_id (None or
+        ROOT_FOLDER: the top level), public (shown on the profile and in search) when
+        `public`, confirm with a toast and follow Apple's listing; one made empty (New
+        Playlist), or with `show`, is then shown. `objects`: albums, playlists or tracks
+        whose songs it holds in place of `tracks` (tracks_of()), counted in the toast; with
+        none to add no playlist is made. The task, or None."""
         if self.app.refuse_in_demo():
             return None
         if title:
@@ -2374,7 +2476,7 @@ class ItemActions:
                         return
                     message = added_message(len(tracks), name, new=True)
                 new_id = await self.engine.create_playlist(name, description, tracks,
-                                                           folder_id)
+                                                           folder_id, public=public)
             except EngineError as error:
                 self.app.report(error)
                 return
@@ -2432,8 +2534,50 @@ class ItemActions:
         if obj.kind == 'folder':
             return self.ask_name(_('Rename Folder'), _('_Rename'), obj.title, None,
                                  lambda name, _description: self.rename(obj, name))
-        return self.ask_name(_('Rename Playlist'), _('_Rename'), obj.title, obj.summary or '',
-                             lambda name, description: self.rename(obj, name, description))
+        return self.ask_edit_details(obj)
+
+    def ask_edit_details(self, playlist):
+        """Edit Details…: the playlist dialog filled in with a playlist's name, description,
+        folder and whether it is public; what is changed in it is written once confirmed
+        (edit_details()). The dialog."""
+        before = Details(playlist.title or '', playlist.summary or '',
+                         self._parent_of(playlist), playlist.public)
+        folders = folder_choices(self.library.playlist_tree(), playlist)
+        return self.ask_playlist(_('Edit Details'), _('_Save'), before, folders,
+                                 lambda after: self.edit_details(playlist, before, after))
+
+    def edit_details(self, playlist, before, after):
+        """What Edit Details… changed (playlist_changes(), from the Details
+        `before` to `after`) written: the name, description and whether it is public in one
+        write (Engine.edit_playlist), which the Item and the sidebar show at once, then a
+        new folder as Move to Folder moves it (move_to_folder(): at once, with its toast and
+        Undo); the library follows Apple's listing. The task, or None when nothing changed
+        (or with the demo library)."""
+        changed = playlist_changes(before, after)
+        if not changed or self.app.refuse_in_demo():
+            return None
+        written = {key: changed[key] for key in ('name', 'description', 'public')
+                   if key in changed}
+        folder = changed.get('folder')
+        parent = self._parent_of(playlist)
+
+        async def run():
+            if written:
+                try:
+                    await self.app.player.ensure_engine()
+                    await self.engine.edit_playlist(playlist.id, **written)
+                except EngineError as error:
+                    self.app.report(error)
+                    return False
+                playlist.merge(item_changes(playlist, written))
+                self.library.place_playlists()  # the sidebar retitles and places it now
+            if folder is not None:
+                task = self.move_to_folder(playlist, folder)
+                return bool(task is not None and await task)
+            await self._follow_listing(parent, playlist.id, playlist.title)
+            return True
+
+        return self.app.spawn(run())
 
     def rename(self, obj, name, description=None):
         """Give a playlist of the user's its name (and its description, unless None), or a

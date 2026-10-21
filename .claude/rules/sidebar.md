@@ -74,6 +74,13 @@ entry: it is spliced out and in, and the window selects it again by key).
   one above the titled ones on the `.header` itself, never on its insides
   (tests/test_sidebar.py checks the headers). Page mode has no `.navigation-sidebar`: its
   sections are `AdwPreferencesGroup`s.
+- A header is made again whenever the list updates its headers (a new Stack each time),
+  and 1.9 has no suffix for one: the controller adds a page of its own to the Playlists
+  header (the title and the New button: `place_header_suffix()`) after every change that can
+  remake it (`update_rows()`, the items' `items-changed`), and in page mode sets the
+  group's `header-suffix`; with 1.10's `AdwSidebarSection:suffix` it uses that. The list's
+  Up and Down go row to row past a header (`move-cursor`), so a capture-phase key controller
+  steps through the button (`header_step()`).
 - In sidebar mode it names none of its rows for assistive technology and says nothing of a
   folder's state; the controller sets both on the rows itself. It builds a mode's rows
   before it notifies `mode`, so `update_rows()` runs in that handler (and once more in an

@@ -68,7 +68,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `bitrate(kbps)` | `{bitrate}` after `mk.bitrate` is set: 64 is `MusicKit.PlaybackBitrate.STANDARD` (High Efficiency), anything else `HIGH` (256, High Quality); null only reads. `bitrate` is null when MusicKit says none ("Streaming quality") |
 | `queueJump(index)` | `{ok: true}` (`mk.changeToMediaAtIndex`) |
 | `rating(kind, id, value)`, `addToLibrary(kind, id)`, `addToPlaylist(playlistId, tracks)` | `{ok: true}`, or a throw with Apple's status and message. `tracks` is `[{id, type}]`, appended in order by one `POST /v1/me/library/playlists/<id>/tracks` `{data: tracks}` (`addToPlaylist(playlistId, songId, type)`, one song, still works); the engine sends an album's or a playlist's in runs of `api.PLAYLIST_BATCH` (100), one after the other: Apple documents no limit, and none has been checked yet. Writes go through `mk.api.client.createRequest(...).send()`: Apple answers them 202 or 204 with no body, which `music()` cannot read (a body Apple does send comes back as `data`) |
-| `createPlaylist(attributes, tracks, parentId)` | `{id}`, the new playlist's; `attributes` `{name, description?}`, `tracks` `[{id, type}]` |
+| `createPlaylist(attributes, tracks, parentId)` | `{id}`, the new playlist's; `attributes` `{name, description?, isPublic?}`, `tracks` `[{id, type}]`; `with=shared` in the query when `isPublic` is true, as the web player asks |
 | `removeFromLibrary(type, id)` | `{ok: true}`, or a throw as above: `DELETE /v1/me/library/<type>/<id>` (below) |
 | `favourite(type, id, on)` | `{ok: true}`, or a throw as above: `POST /v1/me/favorites?ids[<type>]=<id>` (`on`), else a `DELETE` of the same; the web player's `UpdateFavoritesIntent` (an artist's star, below) |
 | `apiFresh(path, params)` | the JSON body of a `GET` through the request builder, never answered from `music()`'s cache (a read that must see a write: an artist's `inFavorites`); a throw with Apple's status and message |
@@ -96,7 +96,7 @@ way, the listings read past MusicKit's cache (`apiFresh`) once a second:
 | Request | Apple's answer |
 |---|---|
 | `POST /v1/me/library/playlists` `{attributes: {name, description?}, relationships: {tracks: {data: [{id, type}]}, parent: {data: [{id, type: 'library-playlist-folders'}]}}}` | 201 with the new playlist; both relationships may be left out (an empty playlist at the top level). Listed by the listings 4 to 6.5 s later |
-| `PATCH /v1/me/library/playlists/<id>` `{attributes: {name?, description?}}` | 204; either attribute alone; listed within a second |
+| `PATCH /v1/me/library/playlists/<id>` `{attributes: {name?, description?, isPublic?}}` | 204; any attribute alone; listed within a second. The web player adds `?with=shared` when it makes the playlist public (`updatePlaylist` does too); `isPublic: false` alone answered 204 (2026-10-21). Making one public was not tried on the account: it would show on the profile |
 | `DELETE /v1/me/library/playlists/<id>/tracks?ids[library-songs]=<id>&mode=all` | 204: every entry of that song goes. The tracks of a library playlist are `library-songs` (or `library-music-videos`) by the song's own `i.` id, and carry no id of the entry |
 | `PUT /v1/me/library/playlists/<id>/tracks` `{data: [{id, type}]}` | 204: the list replaced whole, in that order (the web player's reorder: `Engine.reorder_playlist()`); one entry of a song held twice is removed so. Checked on a playlist of three songs; one of about 500, how soon the tracks read shows the new order, and whether an entry Apple cannot play survives it are not checked yet |
 | `DELETE /v1/me/library/playlists/<id>` | 204. A playlist is still listed for minutes after, nameless (`api.is_deleted`), and a second DELETE is a 500 |
@@ -122,6 +122,19 @@ own `id` and `type` as Apple gave them (`api.playlist_entries()`): an entry with
 refused (`api`) and nothing is written; a list that is not the one the app showed is
 refused as `conflict` (`api.reordered_entries()`). The ids alone say whether it changed: a
 rename moves `lastModifiedDate` too, and no count is listed.
+
+A library playlist's cover cannot be set from the web (checked 2026-10-21, #556). The web
+player's own playlist form (create and edit: its `requestCreateNewPlaylist` and
+`requestUpdatePlaylist`) has a title (255 characters at most), a description (2,000) and a
+"make public" check box, and sends `{name, description, isPublic}` and nothing else; neither
+its code nor MusicKit JS has an upload of any image, and Apple's documented creation request
+(`LibraryPlaylistCreationRequest`) takes a name, a description, the tracks and the parent.
+A PATCH of `{attributes: {artwork: {url, width, height}}}` on a playlist made for the check
+answered 204 and the playlist's read showed no `artwork` after it: Apple ignores it. A new
+playlist answers with `canDelete`, `canEdit`, `dateAdded`, `description`, `hasCatalog`,
+`hasCollaboration`, `isPublic` (false), `lastModifiedDate`, `name` and `playParams`, and no
+`artwork` until Apple's own apps give it one (the web player draws one from its songs'
+covers). So the playlist dialog (src/dialogs/playlist.py) has no image.
 
 ### Removing from the library
 

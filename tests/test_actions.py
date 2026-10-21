@@ -28,6 +28,7 @@ from applemusic.actions import (ItemActions, build_menu, can_play, describe,
                                 station_target, web_url)
 from applemusic.backend import api
 from applemusic import actions as actions_module
+from applemusic.actions import Details, folder_choices, playlist_changes
 from applemusic.backend.errors import EngineError
 from applemusic.library import (Item, ItemRefs, PlaylistTree, Ref, Track, apply_changes,
                                 track_ref)
@@ -680,6 +681,10 @@ class MenuTest(unittest.TestCase):
             ('win.item-delete', ('folder', 'l.fd1'))])
         self.assertIn('_Delete Folder…', labels_of(build_menu(FOLDER)))
         self.assertIn('New _Folder…', labels_of(build_menu(FOLDER)))
+        # A folder is renamed; a playlist's details are edited, in the playlist dialog.
+        self.assertIn('Rena_me…', labels_of(build_menu(FOLDER)))
+        self.assertIn('Edit De_tails…', labels_of(build_menu(PLAYLIST)))
+        self.assertNotIn('Rena_me…', labels_of(build_menu(PLAYLIST)))
         # All Playlists (the top level's folder Item): new ones there, nothing to rename.
         self.assertEqual(actions_of(build_menu(TOP_LEVEL)), [
             ('win.item-new-playlist', ('folder', 'root')),
@@ -994,12 +999,16 @@ class FakeEngine(GObject.Object):
         await self._record('related', kind, item_id)
         return self.related_answers.get((kind, item_id), {'album': None, 'artists': []})
 
-    async def create_playlist(self, name, description='', tracks=(), folder_id=None):
-        await self._record('create_playlist', name, description, tuple(tracks), folder_id)
+    async def create_playlist(self, name, description='', tracks=(), folder_id=None,
+                              public=False):
+        # A public one's call says so; the others' as they were.
+        await self._record('create_playlist', name, description, tuple(tracks), folder_id,
+                           *(('public',) if public else ()))
         return 'p.new'
 
-    async def edit_playlist(self, playlist_id, name=None, description=None):
-        await self._record('edit_playlist', playlist_id, name, description)
+    async def edit_playlist(self, playlist_id, name=None, description=None, public=None):
+        await self._record('edit_playlist', playlist_id, name, description,
+                           *(() if public is None else (public,)))
 
     async def delete_playlist(self, playlist_id):
         await self._record('delete_playlist', playlist_id)
@@ -1729,17 +1738,17 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         # New Playlist… in an album's Add to Playlist: the name filled in with its title,
         # its songs read, the playlist made holding them, the toast counting them.
         asked = []
-        self.actions.ask_name = lambda *args: asked.append(args)
+        self.actions.ask_playlist = lambda *args: asked.append(args)
         album = Item({'id': 'l.alb9', 'kind': 'album', 'title': 'Tidewater', 'groups': [
             {'entries': [{'id': 'i.s1', 'title': 'One'}, {'id': 'i.s2', 'title': 'Two'}]}]})
         self.actions.menu_for(album)
         self.actions.actions['item-new-playlist'].activate(GLib.Variant('(ss)',
                                                                         ('album', 'l.alb9')))
-        _heading, _confirm, name, _description, done = asked[0]
-        self.assertEqual(name, 'Tidewater')
-        await done('Tidewater', '')
+        _heading, _confirm, details, _folders, done = asked[0]
+        self.assertEqual(details.name, 'Tidewater')
+        await done(details)
         self.assertIn(('create_playlist', 'Tidewater', '', (('song', 'i.s1'), ('song', 'i.s2')),
-                       None), self.app.engine.calls)
+                       'root'), self.app.engine.calls)
         self.assertEqual(self.app.toasts[0], 'Added 2 songs to the new playlist “Tidewater”')
 
     def test_container_tracks_and_the_messages(self):
@@ -2155,6 +2164,54 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.loved_shown(), (True, False))
 
 
+class PlaylistDetailsTest(unittest.TestCase):
+    """The playlist dialog's Folder row (folder_choices) and what an edit changed
+    (playlist_changes)."""
+
+    def setUp(self):
+        self.playlist = Item({'id': 'p.pl1', 'kind': 'playlist', 'title': 'Road Trip'})
+        self.favourites = Item({'id': 'p.fav', 'kind': 'playlist', 'title': 'Favourite Songs',
+                                'attributes': {'isFavourites': True}})
+        self.tree = PlaylistTree([
+            {'id': 'root', 'title': '', 'parent': None, 'children': [
+                {'kind': 'folder', 'id': 'p.fd1'}, {'kind': 'folder', 'id': 'p.fd3'},
+                {'kind': 'playlist', 'id': 'p.fav'}]},
+            {'id': 'p.fd1', 'title': 'Evenings', 'parent': 'root', 'children': [
+                {'kind': 'folder', 'id': 'p.fd2'}, {'kind': 'playlist', 'id': 'p.pl1'}]},
+            {'id': 'p.fd2', 'title': 'Late', 'parent': 'p.fd1', 'children': []},
+            {'id': 'p.fd3', 'title': '', 'parent': 'root', 'children': []},
+        ], [self.playlist, self.favourites])
+
+    def test_a_new_playlist_can_go_anywhere(self):
+        # In the sidebar's order (the untitled folder first, as its title sorts).
+        self.assertEqual(folder_choices(self.tree), [
+            ('root', 'Top Level'), ('p.fd3', 'Untitled Folder'), ('p.fd1', 'Evenings'),
+            ('p.fd2', 'Evenings › Late')])
+        self.assertEqual(folder_choices(None), [('root', 'Top Level')])
+
+    def test_a_playlist_where_it_is_and_where_it_can_go(self):
+        self.assertEqual(folder_choices(self.tree, self.playlist), [
+            ('root', 'Top Level'), ('p.fd3', 'Untitled Folder'), ('p.fd1', 'Evenings'),
+            ('p.fd2', 'Evenings › Late')])
+        # Favourite Songs stays where it is: no row.
+        self.assertIsNone(folder_choices(self.tree, self.favourites))
+        # Apple not known to take a move out to the top level: not offered, but where it is.
+        with mock.patch.object(api, 'can_move_to_folder',
+                               lambda kind, folder_id: folder_id != 'root'):
+            self.assertEqual([choice for choice, _label in
+                              folder_choices(self.tree, self.playlist)],
+                             ['p.fd3', 'p.fd1', 'p.fd2'])
+
+    def test_what_an_edit_changed(self):
+        before = Details('Road Trip', 'Long drives', 'p.fd1', False)
+        self.assertEqual(playlist_changes(before, before), {})
+        self.assertEqual(playlist_changes(before, before._replace(name=' Road Trip ')), {})
+        self.assertEqual(playlist_changes(before, before._replace(name='  ')), {})  # no name
+        self.assertEqual(playlist_changes(before, Details(' Night Drive ', '', 'root', True)),
+                         {'name': 'Night Drive', 'description': '', 'public': True,
+                          'folder': 'root'})
+
+
 class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
     """New Playlist, Rename, Delete and Remove from Playlist: the dialogs stood in for (what
     they would answer is called directly), the engine's writes recorded."""
@@ -2176,7 +2233,9 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.actions = ItemActions(self.window, self.app)
         self.asked = []  # (heading, confirm, name, description, done) per name dialog
         self.confirms = []  # (heading, body, confirm, done) per confirmation
+        self.details = []  # (heading, confirm, details, folders, done) per playlist dialog
         self.actions.ask_name = lambda *args: self.asked.append(args)
+        self.actions.ask_playlist = lambda *args: self.details.append(args)
         self.actions.ask_confirm = lambda *args: self.confirms.append(args)
         for name in ('SETTLE_DELAYS', 'FOLDER_SETTLE_DELAYS'):
             self.addCleanup(setattr, actions_module, name, getattr(actions_module, name))
@@ -2331,14 +2390,18 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call[0] for call in self.writes()][:2],
                          ['reorder_playlist', 'remove_from_playlist'])
 
-    async def test_rename_a_playlist_and_its_description(self):
+    async def test_edit_details_of_a_playlist(self):
         self.app.engine.listings = [[], [{'kind': 'playlist', 'id': 'p.pl1',
                                           'name': 'Night Drive'}]]
         await self.run_action('item-rename', 'playlist', 'p.pl1')
-        heading, confirm, name, description, done = self.asked[0]
-        self.assertEqual((heading, confirm, name, description),
-                         ('Rename Playlist', '_Rename', 'Road Trip', ''))
-        done('Night Drive', 'Late, with the windows down')
+        heading, confirm, details, folders, done = self.details[0]
+        self.assertEqual((heading, confirm), ('Edit Details', '_Save'))
+        self.assertEqual(details, Details('Road Trip', '', 'p.fd1', False))
+        # In its folder now, or at the top level, or in the other folder.
+        self.assertEqual(folders, [('root', 'Top Level'), ('p.fd1', 'Evenings'),
+                                   ('p.fd2', 'Mornings')])
+        self.assertEqual(self.asked, [])  # not the name dialog
+        done(details._replace(name='Night Drive', description='Late, with the windows down'))
         await self.settle()
         self.assertEqual(self.writes(), [
             ('edit_playlist', 'p.pl1', 'Night Drive', 'Late, with the windows down')])
@@ -2351,6 +2414,35 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
                           if call[0] == 'folder_children'],
                          [('folder_children', 'p.fd1')] * 2)
         self.assertEqual(self.app.syncs, ['playlists'])
+
+    async def test_edit_details_writes_only_what_changed(self):
+        await self.run_action('item-rename', 'playlist', 'p.pl1')
+        before, done = self.details[0][2], self.details[0][4]
+        # Nothing changed: nothing written.
+        self.assertIsNone(self.actions.edit_details(self.app.playlist, before, before))
+        # Made public: that alone, and the Item says so at once.
+        done(before._replace(public=True))
+        await self.settle()
+        self.assertEqual(self.writes(), [('edit_playlist', 'p.pl1', None, None, True)])
+        self.assertTrue(self.app.playlist.public)
+        # Another folder: moved there as Move to Folder moves it, nothing else written.
+        await self.run_action('item-rename', 'playlist', 'p.pl1')
+        before, done = self.details[1][2], self.details[1][4]
+        self.assertTrue(before.public)
+        done(before._replace(folder='p.fd2'))
+        await self.settle()
+        self.assertEqual(self.writes()[1:], [('move_to_folder', 'playlist', 'p.pl1', 'p.fd2')])
+        self.assertEqual(self.parent_of('playlist', 'p.pl1'), 'p.fd2')
+        self.assertEqual(self.app.toasts, ['Moved “Road Trip” to “Mornings”'])
+        # A refusal is reported, and nothing moves.
+        self.app.engine.fail = EngineError('api', 'HTTP 500')
+        await self.run_action('item-rename', 'playlist', 'p.pl1')
+        before, done = self.details[2][2], self.details[2][4]
+        done(before._replace(name='Elsewhere', folder='root'))
+        await self.settle()
+        self.assertEqual(self.app.reported, ['api'])
+        self.assertEqual(self.parent_of('playlist', 'p.pl1'), 'p.fd2')
+        self.assertEqual(self.app.playlist.title, 'Road Trip')
 
     async def test_rename_a_folder(self):
         await self.run_action('item-rename', 'folder', 'p.fd1')
@@ -2366,7 +2458,8 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         for action in ('item-rename', 'item-delete'):
             for target in (('playlist', 'p.pl2'), ('playlist', 'p.fav'), ('folder', 'root')):
                 await self.run_action(action, *target)
-        self.assertEqual((self.asked, self.confirms, self.writes()), ([], [], []))
+        self.assertEqual((self.asked, self.details, self.confirms, self.writes()),
+                         ([], [], [], []))
         self.assertEqual(self.app.toasts, ['This cannot be renamed'] * 3
                          + ['This cannot be deleted'] * 3)
 
@@ -2407,13 +2500,16 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
     async def test_new_playlist_holding_a_song(self):
         self.actions.menu_for(LIBRARY_TRACK)
         await self.run_action('item-new-playlist', 'song', 'i.song1')
-        heading, confirm, name, description, done = self.asked[0]
-        self.assertEqual((heading, confirm, name, description),
-                         ('New Playlist', '_Create', '', ''))
-        done('Harbour Songs', None)
+        heading, confirm, details, folders, done = self.details[0]
+        self.assertEqual((heading, confirm, details),
+                         ('New Playlist', '_Create', Details('', '', 'root', False)))
+        # Any folder can take it.
+        self.assertEqual(folders, [('root', 'Top Level'), ('p.fd1', 'Evenings'),
+                                   ('p.fd2', 'Mornings')])
+        done(Details('Harbour Songs', '', 'root', False))
         await self.settle()
         self.assertEqual(self.writes(), [
-            ('create_playlist', 'Harbour Songs', None, (('song', 'i.song1'),), None)])
+            ('create_playlist', 'Harbour Songs', '', (('song', 'i.song1'),), 'root')])
         self.assertEqual(self.app.toasts,
                          ['Added “Harbour Lights” to the new playlist “Harbour Songs”'])
         self.assertIn(('folder_children', 'root'), self.app.engine.calls)
@@ -2428,27 +2524,27 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.app.start_sync = start_sync
         refs = ItemRefs.for_objects([LIBRARY_TRACK, VIDEO_TRACK])
         self.assertTrue(self.actions.drop_new_playlist(refs))
-        heading, confirm, name, description, done = self.asked[0]
+        heading, confirm, details, _folders, done = self.details[0]
         # Named after the first song, which the user may change.
-        self.assertEqual((heading, confirm, name, description),
-                         ('New Playlist', '_Create', 'Harbour Lights', ''))
-        done('Harbour Lights', None)
+        self.assertEqual((heading, confirm, details),
+                         ('New Playlist', '_Create', Details('Harbour Lights', '', 'root')))
+        done(details)
         await self.settle()
         self.assertEqual(self.writes(), [
-            ('create_playlist', 'Harbour Lights', None,
-             (('song', 'i.song1'), ('video', 'i.vid1')), None)])
+            ('create_playlist', 'Harbour Lights', '',
+             (('song', 'i.song1'), ('video', 'i.vid1')), 'root')])
         self.assertEqual(self.app.toasts, ['Created “Harbour Lights”'])
         self.assertEqual(self.window.selected, ['playlist:p.new'])  # then shown
         # One song: the toast names it.
         self.assertTrue(self.actions.drop_new_playlist(ItemRefs.for_objects([UPLOAD_TRACK])))
-        self.asked[1][4]('Takes', '')
+        self.details[1][4](Details('Takes'))
         await self.settle()
         self.assertEqual(self.app.toasts[-1], 'Added “Demo Take” to the new playlist “Takes”')
         # Playlists dropped there are moved, not made into a playlist: refused here.
         for refused in (ItemRefs.for_objects([PLAYLIST]),
                         ItemRefs.for_objects([LIBRARY_TRACK, PLAYLIST]), None):
             self.assertFalse(self.actions.drop_new_playlist(refused))
-        self.assertEqual(len(self.asked), 2)
+        self.assertEqual(len(self.details), 2)
 
     async def test_new_playlist_in_a_folder_is_shown(self):
         new = Item({'id': 'p.new', 'kind': 'playlist', 'title': 'Fresh'})
@@ -2458,9 +2554,12 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
 
         self.app.start_sync = start_sync
         await self.run_action('item-new-playlist', 'folder', 'p.fd1')
-        self.asked[0][4]('Fresh', 'Brand new')
+        heading, _confirm, details, _folders, done = self.details[0]
+        self.assertEqual(details, Details('', '', 'p.fd1', False))  # the folder chosen
+        done(Details('Fresh', 'Brand new', 'p.fd1', True))
         await self.settle()
-        self.assertEqual(self.writes(), [('create_playlist', 'Fresh', 'Brand new', (), 'p.fd1')])
+        self.assertEqual(self.writes(), [('create_playlist', 'Fresh', 'Brand new', (), 'p.fd1',
+                                          'public')])
         self.assertEqual(self.app.toasts, ['Created “Fresh”'])
         self.assertEqual(self.window.selected, ['playlist:p.new'])
 
@@ -2522,7 +2621,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_demo_shows_the_dialog_and_writes_nothing(self):
         self.app.demo = True
         await self.run_action('item-new-playlist', 'folder', 'root')
-        self.asked[0][4]('Fresh', None)
+        self.details[0][4](Details('Fresh'))
         await self.run_action('item-delete', 'playlist', 'p.pl1')
         self.confirms[0][3]()
         await self.settle()
@@ -3001,6 +3100,7 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
         self.asked = []
         self.actions.ask_confirm = lambda *args: self.confirms.append(args)
         self.actions.ask_name = lambda *args: self.asked.append(args)
+        self.actions.ask_playlist = lambda *args: self.asked.append(args)
         for name, value in (('SETTLE_DELAYS', (0, 0, 0)), ('FOLDER_SETTLE_DELAYS', (0, 0, 0)),
                             ('REMOVAL_DELAYS', (0, 0, 0)), ('LISTING_LAG', 0)):
             self.addCleanup(setattr, actions_module, name, getattr(actions_module, name))
@@ -3173,12 +3273,12 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
     async def test_new_playlist_of_a_selection(self):
         tracks = self.mix_tracks()[:2]
         self.actions.new_playlist_of(tracks)
-        heading, confirm, name, description, done = self.asked[0]
-        self.assertEqual((heading, name), ('New Playlist', ''))
-        done('Picked', '')
+        heading, confirm, details, folders, done = self.asked[0]
+        self.assertEqual((heading, details.name), ('New Playlist', ''))
+        done(details._replace(name='Picked'))
         await self.settle()
         self.assertEqual(self.calls('create_playlist'), [
-            ('create_playlist', 'Picked', '', (('song', 'i.m1'), ('song', 'i.m2')), None)])
+            ('create_playlist', 'Picked', '', (('song', 'i.m1'), ('song', 'i.m2')), 'root')])
 
     def test_add_to_playlist_menu_for_a_selection(self):
         entries = [('p.pl1', 'Road Trip', None), ('p.pl5', 'Mix', None),

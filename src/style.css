@@ -44,6 +44,31 @@ sidebar .navigation-sidebar > .header:not(.first) {
   background-size: calc(100% - 12px) 1px;
 }
 
+/* The Playlists heading's New button (sidebar_view.py): libadwaita 1.9 has no suffix for a
+   heading, so the controller shows the title in a box of its own beside the button. The
+   title keeps libadwaita's own margins (`.header > .heading`) and the button, centred on
+   it and shorter than the heading with them, ends 6px from the edge, as a row's content
+   does. */
+sidebar .navigation-sidebar > .header > .header-suffixed > .heading {
+  margin: 12px;
+}
+
+sidebar .navigation-sidebar > .header > .header-suffixed > menubutton.heading-suffix {
+  margin-right: 6px;
+}
+
+sidebar .navigation-sidebar > .header > .header-suffixed > menubutton.heading-suffix:dir(rtl) {
+  margin-right: 0;
+  margin-left: 6px;
+}
+
+/* The playlist dialog's description (dialogs/playlist.blp): a text view of several lines on
+   the card its scrolled window is, as a boxed list's rows are. */
+scrolledwindow.playlist-description > textview,
+scrolledwindow.playlist-description > textview > text {
+  background: none;
+}
+
 /* A folder's contents in the window's sidebar, indented by depth as a tree (sidebar_view.py
    gives a nested item's row `depth-1` to `depth-3`), in both its modes: the sidebar's list and
    the narrow layout's boxed lists, where the indent is the only sign of nesting. A transparent

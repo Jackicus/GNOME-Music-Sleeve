@@ -77,6 +77,12 @@
         return await client.createRequest(path, request).send();
     }
 
+    // The query of a playlist write: `with=shared` when it makes the playlist public, as
+    // the web player's requestCreateNewPlaylist and requestUpdatePlaylist add it.
+    function sharedQuery(attributes) {
+        return (attributes && attributes.isPublic === true) ? { with: 'shared' } : {};
+    }
+
     // The id of the resource a 201 Created answered with ({data: [{id}]}), or null.
     function createdId(answer) {
         const data = answer && answer.data && answer.data.data;
@@ -1395,9 +1401,11 @@
         // requestUpdatePlaylistTracks and requestDeleteFromLibrary), checked against
         // the API on 2026-10-03 (src/backend/README.md has what each answered).
 
-        // A new library playlist: `attributes` {name, description?}, `tracks`
-        // [{id, type}] (may be empty), in the folder `parentId` when given (else at
-        // the top level). Answers {id}, the new playlist's.
+        // A new library playlist: `attributes` {name, description?, isPublic?},
+        // `tracks` [{id, type}] (may be empty), in the folder `parentId` when given
+        // (else at the top level). Answers {id}, the new playlist's. A public one
+        // (shown on the profile and in search) is asked `with=shared`, as the web
+        // player asks it.
         createPlaylist: async function (attributes, tracks, parentId) {
             const relationships = {};
             if (tracks && tracks.length) relationships.tracks = { data: tracks };
@@ -1406,15 +1414,17 @@
             }
             const body = { attributes: attributes };
             if (Object.keys(relationships).length) body.relationships = relationships;
-            const answer = await apiWrite('/v1/me/library/playlists', {}, { method: 'POST', body: body });
+            const answer = await apiWrite('/v1/me/library/playlists', sharedQuery(attributes),
+                                          { method: 'POST', body: body });
             const id = createdId(answer);
             if (!id) throw new Error('Apple answered the new playlist without its id');
             return { id: id };
         },
 
-        // A library playlist's name and description (`attributes`: either or both).
+        // A library playlist's name, description and whether it is public
+        // (`attributes`: {name?, description?, isPublic?}).
         updatePlaylist: async function (playlistId, attributes) {
-            return await apiWrite('/v1/me/library/playlists/' + playlistId, {}, {
+            return await apiWrite('/v1/me/library/playlists/' + playlistId, sharedQuery(attributes), {
                 method: 'PATCH',
                 body: { attributes: attributes }
             });

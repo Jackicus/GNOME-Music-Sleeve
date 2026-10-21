@@ -19,7 +19,8 @@
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
                                     remove-from-library|credits|add-songs] [--song N]
                           [--find TERM] [--pick N]
-                          [--more-options] [--main-menu] [--sidebar-menu KEY [--submenu NAME]]
+                          [--more-options] [--main-menu] [--new-menu]
+                          [--sidebar-menu KEY [--submenu NAME]]
                           [--drop-target KEY] [--drop-line N] [--scroll PX] [--select N]
                           [--sort KEY[:descending]]
 
@@ -124,9 +125,10 @@ own window (a fixed-size window that is neither maximized nor tiled gets one), a
 --size when that is narrower than 640 px.
 --dialog opens the About (app.about) or Keyboard Shortcuts (app.shortcuts) dialog and
 shoots it as --preferences does; new-playlist, new-folder, rename and delete open the
-playlists' dialogs (win.item-new-playlist, win.item-new-folder, win.item-rename,
-win.item-delete) for the playlist or folder the page shows, else the library's first playlist
-of the user's (a new playlist or folder: in the folder shown, else at the top level);
+playlists' dialogs (win.item-new-playlist, win.item-new-folder, win.item-rename: a
+playlist's Edit Details…, a folder's Rename…, win.item-delete) for the playlist or folder
+the page shows, else the library's first playlist of the user's (a new playlist or folder:
+in the folder shown, else at the top level);
 remove-from-library the confirmation of win.item-remove-from-library for the item the page
 shows, else the library's first album; credits the View Credits dialog of a song of the album
 the page shows, else of the library's first album: its first, or its Nth with --song N (-1:
@@ -140,6 +142,8 @@ other way) shows the playlist's songs in that order.
 --more-options pops up the More Options menu of the page shown (an album's, a playlist's, a
 folder's) as a click on it would; --sort-menu its Sort By or Sort and Filter menu;
 --main-menu the main menu (in the narrow layout, with --sidebar, where its button is).
+--new-menu the menu of the sidebar's Playlists heading's New button (New Playlist…, New
+Folder…), as a click on it opens it (in the narrow layout, with --sidebar).
 --sidebar-menu KEY pops up the sidebar's context menu for KEY (playlist:ID, folder:ID,
 all-playlists, favourite-songs; playlist:first and folder:first are the library's first of
 each) under its row, scrolled into view, as Menu on the focused row opens it (--expand the
@@ -257,6 +261,8 @@ parser.add_argument('--more-options', action='store_true',
                     help='pop up the More Options menu of the page shown')
 parser.add_argument('--main-menu', action='store_true',
                     help="pop up the main menu (the sidebar's header bar's)")
+parser.add_argument('--new-menu', action='store_true',
+                    help="pop up the menu of the sidebar's Playlists heading's New button")
 parser.add_argument('--sidebar-menu', metavar='KEY',
                     help="pop up the sidebar's context menu for KEY")
 parser.add_argument('--drop-target', metavar='KEY',
@@ -831,7 +837,7 @@ def open_dialog(window):
     none is shown."""
     if args.dialog in ('new-playlist', 'new-folder', 'rename', 'delete'):
         open_playlist_dialog(window)
-        kind = Adw.AlertDialog
+        kind = Adw.Dialog  # the playlist dialog, or an alert
     elif args.dialog == 'remove-from-library':
         open_removal_dialog(window)
         kind = Adw.AlertDialog
@@ -998,6 +1004,14 @@ def _shoot():
         if not window.primary_menu_button.get_mapped():
             sys.exit('screenshot: the main menu button is not shown (narrow: add --sidebar)')
         window.primary_menu_button.popup()
+        GLib.timeout_add(800, shoot)  # the popover shown and placed
+        return GLib.SOURCE_REMOVE
+    if args.new_menu and not menu_opened:
+        menu_opened = True
+        button = window._sidebar.new_button()
+        if button is None or not button.get_mapped():
+            sys.exit('screenshot: the New button is not shown (narrow: add --sidebar)')
+        button.popup()
         GLib.timeout_add(800, shoot)  # the popover shown and placed
         return GLib.SOURCE_REMOVE
     if args.sidebar_menu and not menu_opened:

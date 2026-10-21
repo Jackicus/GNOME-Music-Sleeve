@@ -84,7 +84,9 @@ What the web player asks for, found by watching its requests (2026-09-28):
   `attributes: {isFavourites: true}` in the Item (library.FAVOURITES), as the demo has it.
   A playlist whose `attributes.canEdit` is false (Favourite Songs, one of Apple's added to the
   library) gets `canEdit: false` there too (library.EDITABLE), and one whose `canDelete` is
-  false `canDelete: false` (library.REMOVABLE).
+  false `canDelete: false` (library.REMOVABLE). A public one (`isPublic` true: shown on the
+  account's profile and in search) gets `isPublic: true` (library.PUBLIC), which the
+  playlist dialog shows.
 - Songs: `/v1/me/library/songs?limit=100&offset=N` (the answer carries `meta.total` and
   `next`); Music Videos: `/v1/me/library/music-videos?limit=100&offset=N`; Recently Added:
   `/v1/me/library/recently-added?limit=25`, paged by `next` (no total).
@@ -129,7 +131,7 @@ from gi.repository import GdkPixbuf, GLib, GObject  # noqa: E402
 from .backend import api, config  # noqa: E402
 from .backend import normalize, store  # noqa: E402
 from .backend.errors import EngineError  # noqa: E402
-from .library import EDITABLE, FAVOURITES, REMOVABLE, ROOT_FOLDER, parse  # noqa: E402
+from .library import EDITABLE, FAVOURITES, PUBLIC, REMOVABLE, ROOT_FOLDER, parse  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -970,7 +972,8 @@ def flag_favourites(item, raw):
     """Mark the playlist Item as Favourite Songs when Apple's tags say so, and as one that
     cannot be added to when Apple's canEdit is false (Favourite Songs, a playlist of Apple's
     or someone else's added to the library): the Add to Playlist menu leaves those out; and
-    as one that cannot be removed from the library when its canDelete is false."""
+    as one that cannot be removed from the library when its canDelete is false; and as a
+    public one (shown on the profile and in search) when its isPublic is true."""
     attributes = raw.get('attributes') or {}
     flags = {}
     tags = attributes.get('tags')
@@ -980,6 +983,8 @@ def flag_favourites(item, raw):
         flags[EDITABLE] = False
     if attributes.get('canDelete') is False:
         flags[REMOVABLE] = False
+    if attributes.get('isPublic') is True:
+        flags[PUBLIC] = True
     if flags:
         item['attributes'] = flags
 

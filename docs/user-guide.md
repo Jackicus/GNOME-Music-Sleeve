@@ -279,10 +279,17 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   its page: right-click it, press and hold it, or press <kbd>Menu</kbd> (or
   <kbd>Shift</kbd>+<kbd>F10</kbd>) on the focused row. **All Playlists** has **New
   Playlist…** and **New Folder…**.
+- The **+** at the end of the sidebar's Playlists heading has **New Playlist…** and **New
+  Folder…**. A new playlist gets its name, a description, the folder it goes in and whether
+  it shows on your Apple Music profile and in search (**Show on My Profile and in Search**),
+  all in one dialog; **Create** makes it. Apple Music on the web cannot give a playlist a
+  cover image, so the dialog has none: a playlist without one shows its songs' covers, and a
+  cover set in Apple's own apps shows here too.
 - Your own playlists can be managed from their menus (right-click one in the sidebar or on
-  All Playlists, or use **More Options** on its page): **Rename…** changes its name and
-  description, **Delete Playlist…** deletes it from your library on all your devices, after
-  asking. A song's menu on one of your playlists has **Remove from Playlist**, which takes out
+  All Playlists, or use **More Options** on its page): **Edit Details…** opens the same
+  dialog to change its name, description, folder or whether it is public (**Save** writes
+  what you changed), **Delete Playlist…** deletes it from your library on all your devices,
+  after asking. A song's menu on one of your playlists has **Remove from Playlist**, which takes out
   that one entry (the same song elsewhere in the playlist stays); <kbd>Delete</kbd> on the
   focused song does the same, with **Undo** in the message that follows, and the focus moves
   to the song that took its place (while selecting songs, <kbd>Delete</kbd> takes out the
@@ -290,9 +297,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   too) makes a playlist of your own with the same songs in the same order, named "… Copy",
   beside it, and opens it. **New Playlist…** is at the
   end of **Add to Playlist** (a new playlist holding that song), in a folder's menu, in the
-  main menu (<kbd>Ctrl</kbd>+<kbd>N</kbd>), and is the **+** button of All Playlists and of a folder's page. A folder's menu
+  main menu (<kbd>Ctrl</kbd>+<kbd>N</kbd>), under the Playlists heading's **+**, and is the **+** button of All Playlists and of a folder's page. A folder's menu
   also has **Rename…** and **Delete Folder…**, which deletes the playlists in it too.
-  Favourite Songs and Apple's playlists in your library cannot be renamed or deleted;
+  Favourite Songs and Apple's playlists in your library cannot be edited or deleted;
   Apple's playlists can be removed from your library instead (below). A change takes a few
   seconds to reach the library's listing, as Apple lists it.
 - A playlist of your own can be put in a new order on its page: drag a song up or down the
