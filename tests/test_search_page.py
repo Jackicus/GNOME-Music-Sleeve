@@ -9,12 +9,16 @@ Library."""
 import asyncio
 import unittest
 
+from tests.gtk import requires_gtk
 from tests.page_harness import PageTestCase, album, find_all, playing, track
 
 from applemusic.backend.errors import EngineError
 from applemusic.library import Item
 
 
+# Pure logic, but it imports a page module, whose templates need the built gresource
+# (absent from `meson test` on a dist tarball without a display): skip like the widget tests.
+@requires_gtk
 class TopResultsTest(unittest.TestCase):
     def items(self, kind, *titles):
         return [Item({'id': f'l.{kind}{n}', 'kind': kind, 'title': title,

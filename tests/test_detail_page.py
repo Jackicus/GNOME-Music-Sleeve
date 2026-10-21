@@ -9,6 +9,7 @@ import asyncio
 import unittest
 from unittest import mock
 
+from tests.gtk import requires_gtk
 from tests.page_harness import PageTestCase, album, artist, artist_answer, playing, track
 
 from applemusic.backend.errors import EngineError
@@ -1945,6 +1946,9 @@ class ArtistWordsTest(PageTestCase):
         self.assertIsNone(artist_catalog_id(Item({'id': 'l.art_abc', 'kind': 'artist'})))
 
 
+# Pure logic, but it imports a page module, whose templates need the built gresource
+# (absent from `meson test` on a dist tarball without a display): skip like the widget tests.
+@requires_gtk
 class ExpectsTableTest(unittest.TestCase):
     def test_the_table_is_assumed_from_the_width_before_the_first_layout(self):
         from applemusic.pages.detail import TABLE_WIDTH, expects_table
