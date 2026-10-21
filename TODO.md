@@ -23,10 +23,14 @@ the audit left for the
 columns, View Credits, streaming quality, song-change notifications, New's banners and More to
 Explore, the charts by genre, drags out as links, a playlist's Duplicate, Sort By and Add
 Songs…, pre-release albums, folder moves to the top level and into folders) and a lazy
-Songs store, and
-[v1.1.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.1), the latest: a
-fix for 1.1.0 aborting once the desktop described its actions (#546), and the first release
-with an Arch package attached. A release is a tag and a GitHub release with the tarball and
+Songs store,
+[v1.1.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.1): a fix for 1.1.0
+aborting once the desktop described its actions (#546), and the first release with an Arch
+package attached, and
+[v1.2.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.2.0), the latest: a
+new app icon (#552), Add to Playlist's folders as submenus (#554), shelves without a
+scrollbar (#555), and a + on the sidebar's Playlists heading with one dialog to make and edit
+a playlist (#556). A release is a tag and a GitHub release with the tarball and
 the Arch package (`docs/release.md`); why the app is built the way it
 is, is in `docs/decisions.md`.
 
