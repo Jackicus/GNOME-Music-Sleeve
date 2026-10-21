@@ -326,7 +326,7 @@ class BackgroundTest(AppTestCase):
         self.assertEqual(len(buttons), 1)
         method, label, action, target = buttons[0]
         self.assertEqual((method, label, action), ('with-target', 'Undo', 'app.window-action'))
-        self.assertEqual(target.unpack(), ('item-undo-reorder', 'p.1'))
+        self.assertEqual(target.unpack(), ('item-undo-reorder', ['p.1']))
         self.assertIsNotNone(self.app.lookup_action('window-action'))
 
     def test_an_app_actions_button_is_kept(self):
@@ -367,6 +367,26 @@ class WindowActionTest(AppTestCase):
         with self.assertLogs('applemusic.main', 'WARNING'):
             self.app.lookup_action('window-action').activate(main.app_action('win.refresh')[1])
 
+    def test_every_app_actions_parameter_type_can_be_exported_on_the_bus(self):
+        # The bus's DescribeAll writes each parameter type as a D-Bus signature, which has
+        # no maybe type: one with an 'm' aborted the process once something described the
+        # app's actions.
+        added = []
+        add_action = main.Application.add_action
+
+        def record(app, action):
+            added.append(action)
+            add_action(app, action)
+
+        with mock.patch.object(main.Application, 'add_action', record):
+            make_app()
+        self.assertIn('window-action', [action.get_name() for action in added])
+        for action in added:
+            parameter_type = action.get_parameter_type()
+            if parameter_type is not None:
+                self.assertTrue(GLib.Variant.is_signature(parameter_type.dup_string()),
+                                f'app.{action.get_name()}: {parameter_type.dup_string()}')
+
     def test_app_actions_are_left_as_they_are(self):
         target = GLib.Variant('s', 'x')
         self.assertEqual(main.app_action('app.sync', target), ('app.sync', target))
@@ -381,7 +401,7 @@ class WindowActionTest(AppTestCase):
         app.toast('Moved', 'Undo', 'win.item-undo-reorder', GLib.Variant('s', 'p.1'))
         (toast,) = toasts
         self.assertEqual(toast.get_action_name(), 'app.window-action')
-        self.assertEqual(toast.get_action_target_value().unpack(), ('item-undo-reorder', 'p.1'))
+        self.assertEqual(toast.get_action_target_value().unpack(), ('item-undo-reorder', ['p.1']))
 
 
 class RatedTest(AppTestCase):

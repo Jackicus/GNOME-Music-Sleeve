@@ -100,7 +100,11 @@ def app_action(action_name, action_target=None):
     where only app.* actions can: a win.* action becomes app.window-action, which runs it on
     the window with its target; any other is answered as it is."""
     if action_name and action_name.startswith('win.'):
-        return 'app.window-action', GLib.Variant('(smv)', (action_name[4:], action_target))
+        # An array of none or one target, not a maybe: D-Bus signatures have no maybe type,
+        # and an exported action whose parameter type has one cannot be described (the bus's
+        # DescribeAll aborts the process).
+        targets = [] if action_target is None else [action_target]
+        return 'app.window-action', GLib.Variant('(sav)', (action_name[4:], targets))
     return action_name, action_target
 
 
@@ -192,7 +196,7 @@ class Application(Adw.Application):
         # A toast's button that runs one of the window's actions where only app.* ones can
         # run (toast(): a background notification, Preferences shown as a window of its
         # own), as app_action() makes it: the window action's name and its target.
-        window_action = Gio.SimpleAction.new('window-action', GLib.VariantType.new('(smv)'))
+        window_action = Gio.SimpleAction.new('window-action', GLib.VariantType.new('(sav)'))
         window_action.connect('activate', self._on_window_action)
         self.add_action(window_action)
         # Playback, enabled while something plays (the bar's buttons follow; Next and
@@ -688,9 +692,8 @@ class Application(Adw.Application):
         """app.window-action: the window action app_action() named, run with its target on
         the window that has it (hidden for background playback, or under Preferences)."""
         name = parameter.get_child_value(0).get_string()
-        target = parameter.get_child_value(1).get_maybe()
-        if target is not None:
-            target = target.get_variant()
+        targets = parameter.get_child_value(1)
+        target = targets.get_child_value(0).get_variant() if targets.n_children() else None
         for window in self.get_windows():
             lookup = getattr(window, 'lookup_action', None)
             action = lookup(name) if lookup is not None else None
