@@ -146,6 +146,42 @@ gridview.tile-grid.under-heading {
   padding-top: 18px;
 }
 
+/* A grid's cells are as wide as the page divided by its columns (up to nearly two tiles'
+   widths before another column fits), and a tile sits at the start of its cell, so
+   libadwaita's rounded highlight on the cell (hover, press, the focus ring) would be a wide,
+   lopsided box with the tile in its left end: one album under an artist's name looked like a
+   big button. The cell carries none of it; the tile does, with the cell's 3px of padding
+   (the covers stay on the page's 24px margin) and the same colours. */
+gridview.tile-grid > child {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+gridview.tile-grid > child:focus:focus-visible {
+  outline-width: 0;
+}
+
+gridview.tile-grid > child > .tile {
+  padding: 3px;
+  border-radius: 9px;
+}
+
+gridview.tile-grid > child.activatable:hover > .tile {
+  background-color: color-mix(in srgb, currentColor 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor var(--border-opacity), transparent);
+}
+
+gridview.tile-grid > child.activatable:active > .tile {
+  background-color: color-mix(in srgb, currentColor 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor var(--border-opacity), transparent);
+}
+
+gridview.tile-grid > child:focus:focus-visible > .tile {
+  outline: 2px solid color-mix(in srgb, var(--accent-color) 80%, transparent);
+  outline-offset: -2px;
+}
+
 /* A tile's cover and its placeholder: rounded as the cards elsewhere in the app are. */
 .tile-art {
   border-radius: 8px;
