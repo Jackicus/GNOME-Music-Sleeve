@@ -11,6 +11,9 @@ using Gtk 4.0;
 // play icon over the thumbnail, the explicit badge, the artist's line under the title.
 template $AppleMusicTrackRow: Box {
   spacing: 12;
+  // In the middle of a row taller than its line (a detail page's rows keep a minimum height;
+  // detail.py's row gives the track row all of it).
+  valign: center;
 
   // Albums: the track number, in a column as wide as two digits, and three when there is
   // room (a box set's hundredth track); a play icon in its place while the track is the one

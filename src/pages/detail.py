@@ -378,7 +378,10 @@ class _Row(Gtk.Box):
         # is taller the narrower it is, which made the row's minimum height above its natural
         # one (GTK's "natural size must be >= min size").
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
-        self.track_row = TrackRow(hexpand=True)
+        # Given the row's whole height (the list's rows keep a minimum, style.css), which
+        # the track row centres itself in: a vertical box would otherwise leave the rest
+        # under it.
+        self.track_row = TrackRow(hexpand=True, vexpand=True)
         self.append(self.track_row)
 
     def show_widget(self, widget):
