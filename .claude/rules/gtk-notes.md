@@ -9,10 +9,10 @@ paths:
   - "src/main.py"
 ---
 
-# GTK 4.22, libadwaita 1.9 and PyGObject 3.56: behaviour this code depends on
+# GTK 4.22 to 4.24, libadwaita 1.9 to 1.10 and PyGObject 3.56 to 3.58: behaviour this code depends on
 
-Each of these was checked against the toolkit (or found the hard way). The sidebar's are in
-`sidebar.md`; measurements are in docs/notes.md.
+Each of these was checked against the toolkit (or found the hard way), on GTK 4.22 unless it
+names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes.md.
 
 ## Lists and grids
 
@@ -27,6 +27,13 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   asked from inside the adjustment's `changed` handler is lost: defer it to an idle.
 - `Gtk.ColumnView.sort_by_column()` leaves the previous column's sort arrow; use it for the
   initial order only, or call `sort_by_column(None, …)` first.
+- GTK 4.24 measures a height-for-width `Gtk.ColumnView` row's cells for the widths of the
+  columns at the cells' places among the row's children, but a hidden column has no cells
+  (shown again, its cells go last): each cell after a hidden column is measured for the wrong
+  column's width, 0 px for a hidden one, and warns ("Trying to measure
+  GtkColumnViewCellWidget for width of 0"). A constant-size row is measured for no width, so
+  every cell of the Songs table is constant (`song_title.ConstantBoxLayout`: a
+  `Gtk.Picture` is height-for-width, and a box with one is too).
 - A `Gtk.StringFilter` over `Gtk.ClosureExpression.new(str, lambda item: item.search_key, None)`
   filters tens of thousands of items in one pass (fold the text first, `ignore-case: false`).
   With no search it matches everything without reading an item; a longer search refilters
@@ -181,7 +188,7 @@ Each of these was checked against the toolkit (or found the hard way). The sideb
   freed. Make one with the constructor's properties, `Adw.TimedAnimation(widget=…,
   value_from=…, value_to=…, duration=…, target=…)`, as the banner, a shelf's paging, the
   lyrics and the backdrop do. Targets' own `new()` are fine.
-- libadwaita 1.9.0 to 1.9.4 never frees an `Adw.Breakpoint` added to an `Adw.BreakpointBin`
+- libadwaita 1.9.0 to 1.10.0 never frees an `Adw.Breakpoint` added to an `Adw.BreakpointBin`
   (its array has no free function; fixed upstream on main, f2e30ed1, in no release yet): each
   page built from a template with breakpoints leaves them behind (docs/notes.md, Memory). Never
   unref one to make up for it: once the fix ships that frees it twice.

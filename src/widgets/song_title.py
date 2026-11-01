@@ -11,6 +11,21 @@ from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the templ
 from .track_row import artist_line, check_box, explicit_badge, playing_scrim
 
 
+class ConstantBoxLayout(Gtk.BoxLayout):
+    """A box layout whose height never depends on its width: SongTitle's, whose every part
+    is one line or of a fixed size. Its cover's Gtk.Picture would make the cell, and so the
+    Songs table's rows, height-for-width; GTK 4.24 then measures a row's cells for the
+    widths of the columns in their place, not their own, and with a column hidden before
+    them (Genre, Year, the narrow table's Artist and Album) the cells after it are measured
+    for its 0 px and warn (.claude/rules/gtk-notes.md). A constant row is measured for no
+    width, as every row was before 4.24."""
+
+    __gtype_name__ = 'AppleMusicConstantBoxLayout'
+
+    def do_get_request_mode(self, _widget):
+        return Gtk.SizeRequestMode.CONSTANT_SIZE
+
+
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/song_title.ui')
 class SongTitle(Gtk.Box):
     """A track's 32 px thumbnail (its own, else its album's), its title and, for explicit
@@ -53,6 +68,10 @@ class SongTitle(Gtk.Box):
     _selecting = False
     _selected = False
     _stacked = False
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.set_layout_manager(ConstantBoxLayout(spacing=self.get_spacing()))
 
     @property
     def context_item(self):

@@ -396,7 +396,7 @@ by as much as the process did.
   artist page with a banner, and a shelf's paging glide, one a click. Both are made with the
   constructor now, as the lyrics and the backdrop were (`.claude/rules/gtk-notes.md`).
 - **Every `Adw.Breakpoint` stays behind**, 3 an artist page or album page: libadwaita 1.9.0 to
-  1.9.4's `Adw.BreakpointBin` takes them but never lets go (a `GPtrArray` without a free
+  1.10.0's `Adw.BreakpointBin` takes them but never lets go (a `GPtrArray` without a free
   function since its port to one, b4b4226c), reproduced in C; fixed upstream on main
   (f2e30ed1, 2026-10-20). About 1 KB each, the 1.4 MB that 490 artist pages left in malloc's
   use. Nothing to do here: unreffing them ourselves would free them twice once the fix ships.

@@ -57,9 +57,10 @@ paths:
   to it: `updpkgsums && makepkg --printsrcinfo > .SRCINFO`. Test it without installing it.
   Its modules are byte-compiled for the Python that built it (outside site-packages, which
   Arch's Python rebuilds cover), so each Python minor release needs a pkgrel bump.
-- `build-aux/flatpak/*.Devel.json` is for development only (why in its `x-comment`) and has
-  not been built here: there is no GNOME 50 runtime or flatpak-builder on the development
-  machine. Say so when you change it.
+- `build-aux/flatpak/*.Devel.json` is for development only (why in its `x-comment`). It
+  builds against GNOME 51 (`flatpak run org.flatpak.Builder`, with `org.gnome.Sdk//51` and
+  `org.gnome.Platform//51`; the SDK's blueprint-compiler builds the `.blp`s), but the
+  sandboxed app has not been run against the host's Chrome. Say so when you change it.
 - If Meson falls back to the blueprint-compiler wrap, that subproject installs a file of its
   own: installs use `--skip-subprojects`.
 - CI (`.github/workflows/ci.yml`) installs its dependencies with pacman in an Arch Linux

@@ -3,7 +3,7 @@
     "Development only: GNOME Builder or flatpak-builder run the .Devel build from this tree.",
     "Releases are native (meson install, build-aux/aur/PKGBUILD). Flathub is out of scope:",
     "playback needs the host's Google Chrome (its Widevine plays Apple's protected streams),",
-    "which a Flathub app may not depend on, and the name and ID carry Apple's trademark.",
+    "which a Flathub app may not depend on.",
     "The sandboxed app runs that Chrome through flatpak-spawn --host, hence the",
     "org.freedesktop.Flatpak talk-name; the Chrome profile under ~/.var/app is the same path on",
     "both sides, and the DevTools pipe (descriptors 3 and 4) is passed on to the host's Chrome",
@@ -12,12 +12,12 @@
     "own without asking. The Shell search provider's .ini and the D-Bus service file are",
     "among the files Flatpak exports from share/ (gnome-shell/search-providers and",
     "dbus-1/services, the service's Exec rewritten to flatpak run), so the overview's search",
-    "should reach the sandboxed app too. Written without a GNOME 50 runtime or",
-    "flatpak-builder to test it on: not built yet."
+    "should reach the sandboxed app too. Built with flatpak-builder against GNOME 51 (whose",
+    "SDK has blueprint-compiler 0.22); the sandboxed app has not been run yet."
   ],
   "id": "io.github.jackicus.MusicSleeve.Devel",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "50",
+  "runtime-version": "51",
   "sdk": "org.gnome.Sdk",
   "command": "music-sleeve",
   "finish-args": [
@@ -38,18 +38,6 @@
     "*.a"
   ],
   "modules": [
-    {
-      "name": "blueprint-compiler",
-      "buildsystem": "meson",
-      "cleanup": ["*"],
-      "sources": [
-        {
-          "type": "git",
-          "url": "https://gitlab.gnome.org/GNOME/blueprint-compiler.git",
-          "tag": "v0.22.2"
-        }
-      ]
-    },
     {
       "name": "music-sleeve",
       "builddir": true,
