@@ -530,6 +530,12 @@ class SongsPageTest(PageTestCase):
                                                      for cell in cells)))
         self.assertFalse(page.artist_column.get_visible())
         self.assertFalse(page.album_column.get_visible())
+        # The rows are measured for no width (song_title.ConstantBoxLayout): GTK 4.24 would
+        # measure the Time cells for the hidden Artist column's 0 px, and warn for each.
+        for cell in cells:
+            self.assertEqual(cell.get_parent().get_parent().get_request_mode(),
+                             Gtk.SizeRequestMode.CONSTANT_SIZE)
+            self.assertEqual(cell.get_layout_manager().get_spacing(), 12)
         self.assertEqual({cell.artist_label.get_text() for cell in cells}, {'Invented Artist'})
         # The title's line has room for "Analog Boulevard" and its badge (about 140 px) beside
         # the heart, and the time is still shown whole, inside the window.

@@ -121,8 +121,8 @@ binary through `flatpak-spawn --host`, and `chrome_args()` prefixes
 on to the host's Chrome. The pid the engine holds is flatpak-spawn's, which relays SIGTERM to
 Chrome and whose end ends Chrome (`--watch-bus`), so `setpriv` is not used there; the profile's
 `SingletonLock` names a host pid, which the sandbox cannot check, so a Chrome left on the
-profile is not ended at the next start. It has not been built: there is no GNOME 50 runtime or
-flatpak-builder on the development machine.
+profile is not ended at the next start. It builds against GNOME 51 (org.gnome.Sdk//51), but
+the sandboxed app has not been run yet.
 
 Nothing installed may set `APPLE_MUSIC_DEBUG_PORT`: the launcher, the desktop file, the
 PKGBUILD and the manifest leave the engine on its pipe alone.

@@ -47,9 +47,9 @@ is, is in `docs/decisions.md`.
 - [ ] The lyrics cache: since the word timings (#315) a kept song is about five times bigger
       (14 to 41 KB), so the 2,000 songs `LYRICS_KEEP` allows may take about 60 MB. Lower the
       limit or keep the files compressed if that turns out to matter.
-- [ ] Build and run the Flatpak in GNOME Builder (the manifest in `build-aux/flatpak/` has
-      never been built: no GNOME 50 runtime on the development machine). It can reach a
-      native or Flatpak Discord's socket; that is untested too.
+- [ ] Run the Flatpak (the manifest in `build-aux/flatpak/` builds against GNOME 51, but
+      the sandboxed app, its host Chrome through `flatpak-spawn`, has never been run). It
+      can reach a native or Flatpak Discord's socket; that is untested too.
 - [ ] The [After v1.1.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/7)
       milestone: [#541](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/541), the
       pages step of `scripts/bench.py` leaving 4 to 7 MB behind, over its 5 MB target.
