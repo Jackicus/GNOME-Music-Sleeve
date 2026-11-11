@@ -504,8 +504,10 @@ def download_art(urls, cache_dir, workers=8, progress=None, cancelled=None, gene
                 ok = False
                 try:
                     ok = bool(fut.result())
-                except Exception as error:
+                except OSError as error:  # the disk (the fetch's own errors were caught)
                     log.warning('artwork: could not fetch %s: %s', futures[fut], error)
+                except Exception:  # one artwork's bug is not the end of the others
+                    log.exception('artwork: fetching %s failed', futures[fut])
                 if ok:
                     counts['fetched'] += 1
                 else:

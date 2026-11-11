@@ -173,8 +173,8 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
 ## Verifying and landing a change
 
 1. `scripts/check.sh` passes. CI (`.github/workflows/ci.yml`) runs it on every push to main and
-   every pull request, in an Arch Linux container under Xvfb with software rendering, no
-   accessibility bus and no Chrome: widget tests must pass there.
+   pull request in an Arch Linux container under Xvfb (software rendering, no accessibility bus,
+   no Chrome: widget tests must pass there), and tests the `meson dist` tarball as packaged.
 2. Anything visible: screenshots of the demo library (the `screenshots` skill), each looked at
    with the Read tool; also `--light`, and `--size 360x640` (the narrowest width) if adaptive.
 3. Keyboard or accessibility changes, or a new page: `scripts/a11y_check.py`, also with

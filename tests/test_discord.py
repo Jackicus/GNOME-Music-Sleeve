@@ -316,6 +316,17 @@ class ConnectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_closing_a_connection_that_never_opened_is_safe(self):
         await discord.Connection('123456').close()
 
+    async def test_closing_cancels_the_reader_and_it_ends_cancelled(self):
+        connection = await self.connected()
+        reader = connection._drain
+        for _turn in range(5):  # the reader runs, and waits on the socket
+            await asyncio.sleep(0)
+        self.assertFalse(reader.done())
+        await connection.close()
+        with self.assertRaises(asyncio.CancelledError):
+            await reader
+        self.assertTrue(reader.cancelled())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -826,8 +826,8 @@ class Application(Adw.Application):
             await asyncio.wait_for(asyncio.gather(*stopping), QUIT_TIMEOUT)
         except TimeoutError:
             log.warning('the engine took longer than %g s to stop', QUIT_TIMEOUT)
-        except Exception:
-            log.exception('stopping the engine failed')
+        except Exception:  # whatever failed, the quit goes on: Chrome is killed below
+            log.exception('stopping the engine, saving the session or ending a sync failed')
         finally:
             sign_out = self._sign_out_task
             if sign_out is not None and not sign_out.done():

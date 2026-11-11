@@ -42,7 +42,11 @@ scripts/headless.sh COMMAND   # any of these on an invisible display, off your d
 The development build has its own app ID (`io.github.jackicus.MusicSleeve.Devel`), Chrome
 profile, cache and sign-in, so it installs beside a release build without touching it.
 `scripts/check.sh` is what CI runs (in an Arch Linux container, with the widget tests on
-Xvfb) and must pass before a pull request is merged. GNOME Builder can also build the
+Xvfb) and must pass before a pull request is merged. Beside it, CI builds and tests the
+`meson dist` tarball as a distribution package would (`arch-meson`, the PKGBUILD's
+dependencies, no display): a test that imports a module with a widget template has to be
+marked `@requires_gtk` (`tests/gtk.py`) even when it builds no widget, or it fails there.
+GNOME Builder can also build the
 development profile through the Flatpak manifest in `build-aux/flatpak/`, which runs the
 host's Chrome from the sandbox; that manifest has never been built, so it is untested.
 

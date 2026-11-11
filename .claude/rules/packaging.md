@@ -65,7 +65,13 @@ paths:
   own: installs use `--skip-subprojects`.
 - CI (`.github/workflows/ci.yml`) installs its dependencies with pacman in an Arch Linux
   container and runs `xvfb-run scripts/check.sh`. A new build or test dependency goes on its
-  pacman line too. It has no Chrome, and the tests need none (tests.md).
+  pacman line too. It has no Chrome, and the tests need none (tests.md). Its `dist` job, beside
+  it, installs only base-devel and the PKGBUILD's dependencies and runs `arch-meson . _build`
+  and `meson dist -C _build` with no display: the tarball configured as the package is,
+  built, tested (`meson test`, as `check()` runs it) and installed. A test that needs a tool
+  not in the PKGBUILD's `checkdepends`, or build/'s gresource, fails there unless it skips
+  without it (as test_bridge does without gjs, and `@requires_gtk` tests do). Run it locally the same way (blueprint-compiler installed,
+  since arch-meson downloads no wrap; commit first, as meson dist archives HEAD).
 - Nothing installed (the launcher, the desktop file, the PKGBUILD, the Flatpak manifest) sets
   `APPLE_MUSIC_DEBUG_PORT`: it opens the signed-in session to every local program (engine.md).
 - Release steps (version, metainfo release notes, tag, tarball, Arch package, AUR) are in

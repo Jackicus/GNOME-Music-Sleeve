@@ -765,8 +765,8 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
                                                generation=generation)
     except normalize.Cancelled:
         raise  # cancelled, or the cache was cleared: nothing more is written
-    except Exception as error:
-        log.warning('sync: artwork: %s', error)
+    except Exception as error:  # the listing matters more than its artwork: it is written
+        log.warning('sync: artwork: %s', error, exc_info=True)
         counts['art'] = {'wanted': 0, 'fetched': 0, 'failed': 0}
     _stop_if(cancelled, generation, cache_dir)  # with nothing to fetch, download_art did not ask
     normalize.save_library(library_data, cache_dir, indent=None,  # compact: a third the size
