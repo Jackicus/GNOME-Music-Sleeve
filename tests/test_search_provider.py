@@ -458,6 +458,18 @@ class DispatchTest(ProviderTestCase):
         # The app's spawn() logs a task's failure; this stand-in's is taken here instead.
         self.assertIsInstance(self.app.load.exception(), OSError)
 
+    async def test_a_cancelled_load_still_answers(self):
+        # A load that ends cancelled is not the answer's cancellation: the caller on the bus
+        # is answered from what the stores hold, and the app is released.
+        self.app.load = asyncio.get_running_loop().create_future()
+        invocation = self.call('GetInitialResultSet', GLib.Variant('(as)', (['tide'],)))
+        await asyncio.sleep(0)
+        self.app.load.cancel()
+        await self.settle()
+        self.assertIsNone(invocation.error)
+        self.assertEqual(invocation.value.unpack()[0][0], 'album:l.a2')
+        self.assertEqual((self.app.held, self.app.released), (1, 1))
+
 
 # -- on a bus -------------------------------------------------------------------------------
 
