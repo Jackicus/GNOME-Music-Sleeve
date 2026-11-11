@@ -6,6 +6,7 @@ narrowed by what is typed, Apple Music's for a search (the stand-in engine's ans
 picked from both and handed over in the order picked, and what the engine's failure means.
 Every title here is invented."""
 
+import asyncio
 import unittest
 
 from tests.gtk import requires_gtk
@@ -126,6 +127,32 @@ class AddSongsDialogTest(PageTestCase):
         dialog.add_button.emit('clicked')
         self.assertEqual([[obj.title for obj in objects] for objects in self.picked],
                          [['Harbour Lights', 'Tide Pool']])
+
+    async def test_a_search_stopped_before_its_answer_is_asked_again(self):
+        # A search still on its way as the text changes in Your Library is stopped; the same
+        # text typed again and Apple Music shown again asks once more, where the stopped
+        # search, taken for that text's, left the spinner for good.
+        self.library_songs('Harbour Lights')
+        gate = asyncio.Event()
+
+        async def slow(_text, _kind, _offset):
+            await gate.wait()
+            return songs_answer('Tidewater', 'Tide Pool')
+
+        self.app.engine.answers['search'] = slow
+        dialog = await self.presented()
+        dialog.scope_toggle.set_active_name('catalog')
+        await self.typed(dialog, 'tide')  # asked, not answered yet
+        self.assertEqual(dialog.stack.get_visible_child_name(), 'loading')
+        dialog.scope_toggle.set_active_name('library')
+        await self.typed(dialog, 'tides')  # stops the search under way
+        await self.typed(dialog, 'tide')
+        gate.set()
+        dialog.scope_toggle.set_active_name('catalog')
+        self.assertTrue(await self.until(
+            lambda: dialog.stack.get_visible_child_name() == 'catalog'))
+        self.assertEqual([request['text'] for request in self.app.engine.search_requests],
+                         ['tide', 'tide'])
 
     def pick_rows(self, widget):
         from applemusic.dialogs.add_songs import PickRow

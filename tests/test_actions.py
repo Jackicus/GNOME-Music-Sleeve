@@ -2594,6 +2594,20 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.actions.duplicate(empty))
         self.assertEqual(len(self.writes()), 1)
 
+    async def test_an_empty_playlist_listed_without_its_tracks_is_duplicated_empty(self):
+        # A playlist the library lists without its tracks (made empty and never opened: a
+        # playlists pass reads no tracks) is read first; Apple answers that it has none, and
+        # its copy is made empty all the same, not refused as an add of no songs is.
+        unread = Item({'id': 'p.pl3', 'kind': 'playlist', 'title': 'Quiet', 'groups': []})
+        self.app.engine.items[('playlist', 'p.pl3')] = {
+            'id': 'p.pl3', 'kind': 'playlist', 'title': 'Quiet',
+            'groups': [{'name': 'Tracks', 'entries': []}]}
+        self.actions.duplicate(unread)
+        await self.settle()
+        self.assertEqual(self.writes(), [('item', 'playlist', 'p.pl3'),
+                                         ('create_playlist', 'Quiet Copy', '', (), 'root')])
+        self.assertEqual(self.app.toasts, ['Created “Quiet Copy”'])
+
     async def test_add_songs_opens_its_dialog_for_a_playlist_of_the_users(self):
         made = []
 
@@ -3238,6 +3252,28 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
                          [('remove_from_library', 'song', 'i.song3'),
                           ('remove_from_library', 'song', 'i.song4')])
         self.assertEqual(self.app.toasts, ['Removed 2 songs from your library'])
+        self.assertEqual(self.app.syncs, [('quick', False, ('p.pl4',))])
+
+    async def test_remove_from_library_looks_through_the_playlists_once(self):
+        # One look for the whole selection, and before the library leaves the songs out of
+        # its playlists: a look a song went through every playlist's entries each time and
+        # held the main loop for seconds.
+        library = self.app.library
+        looks = []
+        playlists_holding = library.playlists_holding
+
+        def counted(ids):
+            looks.append((set(ids), list(library.hidden)))
+            return playlists_holding(ids)
+
+        library.playlists_holding = counted
+        self.actions.ask_remove_from_library([track_of(HELD_ALBUM, 0), track_of(HELD_ALBUM, 1),
+                                              track_of(LONE_ALBUM, 0)])
+        self.confirms[0][3]()
+        await self.settle()
+        self.assertEqual(looks, [({'i.song3', '1000000021', 'i.song4', '1000000022',
+                                   'i.song5', '1000000023'}, [])])
+        self.assertEqual(len(self.calls('remove_from_library')), 3)
         self.assertEqual(self.app.syncs, [('quick', False, ('p.pl4',))])
 
     async def test_remove_from_library_of_one_is_the_menus(self):

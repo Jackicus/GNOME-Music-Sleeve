@@ -251,12 +251,13 @@ paths:
   window's place: `mini_player.MiniPlayerHost` (`app.mini_player`) builds it as it shows and
   puts the main window away (`Window.put_away()`, background playback's too), and as it
   goes (Return to Main Window, the key again, its close) presents the main window and
-  destroys it (`release()`: its view's pieces and handlers detached first, so a closed one
+  destroys it (`release()`: a dialog over it closed, its view's pieces and handlers detached, so a closed one
   follows nothing and is freed: tests/test_page_lifetime.py). One at a time; its size is
   `mini-player-width` and `-height`, its layout `mini_player.layout_for()` (a small cover
   beside the titles when low). It has the transport pieces only (no lyrics, Up Next, heart
   or volume), the playback keys as the window has them, its own toasts while it shows
-  (`get_active_window()` is it), and announces each new item itself (the bar does not
+  (`get_active_window()` is it; a `win.*` button there runs through `app.window-action`),
+  and announces each new item itself (the bar does not
   announce from a hidden window: `transport.announcement()`). What needs the main window
   asks `app.main_window()`, and the Shell's search results `app.show_main_window()`, which
   leaves the mini player. Nothing keeps it on top (Wayland has no way to ask).

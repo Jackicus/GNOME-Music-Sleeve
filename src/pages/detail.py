@@ -827,7 +827,12 @@ class DetailPage(Adw.NavigationPage):
             self._suggestions_start = None
             self._shelves_start = None
             self._sections.remove_all()
+            # No songs show: the filter and Sort By go with them (a root page whose playlist
+            # went, Favourite Songs after a sign-out).
+            self._sorted, self._filtered, self._track_models = [], [], []
+            self._starts, self._headings, self._groups = [], [], 0
             self._update_state()
+            self._update_filter()
             self.selection_mode.set_available(False)
             return
         self._album_artist = album_artist(item) if item.kind == 'album' else None
@@ -937,7 +942,8 @@ class DetailPage(Adw.NavigationPage):
         self._update_filter()
         self.selection_mode.prune()
         if bar.search and self._track_models:
-            shown = self._shown_tracks()
+            # The filter's own count: the list may still be growing back to it (ShownModel).
+            shown = sum(model.get_n_items() for model in self._filtered)
             total = self._track_total
             words = ngettext('{shown} of {total} song', '{shown} of {total} songs', total)
             bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
@@ -1829,10 +1835,16 @@ class DetailPage(Adw.NavigationPage):
     # The selection mode.
 
     def _selectable(self):
-        """The tracks shown, in order: what the selection mode selects among."""
+        """The tracks shown, in order: what the selection mode selects among. A filtered
+        list growing back (ShownModel) counts whole: its rows still to come are shown as
+        far as a selection goes, so a filter loosened keeps what was selected."""
         tracks = []
         for model in self._track_models:
-            tracks.extend(model.get_item(position) for position in range(model.get_n_items()))
+            if isinstance(model, ShownModel):
+                tracks.extend(model.items())
+            else:
+                tracks.extend(model.get_item(position)
+                              for position in range(model.get_n_items()))
         return tracks
 
     def _update_selection(self, item):
