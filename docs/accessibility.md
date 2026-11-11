@@ -170,8 +170,10 @@ list and the script together.
 15. Radio shows the live stations as large cards, then Recently Played: Ctrl+2 puts the
     focus in the live stations, Tab (past the shelf's arrows and See All) reaches the first,
     and Right, Enter plays the second. New opens with its banners as wide cards (Ctrl+2 and
-    Tab reach the first) and ends with More to Explore's links: Enter on one opens its room
-    as a grid, Ctrl+2 puts the focus in the grid, and Escape goes back to New. Charts (New's
+    Tab reach the first; each is read with its title and subtitle, and described by
+    Apple's label over it and its tagline: "NEW ALBUM, …") and ends with More to Explore's
+    links: Enter on one opens its room as a grid, Ctrl+2 puts the focus in the grid, and
+    Escape goes back to New. Charts (New's
     or Search's Top Charts tile) shows Top
     Songs as a numbered grid of songs, then numbered tiles: Ctrl+2 and Tab reach the first
     song, and Enter plays the chart from it. Its header bar's genre menu is named (Genre) and
@@ -220,6 +222,17 @@ list and the script together.
     columns, every item with a mnemonic of its own; C shows the Genre column at once. In a
     narrow window the items are not listed. The script walks this after Albums' Favourites
     Only, and `--names` looks at Genres, and at Songs with both columns shown.
+20. On a song's menu (Menu on an album's track), Y, Add to Playlist's mnemonic, opens its
+    list of playlists, each named, a folder a submenu of its own, then New Playlist…;
+    Down moves to the folder, Right (or Enter) opens it with the focus on its title, the
+    way back, and Down reaches its first playlist; Up, then Left (or Enter) on the title,
+    goes back to the list, the focus on the folder. Enter on a playlist adds the song and
+    closes the menu, the focus back on the track. The script walks this after View
+    Credits (`--step add-to-playlist` alone).
+21. A dialog opened from a menu gives the focus back to the button the menu came from once
+    Escape closes it: Edit Details… (T) from a playlist's More Options, New Playlist… (W)
+    from the sidebar's New button, Remove from Library… (B) from an album's More Options,
+    nothing removed. The script walks this before step 8 (`--step dialog-focus` alone).
 
 ## The tools
 
@@ -244,7 +257,9 @@ list and the script together.
   from /usr/share/defaults/at-spi2 or /etc/at-spi2, on an abstract socket, and
   `at-spi2-registryd` from /usr/libexec, /usr/lib or /usr/lib/at-spi2-core), stops both when it
   exits, and lists each page's focusable controls that have no accessible name, as libatspi
-  (and so Orca) reads them, Search's Show Results Of open among them. GTK and libatspi both follow `AT_SPI_BUS_ADDRESS`.
+  (and so Orca) reads them, Search's Show Results Of open among them, and Now Playing's Up
+  Next and History; and those whose description only says their name again (a tooltip that
+  repeats the name, read twice). GTK and libatspi both follow `AT_SPI_BUS_ADDRESS`.
 - An `Atspi.EventListener` sees events only when registered before the app starts, and after
   `Atspi.init()`. `Gtk.Accessible.announce()` from a widget that no client has asked about is
   dropped; from the window it is always sent (`object:announcement`), which is why the app
@@ -258,7 +273,16 @@ list and the script together.
   default factories leave its list items unnamed, in the popup and in the row's own display
   of the value, and so do `GtkDropDown`'s (`widgets.labels.named_list_factory()` names them,
   for Preferences' combo row and Search's Show Results Of); an open
-  `Adw.BottomSheet` leaves the content behind it "showing".
+  `Adw.BottomSheet` leaves the content behind it "showing". A sidebar row's tooltip (a
+  playlist's whole name) would be read as its description too, the name said twice
+  (`update_rows()` sets an empty one), and a grid cell reads a tooltip set on a widget in its
+  row as the cell's description (the explicit badge's in a chart's songs: `song_shelf.py`
+  asks for it on `query-tooltip` instead); `--names` lists a description that repeats the
+  name.
+- GTK's own, not worked around: a `Gtk.PopoverMenu`'s items (the main menu, every context
+  menu and its submenus) are labelled by their label, which libatspi on GTK 4.24 cannot
+  resolve (the relation's target is an invalid object), so their name reads empty there;
+  `--names` leaves menus out for that.
 - Not checked by machine: input methods, Orca itself, the high-contrast switch live, and
   right-to-left layouts. Nor is CI: its container has no mutter, so the keyboard walkthrough is
   a tool to run here, not a job there.

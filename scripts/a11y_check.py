@@ -4,14 +4,14 @@
 
 """Walk the keyboard checklist and list unnamed widgets, with no one at the keyboard.
 
-    scripts/a11y_check.py [--size WxH] [--light] [--names] [--emulate-keys] [--step radio]
+    scripts/a11y_check.py [--size WxH] [--light] [--names] [--emulate-keys] [--step STEP]
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) on the demo
 library, as screenshot.py --demo does (scripts/harness.py: memory settings, animations off,
 no engine), and walks the
 keyboard walkthrough in docs/accessibility.md key by key, printing PASS or FAIL for each step;
 the exit status is 1 when a step fails. Use --size 360x640 for the narrow layout, and
---step radio to walk the Radio page's steps alone (to repeat them).
+--step radio (or add-to-playlist, dialog-focus) to walk that step alone (to repeat it).
 
 Under scripts/headless.sh the keys are real: scripts/remote_keys.py opens a session on the
 headless mutter's org.gnome.Mutter.RemoteDesktop and injects them as a keyboard would, so the
@@ -55,7 +55,7 @@ parser.add_argument('--names', action='store_true',
 parser.add_argument('--emulate-keys', action='store_true',
                     help="dispatch each press through GTK's handlers instead of sending a real "
                          "key through the compositor's RemoteDesktop interface")
-parser.add_argument('--step', choices=['radio'],
+parser.add_argument('--step', choices=['radio', 'add-to-playlist', 'dialog-focus'],
                     help='walk that step alone, from the window as it opens')
 parser.add_argument('--dump', action='store_true', help=argparse.SUPPRESS)  # the lister
 args = parser.parse_args()
@@ -75,7 +75,9 @@ NAMED_ROLES = {'push button', 'toggle button', 'check box', 'slider', 'spin butt
 
 def list_unnamed():
     """--dump: print the app's showing, focusable, sensitive objects with a role in
-    NAMED_ROLES and no name, one per line (role and path), from the bus in the environment."""
+    NAMED_ROLES and no name, and those whose description only says their name again (a
+    tooltip of the name, read twice), one per line (role and path), from the bus in the
+    environment."""
     import gi
     gi.require_version('Atspi', '2.0')
     from gi.repository import Atspi
@@ -95,6 +97,11 @@ def list_unnamed():
                 and states.contains(Atspi.StateType.FOCUSABLE)
                 and states.contains(Atspi.StateType.SENSITIVE)):
             print(f'{role} in {" > ".join(path[-3:])}')
+        elif (role in NAMED_ROLES and obj.get_name()
+              and obj.get_description() == obj.get_name()
+              and states.contains(Atspi.StateType.FOCUSABLE)):
+            print(f'{role} {obj.get_name()!r} described by its name again in '
+                  f'{" > ".join(path[-3:])}')
         label = f'{role} {obj.get_name()!r}' if obj.get_name() else role
         for i in range(obj.get_child_count()):
             child = obj.get_child_at_index(i)
@@ -199,6 +206,7 @@ import remote_keys  # noqa: E402  (imports Gtk, so after make_app)
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402  (after make_app)
 
 from applemusic import shortcuts  # noqa: E402  (the installed build's, after make_app)
+from applemusic.actions import submenu_labels  # noqa: E402  (likewise)
 from applemusic.widgets import context_menu  # noqa: E402  (likewise)
 
 failures = []
@@ -742,6 +750,169 @@ async def view_credits(window, detail):
           describe(window.get_focus()))
 
 
+def menu_page(popover):
+    """The name of the page a sliding Gtk.PopoverMenu shows: `main`, or the label of the
+    submenu open (mnemonic underscore and all), or None."""
+    stack = next((each for each in descendants(popover) if isinstance(each, Gtk.Stack)), None)
+    return stack.get_visible_child_name() if stack is not None else None
+
+
+def menu_focus_text(popover):
+    """The text of the menu item with the focus in a popover menu, or None."""
+    focus = popover.get_root().get_focus() if popover.get_root() is not None else None
+    if not inside(focus, popover) or focus.__gtype__.name != 'GtkModelButton':
+        return None
+    return focus.get_property('text')
+
+
+async def add_to_playlist(window, detail):
+    """Step 20: Add to Playlist's submenus from a track's menu by the keyboard: its
+    mnemonic opens its page of playlists, a folder is a submenu of its own playlists that
+    Right (or Enter) opens and Left on its title leaves, Enter on a playlist adds the song
+    (recorded: the demo writes nothing) and the focus is back on the track."""
+    print('-- Add to Playlist')
+    row = window.get_focus()
+    found = context_menu.find(detail.list_view, row)
+    track = found[1] if found is not None else None
+    check('the focus is on a track', track is not None, describe(row))
+    if track is None:
+        return
+    await key(window, 'Menu', 0.6)
+    shown = [each for each in harness.popovers(detail.list_view)
+             if isinstance(each, Gtk.PopoverMenu) and each.get_visible()]
+    menu = shown[0].get_menu_model() if shown else None
+    submenu = menu_submenu(menu, 'Add to Pla_ylist') if menu is not None else None
+    labels = menu_labels(submenu) if submenu is not None else []
+    folder = next((entry for entry in window.item_actions.playlists() if entry[2]), None)
+    folders = submenu_labels(submenu) if submenu is not None else []
+    check("its Add to Playlist lists the playlists by name, a folder's as a submenu, then "
+          'New Playlist…', bool(labels) and all(labels) and labels[-1] == 'Ne_w Playlist…'
+          and folder is not None and folder[1] in folders, (labels, folders))
+    if not shown or keyboard is None or folder is None:
+        # Moving through a popover menu needs real keys (its own key handling).
+        for each in shown:
+            each.popdown()
+        await asyncio.sleep(0.3)
+        return
+    popover = shown[0]
+    await key(window, 'y', 0.6)  # its mnemonic
+    check('Y, its mnemonic, opens its page with the focus on a playlist',
+          menu_page(popover) == 'Add to Pla_ylist' and menu_focus_text(popover) is not None,
+          (menu_page(popover), menu_focus_text(popover)))
+    for _step in range(len(labels) + 4):  # down to the folder's item
+        if menu_focus_text(popover) == folder[1]:
+            break
+        await key(window, 'Down', 0.2)
+    check("Down reaches the folder's item", menu_focus_text(popover) == folder[1],
+          menu_focus_text(popover))
+    await key(window, 'Right', 0.6)
+    check("Right opens the folder's page, the focus on its title (the way back)",
+          menu_page(popover) == folder[1] and menu_focus_text(popover) == folder[1],
+          (menu_page(popover), menu_focus_text(popover)))
+    await key(window, 'Down', 0.3)
+    inner = [title for _id, title, children in folder[2] if children is None]
+    check('Down reaches its first playlist', menu_focus_text(popover) in inner[:1],
+          (menu_focus_text(popover), inner))
+    await key(window, 'Up', 0.3)
+    await key(window, 'Left', 0.6)  # on the title: GTK's way back
+    check('Up, Left goes back to Add to Playlist, the focus on the folder',
+          menu_page(popover) == 'Add to Pla_ylist' and menu_focus_text(popover) == folder[1],
+          (menu_page(popover), menu_focus_text(popover)))
+    await key(window, 'Return', 0.6)  # Enter opens the folder's page too
+    added = []
+    actions = window.item_actions
+    actions.add_to_playlist = lambda playlist_id, song_id, title='', kind='song': (
+        added.append((playlist_id, song_id)))
+    await key(window, 'Down', 0.3)  # past the page's title, to its first playlist
+    chosen = menu_focus_text(popover)
+    await key(window, 'Return', 0.6)
+    del actions.add_to_playlist
+    await until(lambda: not popover.get_visible() and window.get_focus() is row)
+    check('Enter on a playlist in it adds the song to it, the focus back on the track',
+          len(added) == 1 and added[0][1] == track.id and chosen in inner
+          and not popover.get_visible() and window.get_focus() is row,
+          (chosen, added, describe(window.get_focus())))
+
+
+async def dialog_focus(window):
+    """Step 21: a dialog opened from a menu gives the focus back to where the menu was
+    opened from once Escape closes it: Edit Details… from a playlist's More Options, New
+    Playlist… from the sidebar's New button, Remove from Library… from an album's More
+    Options."""
+    from applemusic.dialogs.playlist import PlaylistDialog
+
+    print('-- the focus after a dialog')
+    if keyboard is None:
+        return  # a dialog's own window takes the keys only once it is active
+    playlist = first_playlist()
+    window.select_page(f'playlist:{playlist.id}')
+    window.split_view.set_show_content(True)
+    await asyncio.sleep(0.8)
+    page = window.navigation_view.get_visible_page()
+    for opener, mnemonic, kind, name in (
+            (page.more_button, 't', PlaylistDialog, "Edit Details… from the playlist's More "
+             'Options'),
+            (window._sidebar.new_button(), 'w', PlaylistDialog, 'New Playlist… from the '
+             "sidebar's New button")):
+        if opener is not page.more_button and window.split_view.get_collapsed():
+            window.split_view.set_show_content(False)  # the narrow layout: the sidebar
+            await asyncio.sleep(0.6)
+        if opener is None or not opener.get_mapped():
+            check(f'{name}: its button shows', False)
+            continue
+        opener.grab_focus()
+        await key(window, 'space', 0.6)
+        await key(window, mnemonic, 1.0)
+        await until(lambda kind=kind: dialog_shown(window, kind) is not None)
+        shown = dialog_shown(window, kind)
+        if shown is None:
+            check(f'{name} opens its dialog', False, describe(window.get_focus()))
+            continue
+        toplevel = shown.get_root()
+        await until(toplevel.is_active)
+        await key(toplevel, 'Escape', 0)
+        await until(lambda kind=kind: dialog_shown(window, kind) is None)
+        await until(window.is_active)
+        await until(lambda opener=opener: inside(window.get_focus(), opener))
+        check(f'{name}, Escape: the focus back on the button', inside(window.get_focus(), opener),
+              describe(window.get_focus()))
+    album = app.library.albums.get_item(0)
+    window.open_item(album)
+    window.split_view.set_show_content(True)
+    await asyncio.sleep(1.0)
+    detail = window.navigation_view.get_visible_page()
+    detail.more_button.grab_focus()
+    await key(window, 'space', 0.6)
+    await key(window, 'b', 1.0)  # Remove from Li_brary…
+    await until(lambda: dialog_shown(window, Adw.AlertDialog) is not None)
+    shown = dialog_shown(window, Adw.AlertDialog)
+    check("Remove from Library… from an album's More Options asks first", shown is not None)
+    if shown is not None:
+        await until(shown.get_root().is_active)
+        await key(shown.get_root(), 'Escape', 0)
+        await until(lambda: dialog_shown(window, Adw.AlertDialog) is None)
+        await until(window.is_active)
+        await until(lambda: inside(window.get_focus(), detail.more_button))
+        check('Escape: nothing removed, the focus back on More Options',
+              inside(window.get_focus(), detail.more_button)
+              and app.library.by_id('album', album.id) is album, describe(window.get_focus()))
+    window.navigation_view.pop()
+    await asyncio.sleep(0.6)
+
+
+async def add_to_playlist_alone(window):
+    """--step add-to-playlist: an album opened, the focus on its second track, then
+    add_to_playlist()."""
+    from applemusic.widgets.util import focus_position
+
+    window.open_item(app.library.albums.get_item(0))
+    await asyncio.sleep(1.0)
+    detail = window.navigation_view.get_visible_page()
+    focus_position(detail.list_view, 2)  # the hero is the first item
+    await asyncio.sleep(0.3)
+    await add_to_playlist(window, detail)
+
+
 async def selecting_songs(window):
     """Step 16: a playlist's selection mode from the keyboard: Ctrl+A on a song selects them
     all (the mode on), Ctrl+Shift+A none, Space selects the focused song and Shift+Space up
@@ -1220,6 +1391,7 @@ async def walkthrough(window):
     second = detail.item.groups[0].entries.get_item(1)
     check('Down, Enter plays the second track', requests == [(1, second.id)], requests)
     await view_credits(window, detail)
+    await add_to_playlist(window, detail)
     # The footer and the catalog's shelves after the tracks (the demo's invented answer).
     await until(lambda: detail._shelves_start is not None)
     check("the catalog's shelves follow the tracks", detail._shelves_start is not None)
@@ -2183,6 +2355,7 @@ async def walkthrough(window):
         check('Escape closes it, nothing removed',
               dialog_shown(window, Adw.AlertDialog) is None
               and app.library.by_id('album', album.id) is album)
+    await dialog_focus(window)
     print('-- a dialog over the window')
     # A dialog is inside the window only when the window is maximized or tiled (else it is
     # a window of its own, which the window's keys never reach).
@@ -2597,7 +2770,8 @@ async def unnamed(label):
                                  | Gio.SubprocessFlags.STDERR_SILENCE)
     _ok, out, _err = await process.communicate_utf8_async(None, None)
     lines = [line for line in (out or '').splitlines() if line]
-    print(f'{label}: {len(lines)} unnamed' + ''.join(f'\n    {line}' for line in lines))
+    print(f'{label}: {len(lines)} unnamed or named twice'
+          + ''.join(f'\n    {line}' for line in lines))
     return len(lines)
 
 
@@ -2688,10 +2862,19 @@ async def names(window):
     total += await unnamed("search's See All")
     window.navigation_view.pop()
     await asyncio.sleep(0.5)
-    app.player.apply(harness.invented_playing_state(app))
+    app.player.apply(harness.invented_playing_state(app, autoplay=True, history=True))
     window.bottom_sheet.set_open(True)
     await asyncio.sleep(1.0)
     total += await unnamed('Now Playing')
+    sheet = window.now_playing
+    sheet.show_tab('queue')  # Up Next: its tools, its entries, Autoplay's
+    await asyncio.sleep(1.0)
+    total += await unnamed('Now Playing, Up Next')
+    sheet.queue_view.history_button.set_active(True)  # the entries played before
+    await asyncio.sleep(1.0)
+    total += await unnamed('Now Playing, History')
+    sheet.queue_view.history_button.set_active(False)
+    sheet.show_tab('lyrics')
     window.bottom_sheet.set_open(False)
     window.activate_action('win.fullscreen-player', None)
     await asyncio.sleep(1.0)
@@ -2759,7 +2942,7 @@ async def names(window):
     window.activate_action('win.item-view-credits', GLib.Variant('(ss)', ('song', song.id)))
     await asyncio.sleep(1.0)
     total += await unnamed('View Credits')
-    print(f'{total} unnamed in all')
+    print(f'{total} unnamed or named twice in all')
 
 
 # -- running -------------------------------------------------------------------------------
@@ -2778,6 +2961,10 @@ async def run():
             check('the window takes the keyboard', await until(window.is_active, 5.0))
         if args.step == 'radio':
             await radio_step(window)
+        elif args.step == 'add-to-playlist':
+            await add_to_playlist_alone(window)
+        elif args.step == 'dialog-focus':
+            await dialog_focus(window)
         else:
             await walkthrough(window)
         if args.names and not args.step:

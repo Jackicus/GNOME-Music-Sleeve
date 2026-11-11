@@ -907,6 +907,9 @@ class SidebarController:
         for index, row in enumerate(self.rows()):
             item = items.get_item(index)
             row.update_property([Gtk.AccessibleProperty.LABEL], [item.get_title()])
+            # No description: GTK would read the tooltip (a playlist's whole name, for a row
+            # that ellipsizes it) as one, the name said twice.
+            row.update_property([Gtk.AccessibleProperty.DESCRIPTION], [''])
             # A row with a context menu says so (AdwSidebar would, with a menu of its own).
             if self._item_of(item) is not None:
                 row.update_property([Gtk.AccessibleProperty.HAS_POPUP], [True])

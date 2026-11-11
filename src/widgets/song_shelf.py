@@ -35,6 +35,12 @@ def badge_texts():
     return C_('explicit badge', 'E'), _('Explicit')
 
 
+def _badge_tooltip(_badge, _x, _y, _keyboard, tooltip):
+    """The explicit badge's tooltip, as it shows."""
+    tooltip.set_text(badge_texts()[1])
+    return True
+
+
 class SongRow(Gtk.Box):
     """A song in the grid: its album's cover, its title (with the explicit badge) and its
     album and year; with `suggestion`, its artist and album (a playlist's Suggested Songs,
@@ -86,10 +92,13 @@ class SongRow(Gtk.Box):
                                single_line_mode=True)
         line.append(self.title)
         # Decoration: the row's name says "explicit" (song_label).
-        badge, tooltip = badge_texts()
+        # Its tooltip is asked for as it shows, not set: a grid's cell reads a set tooltip
+        # of its row's as the song's description ("…, explicit", then "Explicit").
+        badge, _tooltip = badge_texts()
         self.badge = Gtk.Label(
-            label=badge, tooltip_text=tooltip, visible=False,
+            label=badge, visible=False, has_tooltip=True,
             valign=Gtk.Align.CENTER, accessible_role=Gtk.AccessibleRole.PRESENTATION)
+        self.badge.connect('query-tooltip', _badge_tooltip)
         self.badge.add_css_class('caption')
         self.badge.add_css_class('explicit-badge')
         line.append(self.badge)
