@@ -569,6 +569,57 @@ class DetailPageTest(PageTestCase):
         self.assertEqual(self.window.item_actions.went[-1],
                          (row.context_item, 'link to artist'))
 
+    async def test_a_click_on_a_link_opens_its_page_on_the_release(self):
+        # track_links.attach()'s gesture on the view: a press on a link and its release over
+        # the same link open the page; a release elsewhere, a double press, a cancelled
+        # press or a list in its selection mode (set_inert) open nothing.
+        from gi.repository import Gdk, Gtk
+
+        from applemusic.widgets import track_links
+
+        page = await self.push(self.page(album(1, tracks=3, kind='playlist')))
+        self.assertTrue(await self.until(lambda: page.table and len(page._bound) == 3))
+        row = next(iter(page._bound)).get_child().track_row
+        await self.until(lambda: row.album_link.get_width() > 0)
+        view = page.list_view
+        found, bounds = row.album_link.compute_bounds(view)
+        self.assertTrue(found)
+        x = bounds.get_x() + bounds.get_width() / 2
+        y = bounds.get_y() + bounds.get_height() / 2
+        off = x + bounds.get_width()  # beside the link's text
+
+        def link_gestures():
+            return [controller for controller in view.observe_controllers()
+                    if isinstance(controller, Gtk.GestureClick)
+                    and controller.get_button() == Gdk.BUTTON_PRIMARY
+                    and controller.get_propagation_phase() == Gtk.PropagationPhase.CAPTURE]
+
+        self.assertEqual(len(link_gestures()), 1)
+        click = link_gestures()[0]
+        went = self.window.item_actions.went
+
+        def press_release(at=(x, y), to=(x, y), n_press=1, cancel=False):
+            click.emit('pressed', n_press, *at)
+            if cancel:
+                click.emit('cancel', None)
+            click.emit('released', n_press, *to)
+
+        press_release()
+        self.assertEqual(went, [(row.context_item, 'album')])
+        press_release(to=(off, y))  # released beside it
+        press_release(n_press=2)  # a double click's second press
+        press_release(cancel=True)  # a drag took it, say
+        press_release(at=(off, y))  # pressed beside it
+        self.assertEqual(len(went), 1)
+        track_links.set_inert(view, True)
+        press_release()
+        self.assertEqual(len(went), 1)
+        track_links.set_inert(view, False)
+        press_release()
+        self.assertEqual(len(went), 2)
+        track_links.attach(view)  # once per view: no second gesture
+        self.assertEqual(link_gestures(), [click])
+
     async def test_the_more_options_menu_is_the_items(self):
         page = await self.push(self.page(album(1)))
         page.more_button.popup()
