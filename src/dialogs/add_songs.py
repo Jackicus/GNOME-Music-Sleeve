@@ -259,7 +259,12 @@ class AddSongsDialog(Adw.Dialog):
         self._show_scope()
 
     def _on_scope_changed(self, *_args):
-        if self.scope == CATALOG and (self._pager is None or self._pager.term != self.term):
+        pager = self._pager
+        # Asked for what is typed, unless it was: a search stopped before its first page
+        # (the text changed while Your Library showed, then back) is asked again, since its
+        # list, never shown, would never resume it.
+        if self.scope == CATALOG and (pager is None or pager.term != self.term or (
+                pager.stopped and not pager.items.get_n_items())):
             self._search_catalog()
         self._show_scope()
 

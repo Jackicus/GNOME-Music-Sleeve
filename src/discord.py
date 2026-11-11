@@ -296,7 +296,7 @@ class Connection:
 
     async def _read_forever(self):
         """Read Discord's answers and drop them, so its writes never fill the socket. Ends
-        quietly when the connection goes."""
+        quietly when the connection goes; close() cancelling it ends it cancelled."""
         try:
             while True:
                 header = await self._reader.readexactly(HEADER_SIZE)
@@ -308,7 +308,7 @@ class Connection:
                     await self._reader.readexactly(length)
                 if opcode == OP_CLOSE:
                     break
-        except (asyncio.IncompleteReadError, OSError, asyncio.CancelledError):
+        except (asyncio.IncompleteReadError, OSError):
             pass
 
 

@@ -107,7 +107,7 @@ from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
 from ..release import (album_artist, album_shelves, album_target, curator, curator_item,
                        footer_lines, hero_caption, is_prerelease, playlist_shelves,
-                       playlist_target, released_play)
+                       playlist_target, released_play, unbroken)
 from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
@@ -631,6 +631,12 @@ class DetailPage(Adw.NavigationPage):
         self.selection_mode = SelectionMode(self, self.header_bar, self.toolbar, self.list_view,
                                             self._selectable, self._focus_tracks)
         self.selection_mode.set_header_title(self._header_title)
+        # A playlist's Sort By at the header bar's end, then Select and the filter's button,
+        # in the order the Songs page and the grids have them (its menu is made below).
+        self.sort_button = Gtk.MenuButton(icon_name='view-sort-descending-symbolic',
+                                          tooltip_text=_('Sort By'), visible=False)
+        self.sort_button.update_property([Gtk.AccessibleProperty.LABEL], [_('Sort By')])
+        self.header_bar.pack_end(self.sort_button)
         self.header_bar.pack_end(self.selection_mode.select_button)
         self.header_bar.pack_end(self.selection_mode.cancel_button)
         connect_weak(self.selection_mode.selection, 'changed', self._on_selection_changed)
@@ -649,8 +655,8 @@ class DetailPage(Adw.NavigationPage):
         self.selection_mode.set_filter_bar(self.filter_bar)
         connect_weak(self.filter_bar, 'changed', self._on_filter_changed)
         self.filter_bar.set_focus_return(self._focus_tracks)
-        # A playlist's Sort By, beside the filter's button: radio items of the stateful
-        # tracks.sort and tracks.sort-order actions (the view's order only).
+        # A playlist's Sort By (packed above): radio items of the stateful tracks.sort and
+        # tracks.sort-order actions (the view's order only).
         self._sort_action = Gio.SimpleAction.new_stateful(
             'sort', GLib.VariantType.new('s'), GLib.Variant('s', OWN_ORDER[0]))
         self._order_action = Gio.SimpleAction.new_stateful(
@@ -678,11 +684,7 @@ class DetailPage(Adw.NavigationPage):
             sort_actions, weak_method(self._on_column_chosen))
         sort_menu.append_section(None, song_columns.menu_section('tracks'))
         song_columns.show_states(self._column_actions, self._optional, False)
-        self.sort_button = Gtk.MenuButton(icon_name='view-sort-descending-symbolic',
-                                          tooltip_text=_('Sort By'), menu_model=sort_menu,
-                                          visible=False)
-        self.sort_button.update_property([Gtk.AccessibleProperty.LABEL], [_('Sort By')])
-        self.header_bar.pack_end(self.sort_button)
+        self.sort_button.set_menu_model(sort_menu)
         # Tab from the hero's last button goes on into the tracks (_on_list_key_pressed).
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         connect_weak(keys, 'key-pressed', self._on_list_key_pressed)
@@ -827,7 +829,12 @@ class DetailPage(Adw.NavigationPage):
             self._suggestions_start = None
             self._shelves_start = None
             self._sections.remove_all()
+            # No songs show: the filter and Sort By go with them (a root page whose playlist
+            # went, Favourite Songs after a sign-out).
+            self._sorted, self._filtered, self._track_models = [], [], []
+            self._starts, self._headings, self._groups = [], [], 0
             self._update_state()
+            self._update_filter()
             self.selection_mode.set_available(False)
             return
         self._album_artist = album_artist(item) if item.kind == 'album' else None
@@ -937,7 +944,8 @@ class DetailPage(Adw.NavigationPage):
         self._update_filter()
         self.selection_mode.prune()
         if bar.search and self._track_models:
-            shown = self._shown_tracks()
+            # The filter's own count: the list may still be growing back to it (ShownModel).
+            shown = sum(model.get_n_items() for model in self._filtered)
             total = self._track_total
             words = ngettext('{shown} of {total} song', '{shown} of {total} songs', total)
             bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
@@ -1395,7 +1403,7 @@ class DetailPage(Adw.NavigationPage):
         self._artist = resolve_artist(self._library, item)
         self._show_curator(item)
         caption = hero_caption(item)
-        self.caption_label.set_label(caption)
+        self.caption_label.set_label(unbroken(caption))
         self.caption_label.set_visible(bool(caption))
         self.summary_label.set_label(item.summary or '')
         self.summary_box.set_visible(bool(item.summary))
@@ -1829,10 +1837,16 @@ class DetailPage(Adw.NavigationPage):
     # The selection mode.
 
     def _selectable(self):
-        """The tracks shown, in order: what the selection mode selects among."""
+        """The tracks shown, in order: what the selection mode selects among. A filtered
+        list growing back (ShownModel) counts whole: its rows still to come are shown as
+        far as a selection goes, so a filter loosened keeps what was selected."""
         tracks = []
         for model in self._track_models:
-            tracks.extend(model.get_item(position) for position in range(model.get_n_items()))
+            if isinstance(model, ShownModel):
+                tracks.extend(model.items())
+            else:
+                tracks.extend(model.get_item(position)
+                              for position in range(model.get_n_items()))
         return tracks
 
     def _update_selection(self, item):
@@ -2028,7 +2042,7 @@ class DetailPage(Adw.NavigationPage):
         row = self._row_at(index) if self.can_reorder() else None
         if row is None:
             return False
-        self._drop_feedback.insert(row, after)
+        self._drop_feedback.insert(row.get_parent() or row, after)
         return True
 
     def _row_at(self, index):
@@ -2058,7 +2072,9 @@ class DetailPage(Adw.NavigationPage):
         if drop_index(from_index, gap) is None or row is None:
             self._drop_feedback.highlight(None)
             return 0
-        self._drop_feedback.insert(row, after)
+        # On the list's row, around the song's own padding: on the song's widget the line
+        # would run behind its cover.
+        self._drop_feedback.insert(row.get_parent() or row, after)
         return Gdk.DragAction.MOVE
 
     def _on_drop_leave(self, _target):

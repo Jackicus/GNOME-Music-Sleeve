@@ -1,8 +1,16 @@
-# Runs scripts/check.sh (byte-compile, ruff, meson build, unit tests, desktop/metainfo/schema
-# validation) on every push to main and every pull request.
+# On every push to main and every pull request, two jobs side by side:
+#
+# - check: scripts/check.sh (byte-compile, ruff, meson build, unit tests, desktop/metainfo/
+#   schema validation), with the widget tests on Xvfb.
+# - dist: `meson dist` as a packager meets it: the tarball's source, configured as arch-meson
+#   configures it, built, tested (`meson test`, what the PKGBUILD's check() runs) and
+#   installed, with only the PKGBUILD's dependencies and no display. There the source tree has
+#   no build/, so no compiled gresource where tests/gtk.py looks: a test that imports a module
+#   with a Gtk.Template without `@requires_gtk` errors here, where check.sh's suite, whose
+#   widget tests have registered build/'s gresource by then, passes it (#543).
 #
 # The app needs GTK 4.22 and libadwaita 1.9, which the Ubuntu runner images do not ship, so
-# the job runs in an Arch Linux container, the distribution the app is developed on.
+# the jobs run in an Arch Linux container, the distribution the app is developed on.
 name: CI
 
 on:
@@ -74,4 +82,59 @@ jobs:
         with:
           name: meson-logs
           path: build/meson-logs/
+          if-no-files-found: ignore
+
+  dist:
+    name: meson dist (Arch Linux, as packaged)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: archlinux:latest
+    env:
+      LANG: C.UTF-8
+    steps:
+      - name: Name this week's package cache
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pacman package cache
+        uses: actions/cache@v6
+        with:
+          path: /var/cache/pacman/pkg
+          key: pacman-dist-${{ runner.os }}-${{ steps.week.outputs.week }}
+          restore-keys: |
+            pacman-dist-${{ runner.os }}-
+
+      - name: Install makepkg's tools
+        # Before the checkout, which needs git to make a repository meson dist can archive.
+        run: pacman -Syu --noconfirm --needed base-devel git
+
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install the PKGBUILD's dependencies
+        working-directory: build-aux/aur
+        run: |
+          source ./PKGBUILD
+          pacman -S --noconfirm --needed "${depends[@]}" "${makedepends[@]}" "${checkdepends[@]}"
+          pacman -Sc --noconfirm
+          pacman -Q gtk4 libadwaita python python-gobject meson blueprint-compiler
+
+      - name: Build and test the dist tarball
+        # No xvfb-run: a packager's clean chroot has no display either.
+        run: |
+          arch-meson . _build
+          meson dist -C _build
+
+      - name: Upload the Meson logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: meson-dist-logs
+          path: |
+            _build/meson-logs/
+            _build/meson-private/dist-build/meson-logs/
           if-no-files-found: ignore

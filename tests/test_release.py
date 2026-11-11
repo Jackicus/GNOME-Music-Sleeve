@@ -15,7 +15,7 @@ from applemusic.release import (album_artist, album_shelves, album_target, comin
                                 curator, curator_item, footer_lines, hero_caption,
                                 is_prerelease, length_text, playlist_shelves,
                                 playlist_target, release_date_text, released_play,
-                                shelf_title, updated_text)
+                                shelf_title, unbroken, updated_text)
 
 
 def album(album_id='l.alb001', catalog_id=None, songs=(None, '1724049201'), **extra):
@@ -195,6 +195,11 @@ class PrereleaseTest(unittest.TestCase):
                          'Pop · Coming 4 December 2026 · 4 songs, 12 min')
         self.assertEqual(hero_caption(upcoming(releaseDate=None)),
                          'Pop · Coming Soon · 4 songs, 12 min')
+        # As the page shows it: a narrow page wraps it between its parts only.
+        self.assertEqual(unbroken(hero_caption(upcoming())),
+                         'Pop · Coming\u00a04\u00a0December\u00a02026 · 4\u00a0songs,'
+                         '\u00a012\u00a0min')
+        self.assertEqual(unbroken(''), '')
         self.assertEqual(footer_lines(upcoming(), None, 4, 720000),
                          ['Coming 4 December 2026', '4 songs, 12 minutes'])
         # The catalog's answer's date over the Item's; a date always, a year alone too.

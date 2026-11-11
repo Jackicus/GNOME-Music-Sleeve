@@ -559,6 +559,40 @@ class SyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.children('p.fldB2'), [])
         self.assertIn(('playlist', 'p.pl789'), self.children(ROOT_FOLDER))
 
+    def moved_folder(self, moved):
+        """The fixtures with a second top-level folder, p.fldC3, read after p.fldA1, which
+        holds p.fldB2 alone (its playlist at the top level); `moved`: p.fldB2 in p.fldC3
+        now, p.fldA1 answering nothing."""
+        wired = answers()
+        folders = fixture('playlist_folders.json')
+        root = folders[app_sync.APPLE_ROOT_FOLDER]
+        root['data'].insert(2, {'id': 'p.fldC3', 'type': app_sync.FOLDER_TYPE,
+                                'attributes': {'name': 'Zebra'}})
+        root['data'].append(folders['p.fldA1']['data'][1])  # p.pl456
+        inner = folders['p.fldA1']['data'][0]  # p.fldB2
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/{app_sync.APPLE_ROOT_FOLDER}/children'] = root
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldA1/children'] = {
+            'data': [] if moved else [inner]}
+        wired[f'{app_sync.FOLDERS_ENDPOINT}/p.fldC3/children'] = {
+            'data': [inner] if moved else []}
+        return wired
+
+    async def test_a_folder_moved_out_of_the_folder_it_was_alone_in_is_where_apple_lists_it(self):
+        # The folder it left answers nothing and is read first: last time's file has the
+        # moved folder there, but the folder read after lists it, and that is where it is.
+        await app_sync.sync_library(FakeEngine(self.moved_folder(False)), self.library)
+        self.assertEqual(self.children('p.fldA1'), [('folder', 'p.fldB2')])
+        for playlists in (True, False):  # a playlists pass, then a full one
+            with self.subTest(playlists=playlists), self.assertNoLogs('applemusic.sync',
+                                                                      'WARNING'):
+                await app_sync.sync_library(FakeEngine(self.moved_folder(True)), self.library,
+                                            playlists=playlists)
+                self.assertEqual(self.children('p.fldA1'), [])
+                self.assertEqual(self.children('p.fldC3'), [('folder', 'p.fldB2')])
+                self.assertEqual(self.children('p.fldB2'), [('playlist', 'p.pl789')])
+        tree = self.library.playlist_tree()
+        self.assertEqual([node.id for node in tree.folder('p.fldC3').children], ['p.fldB2'])
+
     async def test_a_folder_deleted_with_its_playlists_is_not_kept(self):
         # p.fldB2 and the one playlist in it deleted: the folder that held it answers with
         # nothing live, and p.fldB2 itself with a 404. Last time's file has p.fldB2, but

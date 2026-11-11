@@ -233,6 +233,20 @@ class WindowTest(unittest.TestCase):
                            'position': 3, 'duration': 200})
         self.assertEqual(view.title_label.get_label(), 'Harbour Lights')
 
+    def test_released_it_closes_the_dialog_over_it(self):
+        # Preferences (or the sign-in) opened over the mini player by its key: the app keeps
+        # the one it has until its `closed`, which a dialog only destroyed with its window
+        # never emitted, so Preferences never opened again and the toasts went nowhere.
+        from gi.repository import Adw
+
+        closed = []
+        dialog = Adw.Dialog(child=Adw.Bin())
+        dialog.connect('closed', lambda _dialog: closed.append(True))
+        dialog.present(self.window)
+        self.assertTrue(wait_for(dialog.get_mapped))
+        self.close()
+        self.assertTrue(wait_for(lambda: closed))
+
 
 if __name__ == '__main__':
     unittest.main()

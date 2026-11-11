@@ -85,6 +85,10 @@ skipped at -1. Only stale files are compiled again, so development installs stay
 - `meson dist -C build` archives HEAD (commit first) without the subprojects, into
   `build/meson-dist/`, and builds and tests the tarball with the build directory's options, so
   it needs `blueprint-compiler` installed or the network for the wrap.
+- CI's `dist` job does the same on every pull request and push to main, from a build
+  directory set up by `arch-meson` (the release profile, as the PKGBUILD's), with only the
+  PKGBUILD's dependencies and no display, so the release's `meson dist` meets no test that
+  check.sh passed only because build/'s gresource was there.
 - Test a tarball in a temporary directory with its own `--prefix`.
 - The Package workflow builds the PKGBUILD as it stands on every pull request that touches it,
   and uploads the package as a workflow artifact. Locally, test it in a temporary copy: run

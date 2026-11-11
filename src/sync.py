@@ -562,14 +562,28 @@ async def _fetch_folders(engine, report, raw_playlists=None, previous=None):
     (`previous`, read only when needed), a read never takes a playlist out of the tree that
     the listing still has: kept_places() puts it back where last time's file had it. A
     folder that answers with nothing live has the folders it held last time read too, kept
-    only when something ends up in them."""
+    only when something ends up in them, and only those that no folder Apple listed names:
+    they are taken up once every listed folder has been read, so a folder moved out of the
+    folder it was alone in is filed where Apple lists it now."""
     folders = []
     seen = {APPLE_ROOT_FOLDER}
     queue = [(APPLE_ROOT_FOLDER, None, '')]
     before = None  # last time's folders by id, read when first needed
     unread = set()  # folders kept from last time's file, not from Apple's listing
+    held = []  # (entry, child id): last time's folders of the folders that answered nothing
     report('folders', 0, None)
-    while queue:
+    while queue or held:
+        if not queue:
+            # Every folder listed so far has been read: last time's that none of them named.
+            for entry, child_id in held:
+                if child_id in seen:
+                    continue
+                seen.add(child_id)
+                unread.add(child_id)
+                entry['children'].append({'kind': 'folder', 'id': child_id})
+                queue.append((child_id, entry['id'], str(before[child_id].get('title') or '')))
+            held = []
+            continue
         apple_id, parent, title = queue.pop(0)
         try:
             children = await engine.api_pages(f'{FOLDERS_ENDPOINT}/{apple_id}/children',
@@ -603,12 +617,8 @@ async def _fetch_folders(engine, report, raw_playlists=None, previous=None):
                 before = _by_id(await asyncio.to_thread(previous.folders))
             for child in _dicts((before.get(entry['id']) or {}).get('children')):
                 child_id = str(child.get('id') or '')
-                if child.get('kind') != 'folder' or child_id in seen or child_id not in before:
-                    continue
-                seen.add(child_id)
-                unread.add(child_id)
-                entry['children'].append({'kind': 'folder', 'id': child_id})
-                queue.append((child_id, entry['id'], str(before[child_id].get('title') or '')))
+                if child.get('kind') == 'folder' and child_id not in seen and child_id in before:
+                    held.append((entry, child_id))
         folders.append(entry)
         report('folders', len(folders), len(folders) + len(queue))
     if raw_playlists is None or previous is None:
@@ -765,8 +775,8 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
                                                generation=generation)
     except normalize.Cancelled:
         raise  # cancelled, or the cache was cleared: nothing more is written
-    except Exception as error:
-        log.warning('sync: artwork: %s', error)
+    except Exception as error:  # the listing matters more than its artwork: it is written
+        log.warning('sync: artwork: %s', error, exc_info=True)
         counts['art'] = {'wanted': 0, 'fetched': 0, 'failed': 0}
     _stop_if(cancelled, generation, cache_dir)  # with nothing to fetch, download_art did not ask
     normalize.save_library(library_data, cache_dir, indent=None,  # compact: a third the size

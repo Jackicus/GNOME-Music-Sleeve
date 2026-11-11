@@ -15,6 +15,11 @@ from tests.page_harness import PageTestCase, album, artist, artist_answer, playi
 from applemusic.backend.errors import EngineError
 
 
+def caption(page):
+    """The hero's caption with its no-break spaces read as spaces (release.unbroken())."""
+    return page.caption_label.get_label().replace('\u00a0', ' ')
+
+
 class DetailPageTest(PageTestCase):
     def page(self, data):
         from applemusic.library import Item
@@ -76,6 +81,26 @@ class DetailPageTest(PageTestCase):
         self.window.navigation_view.replace([page])
         self.assertTrue(await self.until(page.get_mapped))
         self.assertEqual(self.marked(page), ['l.album001.t1.0'])
+
+    async def test_a_root_page_whose_playlist_goes_has_no_filter_or_sort(self):
+        # Favourite Songs after a sign-out: the page is kept and finds no playlist. Its
+        # empty state has no Sort By, no filter (Ctrl+F goes to Search) and no Select.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        shown = [Item(album(1, tracks=3, kind='playlist'))]
+        page = await self.show_root(DetailPage(self.library, find=lambda: shown[0], root=True,
+                                               title='Invented Root'))
+        self.assertTrue(await self.until(lambda: len(page._bound) == 3))
+        self.assertTrue(page.sort_button.get_visible())
+        self.assertTrue(page.filter_bar.button.get_visible())
+        shown[0] = None
+        page._follow()
+        self.assertEqual(page.stack.get_visible_child_name(), 'empty')
+        self.assertFalse(page.sort_button.get_visible())
+        self.assertFalse(page.filter_bar.button.get_visible())
+        self.assertFalse(page.focus_filter())
+        self.assertEqual(page._selectable(), [])
 
     def test_the_playing_song_s_place(self):
         from applemusic.library import Track
@@ -569,6 +594,83 @@ class DetailPageTest(PageTestCase):
         self.assertEqual(self.window.item_actions.went[-1],
                          (row.context_item, 'link to artist'))
 
+    async def test_a_ctrl_click_on_a_link_is_the_rows(self):
+        # Ctrl or Shift held, a click selects (SelectionMode.activated()), on a link too:
+        # the link's gesture leaves the press to the row, and opens nothing.
+        from gi.repository import Gdk, Gtk
+
+        page = await self.push(self.page(album(1, tracks=3, kind='playlist')))
+        self.assertTrue(await self.until(lambda: page.table and len(page._bound) == 3))
+        row = next(iter(page._bound)).get_child().track_row
+        await self.until(lambda: row.album_link.get_width() > 0)
+        _found, bounds = row.album_link.compute_bounds(page.list_view)
+        x = bounds.get_x() + bounds.get_width() / 2
+        y = bounds.get_y() + bounds.get_height() / 2
+        click = next(controller for controller in page.list_view.observe_controllers()
+                     if isinstance(controller, Gtk.GestureClick)
+                     and controller.get_button() == Gdk.BUTTON_PRIMARY
+                     and controller.get_propagation_phase() == Gtk.PropagationPhase.CAPTURE)
+        for held in (Gdk.ModifierType.CONTROL_MASK, Gdk.ModifierType.SHIFT_MASK):
+            with mock.patch('applemusic.widgets.dnd.modifiers', return_value=held):
+                click.emit('pressed', 1, x, y)
+                click.emit('released', 1, x, y)
+            self.assertEqual(self.window.item_actions.went, [])
+        with mock.patch('applemusic.widgets.dnd.modifiers', return_value=0):
+            click.emit('pressed', 1, x, y)
+            click.emit('released', 1, x, y)
+        self.assertEqual(self.window.item_actions.went, [(row.context_item, 'album')])
+
+    async def test_a_click_on_a_link_opens_its_page_on_the_release(self):
+        # track_links.attach()'s gesture on the view: a press on a link and its release over
+        # the same link open the page; a release elsewhere, a double press, a cancelled
+        # press or a list in its selection mode (set_inert) open nothing.
+        from gi.repository import Gdk, Gtk
+
+        from applemusic.widgets import track_links
+
+        page = await self.push(self.page(album(1, tracks=3, kind='playlist')))
+        self.assertTrue(await self.until(lambda: page.table and len(page._bound) == 3))
+        row = next(iter(page._bound)).get_child().track_row
+        await self.until(lambda: row.album_link.get_width() > 0)
+        view = page.list_view
+        found, bounds = row.album_link.compute_bounds(view)
+        self.assertTrue(found)
+        x = bounds.get_x() + bounds.get_width() / 2
+        y = bounds.get_y() + bounds.get_height() / 2
+        off = x + bounds.get_width()  # beside the link's text
+
+        def link_gestures():
+            return [controller for controller in view.observe_controllers()
+                    if isinstance(controller, Gtk.GestureClick)
+                    and controller.get_button() == Gdk.BUTTON_PRIMARY
+                    and controller.get_propagation_phase() == Gtk.PropagationPhase.CAPTURE]
+
+        self.assertEqual(len(link_gestures()), 1)
+        click = link_gestures()[0]
+        went = self.window.item_actions.went
+
+        def press_release(at=(x, y), to=(x, y), n_press=1, cancel=False):
+            click.emit('pressed', n_press, *at)
+            if cancel:
+                click.emit('cancel', None)
+            click.emit('released', n_press, *to)
+
+        press_release()
+        self.assertEqual(went, [(row.context_item, 'album')])
+        press_release(to=(off, y))  # released beside it
+        press_release(n_press=2)  # a double click's second press
+        press_release(cancel=True)  # a drag took it, say
+        press_release(at=(off, y))  # pressed beside it
+        self.assertEqual(len(went), 1)
+        track_links.set_inert(view, True)
+        press_release()
+        self.assertEqual(len(went), 1)
+        track_links.set_inert(view, False)
+        press_release()
+        self.assertEqual(len(went), 2)
+        track_links.attach(view)  # once per view: no second gesture
+        self.assertEqual(link_gestures(), [click])
+
     async def test_the_more_options_menu_is_the_items(self):
         page = await self.push(self.page(album(1)))
         page.more_button.popup()
@@ -643,7 +745,7 @@ class DetailPageTest(PageTestCase):
 
     async def test_a_prerelease_album_says_when_and_plays_what_is_out(self):
         page = await self.push(self.page(self.upcoming()))
-        self.assertEqual(page.caption_label.get_label(),
+        self.assertEqual(caption(page),
                          'Pop · Coming 4 December 2026 · 3 songs, 9 min')
         self.assertEqual(page.footer_label.get_label().split('\n'),
                          ['Coming 4 December 2026', '3 songs, 9 minutes'])
@@ -688,9 +790,9 @@ class DetailPageTest(PageTestCase):
                     trackCount=3, durationMs=540000)
         page = await self.push(self.page(data))
         self.assertEqual(page.subtitle_label.get_label(), 'Invented Curator')
-        self.assertTrue(page.caption_label.get_label().startswith('Updated '))
-        self.assertTrue(page.caption_label.get_label().endswith(' · 3 songs, 9 min'))
-        self.assertNotIn('Pop', page.caption_label.get_label())
+        self.assertTrue(caption(page).startswith('Updated '))
+        self.assertTrue(caption(page).endswith(' · 3 songs, 9 min'))
+        self.assertNotIn('Pop', caption(page))
         # One of the user's, which carries no curator: the account's name.
         self.app.settings.set_string('account-name', 'Alex Rivera')
         self.addCleanup(self.app.settings.reset, 'account-name')
@@ -699,7 +801,7 @@ class DetailPageTest(PageTestCase):
         self.assertTrue(page.subtitle_label.get_visible())
         # An album's caption is as it was: genre, year and songs.
         page = await self.push(self.page(album(3, year=2003)))
-        self.assertTrue(page.caption_label.get_label().startswith('Pop · 2003 · '))
+        self.assertTrue(caption(page).startswith('Pop · 2003 · '))
 
     async def shown_at(self, page, width):
         """page shown width px wide: in a clamp of that width (which hands its child that
@@ -957,6 +1059,10 @@ class ReorderTest(PageTestCase):
     def row(self, page, index):
         return page._row_at(index)
 
+    def list_row(self, page, index):
+        """The list's own row around the song's: where the insertion line is drawn."""
+        return page._row_at(index).get_parent()
+
     def keys(self, page):
         from gi.repository import Gtk
 
@@ -1030,21 +1136,21 @@ class ReorderTest(PageTestCase):
 
         # The top half of the third song: the line on its top edge.
         self.assertEqual(page._on_drop_motion(None, *at(2, False)), Gdk.DragAction.MOVE)
-        self.assertTrue(self.row(page, 2).has_css_class('drop-before'))
+        self.assertTrue(self.list_row(page, 2).has_css_class('drop-before'))
         # The bottom half of the last: on its bottom edge.
         self.assertEqual(page._on_drop_motion(None, *at(3, True)), Gdk.DragAction.MOVE)
-        self.assertFalse(self.row(page, 2).has_css_class('drop-before'))
-        self.assertTrue(self.row(page, 3).has_css_class('drop-after'))
+        self.assertFalse(self.list_row(page, 2).has_css_class('drop-before'))
+        self.assertTrue(self.list_row(page, 3).has_css_class('drop-after'))
         # Beside itself: where it is, no line and no drop.
         self.assertEqual(page._on_drop_motion(None, *at(0, True)), 0)
         self.assertEqual(page._on_drop_motion(None, *at(1, False)), 0)
-        self.assertFalse(self.row(page, 3).has_css_class('drop-after'))
+        self.assertFalse(self.list_row(page, 3).has_css_class('drop-after'))
         # Dropped on the bottom half of the third song: after it, written at once.
         self.assertTrue(page._on_drop(None, None, *at(2, True)))
         self.assertEqual(self.window.item_actions.moved, [('l.playlist001', 0, 2, True)])
         self.assertEqual(self.ids(), ['1', '2', '0', '3'])
         for index in range(4):
-            self.assertFalse(self.row(page, index).has_css_class('drop-after'))
+            self.assertFalse(self.list_row(page, index).has_css_class('drop-after'))
 
     async def test_other_drags_are_not_taken(self):
         from applemusic.library import Item, ItemRefs
@@ -1376,6 +1482,30 @@ class SelectionTest(PageTestCase):
         self.assertEqual(mode.selection.count, 1)
         page.do_hidden()
         self.assertFalse(mode.active)
+
+    async def test_a_filter_loosened_keeps_the_selection_and_says_its_count(self):
+        # A long playlist's list grows back a few rows a frame after a filter is loosened
+        # (ShownModel), showing fewer songs than match meanwhile: the songs still to come
+        # stay selected, and the count announced is the filter's.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+
+        data = album(1, tracks=300, kind='playlist')
+        for place in (10, 250, 290):
+            data['groups'][0]['entries'][place]['title'] = f'Harbour {place}'
+        page = await self.push(DetailPage(self.library, Item(data)))
+        said = []
+        self.window.announce = lambda text, _priority: said.append(text)
+        self.addCleanup(delattr, self.window, 'announce')
+        mode = page.selection_mode
+        page.filter_bar.set_text('harbour')
+        mode.key('select-all')
+        self.assertEqual(mode.selection.count, 3)
+        page.filter_bar.set_text('invented')  # every song again
+        self.assertTrue(page._track_models[0].growing)  # fewer shown than match, so far
+        self.assertEqual(mode.selection.count, 3)
+        self.assertEqual(said[-1], '300 of 300 songs')
+        self.assertEqual(len(page._selectable()), 300)  # Select All's, as it grows back
 
 
 class SuggestionsTest(PageTestCase):
