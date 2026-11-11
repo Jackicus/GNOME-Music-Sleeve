@@ -7,6 +7,7 @@ when a sync may start, how it quits (where errors go: tests/test_errors.py).
 """
 
 import asyncio
+import logging
 import os
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ from gi.repository import Gio, GLib, GObject
 
 from applemusic import main
 from applemusic.backend import config
+from applemusic.backend.errors import EngineError
 from applemusic.sync import LibrarySync
 
 BASE_ID = 'io.github.jackicus.MusicSleeve'
@@ -499,6 +501,354 @@ class AccountKeyTest(unittest.TestCase):
         app.settings.set_boolean('signed-in-devel', True)
         self.assertTrue(action.get_enabled())
         self.assertTrue(app._autostart_wanted())
+
+
+class AutostartTest(AppTestCase):
+    """Chrome at launch (_autostart_wanted(), _autostart()): only signed in, with
+    engine-autostart on, never in the demo; a failed start reported, a sign-in gone said
+    with Sign In, and the account's name read from the page when the sign-in missed it."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.app.settings.reset, 'engine-autostart')
+        self.reported = []
+        self.app.report = self.reported.append
+        self.asked = []  # account_name()'s waits
+
+        async def account_name(wait=None):
+            self.asked.append(wait)
+            return self.name
+
+        self.name = 'Invented Listener'
+        self.app.engine.account_name = account_name
+
+    def test_wanted_signed_in_with_its_setting_and_not_in_the_demo(self):
+        app = self.app
+        self.assertFalse(app._autostart_wanted())  # signed out
+        app.settings.set_boolean('signed-in', True)
+        self.assertTrue(app._autostart_wanted())
+        app.settings.set_boolean('engine-autostart', False)
+        self.assertFalse(app._autostart_wanted())
+        app.settings.set_boolean('engine-autostart', True)
+        app.demo = True
+        self.assertFalse(app._autostart_wanted())
+
+    async def test_a_failed_start_is_reported_and_nothing_more(self):
+        error = EngineError('no-browser')
+
+        async def start(visible=None):
+            raise error
+
+        self.app.engine.start = start
+        await self.app._autostart()
+        self.assertEqual(self.reported, [error])
+        self.assertEqual((self.app.toasts, self.asked), ([], []))
+
+    async def test_a_sign_in_gone_offers_to_sign_in_again(self):
+        async def start(visible=None):
+            self.app.engine.state = 'up'  # up, but Apple Music is not signed in
+
+        self.app.engine.start = start
+        with self.assertLogs('applemusic.main', 'WARNING'):
+            await self.app._autostart()
+        self.assertEqual(self.app.toasts, [('Your Apple Music sign-in has expired', 'Sign In',
+                                            'app.sign-in')])
+        self.assertEqual((self.reported, self.asked), ([], []))
+
+    async def test_a_name_the_sign_in_missed_is_read_from_the_page(self):
+        await self.app._autostart()
+        self.assertEqual(self.asked, [10])
+        self.assertEqual(self.app.settings.get_string('account-name'), 'Invented Listener')
+        self.assertEqual(self.app.toasts, [])
+
+    async def test_a_name_known_is_not_asked_again(self):
+        self.app.settings.set_string('account-name', 'Someone Invented')
+        await self.app._autostart()
+        self.assertEqual(self.asked, [])
+        self.assertEqual(self.app.settings.get_string('account-name'), 'Someone Invented')
+
+    async def test_a_name_the_page_has_not_either_is_left_unset(self):
+        self.name = ''
+        await self.app._autostart()
+        self.assertEqual(self.app.settings.get_string('account-name'), '')
+
+        async def account_name(wait=None):
+            raise EngineError('timeout')
+
+        self.app.engine.account_name = account_name
+        await self.app._autostart()  # only logged
+        self.assertEqual(self.app.settings.get_string('account-name'), '')
+        self.assertEqual((self.reported, self.app.toasts), ([], []))
+
+
+class StartEngineTest(AppTestCase):
+    """app.start-engine (start_engine()): one start at a time, its failure reported; none in
+    the demo."""
+
+    def setUp(self):
+        super().setUp()
+        self.reported = []
+        self.app.report = self.reported.append
+
+    def test_the_demo_has_no_engine_to_start(self):
+        self.app.demo = True
+        self.assertIsNone(self.app.start_engine())
+        self.assertEqual(self.app.toasts, [('Not available with the demo library', None, None)])
+        self.assertEqual(self.app.engine.calls, [])
+
+    async def test_a_start_under_way_is_the_one_answered(self):
+        engine = self.app.engine
+        engine.start_blocks = True
+        first = self.app.start_engine()
+        await asyncio.sleep(0)
+        self.assertIs(self.app.start_engine(), first)
+        self.app.lookup_action('start-engine').activate(None)  # a toast's Restart: the same
+        await asyncio.sleep(0)
+        self.assertEqual(engine.calls, ['start'])
+        first.cancel()
+        await asyncio.gather(first, return_exceptions=True)
+        # Once it is over, the next asks for a start of its own.
+        engine.start_blocks = False
+        second = self.app.start_engine()
+        self.assertIsNot(second, first)
+        await second
+        self.assertEqual((engine.calls, engine.state), (['start', 'start'], 'up'))
+        self.assertEqual(self.reported, [])
+
+    async def test_a_failed_start_is_reported(self):
+        error = EngineError('no-browser')
+
+        async def start(visible=None):
+            raise error
+
+        self.app.engine.start = start
+        await self.app.start_engine()
+        self.assertEqual(self.reported, [error])
+
+
+class PlayerCommandTest(AppTestCase):
+    """player_command(): the one runner of the Player's commands reports an EngineError and
+    calls on_error() to put the widget back; a command that succeeds says nothing."""
+
+    def setUp(self):
+        super().setUp()
+        self.reported = []
+        self.app.report = self.reported.append
+
+    async def test_a_failure_is_reported_and_the_widget_put_back(self):
+        error = EngineError('timeout')
+        put_back = []
+
+        async def command():
+            raise error
+
+        await self.app.player_command(command(), on_error=lambda: put_back.append(True))
+        self.assertEqual((self.reported, put_back), ([error], [True]))
+
+    async def test_a_failure_without_on_error(self):
+        async def command():
+            raise EngineError('timeout')
+
+        await self.app.player_command(command())
+        self.assertEqual(len(self.reported), 1)
+
+    async def test_success_says_nothing(self):
+        put_back = []
+
+        async def command():
+            return 'done'
+
+        await self.app.player_command(command(), on_error=lambda: put_back.append(True))
+        self.assertEqual((self.reported, put_back), ([], []))
+
+
+class PlaybackActionsTest(AppTestCase):
+    """Play/Pause is enabled while there is an item, Next and Previous while MusicKit allows
+    them too (_on_track_changed); all three start disabled."""
+
+    def enabled(self):
+        return [self.app.lookup_action(name).get_enabled()
+                for name in ('play-pause', 'next', 'previous')]
+
+    def changed(self, track, can_go_next=True, can_go_previous=True):
+        player = mock.Mock(track=track, can_go_next=can_go_next,
+                           can_go_previous=can_go_previous)
+        self.app._on_track_changed(player, None)
+
+    def test_the_actions_follow_the_item(self):
+        self.assertEqual(self.enabled(), [False, False, False])
+        self.changed(object())
+        self.assertEqual(self.enabled(), [True, True, True])
+        self.changed(object(), can_go_next=False)
+        self.assertEqual(self.enabled(), [True, False, True])
+        self.changed(object(), can_go_previous=False)
+        self.assertEqual(self.enabled(), [True, True, False])
+        # A live station: neither.
+        self.changed(object(), can_go_next=False, can_go_previous=False)
+        self.assertEqual(self.enabled(), [True, False, False])
+        # Nothing playing: none, whatever MusicKit last said.
+        self.changed(None)
+        self.assertEqual(self.enabled(), [False, False, False])
+
+
+class AccountActionsTest(AppTestCase):
+    """Sign In and Sign Out are off while either runs (signing-in, signing-out)."""
+
+    def test_off_while_the_account_changes(self):
+        actions = [self.app.lookup_action(name) for name in ('sign-in', 'sign-out')]
+        self.assertEqual([action.get_enabled() for action in actions], [True, True])
+        for prop in ('signing-in', 'signing-out'):
+            self.app.set_property(prop, True)
+            self.assertEqual([action.get_enabled() for action in actions], [False, False])
+            self.app.set_property(prop, False)
+            self.assertEqual([action.get_enabled() for action in actions], [True, True])
+
+    def test_the_sign_out_runs_only_when_confirmed(self):
+        async def sign_out(app):
+            pass
+
+        spawned = []
+
+        def spawn(coro):
+            spawned.append(coro.cr_code.co_name)
+            coro.close()
+
+        self.app.spawn = spawn
+        with mock.patch('applemusic.account.sign_out', sign_out):
+            self.app._on_sign_out_response(None, 'cancel')
+            self.assertEqual(spawned, [])
+            self.app._on_sign_out_response(None, 'sign-out')
+        self.assertEqual(spawned, ['sign_out'])
+
+
+class CloseWindowTest(AppTestCase):
+    """close_window(): with background playback on and something playing the window hides
+    and the music plays on; otherwise, and while quitting, the app quits."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.app.settings.reset, 'background-playback')
+        self.asked = []
+        self.app.activate_action = lambda name, parameter=None: self.asked.append(name)
+        self.app.player = mock.Mock(active=True)
+        self.app.background = mock.Mock()
+        self.window = mock.Mock()
+
+    def test_background_playback_keeps_the_music_on(self):
+        self.app.settings.set_boolean('background-playback', True)
+        self.app.close_window(self.window)
+        self.window.put_away.assert_called_once_with()
+        self.app.background.enter.assert_called_once_with(self.window)
+        self.assertEqual(self.asked, [])
+
+    def test_otherwise_the_app_quits(self):
+        self.app.close_window(self.window)  # the setting off (its default)
+        self.app.settings.set_boolean('background-playback', True)
+        self.app.player.active = False  # nothing playing
+        self.app.close_window(self.window)
+        self.app.player.active = True
+        self.app._quitting = object()  # quitting already
+        self.app.close_window(self.window)
+        self.assertEqual(self.asked, ['quit', 'quit', 'quit'])
+        self.window.put_away.assert_not_called()
+        self.app.background.enter.assert_not_called()
+
+
+class MakeEngineTest(unittest.IsolatedAsyncioTestCase):
+    """_make_engine(): the Engine made from the settings (the browser program, the preferred
+    mode, the streaming quality), which then follows them; the quality goes to MusicKit at
+    once (_set_bitrate), a failure there only logged. The demo's has no settings."""
+
+    class Engine:
+        def __init__(self, browser_command=None, demo=False):
+            self.browser_command = browser_command
+            self.demo = demo
+            self.bitrates = []
+            self.fail = None
+
+        async def set_bitrate(self, bitrate):
+            self.bitrates.append(bitrate)
+            if self.fail is not None:
+                raise self.fail
+
+    def setUp(self):
+        self.addCleanup(config.set_build_profile, 'default')
+        self.app = main.Application('0.9.0', f'{BASE_ID}.Test', BASE_ID, 'default', None)
+        self.settings = self.app.settings
+        for key in ('browser-command', 'engine-headless', 'streaming-quality'):
+            self.addCleanup(self.settings.reset, key)
+        patcher = mock.patch.object(main, 'Engine', self.Engine)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    async def test_made_from_the_settings_and_following_them(self):
+        settings = self.settings
+        settings.set_string('browser-command', 'invented-browser')
+        settings.set_boolean('engine-headless', False)
+        settings.set_string('streaming-quality', 'standard')
+        engine = self.app.engine = self.app._make_engine()
+        self.assertEqual((engine.browser_command, engine.prefer_headless,
+                          engine.preferred_bitrate), ('invented-browser', False, 64))
+        settings.set_string('browser-command', '/opt/invented/browser')
+        settings.set_boolean('engine-headless', True)
+        self.assertEqual((engine.browser_command, engine.prefer_headless),
+                         ('/opt/invented/browser', True))
+        settings.set_string('streaming-quality', 'high')
+        for _turn in range(3):
+            await asyncio.sleep(0)
+        self.assertEqual(engine.bitrates, [256])
+
+    async def test_a_bitrate_the_engine_cannot_take_is_only_logged(self):
+        engine = self.app.engine = self.app._make_engine()
+        engine.fail = EngineError('engine-down')
+        with self.assertLogs('applemusic.main', 'DEBUG'):
+            await self.app._set_bitrate('standard')
+        self.assertEqual(engine.bitrates, [64])
+
+    def test_the_demos_engine(self):
+        self.app.demo = True
+        engine = self.app._make_engine()
+        self.assertTrue(engine.demo)
+        self.assertFalse(hasattr(engine, 'prefer_headless'))
+
+
+class LocalOptionsTest(unittest.TestCase):
+    """--debug sets the log level; --demo with no demo library to show ends the run."""
+
+    def setUp(self):
+        self.addCleanup(config.set_build_profile, 'default')
+        self.app = main.Application('0.9.0', f'{BASE_ID}.Test', BASE_ID, 'default', None)
+        root = logging.getLogger()
+        self.addCleanup(root.setLevel, root.level)
+        patcher = mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': ''})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def options(self, *names):
+        options = GLib.VariantDict.new(None)
+        for name in names:
+            options.insert_value(name, GLib.Variant('b', True))
+        return options
+
+    def test_none(self):
+        self.assertEqual(self.app.do_handle_local_options(self.options()), -1)
+        self.assertFalse(self.app.demo)
+
+    def test_debug(self):
+        logging.getLogger().setLevel(logging.INFO)
+        self.assertEqual(self.app.do_handle_local_options(self.options('debug')), -1)
+        self.assertEqual(logging.getLogger().level, logging.DEBUG)
+
+    def test_demo_without_a_library_ends_the_run(self):
+        with self.assertLogs('applemusic.main', 'ERROR'):
+            self.assertEqual(self.app.do_handle_local_options(self.options('demo')), 1)
+        self.assertFalse(self.app.demo)
+
+    def test_demo_with_a_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            os.environ['APPLE_MUSIC_CACHE'] = directory
+            self.assertEqual(self.app.do_handle_local_options(self.options('demo')), -1)
+        self.assertTrue(self.app.demo)
 
 
 class ConstructionTest(unittest.TestCase):

@@ -970,6 +970,166 @@ class HeaderStepTest(unittest.TestCase):
         self.assertIsNone(header_step(None, None, first, button, down=False))
 
 
+class RecordingSplitView:
+    def __init__(self):
+        self.collapsed = False
+        self.content_shown = []
+
+    def get_collapsed(self):
+        return self.collapsed
+
+    def set_show_content(self, show):
+        self.content_shown.append(show)
+
+
+class RecordingWindow(StubWindow):
+    """The window's seams, recording each show_root() as (key, pop)."""
+
+    def __init__(self):
+        super().__init__()
+        self.split_view = RecordingSplitView()
+        self.shows = []
+
+    def show_root(self, key, pop=False):
+        self.shown = key
+        self.shows.append((key, pop))
+
+
+@requires_gtk
+class ActivationTest(unittest.TestCase):
+    """What a click, Enter or the arrows do on the sidebar (sidebar.md): selecting shows the
+    item's page, the controller's own selections show nothing; activating the page shown
+    pops it back to its root in the wide layout; a folder opens and closes in the sidebar
+    mode only; Right and Left open and close the focused folder, and Left on a nested item
+    goes up to its folder; select() reveals an item in closed folders."""
+
+    def setUp(self):
+        from gi.repository import Adw, Gio
+
+        from applemusic.sidebar_view import SidebarController
+        from tests.gtk import SCHEMA_ID
+
+        self.Adw = Adw
+        self.settings = Gio.Settings.new(SCHEMA_ID)
+        self.settings.set_strv('expanded-folders', [])
+        self.widget = Adw.Sidebar()
+        self.window = RecordingWindow()
+        self.controller = SidebarController(self.window, self.widget,
+                                            StubLibrary(deep_tree()), self.settings,
+                                            item_actions=None)
+
+    def tearDown(self):
+        self.controller.write_expanded()
+        self.settings.reset('expanded-folders')
+
+    def index(self, key):
+        return self.controller.item_for(key).get_index()
+
+    def activate(self, key):
+        self.controller._on_activated(self.widget, self.index(key))
+
+    def expanded(self):
+        return sorted(self.controller._expanded)
+
+    def test_selecting_shows_the_page_the_controllers_own_selection_nothing(self):
+        self.widget.set_selected(self.index('playlist:p2'))
+        self.assertEqual(self.window.shows, [('playlist:p2', False)])
+        self.controller.select('folder:c', show=False)
+        self.assertEqual(self.window.shows, [('playlist:p2', False)])
+        self.assertEqual(self.controller.key_of(self.widget.get_selected_item()), 'folder:c')
+        self.assertEqual(self.controller.select('folder:c', pop=True), 'folder:c')
+        self.assertEqual(self.window.shows[-1], ('folder:c', True))
+
+    def test_select_reveals_an_item_in_closed_folders(self):
+        self.assertFalse(self.controller.item_for('playlist:p5').get_visible())
+        self.assertEqual(self.controller.select('playlist:p5'), 'playlist:p5')
+        self.assertEqual(self.expanded(), ['a', 'b', 'd', 'e'])
+        self.assertTrue(self.controller.item_for('playlist:p5').get_visible())
+        self.assertEqual(self.window.shows, [('playlist:p5', False)])
+
+    def test_select_what_is_gone_goes_home(self):
+        self.assertEqual(self.controller.select('playlist:gone'), HOME)
+        self.assertEqual(self.window.shows, [(HOME, False)])
+
+    def test_activating_another_item_shows_it(self):
+        self.window.shown = HOME
+        self.activate('playlist:p2')
+        self.assertEqual(self.window.shows, [('playlist:p2', False)])
+        self.assertEqual(self.window.split_view.content_shown, [True])
+
+    def test_activating_the_page_shown_pops_it_back_to_its_root(self):
+        self.window.shown = 'playlist:p2'
+        self.activate('playlist:p2')
+        self.assertEqual(self.window.shows, [('playlist:p2', True)])
+        # Collapsed, the content is only shown again, as it was left.
+        self.window.split_view.collapsed = True
+        self.activate('playlist:p2')
+        self.assertEqual(self.window.shows, [('playlist:p2', True)])
+        self.assertEqual(self.window.split_view.content_shown, [True, True])
+
+    def test_activating_a_folder_opens_and_closes_it_in_the_sidebar_mode(self):
+        self.activate('folder:a')
+        self.assertEqual(self.expanded(), ['a'])
+        self.assertTrue(self.controller.item_for('playlist:p1').get_visible())
+        self.activate('folder:a')
+        self.assertEqual(self.expanded(), [])
+        self.assertFalse(self.controller.item_for('playlist:p1').get_visible())
+        # The page mode: the folder's page lists what it holds; nothing opens.
+        self.widget.set_mode(self.Adw.SidebarMode.PAGE)
+        self.activate('folder:a')
+        self.assertEqual(self.expanded(), [])
+        self.assertEqual(self.window.shows[-1][0], 'folder:a')
+
+    def test_right_and_left_open_and_close_the_focused_folder(self):
+        rows = self.controller.rows()
+        self.window.get_focus = lambda: rows[self.index('folder:a')]
+        self.assertTrue(self.controller._on_arrow(True))
+        self.assertEqual(self.expanded(), ['a'])
+        self.assertFalse(self.controller._on_arrow(True))  # open already: the list's own key
+        self.assertTrue(self.controller._on_arrow(False))
+        self.assertEqual(self.expanded(), [])
+        self.assertFalse(self.controller._on_arrow(False))  # closed, and at the top level
+        self.assertEqual(self.window.shows, [])  # no page changed
+
+    def test_arrows_elsewhere_are_not_the_sidebars(self):
+        from gi.repository import Gtk
+
+        self.assertFalse(self.controller._on_arrow(True))  # no focus
+        self.window.get_focus = Gtk.Button
+        self.assertFalse(self.controller._on_arrow(True))  # not a row
+        rows = self.controller.rows()
+        self.window.get_focus = lambda: rows[self.index('playlist:p2')]
+        self.assertFalse(self.controller._on_arrow(True))  # a playlist opens nothing
+        self.assertFalse(self.controller._on_arrow(False))  # nor has a folder to go up to
+        self.window.get_focus = lambda: rows[self.index(HOME)]
+        self.assertFalse(self.controller._on_arrow(False))  # a destination's row
+
+    def test_left_on_a_nested_item_goes_up_to_its_folder(self):
+        from gi.repository import Gtk
+
+        from tests.gtk import wait_for
+
+        window = Gtk.Window(child=self.widget, default_width=300, default_height=900)
+        self.addCleanup(window.destroy)
+        window.present()
+        self.window.get_focus = window.get_focus
+        self.controller._set_expanded('a', True)
+        nested = self.controller.row(self.index('playlist:p1'))
+        self.assertTrue(wait_for(lambda: nested.get_mapped() and nested.grab_focus()))
+        self.assertTrue(self.controller._on_arrow(False))
+        self.assertIs(window.get_focus(), self.controller.row(self.index('folder:a')))
+        self.assertEqual(self.expanded(), ['a'])  # still open: Left again closes it
+
+    def test_a_drag_held_over_a_folder_opens_it(self):
+        self.controller._spring = 1  # the timeout that ran
+        self.controller._spring_open('a')
+        self.assertIsNone(self.controller._spring)
+        self.assertEqual(self.expanded(), ['a'])
+        self.controller._spring_open('a')  # open already: stays so
+        self.controller._spring_open('gone')  # a folder gone meanwhile
+        self.assertEqual(self.expanded(), ['a'])
+
+
 @requires_gtk
 class NewButtonTest(unittest.TestCase):
     """The Playlists heading ends with the New button (New Playlist…, New Folder…, at the
