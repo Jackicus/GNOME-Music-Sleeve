@@ -19,13 +19,17 @@ opens on the release, over the same link. Not from a touchscreen, where a tap se
 and a long press opens its menu as anywhere else in the list. The row's Track is found as its
 context menu finds it (its `context_item`). The links take no focus: the keyboard's way to
 the same pages is the context menu's Go to Album and Go to Artist. In a list's selection mode
-(widgets/selection_mode.py) they are inert: a click on one toggles its row, as anywhere else.
+(widgets/selection_mode.py) they are inert: a click on one toggles its row, as anywhere else;
+and so is a Ctrl+click or a Shift+click on one outside the mode, which enters it (SELECTING).
 """
 
 from gi.repository import Gdk, Gtk, Pango
 
 from .. import related
-from . import context_menu
+from . import context_menu, dnd
+
+# The modifiers with which a click is a selection's (SelectionMode.activated()), not a link's.
+SELECTING = Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.CONTROL_MASK
 
 
 class TrackLink(Gtk.Label):
@@ -105,7 +109,8 @@ def attach(view):
             pressed.clear()
             return
         view = gesture.get_widget()
-        link = None if getattr(view, '_track_links_inert', False) else link_at(view, x, y)
+        inert = getattr(view, '_track_links_inert', False) or dnd.modifiers(view) & SELECTING
+        link = None if inert else link_at(view, x, y)
         pressed[:] = [link] if link is not None and n_press == 1 else []
         if link is not None:
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)

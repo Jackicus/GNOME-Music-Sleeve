@@ -2326,10 +2326,15 @@ class ItemActions:
         reported. The pages of what went are left, and once Apple's read of the last no
         longer has it, one quick sync reads the songs and the playlists that held any of
         them (_follow_removal's, once for all). The task, whose result says whether all
-        went, or None (the demo library)."""
+        went, or None (the demo library). The playlists holding them are looked for once,
+        for them all (a look goes through every playlist's entries, too long on the main
+        loop for one a song), before the library leaves them out of its playlists; after a
+        failure partway the sync reads the playlists that held any of those asked for."""
         if self.app.refuse_in_demo():
             return None
-        parts = [(target, *self._removal_refs(obj, *target)) for obj, target in found]
+        parts = [(target, *self._removal_parts(obj, *target)) for obj, target in found]
+        ids = set().union(*(part[2] for part in parts))
+        holding = self.library.playlists_holding(ids) if ids else ()
 
         async def run():
             self.app.spawn(self.library.hide(set().union(*(part[1] for part in parts))))
@@ -2353,7 +2358,6 @@ class ItemActions:
             kind, library_id = removed[-1][0]
             if await self.wait_removed(kind, library_id):
                 await asyncio.sleep(LISTING_LAG)
-            holding = set().union(*(set(part[2]) for part in removed))
             task = self.app.start_sync(quick=True,
                                        videos=any(part[0][0] == 'video' for part in removed),
                                        tracks_of=tuple(sorted(holding)))
@@ -2450,13 +2454,14 @@ class ItemActions:
                                      title=obj.title if obj is not None else '')
 
     def create_playlist(self, name, description='', tracks=(), folder_id=None, title='',
-                        show=False, objects=None, public=False):
+                        show=False, objects=None, public=False, empty=False):
         """Make the playlist (Engine.create_playlist), in the folder folder_id (None or
         ROOT_FOLDER: the top level), public (shown on the profile and in search) when
         `public`, confirm with a toast and follow Apple's listing; one made empty (New
         Playlist), or with `show`, is then shown. `objects`: albums, playlists or tracks
         whose songs it holds in place of `tracks` (tracks_of()), counted in the toast; with
-        none to add no playlist is made. The task, or None."""
+        none to add no playlist is made, unless `empty` (Duplicate's: an empty playlist's
+        copy). The task, or None."""
         if self.app.refuse_in_demo():
             return None
         if title:
@@ -2471,10 +2476,11 @@ class ItemActions:
                 await self.app.player.ensure_engine()
                 if objects is not None:
                     tracks = await self.tracks_of(objects)
-                    if not tracks:
+                    if tracks:
+                        message = added_message(len(tracks), name, new=True)
+                    elif not empty:
                         self.app.toast(_('There are no songs to add'))
                         return
-                    message = added_message(len(tracks), name, new=True)
                 new_id = await self.engine.create_playlist(name, description, tracks,
                                                            folder_id, public=public)
             except EngineError as error:
@@ -2494,8 +2500,9 @@ class ItemActions:
         """Duplicate: a new playlist of the user's named duplicate_name(), with the
         playlist's description and its songs in its own order (whatever order its page
         shows: a sort is the view's), beside it (in its folder), its page shown once Apple
-        lists it (create_playlist()). An empty playlist's copy is made empty. The task, or
-        None."""
+        lists it (create_playlist()). An empty playlist's copy is made empty, also one whose
+        songs had to be read first (a playlist the library lists without its tracks). The
+        task, or None."""
         if not duplicates(playlist):
             self.app.toast(_('This cannot be duplicated'))
             return None
@@ -2505,7 +2512,7 @@ class ItemActions:
         if playlist.groups and not container_tracks(playlist):
             return self.create_playlist(name, description, (), folder_id, show=True)
         return self.create_playlist(name, description, folder_id=folder_id, show=True,
-                                    objects=[playlist])
+                                    objects=[playlist], empty=True)
 
     def _on_add_songs(self, _action, parameter):
         return self.ask_add_songs(self._unpack(parameter)[0])
@@ -2908,8 +2915,17 @@ class ItemActions:
         """What a removal of obj takes with it: (the refs Library.hide leaves out, the ids
         of the playlists holding it, whose tracks the sync reads again, the (kind, id) of the
         pages to leave)."""
+        hidden, ids, gone = self._removal_parts(obj, kind, library_id)
         if kind == 'playlist':
-            return {('playlist', library_id)}, (), {('playlist', library_id)}
+            return hidden, (), gone
+        return hidden, self.library.playlists_holding(ids), gone
+
+    def _removal_parts(self, obj, kind, library_id):
+        """_removal_refs() without its look through the playlists: (the refs Library.hide
+        leaves out, the ids and catalog ids of the songs that go, which the playlists
+        holding it hold, the (kind, id) of the pages to leave)."""
+        if kind == 'playlist':
+            return {('playlist', library_id)}, set(), {('playlist', library_id)}
         if kind == 'album':
             album = self.library.by_id('album', library_id)
             ids = set()
@@ -2917,8 +2933,7 @@ class ItemActions:
                 for entry in group.get('entries') or []:
                     ids.update(value for value in (entry.get('id'), entry.get('catalogId'))
                                if value)
-            return ({('album', library_id)}, self.library.playlists_holding(ids),
-                    {('album', library_id)})
+            return {('album', library_id)}, ids, {('album', library_id)}
         catalog_id = getattr(obj, 'catalog_id', None)
         hidden = {(kind, library_id)} | ({(kind, catalog_id)} if catalog_id else set())
         gone = {('video', library_id)} if kind == 'video' else set()
@@ -2927,8 +2942,7 @@ class ItemActions:
             if album is not None and sum(group.entries.get_n_items()
                                          for group in album.groups) <= 1:
                 gone.add(('album', album.id))  # its one song: the album goes too
-        return (hidden, self.library.playlists_holding({library_id, catalog_id} - {None}),
-                gone)
+        return hidden, {library_id, catalog_id} - {None}, gone
 
     async def _follow_removal(self, kind, library_id, parent, holding):
         """After a removal Apple took: a playlist's, as a deleted playlist's

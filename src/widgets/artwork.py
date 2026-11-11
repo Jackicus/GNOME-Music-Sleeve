@@ -190,7 +190,7 @@ class Artwork:
             texture = await in_decoder(_load, path, size)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception:  # _load's own errors are caught there; the waiters still get None
             log.exception('Cannot decode artwork %s', path)
             texture = None
         if texture is not None:

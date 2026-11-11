@@ -131,7 +131,8 @@ them before changing either. What matters most:
   Folder reads never take out a playlist the listing still has: right after a deletion Apple
   can answer a folder with nothing (#529), so `kept_places()` puts a listed playlist no read
   named back where last time's file had it, and a folder answering nothing has the folders
-  it held read too (kept when not empty). A deletion's `wait_listed()` takes an empty answer
+  it held read too (kept when not empty, and only after every folder Apple listed is read:
+  one of them moved into a listed folder is where Apple lists it). A deletion's `wait_listed()` takes an empty answer
   only for a folder that held nothing else.
 - When to sync: `LibrarySync.schedule()` (not in demo mode) starts one when `due()` (the
   last sync older than `sync-interval`, or `library_ok()` false: library.json missing,

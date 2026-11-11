@@ -872,10 +872,10 @@ class Engine(GObject.Object):
                     log.debug('chrome: %s', line.decode('utf-8', 'replace').rstrip())
             if pending:
                 log.debug('chrome: %s', pending.decode('utf-8', 'replace').rstrip())
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
+        except GLib.Error as e:  # the pipe's own failure: Chrome has gone
             log.debug('chrome stderr relay ended: %s', e)
+        except Exception:
+            log.warning('chrome stderr relay failed', exc_info=True)
         finally:
             try:
                 stream.close(None)
@@ -976,8 +976,10 @@ class Engine(GObject.Object):
         if relay is not None and not relay.done():
             try:
                 await asyncio.wait_for(relay, 1.0)  # Chrome's pipe closes as it exits
-            except Exception:
-                relay.cancel()
+            except TimeoutError:
+                pass  # wait_for has cancelled it
+            except Exception:  # the stop goes on to 'down' whatever the relay did
+                log.warning('chrome stderr relay failed', exc_info=True)
         self.authorized = False
         self._storefront = None
         self._related = {}  # the next account's storefront may differ

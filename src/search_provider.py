@@ -259,16 +259,15 @@ class SearchProvider:
 
     async def _library_loaded(self):
         """The library's first load finished, or LOAD_WAIT passed (what is loaded by then
-        answers); its failure is logged where it ran, and the stores hold what they hold."""
+        answers); its failure, or its cancellation, is the task's own (logged where it ran),
+        and the stores hold what they hold. Waited for, never awaited: nothing of the load's
+        ending is raised here, and the load goes on past LOAD_WAIT."""
         task = self._app.load_library()
         if task is None or task.done():
             return
-        try:
-            await asyncio.wait_for(asyncio.shield(task), LOAD_WAIT)
-        except TimeoutError:
+        done, _pending = await asyncio.wait({task}, timeout=LOAD_WAIT)
+        if not done:
             log.warning('search provider: the library is still loading after %g s', LOAD_WAIT)
-        except Exception:
-            pass
 
     # -- the methods ---------------------------------------------------------------------
 
