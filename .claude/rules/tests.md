@@ -38,7 +38,11 @@ paths:
   would print), and under a second per test. They must pass on CI's Xvfb with the cairo renderer and no accessibility bus. A page test subclasses
   `tests/page_harness.py`'s `PageTestCase`: a presented stand-in window (the seams, recorded),
   a stand-in application (`pages.app()`) and an engine that answers each request from
-  `engine.answers`.
+  `engine.answers`. A test of pure logic that imports a module with a `Gtk.Template` (a page,
+  a dialog, a widget) needs `@requires_gtk` too: the template needs the gresource at import,
+  which only `requires_gtk` registers. In the full suite an earlier widget test has registered
+  it, so check.sh passes such a test; CI's `dist` job, where the tarball's tree has no build/
+  and so no gresource, fails it (packaging.md), and so does running its module alone.
 - Each module has to pass on its own (`python3 -m unittest tests.test_tiles`), not only in the
   suite: nothing in a test process is reset between modules, so state one module leaves behind
   can hide another's missing set-up. The default application is the one that bites — a page
