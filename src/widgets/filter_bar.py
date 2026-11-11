@@ -206,6 +206,12 @@ class ShownModel(GObject.Object, Gio.ListModel):
             return None
         return len(self._items) - 1 - index if self._backwards else index
 
+    def items(self):
+        """Every item of the model's, in the order shown: what it shows once it has grown
+        back (meanwhile get_n_items() and get_item() answer only for those given the view
+        so far)."""
+        return list(self._in_order(self._items))
+
     def finish(self):
         """Show every item now, if it was growing back."""
         if self.growing:
