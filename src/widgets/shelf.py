@@ -10,7 +10,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 from . import banner_tile, context_menu
 from .banner_tile import BannerTile
 from .hero_tile import HeroTile
-from .labels import bind_label, unbind_label
+from .labels import banner_description, bind_label, unbind_label
 from .tile import Tile, shape_for
 from .util import connect_weak, each_frame, grown, next_frame, rows_kept, weak_method
 
@@ -379,6 +379,9 @@ class Shelf(PagedRow, Gtk.Box):
             child.set_shape(shape_for(item))
         child.bind(item)
         bind_label(list_item, item, rank=rank)
+        if self._banners:
+            # The card's label ("NEW ALBUM") and tagline, which its name does not say.
+            list_item.set_accessible_description(banner_description(item))
 
     def _on_unbind(self, _factory, list_item):
         child = list_item.get_child()

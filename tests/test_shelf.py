@@ -271,6 +271,48 @@ def _descendants(widget):
         child = child.get_next_sibling()
 
 
+class _BannerListItem:
+    """A list item as the banner shelf's factory binds it: a BannerTile child, and the
+    accessible name and description it is given."""
+
+    label = description = None
+
+    def __init__(self, item, child):
+        self._item, self._child = item, child
+
+    def get_item(self):
+        return self._item
+
+    def get_child(self):
+        return self._child
+
+    def get_position(self):
+        return 0
+
+    def set_accessible_label(self, label):
+        self.label = label
+
+    def set_accessible_description(self, description):
+        self.description = description
+
+
+class BannerShelfTest(PageTestCase):
+    """New's featured shelf of banner cards."""
+
+    async def test_a_banner_card_says_its_label_and_tagline(self):
+        from applemusic.library import Item
+        from applemusic.widgets.banner_tile import BannerTile
+        from applemusic.widgets.shelf import Shelf
+
+        shelf = Shelf(banners=True)
+        item = Item(dict(album(0), badge='NEW ALBUM', tagline='An invented line'))
+        list_item = _BannerListItem(item, BannerTile())
+        shelf._on_bind(None, list_item)
+        self.assertEqual(list_item.label, f'{item.title}, {item.subtitle}')
+        self.assertEqual(list_item.description, 'NEW ALBUM, An invented line')
+        shelf._on_unbind(None, list_item)
+
+
 class ShelfColumnTest(PageTestCase):
     def column(self):
         from gi.repository import Gtk
@@ -382,6 +424,19 @@ class RankedShelfTest(PageTestCase):
         shelf.bind_shelf(model('plain', 2))
         self.assertTrue(await self.until(lambda: len(find_all(shelf.list_view, Tile)) == 2
                                          and not find_all(shelf.list_view, RankedTile)))
+
+    def test_a_songs_explicit_badge_sets_no_tooltip_a_cell_would_read(self):
+        # A grid's cell reads a tooltip set on its row's badge as the song's description,
+        # which its name already ends with ("…, explicit"): the tooltip is asked for.
+        from applemusic.widgets.song_shelf import SongRow, _badge_tooltip
+
+        row = SongRow(ranked=True)
+        self.assertIsNone(row.badge.get_tooltip_text())
+        self.assertTrue(row.badge.get_has_tooltip())
+        shown = []
+        tooltip = type('Tooltip', (), {'set_text': lambda _self, text: shown.append(text)})()
+        self.assertTrue(_badge_tooltip(row.badge, 0, 0, False, tooltip))
+        self.assertEqual(shown, ['Explicit'])
 
     async def test_a_ranked_shelf_of_songs_numbers_them_and_plays_from_the_one_chosen(self):
         from applemusic.library import Item, ShelfModel

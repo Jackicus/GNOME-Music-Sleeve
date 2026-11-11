@@ -329,6 +329,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   name) are `accessible-role: presentation`. A slider has a name and a `VALUE_TEXT`
   ("1:05 of 3:40"). State a widget does not expose itself goes through `update_state`
   (`EXPANDED` takes an int).
+- GTK reads a tooltip as the description when none is set: one that repeats the name is
+  said twice (the sidebar's rows set an empty description), and a `Gtk.GridView` cell
+  takes a tooltip set on a widget in its row as its own (a chart's explicit badge answers
+  `query-tooltip` instead). New's banner cards are described by Apple's label and tagline
+  (`labels.banner_description()`).
 - Announcements go through the window (`get_root().announce(...)`): GTK drops one from a widget
   that no assistive technology has asked about yet.
 - Grids and lists have `tab-behavior: item`. Dialog buttons have mnemonics (`_Label`,

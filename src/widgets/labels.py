@@ -56,6 +56,18 @@ def accessible_label(item, artist=False):
     return label
 
 
+def banner_description(item):
+    """A banner card's description: Apple's label over it ("NEW ALBUM") and its tagline,
+    the lines the card shows that its name (accessible_label()) leaves out; '' for none."""
+    raw = item.raw if isinstance(item.raw, dict) else {}
+    parts = [part for part in (str(raw.get('badge') or '').strip(),
+                               str(raw.get('tagline') or '').strip()) if part]
+    description = parts[0] if parts else ''
+    for part in parts[1:]:
+        description = _format('part').format(label=description, part=part)
+    return description
+
+
 def ranked(rank, label):
     """A chart entry's name: its place in the chart (`rank`, from 1) before `label`, the
     words its tile or row has; `label` alone without a rank."""

@@ -106,6 +106,29 @@ class SongLabelTest(unittest.TestCase):
         self.assertEqual(labels.song_caption(self.song(album='')), '2026')
 
 
+class BannerDescriptionTest(unittest.TestCase):
+    """A banner card's description: the lines it shows that its name does not say."""
+
+    def banner(self, **raw):
+        return Item(dict({'id': 'demo.b1', 'kind': 'album', 'title': 'Invented Album',
+                          'subtitle': 'Invented Artist'}, **raw))
+
+    def test_the_label_then_the_tagline(self):
+        self.assertEqual(labels.banner_description(
+            self.banner(badge='NEW ALBUM', tagline='An invented line')),
+            'NEW ALBUM, An invented line')
+
+    def test_either_alone(self):
+        self.assertEqual(labels.banner_description(self.banner(badge='UPDATED PLAYLIST')),
+                         'UPDATED PLAYLIST')
+        self.assertEqual(labels.banner_description(self.banner(tagline='An invented line')),
+                         'An invented line')
+
+    def test_neither_is_nothing(self):
+        self.assertEqual(labels.banner_description(self.banner()), '')
+        self.assertEqual(labels.banner_description(self.banner(badge='  ', tagline=None)), '')
+
+
 class RankedTest(unittest.TestCase):
     """A chart's entry: its place in the chart before its words."""
 
