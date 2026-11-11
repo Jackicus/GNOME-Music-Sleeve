@@ -1,6 +1,6 @@
 # TODO
 
-What is left, as of 2026-10-21. Music Sleeve (`io.github.jackicus.MusicSleeve`) is released:
+What is left, as of 2026-11-11. Music Sleeve (`io.github.jackicus.MusicSleeve`) is released:
 [v0.9.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.9.0), the first
 release, v0.10.0, which adds Discord rich presence, v0.11.0, the GNOME HIG pass, artist pages
 in Apple Music's structure and Go to Album and Go to Artist, v0.12.0, playlist management,
@@ -50,9 +50,27 @@ is, is in `docs/decisions.md`.
 - [ ] Run the Flatpak (the manifest in `build-aux/flatpak/` builds against GNOME 51, but
       the sandboxed app, its host Chrome through `flatpak-spawn`, has never been run). It
       can reach a native or Flatpak Discord's socket; that is untested too.
-- [ ] The [After v1.1.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/7)
-      milestone: [#541](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/541), the
-      pages step of `scripts/bench.py` leaving 4 to 7 MB behind, over its 5 MB target.
+- [ ] What the review of everything since v1.0.1 found and left (2026-11-11), each waiting
+      for a decision or a check on the real engine:
+      [#573](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/573), a playlist song's
+      Delete swallowed while the last removal's sync runs;
+      [#574](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/574), a reload unselecting
+      songs in selection mode;
+      [#575](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/575), a page left on its
+      spinner by an answer that cannot be shaped;
+      [#576](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/576), an answer kept for a
+      day though one of its reads failed;
+      [#577](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/577), a notification for
+      the same song at another place in the queue;
+      [#578](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/578), Select All's
+      actions without a bound.
+- [ ] [#583](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/583): reordering by
+      keyboard moves a song one place a key press, where a drag moves it any distance.
+- [ ] [#580](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/580): the widget tests
+      crashed once on CI (a callback on an object already freed), and passed when run again.
+- [ ] Report to GTK that a popover menu keeps its model's sections after it is freed (found
+      for #541, `docs/notes.md`, Memory; the app shares its Sort By sections instead, but a
+      menu built each time it opens still leaves its sections behind).
 - [ ] Translations: the strings are ready (`po/`), no languages yet.
 - [ ] The internal names that still say Apple Music, none of them user-visible: the
       `applemusic` Python package, the `AppleMusic*` GType names, the `APPLE_MUSIC_*`
