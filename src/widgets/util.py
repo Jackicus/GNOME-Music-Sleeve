@@ -8,7 +8,8 @@ mapped; next_frame(): wait for a widget's next frame; each_frame(), rows_kept(),
 holds_in_order() and GrowBack: a list's rows given to it a few a frame; HeaderTitle: a page's
 title in its
 header bar only while its big title is out of view; descendants(), first_descendant() and
-has_ancestor(): the widget tree by class; focus_position(): the focus on a list's item.
+has_ancestor(): the widget tree by class; focus_position(): the focus on a list's item;
+shared_section(): a menu section made once, for the menus of widgets that can be dropped.
 
 A widget that connects one of its children's signals (or an owned object's: a list factory,
 an adjustment, a sort model, an event controller) to one of its own bound methods makes a
@@ -39,7 +40,7 @@ GObject vfuncs (`do_map`) need nothing: PyGObject sees those.
 import asyncio
 import weakref
 
-from gi.repository import GLib, GObject, Gtk
+from gi.repository import Gio, GLib, GObject, Gtk
 
 
 def _weak_target(method):
@@ -86,6 +87,34 @@ def weak_method(method):
         return None if instance is None else function(instance, *args)
 
     return call
+
+
+_SECTIONS = {}  # entries -> the Gio.Menu shared_section() made of them
+
+
+def shared_section(entries):
+    """A frozen Gio.Menu of `entries`, each (label, detailed action) or (label, detailed
+    action, hidden-when), the same object for the same entries for the process's life: a
+    menu section a widget that can be dropped gives a Gtk.MenuButton or Gtk.PopoverMenu.
+
+    GTK 4.20 to 4.24's menu tracker, behind every Gtk.PopoverMenu, takes a reference to each
+    section of its model and never gives it back (gtk_menu_tracker_add_items(), for the
+    sections it does not merge, as a popover's): a section given to a popover is never freed,
+    nor its items. A page's Sort By sections, made with each page, added up as pages were
+    opened and closed (docs/notes.md, Memory); shared, they cost once. Never unref one to
+    make up for it: once GTK gives the reference back, that would free it twice."""
+    entries = tuple(entries)
+    section = _SECTIONS.get(entries)
+    if section is None:
+        section = Gio.Menu()
+        for label, action, *hidden_when in entries:
+            item = Gio.MenuItem.new(label, action)
+            if hidden_when:
+                item.set_attribute_value('hidden-when', GLib.Variant('s', hidden_when[0]))
+            section.append_item(item)
+        section.freeze()
+        _SECTIONS[entries] = section
+    return section
 
 
 class MappedHandlers:

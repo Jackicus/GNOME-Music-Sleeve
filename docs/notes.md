@@ -273,7 +273,8 @@ its "Performance pass" section.
 
 The target (`.claude/rules/performance.md`, checked by `scripts/bench.py`): anonymous memory
 under 250 MB after every page has been browsed twice on the 3,000-album, 40,000-song library,
-and pages opened and closed leaving at most 5 MB behind. RSS is not the target: it adds what
+and pages opened and closed leaving at most 5 MB of it behind (malloc's bytes in use, beside
+it, tell a leak from fragmentation: below). RSS is not the target: it adds what
 the libraries and the GL driver map, which the app cannot shrink (a bare `Adw.ApplicationWindow`
 is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anonymous).
 
@@ -406,6 +407,66 @@ by as much as the process did.
   MB of anonymous memory over the three (+4.1, +4.6, +6.9 after each), over the 5 MB target;
   after, +1.6 (+0.3, +0.9, +1.6), every page freed, and startup, the switches, the pages'
   first paints and Albums' scrolling as they were.
+
+### The pages step: two leaks and the fragmentation (2026-11-11, issue 541)
+
+The pages step had read +4 to +7 MB since it opened Charts, Replay and a search's See All
+(issue 527's notes: +3.8 and +7.3), against its 5 MB target, every page freed. Measured
+headless on build/demo-big at 1100x760 (GTK 4.24.1, libadwaita 1.10.0, PyGObject 3.58.1),
+with malloc's bytes in use (`mallinfo2()`: what malloc has handed out and not had back)
+beside the anonymous RSS after `gc.collect()` and `malloc_trim(0)`, live Python objects by
+type (and by the function and the method a `connect_weak()` closure holds), and live
+GObjects by type (an `LD_PRELOAD` shim over `g_object_new*`, as above; none of it is
+committed). Six other builds and test runs shared the machine (load average 3 to 12): the
+memory readings do not depend on it the way timings do, and the before and after benches
+ran under the same load. Before, eight measured rounds of the step: malloc's bytes in use
+grew 0.37-0.47 MB every round, without levelling off, so not warm-up: a leak, which each
+kind of page run alone placed: an album page about 15 KB a visit, a library artist page,
+Apple's artist page and See All 4-6 KB, Charts, Replay and a search's See All nothing.
+
+- **GTK's menu tracker keeps a popover's sections.** Live GMenus grew 3 an album page, 2 a
+  library artist page or See All: their Sort By menus' sections. `gtk_menu_tracker_add_items()`
+  takes a reference to each section link (`g_menu_model_get_item_link()`, transfer full)
+  and drops it only in its branch for sections it merges; a `Gtk.PopoverMenu` merges none,
+  so every section given to a popover stays, with its items. Reproduced in C on 4.24.1 (a
+  `gtk_popover_menu_new_from_model()` freed, its model freed, the section alive); the same
+  code is in 4.20.0 and on GTK's main. The pages' Sort By sections are made once now
+  (`widgets.util.shared_section()`): album pages alone, 0.3 MB a round to none that six
+  rounds could tell from their noise (about 0.3 MB either way). A menu made as it
+  opens (an item's More Options, a context menu, Add to Playlist) still leaves its sections
+  behind each time it opens, a few KB.
+- **Handlers on libadwaita's leaked breakpoints.** The album page connected six handlers to
+  its three `Adw.Breakpoint`s' `apply` and `unapply` (the table, the selection bar's narrow
+  layout); the breakpoints are never freed (above), so neither were the closures: 120 a
+  round, 1,200 Python objects. It follows its `Adw.BreakpointBin`'s
+  `notify::current-breakpoint` instead, whose handler goes with the bin.
+- **What is left in use**, 0.11-0.14 MB a round, fits libadwaita's breakpoints themselves
+  (inferred, not traced: the shim did not count them): 90 a round (3 an album
+  page and an artist page, 2 a library artist page, 1 a See All) at about 1 KB each, as
+  measured above. A real leak, upstream's, fixed on its main.
+- **The rest is fragmentation.** The anonymous RSS grows more than malloc's bytes in use, most
+  of it in the first measured round, while malloc's free space grows with it: the warm-up
+  round leaves the heaps at 30 MB free, the first measured round adds 4, and they level off
+  by the third (one instrumented run after the fixes, eight rounds: free 30.8 after the
+  warm-up, then 35.1, 35.1, 35.3, 35.5, 35.1, 35.7, 36.0, 36.2 MB). Apple's artist pages,
+  run alone, make most of it (anonymous +1.1 to +4.7 MB over six rounds, bytes in use
+  flat), as issue 477 found.
+
+`scripts/bench.py` checks the target on the anonymous RSS (it compared the RSS, which adds
+the files mapped on the way), prints each run's value, and reports malloc's bytes in use
+after each round. Five runs each, one bench after the other under the same load, the same
+bench.py:
+
+| | before (b1d6bbc) | after |
+|---|---|---|
+| anonymous, three rounds (median) | +4.8 MB (+2.3, +2.7, +4.8) | +2.8 MB (+1.6, +1.7, +2.8) |
+| each run | +4.8, +4.9, +3.0, +1.9, +4.9 | +3.0, +2.8, +2.1, +2.5, +4.1 |
+| RSS (median) | +5.6 MB | +3.7 MB |
+| malloc's bytes in use after each round | +0.43, +0.82, +1.29 MB | +0.14, +0.33, +0.42 MB |
+
+Eight rounds after: anonymous +1.9, +2.9, +3.8, +3.9, +4.2, +4.8, +4.5, +5.4 (two runs), bytes
+in use +0.17 to +0.91 (0.11 a round). The 5 MB is for three rounds; more rounds pass it by
+libadwaita's breakpoints and the fragmentation still settling.
 
 ## Chrome and the page
 

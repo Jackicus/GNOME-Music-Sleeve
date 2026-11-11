@@ -31,7 +31,7 @@ from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import (ARTIST, COVER, GRID_VIDEO_SIZE, VIDEO, WIDE_SHAPES, Tile,
                             shared_shape)
 from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
-                            weak_method)
+                            shared_section, weak_method)
 from . import SignInOffer, app, mark_bound
 
 log = logging.getLogger(__name__)
@@ -133,6 +133,16 @@ def sort_labels():
     Songs page's, songs.blp): Ascending and Descending, and Favourites Only."""
     return {'ascending': _('Asc_ending'), 'descending': _('Desce_nding'),
             'favourites-only': _('_Favourites Only')}
+
+
+def direction_section():
+    """Sort By's Ascending and Descending, of the page.sort-order action: one section for
+    every page (widgets.util.shared_section(): GTK keeps a popover's sections)."""
+    labels = sort_labels()
+    return shared_section(((labels['ascending'], 'page.sort-order::ascending'),
+                           (labels['descending'], 'page.sort-order::descending')))
+
+
 # The properties compared as numbers; the rest are text.
 NUMBERS = frozenset({'year', 'added'})
 
@@ -280,6 +290,7 @@ class GridPage(Adw.NavigationPage):
         self._all_sorts = tuple(sorts) + tuple(data_sorts)
         self._data_sorts = frozenset(data_sorts)
         self._sort_keys = tuple(sorts)  # those offered now (_update_sorts)
+        self._keys_shown = False  # the Sort By menu has their section
         self._order = (sorts[0], SORTS[sorts[0]][2]) if sorts else None  # (key, descending)
         sorter, backwards = make_sorter(*self._order) if sorts else (None, False)
         # Favourites Only: `favourites` is (empty title, empty description) on a page that
@@ -348,18 +359,13 @@ class GridPage(Adw.NavigationPage):
         actions.add_action(self._order_action)
         actions.add_action(self._favourites_action)
         self.insert_action_group('page', actions)
-        menu = Gio.Menu()
-        self._keys_menu = Gio.Menu()
-        menu.append_section(None, self._keys_menu)
-        labels = sort_labels()
-        directions = Gio.Menu()
-        directions.append(labels['ascending'], 'page.sort-order::ascending')
-        directions.append(labels['descending'], 'page.sort-order::descending')
-        menu.append_section(None, directions)
+        # Its sections are every page's (shared_section(): GTK keeps a popover's sections);
+        # the orders' first, put in by _update_sorts().
+        self._sort_menu = menu = Gio.Menu()
+        menu.append_section(None, direction_section())
         if favourites is not None:
-            filters = Gio.Menu()
-            filters.append(labels['favourites-only'], 'page.favourites-only')
-            menu.append_section(None, filters)
+            menu.append_section(None, shared_section(
+                ((sort_labels()['favourites-only'], 'page.favourites-only'),)))
             self.sort_button.set_tooltip_text(_('Sort and Filter'))
             self.sort_button.update_property([Gtk.AccessibleProperty.LABEL],
                                              [_('Sort and Filter')])
@@ -579,12 +585,14 @@ class GridPage(Adw.NavigationPage):
         model = self._sorted.get_model()
         keys = tuple(key for key in self._all_sorts
                      if key not in self._data_sorts or offered(model, key))
-        if keys == self._sort_keys and self._keys_menu.get_n_items():
+        if keys == self._sort_keys and self._keys_shown:
             return
         self._sort_keys = keys
-        self._keys_menu.remove_all()
-        for key in keys:
-            self._keys_menu.append(SORTS[key][0](), f'page.sort::{key}')
+        if self._keys_shown:
+            self._sort_menu.remove(0)
+        self._sort_menu.insert_section(0, None, shared_section(
+            (SORTS[key][0](), f'page.sort::{key}') for key in keys))
+        self._keys_shown = True
         if self._order is not None and self._order[0] not in keys and keys:
             self._sort(keys[0])
 

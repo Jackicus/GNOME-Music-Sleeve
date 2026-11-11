@@ -23,7 +23,7 @@ icon theme, the compositor's first configure, the GL driver's memory). The repor
 gives each run and the median, against the targets (.claude/rules/performance.md:
 content painted within 250 ms of the bare window's first frame, the app's own share of the
 start, switches under 100 ms, anonymous memory under 250 MB after every page has been
-browsed twice, and pages opened and closed leaving at most 5 MB behind):
+browsed twice, and pages opened and closed leaving at most 5 MB of it behind):
 
 - startup: from the process start (/proc/self/stat, so the interpreter's own start
   counts) to the window mapped, its first frame painted, the library ready, and the
@@ -48,8 +48,10 @@ browsed twice, and pages opened and closed leaving at most 5 MB behind):
   does) and popped one after the other, --settle ms each: a first round that warms the caches (the
   artwork's LRU fills once, the page modules load), then --rounds measured ones (default
   3), so that what each visit leaves behind adds up where one round would hide it: the
-  RSS and anonymous RSS they left behind, after gc.collect() and malloc_trim(0), with the
-  anonymous RSS after each round, and how many of the pages pushed are still alive
+  anonymous RSS they left behind (the target; the RSS beside it), after gc.collect() and
+  malloc_trim(0), after each round and in each run, malloc's bytes in use after each round
+  (mallinfo2(): a leak grows them round after round, where fragmentation, freed memory
+  malloc cannot give back, grows only the RSS), and how many of the pages pushed are still alive
   (GObject weak references: a Python weakref dies with the wrapper, which PyGObject lets
   go whether or not the widget lives; see widgets/util.py), by class. A page that is
   freed once popped leaves 0 alive. Each kind's median time in the measured rounds, from
@@ -86,7 +88,7 @@ SWITCH_TARGET = 100  # ms
 # MB of anonymous memory (RssAnon: the app's own, where RSS adds the files the libraries and
 # the GL driver map, which the app cannot shrink) after every page has been browsed twice.
 ANON_TARGET = 250
-PAGES_TARGET = 5  # MB the pages step's measured rounds may leave behind
+PAGES_TARGET = 5  # MB of anonymous memory the pages step's measured rounds may leave behind
 FRAME_TIMEOUT = 3000  # ms to wait for a frame before calling it missing
 # What the pages step opens and pops, each round: 'artist-page' is Apple Music's page of an
 # artist, 'search-all' a search's See All page of one kind.
@@ -129,6 +131,27 @@ def malloc_trim():
         ctypes.CDLL('libc.so.6').malloc_trim(0)
     except (OSError, AttributeError):
         pass
+
+
+class Mallinfo2(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_size_t) for name in (
+        'arena', 'ordblks', 'smblks', 'hblks', 'hblkhd', 'usmblks', 'fsmblks', 'uordblks',
+        'fordblks', 'keepcost')]
+
+
+def malloc_in_use_mb():
+    """MB that malloc has handed out and not had back (glibc's mallinfo2(): its arenas'
+    chunks in use and the chunks it maps on their own), or None without glibc. Freed memory
+    malloc cannot give back (free chunks scattered among live ones: fragmentation) counts in
+    the anonymous RSS but not here, so what a leak keeps shows here and fragmentation does
+    not; Python's own small objects (pymalloc maps its arenas itself) show in neither."""
+    try:
+        mallinfo2 = ctypes.CDLL('libc.so.6').mallinfo2
+    except (OSError, AttributeError):
+        return None
+    mallinfo2.restype = Mallinfo2
+    info = mallinfo2()
+    return (info.uordblks + info.hblkhd) / 2**20
 
 
 def process_age_ms():
@@ -203,7 +226,9 @@ def parent():
               f'RSS after browsing {fmt(result["rss"]["browsed"], "MB")} '
               f'(anon {fmt(result["rss"]["browsed_anon"], "MB")}); '
               f'bare window: first frame {fmt(bare and bare["first_frame"])}, '
-              f'RSS {fmt(bare and bare["rss"], "MB")}', flush=True)
+              f'RSS {fmt(bare and bare["rss"], "MB")}'
+              + (f'; pages anon {result["pages"]["anon"]:+.1f} MB'
+                 if result.get('pages') else ''), flush=True)
     if not runs:
         sys.exit('bench: no run finished')
     first = runs[0]
@@ -257,15 +282,26 @@ def parent():
         opened = ', '.join(f'{count} {kind}' for kind, count in pages[0]['opened'].items())
         alive = ', '.join(f'{name} {alive} of {pushed}'
                           for name, (alive, pushed) in pages[0]['alive'].items())
-        grown = median(page['rss'] for page in pages)
+        grown = median(page['anon'] for page in pages)
         rounds = len(pages[0]['anon_rounds'])
-        by_round = ', '.join(f'{median(page["anon_rounds"][i] for page in pages):+.1f}'
-                             for i in range(rounds))
+
+        def by_round(key, digits):
+            return ', '.join(
+                f'{median(page[key][i] for page in pages):+.{digits}f}' for i in range(rounds)
+                if all(len(page.get(key, ())) > i for page in pages))
+
+        in_use = by_round('in_use_rounds', 2)
+        each_run = ', '.join(f"{page['anon']:+.1f}" for page in pages)
         print(f'  pages ({opened} opened and popped a round, {rounds} round(s) after a '
-              f'warm-up): RSS {grown:+.1f} MB (anon '
-              f'{median(page["anon"] for page in pages):+.1f} MB; after each round {by_round}) '
-              f'after gc.collect() and malloc_trim(0), {verdict(grown, PAGES_TARGET)} the '
-              f'{PAGES_TARGET} MB target; still alive (run 1): {alive}')
+              f'warm-up): anon {grown:+.1f} MB (after each round {by_round("anon_rounds", 1)};'
+              f' RSS {median(page["rss"] for page in pages):+.1f} MB) after gc.collect() and '
+              f'malloc_trim(0), {verdict(grown, PAGES_TARGET)} the {PAGES_TARGET} MB target'
+              f' (each run {each_run}); '
+              f'still alive (run 1): {alive}')
+        if in_use:
+            print(f"  pages: malloc's bytes in use after each round {in_use} MB: what the pages "
+                  'kept grows here round after round; the rest of the anonymous growth is '
+                  'freed memory malloc cannot give back (fragmentation)')
         names = {'album': 'an album', 'artist': 'an artist', 'artist-page': 'an artist page',
                  'shelf': 'See All', 'charts': 'Charts', 'replay': 'Replay',
                  'search-all': "a search's See All"}
@@ -615,7 +651,7 @@ def child():
     def memory():
         gc.collect()
         malloc_trim()
-        return rss_mb(), rss_mb('RssAnon')
+        return rss_mb(), rss_mb('RssAnon'), malloc_in_use_mb()
 
     async def pages_step():
         """Open and pop albums, artists and See All grids (PAGES) over the Albums page, as a
@@ -672,13 +708,15 @@ def child():
             await asyncio.sleep(0.2)
 
         await tour()  # the warm-up: what the first visits fill once (the artwork's LRU)
-        rss_before, anon_before = memory()
-        rss_after, anon_after = rss_before, anon_before
-        anon_rounds = []
+        rss_before, anon_before, used_before = memory()
+        rss_after, anon_after, used_after = rss_before, anon_before, used_before
+        anon_rounds, used_rounds = [], []
         for _round in range(args.rounds):
             await tour(timed=True)
-            rss_after, anon_after = memory()
+            rss_after, anon_after, used_after = memory()
             anon_rounds.append(round(anon_after - anon_before, 1))
+            if used_before is not None:
+                used_rounds.append(round(used_after - used_before, 2))
         opened = {}
         for kind, _target in plan:
             name = {'album': 'albums', 'artist': 'artists', 'artist-page': 'artist pages',
@@ -690,6 +728,7 @@ def child():
             'rss': round(rss_after - rss_before, 1),
             'anon': round(anon_after - anon_before, 1),
             'anon_rounds': anon_rounds,
+            'in_use_rounds': used_rounds,  # malloc's bytes in use, MB more than after warm-up
             'alive': {name: [sum(ref() is not None for ref in refs), len(refs)]
                       for name, refs in pushed.items()},
             'open_ms': {kind: round(median(times), 1) for kind, times in opens.items()},

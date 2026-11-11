@@ -40,7 +40,7 @@ from tests.page_harness import Player, artist_answer
 from gi.repository import Gio, GLib, GObject
 
 from applemusic.backend.errors import EngineError
-from applemusic.widgets.util import connect_weak, weak_method
+from applemusic.widgets.util import connect_weak, shared_section, weak_method
 
 
 class _Emitter(GObject.Object):
@@ -115,6 +115,26 @@ class ConnectWeakTest(unittest.TestCase):
         self.assertFalse(emitter.emit('ask', 1))
         self.assertFalse(emitter.handler_is_connected(handler))
         self.assertIsNone(call(4))
+
+
+class SharedSectionTest(unittest.TestCase):
+    """GTK's menu tracker never lets go of a popover's sections (widgets/util.py), so the
+    menus of widgets that can be dropped share theirs."""
+
+    def test_the_same_entries_are_the_same_frozen_section(self):
+        entries = (('Invented _A', 'page.sort::a'),
+                   ('Invented _B', 'page.sort::b', 'action-disabled'))
+        section = shared_section(entries)
+        self.assertIs(shared_section(iter(entries)), section)
+        self.assertIsNot(shared_section(entries[:1]), section)
+        self.assertFalse(section.is_mutable())
+        self.assertEqual(section.get_n_items(), 2)
+        self.assertEqual(section.get_item_attribute_value(0, 'label').get_string(), 'Invented _A')
+        self.assertEqual(section.get_item_attribute_value(1, 'action').get_string(), 'page.sort')
+        self.assertEqual(section.get_item_attribute_value(1, 'target').get_string(), 'b')
+        self.assertEqual(section.get_item_attribute_value(1, 'hidden-when').get_string(),
+                         'action-disabled')
+        self.assertIsNone(section.get_item_attribute_value(0, 'hidden-when'))
 
 
 # -- the widget tests' stand-ins, made once GTK is known to work ---------------------------
@@ -829,6 +849,38 @@ class PageLifetimeTest(WidgetTestCase):
             LibraryArtistPage(self.library, Item(_artist([_album(n) for n in range(4)]))),
             Tile)
         await self.assert_freed(*refs)
+
+    async def test_pages_share_their_sort_menus_sections(self):
+        # GTK's menu tracker keeps each section of a popover's menu for good
+        # (widgets.util.shared_section()): pages of a kind give their Sort By the same ones,
+        # which cost once, rather than each page's own, which would all stay behind.
+        from applemusic.library import Item
+        from applemusic.pages.detail import DetailPage
+        from applemusic.pages.grid import GridPage
+        from applemusic.pages.library_artist import LibraryArtistPage
+
+        def sections(page):
+            menu = page.sort_button.get_menu_model()
+            return [menu.get_item_link(i, 'section') for i in range(menu.get_n_items())]
+
+        def grid():
+            store = Gio.ListStore(item_type=Item)
+            store.splice(0, 0, [Item(_album(number)) for number in range(3)])
+            return GridPage(self.library, 'Invented Shelf', store, sorts=('title', 'year'),
+                            favourites=('No Invented Favourites', ''), root=False)
+
+        makers = {
+            'grid': grid,
+            'playlist': lambda: DetailPage(self.library, Item(_album(1, tracks=3))),
+            'artist': lambda: LibraryArtistPage(
+                self.library, Item(_artist([_album(n) for n in range(2)]))),
+        }
+        for name, make in makers.items():
+            first, second = sections(make()), sections(make())
+            self.assertGreaterEqual(len(first), 2, name)
+            self.assertEqual(len(first), len(second), name)
+            for mine, theirs in zip(first, second, strict=True):
+                self.assertIs(mine, theirs, name)
 
     async def test_artist_page_with_the_catalog(self):
         from applemusic.library import Item

@@ -121,7 +121,7 @@ from ..widgets.labels import track_label
 from ..widgets.suggested_songs import SuggestedSongs
 from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader, is_playing
 from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
-                            next_frame, weak_method)
+                            next_frame, shared_section, weak_method)
 from . import SignInOffer, app, show_notes
 
 log = logging.getLogger(__name__)
@@ -609,8 +609,6 @@ class DetailPage(Adw.NavigationPage):
         connect_weak(self._table_header_factory, 'setup', self._on_setup_table_header)
         connect_weak(self._table_header_factory, 'bind', self._on_bind_table_header)
         self._table_headers = set()  # the table's headers bound: room for the check boxes
-        connect_weak(self.table_breakpoint, 'apply', self._on_table_apply)
-        connect_weak(self.table_breakpoint, 'unapply', self._on_table_unapply)
         # Told from the content pane's width before the first layout (expects_table()); the
         # first paint puts it right if that was wrong (_on_painted).
         window = app().get_active_window() if app() is not None else None
@@ -642,10 +640,11 @@ class DetailPage(Adw.NavigationPage):
         connect_weak(self.selection_mode.selection, 'changed', self._on_selection_changed)
         context_menu.set_drag_objects(self.list_view,
                                       weak_method(self.selection_mode.drag_objects))
-        self._narrow = set()  # the narrow breakpoints applied: the bar's narrow layout
-        for breakpoint in (self.hero_breakpoint, self.phone_breakpoint):
-            connect_weak(breakpoint, 'apply', self._on_narrow, True)
-            connect_weak(breakpoint, 'unapply', self._on_narrow, False)
+        # The table and the selection bar's narrow layout follow the bin's current breakpoint,
+        # not the breakpoints' own apply and unapply: libadwaita 1.9 and 1.10 never free a
+        # bin's breakpoints, which would keep a handler on each, and its closure, for good
+        # (docs/notes.md, Memory). A handler on the bin goes with the bin.
+        connect_weak(self.get_child(), 'notify::current-breakpoint', self._on_breakpoint)
         # A playlist's filter: the bar under the header bar, the text filtering every group.
         self._text = SearchText()  # a Backspace that brings nothing back filters nothing
         self._filtered = []  # the groups' Gtk.FilterListModels of it, while it filters
@@ -667,15 +666,13 @@ class DetailPage(Adw.NavigationPage):
         sort_actions.add_action(self._sort_action)
         sort_actions.add_action(self._order_action)
         self.insert_action_group('tracks', sort_actions)
-        keys_menu = Gio.Menu()
-        for key, (label, _names) in PLAYLIST_SORTS.items():
-            keys_menu.append(label(), f'tracks.sort::{key}')
-        directions = Gio.Menu()
-        directions.append(_('Asc_ending'), 'tracks.sort-order::ascending')
-        directions.append(_('Desce_nding'), 'tracks.sort-order::descending')
+        # Its sections are every page's (shared_section(): GTK keeps a popover's sections).
         sort_menu = Gio.Menu()
-        sort_menu.append_section(None, keys_menu)
-        sort_menu.append_section(None, directions)
+        sort_menu.append_section(None, shared_section(
+            (label(), f'tracks.sort::{key}') for key, (label, _names) in PLAYLIST_SORTS.items()))
+        sort_menu.append_section(None, shared_section((
+            (_('Asc_ending'), 'tracks.sort-order::ascending'),
+            (_('Desce_nding'), 'tracks.sort-order::descending'))))
         # The table's optional columns (song_columns.py, the song-columns setting the Songs
         # table shares), offered while the songs show as a table.
         self._settings = getattr(app(), 'settings', None)
@@ -1367,11 +1364,12 @@ class DetailPage(Adw.NavigationPage):
         if suggestions.restore(song, held_songs(self.item)):
             self._update_suggestions()
 
-    def _on_table_apply(self, _breakpoint):
-        self.table = True
-
-    def _on_table_unapply(self, _breakpoint):
-        self.table = False
+    def _on_breakpoint(self, bin_, _pspec):
+        """The bin's breakpoint changed: a playlist's table from the wide one, the selection
+        bar's narrow layout from either narrow one (only the last that matches applies)."""
+        current = bin_.get_current_breakpoint()
+        self.table = current is self.table_breakpoint
+        self.selection_mode.set_narrow(current in (self.hero_breakpoint, self.phone_breakpoint))
 
     def _is_table(self):
         """Whether the tracks show as a table: a playlist's (not an album's) one list of
@@ -1874,15 +1872,6 @@ class DetailPage(Adw.NavigationPage):
             if header.get_child() is not None:
                 header.get_child().set_selecting(selection.active)
         self._update_sort_button()
-
-    def _on_narrow(self, breakpoint, applied):
-        """A narrow breakpoint applied or not: the selection bar's narrow layout while either
-        is (only the last that matches applies)."""
-        if applied:
-            self._narrow.add(breakpoint)
-        else:
-            self._narrow.discard(breakpoint)
-        self.selection_mode.set_narrow(bool(self._narrow))
 
     def focused_track(self, focus):
         """The Track of the row with the focus `focus` in the list, or None (the window's
