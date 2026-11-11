@@ -65,14 +65,12 @@ def action_name(name):
 def menu_section(group):
     """A menu section of check items, one a column, of the stateful actions make_actions()
     made in the action group `group` ('songs', 'tracks'); each is hidden while its action is
-    disabled (the table too narrow for it)."""
-    section = Gio.Menu()
+    disabled (the table too narrow for it). One section for each group, shared by the pages
+    (widgets.util.shared_section(): GTK keeps a popover's sections)."""
+    from .widgets.util import shared_section
     words = labels()
-    for name in OPTIONAL:
-        item = Gio.MenuItem.new(words[name], f'{group}.{action_name(name)}')
-        item.set_attribute_value('hidden-when', GLib.Variant('s', 'action-disabled'))
-        section.append_item(item)
-    return section
+    return shared_section((words[name], f'{group}.{action_name(name)}', 'action-disabled')
+                          for name in OPTIONAL)
 
 
 def make_actions(actions, changed):

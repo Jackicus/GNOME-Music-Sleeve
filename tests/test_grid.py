@@ -585,12 +585,14 @@ class GridTest(PageTestCase):
         page = await self.show_root(GridPage(self.library, 'Invented Videos', store,
                                              video=True, sorts=('title', 'artist'),
                                              data_sorts=('added',)))
-        keys = page._keys_menu
-        self.assertEqual(keys.get_n_items(), 2)  # Title, Artist: Apple dated none
+        def keys():  # the Sort By menu's first section, the orders
+            return page.sort_button.get_menu_model().get_item_link(0, 'section').get_n_items()
+
+        self.assertEqual(keys(), 2)  # Title, Artist: Apple dated none
         store.append(Item({'id': 'i.mv9', 'kind': 'video', 'title': 'Video 9',
                            'added': '2026-01-01T00:00:00Z'}))
         self.library.emit('changed')  # a sync brought dates
-        self.assertEqual(keys.get_n_items(), 3)
+        self.assertEqual(keys(), 3)
         self.assertEqual(page._sort_keys, ('title', 'artist', 'added'))
 
     async def test_the_header_shows_the_title_only_while_the_big_one_is_away(self):

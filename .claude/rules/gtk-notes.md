@@ -175,6 +175,13 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
 - A `Gio.MenuItem` with the attribute `hidden-when` = `action-disabled` is shown by a
   `Gtk.PopoverMenu` only while its action is enabled, and follows the action's state while
   the menu is open (Favourite / Remove from Favourites, as Nautilus's Star / Unstar).
+- A `Gtk.PopoverMenu` (so every `Gtk.MenuButton` given a model) never lets go of its
+  model's sections: its menu tracker takes a reference to each section it does not merge
+  and never drops it (`gtk_menu_tracker_add_items()`, 4.20 to 4.24 and main; reproduced in C
+  on 4.24.1). The section and its items are never freed. A widget that can be dropped takes
+  its menus' sections from `widgets.util.shared_section()`, made once (a page's Sort By);
+  never unref one to make up for it, which would free it twice once GTK is fixed. A menu
+  made as it opens (`menu_for()`, a context menu) leaves its sections behind each time.
 
 ## PyGObject and asyncio
 
@@ -191,4 +198,6 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
 - libadwaita 1.9.0 to 1.10.0 never frees an `Adw.Breakpoint` added to an `Adw.BreakpointBin`
   (its array has no free function; fixed upstream on main, f2e30ed1, in no release yet): each
   page built from a template with breakpoints leaves them behind (docs/notes.md, Memory). Never
-  unref one to make up for it: once the fix ships that frees it twice.
+  unref one to make up for it: once the fix ships that frees it twice. A page that can be
+  dropped does not connect to their `apply` and `unapply` either, whose handlers would stay
+  with them: it follows the bin's `notify::current-breakpoint` (`DetailPage._on_breakpoint`).

@@ -18,7 +18,9 @@ second from launch here: the bare window alone takes 0.8 s), page switches under
 dropped frames while scrolling Albums and Songs, anonymous memory under 250 MB after every
 page has been browsed twice, and pages opened and closed (20 albums, 5 artists, 5 artist
 pages, 5 See All, 2 Charts, 2 Replay and 2 of a search's See All a round, three rounds
-after a warm-up round) leaving at most 5 MB behind.
+after a warm-up round) leaving at most 5 MB of anonymous memory behind; malloc's bytes in
+use, which bench.py reports after each round, grow only by libadwaita's breakpoints (about
+0.1 MB a round): more is a leak, and the rest of the growth fragmentation (docs/notes.md).
 bench.py checks all but scrolling. The numbers behind these rules are in docs/notes.md.
 
 ## Measure

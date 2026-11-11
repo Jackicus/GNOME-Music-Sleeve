@@ -17,10 +17,10 @@ from ..library import Item, apply_diff
 from ..widgets import context_menu
 from ..widgets.labels import bind_label, unbind_label
 from ..widgets.tile import Tile
-from ..widgets.util import MappedHandlers, connect_weak, weak_method
+from ..widgets.util import MappedHandlers, connect_weak, shared_section, weak_method
 from . import app
 from ..widgets.filter_bar import ShownModel
-from .grid import SORTS, columns_for, estimate_columns, make_sorter, sort_labels
+from .grid import SORTS, columns_for, direction_section, estimate_columns, make_sorter
 
 # The orders the Sort By menu offers: newest first, as Apple Music's library has an artist's
 # albums, or by title.
@@ -120,16 +120,11 @@ class LibraryArtistPage(Adw.NavigationPage):
         actions.add_action(self._sort_action)
         actions.add_action(self._order_action)
         self.insert_action_group('page', actions)
+        # Its sections are every page's (shared_section(): GTK keeps a popover's sections).
         menu = Gio.Menu()
-        keys = Gio.Menu()
-        for key in ORDERS:
-            keys.append(SORTS[key][0](), f'page.sort::{key}')
-        menu.append_section(None, keys)
-        labels = sort_labels()
-        directions = Gio.Menu()
-        directions.append(labels['ascending'], 'page.sort-order::ascending')
-        directions.append(labels['descending'], 'page.sort-order::descending')
-        menu.append_section(None, directions)
+        menu.append_section(None, shared_section(
+            (SORTS[key][0](), f'page.sort::{key}') for key in ORDERS))
+        menu.append_section(None, direction_section())
         self.sort_button.set_menu_model(menu)
 
         # The library and the artist outlive the page: followed while it is mapped.

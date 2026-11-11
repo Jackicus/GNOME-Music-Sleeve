@@ -510,6 +510,32 @@ class DetailPageTest(PageTestCase):
             self.assertTrue(row.artist_label.get_visible())
             self.assertFalse(row.columns.get_homogeneous())
 
+    async def test_the_bins_breakpoint_sets_the_table_and_the_narrow_bar(self):
+        # The page follows its bin's current breakpoint, with nothing connected to the
+        # breakpoints themselves: libadwaita never frees them, nor a handler on them.
+        from gi.repository import Adw, GObject
+
+        page = await self.push(self.page(album(1, tracks=3, kind='playlist')))
+        for breakpoint in (page.table_breakpoint, page.hero_breakpoint, page.phone_breakpoint):
+            for signal in ('apply', 'unapply'):
+                self.assertFalse(GObject.signal_has_handler_pending(
+                    breakpoint, GObject.signal_lookup(signal, Adw.Breakpoint), 0, True))
+
+        class Bin:
+            current = None
+
+            def get_current_breakpoint(self):
+                return self.current
+
+        bin_ = Bin()
+        for current, table, narrow in ((page.table_breakpoint, True, False),
+                                       (None, False, False),
+                                       (page.hero_breakpoint, False, True),
+                                       (page.phone_breakpoint, False, True)):
+            bin_.current = current
+            page._on_breakpoint(bin_, None)
+            self.assertEqual((page.table, page.selection_mode._narrow), (table, narrow))
+
     async def test_a_page_known_to_be_wide_binds_its_rows_once_as_the_table(self):
         # Told before its first layout that it will be a table (expects_table(), from the
         # window's content width), the page binds its rows as the table has them: none made
