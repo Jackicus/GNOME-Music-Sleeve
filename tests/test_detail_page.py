@@ -15,6 +15,11 @@ from tests.page_harness import PageTestCase, album, artist, artist_answer, playi
 from applemusic.backend.errors import EngineError
 
 
+def caption(page):
+    """The hero's caption with its no-break spaces read as spaces (release.unbroken())."""
+    return page.caption_label.get_label().replace('\u00a0', ' ')
+
+
 class DetailPageTest(PageTestCase):
     def page(self, data):
         from applemusic.library import Item
@@ -643,7 +648,7 @@ class DetailPageTest(PageTestCase):
 
     async def test_a_prerelease_album_says_when_and_plays_what_is_out(self):
         page = await self.push(self.page(self.upcoming()))
-        self.assertEqual(page.caption_label.get_label(),
+        self.assertEqual(caption(page),
                          'Pop · Coming 4 December 2026 · 3 songs, 9 min')
         self.assertEqual(page.footer_label.get_label().split('\n'),
                          ['Coming 4 December 2026', '3 songs, 9 minutes'])
@@ -688,9 +693,9 @@ class DetailPageTest(PageTestCase):
                     trackCount=3, durationMs=540000)
         page = await self.push(self.page(data))
         self.assertEqual(page.subtitle_label.get_label(), 'Invented Curator')
-        self.assertTrue(page.caption_label.get_label().startswith('Updated '))
-        self.assertTrue(page.caption_label.get_label().endswith(' · 3 songs, 9 min'))
-        self.assertNotIn('Pop', page.caption_label.get_label())
+        self.assertTrue(caption(page).startswith('Updated '))
+        self.assertTrue(caption(page).endswith(' · 3 songs, 9 min'))
+        self.assertNotIn('Pop', caption(page))
         # One of the user's, which carries no curator: the account's name.
         self.app.settings.set_string('account-name', 'Alex Rivera')
         self.addCleanup(self.app.settings.reset, 'account-name')
@@ -699,7 +704,7 @@ class DetailPageTest(PageTestCase):
         self.assertTrue(page.subtitle_label.get_visible())
         # An album's caption is as it was: genre, year and songs.
         page = await self.push(self.page(album(3, year=2003)))
-        self.assertTrue(page.caption_label.get_label().startswith('Pop · 2003 · '))
+        self.assertTrue(caption(page).startswith('Pop · 2003 · '))
 
     async def shown_at(self, page, width):
         """page shown width px wide: in a clamp of that width (which hands its child that
@@ -957,6 +962,10 @@ class ReorderTest(PageTestCase):
     def row(self, page, index):
         return page._row_at(index)
 
+    def list_row(self, page, index):
+        """The list's own row around the song's: where the insertion line is drawn."""
+        return page._row_at(index).get_parent()
+
     def keys(self, page):
         from gi.repository import Gtk
 
@@ -1030,21 +1039,21 @@ class ReorderTest(PageTestCase):
 
         # The top half of the third song: the line on its top edge.
         self.assertEqual(page._on_drop_motion(None, *at(2, False)), Gdk.DragAction.MOVE)
-        self.assertTrue(self.row(page, 2).has_css_class('drop-before'))
+        self.assertTrue(self.list_row(page, 2).has_css_class('drop-before'))
         # The bottom half of the last: on its bottom edge.
         self.assertEqual(page._on_drop_motion(None, *at(3, True)), Gdk.DragAction.MOVE)
-        self.assertFalse(self.row(page, 2).has_css_class('drop-before'))
-        self.assertTrue(self.row(page, 3).has_css_class('drop-after'))
+        self.assertFalse(self.list_row(page, 2).has_css_class('drop-before'))
+        self.assertTrue(self.list_row(page, 3).has_css_class('drop-after'))
         # Beside itself: where it is, no line and no drop.
         self.assertEqual(page._on_drop_motion(None, *at(0, True)), 0)
         self.assertEqual(page._on_drop_motion(None, *at(1, False)), 0)
-        self.assertFalse(self.row(page, 3).has_css_class('drop-after'))
+        self.assertFalse(self.list_row(page, 3).has_css_class('drop-after'))
         # Dropped on the bottom half of the third song: after it, written at once.
         self.assertTrue(page._on_drop(None, None, *at(2, True)))
         self.assertEqual(self.window.item_actions.moved, [('l.playlist001', 0, 2, True)])
         self.assertEqual(self.ids(), ['1', '2', '0', '3'])
         for index in range(4):
-            self.assertFalse(self.row(page, index).has_css_class('drop-after'))
+            self.assertFalse(self.list_row(page, index).has_css_class('drop-after'))
 
     async def test_other_drags_are_not_taken(self):
         from applemusic.library import Item, ItemRefs

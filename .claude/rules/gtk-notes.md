@@ -154,7 +154,7 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
   `drag-begin`, since GTK loads a drop's value only asynchronously and AdwSidebar's
   `drop-enter` gets nothing but the item's index. Every drag source goes through
   `dnd.attach_source()`, every drop target's look and auto-scroll through `dnd.DropFeedback`
-  (`.drop-highlight`, `.drop-before`/`.drop-after`: inset shadows, never a margin). A
+  (`.drop-highlight`, `.drop-before`/`.drop-after`: drawn inside, never a margin). A
   `Gtk.DragSource` in the capture phase on a container sees the press before its rows'
   click gestures and cancels them once the drag starts. GDK's drag and drop events carry no
   modifier state of their own; Shift held makes the drop's action MOVE where the source

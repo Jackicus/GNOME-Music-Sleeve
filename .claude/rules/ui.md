@@ -187,8 +187,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   `track_links.attach(view)` (the Songs table, a playlist's table).
 - A playlist's page is a table from 720sp (`DetailPage.table`, set by detail.blp's
   breakpoint): TrackRow's table rows under a `TrackTableHeader` (the tracks' section header);
-  an album's tracks stay a numbered list. A playlist's Sort By (the header bar's, beside the
-  filter: `detail.PLAYLIST_SORTS` through `playlist_sorter()`, a `Gtk.SortListModel` before the
+  an album's tracks stay a numbered list. A playlist's Sort By (at the header bar's end, as
+  Songs' is: `detail.PLAYLIST_SORTS` through `playlist_sorter()`, a `Gtk.SortListModel` before the
   filter, for the page's life) orders the view only. A playlist of the user's
   (`DetailPage.can_reorder()`: in Playlist Order, first to last, unfiltered) takes a
   drop of one of its own songs (`dnd.current()`'s origin is the playlist) with an insertion

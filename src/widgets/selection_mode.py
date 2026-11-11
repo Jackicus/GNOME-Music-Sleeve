@@ -161,9 +161,10 @@ class SelectionMode(GObject.Object):
                                              use_underline=True,
                                              action_name='selection.remove-from-favourites',
                                              css_classes=['destructive-action'], visible=False)
+        # Destructive, as the bar's other removals are (one of them shows at a time).
         self._remove_library = Gtk.Button(label=_('Remove from Li_brary…'), use_underline=True,
                                           action_name='selection.remove-from-library',
-                                          visible=False)
+                                          css_classes=['destructive-action'], visible=False)
         self._more = Gtk.MenuButton(icon_name='view-more-symbolic', tooltip_text=_('More'),
                                     visible=False)
         self._more.update_property([Gtk.AccessibleProperty.LABEL], [_('More')])

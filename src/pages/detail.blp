@@ -187,9 +187,12 @@ Box hero {
         ]
       }
 
+      // Wrapped between its parts (release.unbroken()); a part too long for the line is
+      // broken where it must be rather than widening the page.
       Label caption_label {
         xalign: 0;
         wrap: true;
+        wrap-mode: word_char;
 
         styles [
           "caption",
