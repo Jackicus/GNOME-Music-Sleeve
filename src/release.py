@@ -9,6 +9,7 @@ the release footer, then the catalog's shelves.
     curator(item, 'Alex')         an album's artist, a playlist's curator (the user's own: theirs)
     hero_caption(item)            'Pop · 2001 · 12 songs, 43 min'; 'Updated 3 March · 22 songs…';
                                   a pre-release album's 'Pop · Coming 4 December 2026 · …'
+    unbroken(caption)             the caption as shown: each part's spaces no-break spaces
     coming_text('4 December 2026')                   'Coming 4 December 2026'
     is_prerelease(item)           whether an album is not out yet (Apple's isPrerelease)
     released_play(item, track)    (play, start_with, start_id) of what Play or a row plays
@@ -241,6 +242,12 @@ def hero_caption(item, now=None):
     else:
         details = [item.genre, str(item.year) if item.year else None, item.count_label]
     return ' · '.join(detail for detail in details if detail)
+
+
+def unbroken(caption):
+    """A hero_caption() as the page shows it: the spaces inside each of its parts no-break
+    spaces, so a narrow page wraps it between parts, never inside one ("36 / min")."""
+    return ' · '.join(part.replace(' ', '\u00a0') for part in (caption or '').split(' · '))
 
 
 def release_date_text(text):
