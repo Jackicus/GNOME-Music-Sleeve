@@ -657,7 +657,8 @@ class Application(Adw.Application):
         app makes a toast; its title is plain text, never markup. With the window closed for
         background playback, a notification instead (the last one only), withdrawn when the
         window is back. A win.* button runs through app.window-action (app_action()) where
-        the window's actions cannot be reached: in the notification, and in Preferences."""
+        the window's actions cannot be reached: in the notification, in Preferences, and in
+        the mini player (a write begun in the main window may end there)."""
         if self.background is not None and self.background.active:
             notification = Gio.Notification.new(title)
             # A notification's button runs app.* actions only: the window's go through
@@ -678,6 +679,10 @@ class Application(Adw.Application):
             action_name, action_target = app_action(action_name, action_target)
         else:
             target = self.get_active_window()
+            if self.mini_player.shown:
+                # The mini player, in the main window's place, has only the app's actions:
+                # a win.* button there would be insensitive.
+                action_name, action_target = app_action(action_name, action_target)
         if target is None:
             return
         toast = Adw.Toast(title=title, use_markup=False)

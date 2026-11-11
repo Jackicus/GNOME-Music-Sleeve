@@ -231,10 +231,28 @@ class MiniPlayer(Adw.ApplicationWindow):
         self.view.add_toast(toast)
 
     def release(self):
-        """The window goes: the view lets go of the Player, then the window is destroyed."""
+        """The window goes: its dialogs are closed, the view lets go of the Player, then the
+        window is destroyed."""
+        self._close_dialogs()
         self.view.detach()
         self._app = None
         self.destroy()
+
+    def _close_dialogs(self):
+        """Close the dialogs open over the window (Preferences, the sign-in, opened by their
+        keys here), and those shown as windows of their own: the app follows their `closed`
+        (the one Preferences it has, where its toasts go), which a dialog destroyed with
+        its window never emits."""
+        closed = None
+        while True:
+            dialog = self.get_visible_dialog()
+            if dialog is None or dialog is closed:
+                break
+            closed = dialog
+            dialog.force_close()
+        for toplevel in Gtk.Window.list_toplevels():
+            if toplevel is not self and toplevel.get_transient_for() is self:
+                toplevel.close()
 
     def do_close_request(self):
         # Closing is leaving the mini player: the host brings the main window back and

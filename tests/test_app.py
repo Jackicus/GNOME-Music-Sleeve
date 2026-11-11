@@ -403,6 +403,27 @@ class WindowActionTest(AppTestCase):
         self.assertEqual(toast.get_action_name(), 'app.window-action')
         self.assertEqual(toast.get_action_target_value().unpack(), ('item-undo-reorder', ['p.1']))
 
+    def test_a_toast_in_the_mini_player_runs_the_windows_action_through_the_app(self):
+        # A write begun in the main window that ends once the mini player shows: its toast
+        # is the mini player's, which has none of the window's actions (its Undo was dead).
+        app = self.app
+        del app.toast
+        toasts = []
+        mini = mock.Mock(add_toast=toasts.append)
+        app.mini_player = mock.Mock(shown=True, window=mini)
+        app.get_active_window = lambda: mini
+        app.toast('Removed 2 songs', 'Undo', 'win.item-undo-remove', GLib.Variant('s', 'p.1'))
+        app.toast('Queue cleared', 'Undo', 'app.undo-clear-up-next')
+        removed, cleared = toasts
+        self.assertEqual(removed.get_action_name(), 'app.window-action')
+        self.assertEqual(removed.get_action_target_value().unpack(),
+                         ('item-undo-remove', ['p.1']))
+        self.assertEqual(cleared.get_action_name(), 'app.undo-clear-up-next')  # as it is
+        # The main window's own toasts keep the window's action.
+        app.mini_player.shown = False
+        app.toast('Removed 2 songs', 'Undo', 'win.item-undo-remove', GLib.Variant('s', 'p.1'))
+        self.assertEqual(toasts[-1].get_action_name(), 'win.item-undo-remove')
+
 
 class RatedTest(AppTestCase):
     def test_the_library_follows_the_engines_ratings(self):
