@@ -488,7 +488,7 @@ class CDPClient:
                     continue
                 try:
                     self._dispatch(message)
-                except Exception:
+                except Exception:  # one bad message is logged, never the end of the session
                     log.exception('CDP: a message could not be handled')
         except asyncio.CancelledError:
             raise
@@ -555,7 +555,7 @@ class CDPClient:
             if self.on_timeout is not None:
                 try:
                     self.on_timeout(method)
-                except Exception:
+                except Exception:  # the owner's callback: the caller still gets its timeout
                     log.exception('on_timeout failed')
             raise EngineError('timeout', f'{method} took longer than {timeout:g} s') from e
         if 'error' in response:
