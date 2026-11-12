@@ -125,28 +125,31 @@ scripts, in the main checkout's git-ignored build/perf-pass/).
 `scripts/resize_test.py` with its defaults: the width 1400 px down to 360 and back three
 times at 1000 px/s, 760 px high, a frame at a time (`set_default_size()` from a tick),
 then a fourth round under cProfile for the Python time. v1.2.0 from `git archive v1.2.0`
-with main's resize_test.py copied in, main at b017fee, one build/demo-big; the same
+with main's resize_test.py copied in, main at b017fee, main after the fixes below (#594,
+#595 and the grids' columns, on 90f7cbd), one build/demo-big; the same
 machine, toolkit and headless display as the section above. Each series ran alone, five
 runs a page, medians and the runs' range; the owner's music played throughout. Work is a
 frame's main-thread work (before-paint to the end of paint); "over" counts frames over
 16.7 ms.
 
-| page | v1.2.0: mean / 90th / longest work, over | main: the same | Python a frame, main |
-|---|---|---|---|
-| the series' machine: load, idle, available, swap | 2.1-2.2, idle 95-96, 9.8 GB, 3.6-3.7 GB | 2.1-2.4, idle 96, 9.5-9.6 GB, 3.5-3.6 GB | |
-| Albums | 9.0 / 14.1 / 137 ms (136-155), 9.5 % | 9.2 / 14.6 / 138 (136-142), 9.9 % | 1.9 ms |
-| a library artist (`--open artist:most`) | 6.5 / 7.7 / 102 (101-108), 5.2 % | 6.8 / 8.0 / 108 (103-111), 5.2 % | 0.8 |
-| Songs | 15.7 / 27.4 / 224 (221-224), 12.4 % | 14.1 / 23.0 / 234 (226-235), 11.6 % | 13.2 |
-| Home | 7.0 / 8.1 / 104 (98-107), 5.2 % | 7.2 / 8.5 / 105 (104-106), 5.2 % | 0.9 |
-| an album (`--open album:first`) | 7.7 / 9.0 / 125 (123-126), 6.3 % | 8.0 / 9.0 / 126 (120-127), 6.3 % | 1.3 |
-| a playlist (`--open playlist:first`) | 8.8 / 10.8 / 137 (133-143), 7.1 % | 8.6 / 11.1 / 134 (132-141), 7.1 % | 1.5 |
-| Albums, Now Playing open | 11.2 / 21.9 / 159 (143-166), 11.1 % | 10.7 / 20.9 / 157 (143-166), 10.0 % | 2.6 |
+| page | target | v1.2.0: mean / 90th / longest work, over | main before: the same; Python a frame | main after: the same; Python a frame |
+|---|---|---|---|---|
+| the series' machine: load, idle, available, swap | | 2.1-2.2, idle 95-96, 9.8 GB, 3.6-3.7 GB | 2.1-2.4, idle 96, 9.5-9.6 GB, 3.5-3.6 GB | 1.8-2.2, idle 96-98, 9.5-10.0 GB, 2.8-2.9 GB (Now Playing run again: Discord took 1.5 cores at the end of the series) |
+| Albums | longest 50 ms, 4 % | 9.0 / 14.1 / 137 ms (136-155), 9.5 % | 9.2 / 14.6 / 138 (136-142), 9.9 %; 1.9 ms | 8.6 / 11.7 / 135 (133-138), 9.1 %; 1.6 |
+| a library artist (`--open artist:most`) | | 6.5 / 7.7 / 102 (101-108), 5.2 % | 6.8 / 8.0 / 108 (103-111), 5.2 %; 0.8 | 6.3 / 7.5 / 102 (101-112), 5.2 %; 0.7 |
+| Songs | | 15.7 / 27.4 / 224 (221-224), 12.4 % | 14.1 / 23.0 / 234 (226-235), 11.6 %; 13.2 | 13.0 / 21.8 / 217 (217-220), 10.3 %; 4.2 |
+| Home | | 7.0 / 8.1 / 104 (98-107), 5.2 % | 7.2 / 8.5 / 105 (104-106), 5.2 %; 0.9 | 6.9 / 7.9 / 103 (99-106), 5.2 %; 0.7 |
+| an album (`--open album:first`) | | 7.7 / 9.0 / 125 (123-126), 6.3 % | 8.0 / 9.0 / 126 (120-127), 6.3 %; 1.3 | 7.5 / 8.6 / 122 (117-127), 6.3 %; 1.0 |
+| a playlist (`--open playlist:first`) | | 8.8 / 10.8 / 137 (133-143), 7.1 % | 8.6 / 11.1 / 134 (132-141), 7.1 %; 1.5 | 8.1 / 9.9 / 132 (130-134), 6.3 %; 1.2 |
+| Albums, Now Playing open | | 11.2 / 21.9 / 159 (143-166), 11.1 % | 10.7 / 20.9 / 157 (143-166), 10.0 %; 2.6 | 9.8 / 14.9 / 136 (133-138), 8.8 %; 2.0 |
+| Albums dragged 1400 to 700 and back only (`--narrow 700`) | | | 6.3 / 9.9 / 27 (26-28), 7.7 %; 1.4 | 5.3 / 8.2 / 19 (18-20), 2.4 %; 0.3 |
 
-Main is v1.2.0 within the noise: the stutter the owner saw on 1.2.0 is all still there.
-Every page's longest frame is the one where the window's 640sp breakpoint collapses or
-expands the split view (625-655 px), and the frame after it is the next longest (50-60 ms,
-Songs 95); the rest of the frames over budget are a grid's column count rising (20-29 ms)
-and, on Songs, its own breakpoints (33-44 ms) and a re-sort landing (75 ms). The causes,
+Main before the fixes was v1.2.0 within the noise: the stutter the owner saw on 1.2.0 was
+all still there. Every page's longest frame is the one where the window's 640sp breakpoint
+collapses or expands the split view (625-655 px), and the frame after it is the next longest
+(50-60 ms, Songs 95); the rest of the frames over budget are a grid's column count rising
+(20-29 ms) and, on Songs, its own breakpoint (33-44 ms, and 75 ms when the sweep lands past
+it just after the expand). The causes,
 each measured with the scripts kept in build/perf-pass/resize/ (one width change at a time,
 25 frames apart, the frame that lays it out timed and profiled):
 
@@ -158,19 +161,29 @@ each measured with the scripts kept in build/perf-pass/resize/ (one width change
   about 100 ms of Python (SongTitle, the cells' setup, the artist line). The same
   breakpoint's `sidebar.mode: page` has `Adw.Sidebar` build all its rows again for the new
   mode: alone, at a fixed width, 61-113 ms with build/demo-big's 300 playlists, plus
-  `SidebarController.update_rows()` (about 8 ms, then again from an idle). On build/demo
+  `SidebarController.update_rows()` (about 8 ms, and before #594 again from an idle,
+  which lengthened the gap after the crossing by 12 ms on Albums). On build/demo
   the whole crossing takes 32-34 ms; with the grid's model taken away 84-92 ms.
 - Songs re-sorts each time: the move unrealizes and realizes the page, and `do_realize`
   calls `_on_songs_changed()`, which makes a new `SongOrder` and prepares its keys over
   frames (about 0.6 s of Python a collapse and expand, 13 ms a frame on average over the
-  sweep), then splices the new order in, a 75 ms frame.
+  sweep), then splices the same order in. Fixed in #595 (it sorts again only when the store
+  changed while it was unrealized): 4.2 ms of Python a frame. It ran between frames, so the
+  frames themselves moved little.
 - A grid's columns: widening past a column, the grid page raises `max-columns` at once and
   the grid builds a column of about 30 tiles in that frame, 20-29 ms (about 9 ms of it
-  `Tile.__init__`); narrowing lowers it from an idle, which drops them, so every widening
-  builds them again.
+  `Tile.__init__`); narrowing lowered it from an idle, which dropped them, so every
+  widening built them again. Now lowered only once the width has settled
+  (`grid.FewerColumns`, 400 ms) or as the page is unrealized: a drag that stays above the
+  collapse (1400 to 700 px) has 2.4 % of its frames over budget, and none over 20 ms, where
+  it had 7.7 %. The default sweep crosses the collapse each round, which lowers the columns
+  first (keeping them through it made that frame 40-60 ms longer, the grid building more
+  tiles again), so there each widening still builds them.
 - Songs' narrow breakpoint (560sp of the page, a window about 770 px wide with the sidebar):
   showing the album and artist columns again makes their 410 cells anew (GTK below), 33-44
-  ms, 18 ms of it `TrackLinks.__init__`.
+  ms (55-76 ms when it follows the expand), 17-18 ms of it `TrackLinks.__init__`. Left as
+  it is: a cheaper label would take about 8 ms off a frame that would still be over
+  budget.
 - Between those, a resized frame costs 3-4 ms below about 890 px and 7-9 ms above (four
   columns of tiles, or Songs' seven columns): GTK's layout and render, inside the budget.
 
@@ -189,7 +202,19 @@ or four frames (50-67 ms) as the window crosses its breakpoints, and no frame's 
 ms. Its first run of the day had one 217 ms gap at its first crossing, as caches filled.
 
 The target (`.claude/rules/performance.md`) is Nautilus's: no frame's work over 50 ms, and
-no more than 4 % of a sweep's frames over 16.7 ms.
+no more than 4 % of a sweep's frames over 16.7 ms. After the fixes no page meets it in the
+default sweep: every page's longest frame (102-217 ms) and most of its frames over budget
+are the split view's collapse and the frame after it, which only a change of design
+removes (#593: `Adw.OverlaySplitView`, or keeping the sidebar's mode). A drag that stays
+above 640 px meets it on Albums (longest 19 ms, 2.4 % over) and the library artist (none
+over).
+
+The other targets after the fixes, against the table above (#591's main): bench.py's five
+runs unmoved (the app's own share 197 ms (182-226) against 198, the longest first switch
+67 ms against 71, browsed anonymous memory 228 MB against 227, the pages step +3.4 MB
+against +3.3); scroll_test.py on Albums five runs, 2.7 / 3.4 / 5.5 ms, none over (2.7 /
+3.5 / 7.7), and Songs two runs, 3.6-3.8 / 4.6-5.0 / 8.3-12.7 ms, none over (3.8 / 4.9 /
+8.3); the rest of that series was stopped as the session ended.
 
 ## GTK and libadwaita, measured
 
