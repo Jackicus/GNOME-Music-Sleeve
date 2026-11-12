@@ -4,8 +4,9 @@
 """The developer scripts' shared start: the installed app, on its own, off the desktop's
 settings, on the demo library.
 
-screenshot.py, a11y_check.py, scroll_test.py and bench.py each run the installed build (meson
-install -C build, or scripts/run.sh, first) in-process. make_app() does what they all need:
+screenshot.py, a11y_check.py, scroll_test.py, resize_test.py, bench.py and lyrics_test.py each
+run the installed build (meson install -C build, or scripts/run.sh, first) in-process.
+make_app() does what they all need:
 
 - the installed modules on sys.path (build/install/share/music-sleeve) and the translations
   bound (i18n.setup, as the launcher does);
@@ -22,7 +23,8 @@ install -C build, or scripts/run.sh, first) in-process. make_app() does what the
   with `stock_look` stock GNOME's icon theme and font (Adwaita, Adwaita Sans 11) instead of the
   desktop's, which GTK otherwise takes from the Settings portal; the installed icons findable
   (installed_icon() names the app's); each window made non-resizable, a fixed size a tiling
-  window manager leaves alone. The version is the project's (build/meson-info).
+  window manager leaves alone (resize_test.py makes its window resizable again). The
+  version is the project's (build/meson-info).
 
 Call make_app() before importing Gtk: importing it starts GTK, which may read the settings
 schemas once and for all. invented_playing_state() is what the Player shows while the demo's

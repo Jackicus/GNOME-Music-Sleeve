@@ -39,6 +39,14 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
   With no search it matches everything without reading an item; a longer search refilters
   only what matched, a shorter one only what did not (every key read again on a Backspace
   that brings nothing back: `filter_bar.SearchText` stops the filter's `changed` then).
+- `Adw.NavigationSplitView` moves its content as it collapses or expands (the window's
+  640sp breakpoint): the content page is unrealized and realized again, and a
+  `Gtk.GridView`, `ListView` or `ColumnView` in it drops every row and builds them all
+  again, its factory's setup and bind run for each (GTK 4.24, libadwaita 1.10; a bare
+  window does it too; `Adw.OverlaySplitView` keeps them). A `Gtk.ColumnView` column shown
+  again makes its cells anew, and `Adw.Sidebar` builds all its rows again when its mode
+  changes. So a page does nothing costly in `do_realize` or `do_map` that has not changed,
+  and the window's resize is measured with `scripts/resize_test.py` (docs/notes.md).
 - A `Gtk.ListView`, `ColumnView` or `GridView` keeps the row of an item that one change
   removes and adds back (by identity), unbound; a row that a change above it moves is laid
   out again (six rows inserted above 65 cost a frame 8.8 ms, at the end 3.1 ms), so a list

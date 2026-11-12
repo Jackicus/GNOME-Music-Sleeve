@@ -8,8 +8,8 @@ paths:
 - `run.sh`, `check.sh` and `demo.sh` share one build directory, `build/`, set up with the
   development profile and the prefix `build/install`; run.sh and check.sh reconfigure it back
   if something set it up otherwise. Keep a release build in its own directory (`_build/`).
-- The in-process scripts (screenshot.py, a11y_check.py, scroll_test.py, bench.py,
-  lyrics_test.py) run the
+- The in-process scripts (screenshot.py, a11y_check.py, scroll_test.py, resize_test.py,
+  bench.py, lyrics_test.py) run the
   installed build (run `scripts/demo.sh` or `meson install -C build` first) through
   `harness.make_app()`: the installed modules and translations, GSettings on the memory backend
   with engine-autostart off, the demo library (build/demo, written again when out of date, or
@@ -21,7 +21,7 @@ paths:
 - `headless.sh COMMAND…` runs a command on a private, invisible display: a headless mutter with a
   virtual monitor (`HEADLESS_SIZE`, default 1920x1080) in its own D-Bus session, with `DISPLAY`
   unset. Run every GUI script through it (screenshot.py, a11y_check.py, scroll_test.py,
-  bench.py, lyrics_test.py, the widget tests) so no window opens on, or takes focus from, the user's desktop, and
+  resize_test.py, bench.py, lyrics_test.py, the widget tests) so no window opens on, or takes focus from, the user's desktop, and
   the app's MPRIS player never reaches the real session. Compare timings only with other
   headless runs. mutter owns `org.gnome.Mutter.RemoteDesktop` on that private session, which is
   where `remote_keys.py` gets real key presses from; CI has no mutter, so nothing in check.sh
@@ -61,6 +61,20 @@ paths:
   positions about four times a second as MusicKit does, and reports the frames, the work in
   each, the CPU, the lyrics list's allocations, the Python time in the stepping and the
   estimate's error; `--shot PNG` saves the window at the end (a sweep mid-piece).
+- `resize_test.py` drags the window's width (`--wide` 1400 down to `--narrow` 360 and back,
+  `--rounds` 3 times at `--speed` 1000 px/s) over a page (`--page`, `--open KIND:ID` with
+  `artist:most` the library's artist with the most albums, `--now-playing` the sheet open)
+  and reports each frame's work, the frames over budget with the width and what changed in
+  them (a breakpoint, a grid's columns), the gaps, then a round under cProfile (the Python
+  time a frame, the top functions; `--no-profile` skips it). Under the headless mutter a
+  mapped window is resized from inside by `set_default_size()` once it is resizable again
+  (the harness made it fixed): GTK lays out at the new size in that frame and commits it,
+  and mutter keeps a floating window's size. From outside, mutter's keyboard resize does
+  it the compositor's way, with configure events as a drag sends: `<alt>F8` through
+  `remote_keys.py` (the default `begin-resize` binding), then `Right` to take the right edge
+  and `Left`/`Right` for 10 px a key; it costs the same frames (docs/notes.md), and is how
+  another program (Nautilus) can be measured, by its `GDK_DEBUG=frames` lines' times. It
+  waits for the page to settle first (quiet frames: Songs prepares its order over frames).
 - `a11y_check.py` sends real key presses: `remote_keys.py` starts a session on the headless
   mutter's `org.gnome.Mutter.RemoteDesktop` and injects each key by its evdev keycode, which it
   works out from the accelerator through the display's own keymap; it presses Shift alone first,

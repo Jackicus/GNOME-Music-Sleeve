@@ -23,6 +23,9 @@ Target: $ARGUMENTS
    - `APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/scroll_test.py --page KEY`
      (`--page songs --distance 40000`, `--page music-videos`, `--open playlist:l.pllong`
      for the long playlist, `--sidebar`, `--speed 20000` for a fling);
+   - `APPLE_MUSIC_CACHE=build/demo-big scripts/headless.sh scripts/resize_test.py --page KEY`
+     (or `--open KIND:ID`, `--now-playing`): the window dragged narrow and back, the frames
+     over budget with what changed in each, the Python time;
    - `python3 -X importtime` over the startup imports.
    Write down the numbers and the target they miss.
 4. Fix the biggest cost first, one change at a time, measuring after each: work moved off the
