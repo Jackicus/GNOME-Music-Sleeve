@@ -20,7 +20,8 @@ from ..widgets.tile import Tile
 from ..widgets.util import MappedHandlers, connect_weak, shared_section, weak_method
 from . import app
 from ..widgets.filter_bar import ShownModel
-from .grid import SORTS, columns_for, direction_section, estimate_columns, make_sorter
+from .grid import (SORTS, FewerColumns, columns_for, direction_section, estimate_columns,
+                   make_sorter)
 
 # The orders the Sort By menu offers: newest first, as Apple Music's library has an artist's
 # albums, or by title.
@@ -99,6 +100,7 @@ class LibraryArtistPage(Adw.NavigationPage):
         # The columns that fit, from the width the grid is given (its horizontal adjustment's
         # page): Gtk.GridView keeps tiles for max-columns columns by 30 rows (grid.py).
         self._columns_idle = None
+        self._fewer_columns = FewerColumns(weak_method(self._set_columns))
         self._set_columns(estimate_columns())
         connect_weak(self.grid_view.get_hadjustment(), 'changed', self._on_width)
         self.grid_view.set_model(Gtk.NoSelection(model=self._shown))
@@ -148,6 +150,10 @@ class LibraryArtistPage(Adw.NavigationPage):
             self._handlers.add(artist, 'notify::title', self._on_changed)
         self._made = {}
         self._show(replace=True)
+
+    def do_unrealize(self):
+        self._fewer_columns.flush()  # before the grid is built again for the columns kept
+        Adw.NavigationPage.do_unrealize(self)
 
     def do_map(self):
         Adw.NavigationPage.do_map(self)
@@ -251,20 +257,37 @@ class LibraryArtistPage(Adw.NavigationPage):
     # The grid.
 
     def _set_columns(self, columns):
-        self._columns_idle = None
         if columns is not None and columns != self.grid_view.get_max_columns():
             self.grid_view.set_max_columns(columns)
         return GLib.SOURCE_REMOVE
 
     def _on_width(self, adjustment):
-        """The grid's width changed: its max-columns follows, from an idle (the grid is
-        being laid out)."""
+        """The grid's width changed: its max-columns follows, more from an idle (the grid
+        is being laid out), fewer once the width has settled (grid.FewerColumns: a window
+        being dragged narrower and wider again would drop the tiles and build them again)."""
         width = adjustment.get_page_size()
-        if width > 0 and self._columns_idle is None:
-            columns = columns_for(int(width))
-            if columns != self.grid_view.get_max_columns():
-                self._columns_idle = GLib.idle_add(self._set_columns, columns,
+        if width <= 0:
+            return
+        columns = columns_for(int(width))
+        current = self.grid_view.get_max_columns()
+        if columns > current:
+            self._fewer_columns.cancel()
+            if self._columns_idle is None:
+                self._columns_idle = GLib.idle_add(weak_method(self._raise_columns),
                                                    priority=GLib.PRIORITY_HIGH_IDLE)
+        elif columns < current:
+            self._fewer_columns.wait(columns, width)
+        else:
+            self._fewer_columns.cancel()
+
+    def _raise_columns(self):
+        """The idle _on_width() asked: the columns the grid's width fits now, if more."""
+        self._columns_idle = None
+        width = self.grid_view.get_hadjustment().get_page_size()
+        columns = columns_for(int(width)) if width > 0 else None
+        if columns is not None and columns > self.grid_view.get_max_columns():
+            self.grid_view.set_max_columns(columns)
+        return GLib.SOURCE_REMOVE
 
     def _on_setup(self, _factory, list_item):
         list_item.set_child(Tile(year=True))
