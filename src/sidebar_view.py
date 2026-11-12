@@ -274,6 +274,11 @@ class SidebarController:
         """The Playlists heading's New button."""
         return self._new_button
 
+    def _place_new_button_idle(self):
+        """_place_new_button() from an idle: a header the list made again meanwhile."""
+        self._place_new_button()
+        return GLib.SOURCE_REMOVE
+
     def _place_new_button(self):
         """Put the New button at the end of the Playlists heading, the mode's: the page
         mode's group's header suffix, or the sidebar mode's heading (place_header_suffix()).
@@ -556,10 +561,14 @@ class SidebarController:
         page_mode = self._page_mode()
         for position in range(self._fixed_count, self._playlist_store.get_n_items()):
             self._playlist_section.get_item(position).set_arrow_visible(not page_mode)
-        # libadwaita builds the mode's rows before it notifies; should a version build them
-        # later, the idle finds them.
-        self.update_rows()
-        GLib.idle_add(self.update_rows)
+        # libadwaita builds the mode's rows before it notifies, so they are named here, in
+        # the frame that lays them out; should a version build them later, the idle finds
+        # them. Named once: a pass over a few hundred rows is about 8 ms, and the window's
+        # breakpoint changes the mode at each crossing of a resize (docs/notes.md).
+        if self._name_rows():
+            GLib.idle_add(self._place_new_button_idle)
+        else:
+            GLib.idle_add(self.update_rows)
         self.reveal_selected()  # the new rows, centred again by libadwaita as they map
 
     def update_playlists(self):
@@ -902,9 +911,16 @@ class SidebarController:
         """Name each sidebar row after its item; give the Playlists section's rows their
         level (a nested item's folder is a level up) and folders their expanded state; and
         give each row the depth class of its item (none at the top level, nor in the other
-        sections), taking away any other, so style.css indents it."""
+        sections), taking away any other, so style.css indents it. Returns SOURCE_REMOVE (an
+        idle's callback too)."""
+        self._name_rows()
+        return GLib.SOURCE_REMOVE
+
+    def _name_rows(self):
+        """update_rows()'s work; True when the rows were there to name (rows())."""
         items = self._sidebar.get_items()
-        for index, row in enumerate(self.rows()):
+        rows = self.rows()
+        for index, row in enumerate(rows):
             item = items.get_item(index)
             row.update_property([Gtk.AccessibleProperty.LABEL], [item.get_title()])
             # No description: GTK would read the tooltip (a playlist's whole name, for a row
@@ -930,4 +946,4 @@ class SidebarController:
                 else:
                     row.remove_css_class(name)
         self._place_new_button()
-        return GLib.SOURCE_REMOVE
+        return bool(rows)

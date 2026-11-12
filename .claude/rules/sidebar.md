@@ -83,5 +83,7 @@ entry: it is spliced out and in, and the window selects it again by key).
   steps through the button (`header_step()`).
 - In sidebar mode it names none of its rows for assistive technology and says nothing of a
   folder's state; the controller sets both on the rows itself. It builds a mode's rows
-  before it notifies `mode`, so `update_rows()` runs in that handler (and once more in an
-  idle) and the new rows never draw flat.
+  before it notifies `mode`, so the rows are named in that handler and the new rows never
+  draw flat; the idle after it only places the New button again (or names the rows, had
+  they not been there): the window's breakpoint switches the mode at each crossing of a
+  resize, and a walk over a few hundred rows is about 8 ms.
