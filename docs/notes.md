@@ -57,6 +57,69 @@ its "Performance pass" section.
   (`scripts/remote_keys.py`); only its `--emulate-keys` fallback dispatches them through GTK's
   own controllers.
 
+## The targets against v1.2.0, on a quiet machine (2026-11-12, issue 587)
+
+Main after the 2026-11-11 session (c6c2fe1) against v1.2.0 built the same day from `git
+archive v1.2.0` with main's `scripts/bench.py` copied in (its harness, scroll_test.py and
+demo_library.py are v1.2.0's own, unchanged since), both on one build/demo-big made by
+main's generator. GTK 4.24.1, libadwaita 1.10.0, GLib 2.90.1, PyGObject 3.58.1, Python
+3.14.8, Meson 1.12.1, kernel 7.3.0-4-cachyos; headless at 1100x760, scale 1. Each series ran
+alone, five runs, medians and the runs' range in brackets; the owner's music played in the
+installed app throughout (its headless Chrome about a quarter of a core per process).
+
+| | target | v1.2.0 | main |
+|---|---|---|---|
+| the series' machine: load, idle, available, swap | | bench 3.4 to 1.9, idle 94, 8.9-10.4 GB, 1.3-1.5 GB; scroll 1.0 to 3.4, idle 93-94, 8.2-9.7 GB, 1.3-1.9 GB | bench 1.6 to 2.0, idle 91-96, 9.4-10.3 GB, 1.3 GB; scroll 2.6 to 2.8, idle 88-94, 7.9-8.1 GB, 1.9-2.2 GB |
+| a bare window's first frame | | 756 ms (732-848) | 740 (733-780) |
+| content painted | | 955 ms (948-1042) | 945 (931-964) |
+| the app's own share (bench.py's line; run by run) | 250 ms | 208 ms (107-286) | 198 (177-228) |
+| longest first switch (Favourite Songs) | 100 ms | 71 ms (68-81) | 71 (69-77) |
+| Songs built and painted; the longest frame after its switch | | 589 ms (580-628); 70 (69-76) | 581 (568-585); 58 (57-59) |
+| first visits: Albums, Recently Added, All Playlists, Music Videos, a playlist | | 21, 29, 26, 33, 12 ms | 19, 28, 25, 32, 11 |
+| pages' first paint: album, library artist, artist page, See All, Charts, Replay, search See All | | 32.2 (31.6-33.7), 15.3, 17.7, 16.9, 11.4, 11.9, 25.7 ms | 31.9 (31.8-32.3), 14.9, 17.8, 16.7, 11.4, 11.3, 24.7 |
+| anonymous memory, every page browsed twice | 250 MB | 228 MB (226-229) | 227 (227-229) |
+| pages step, anonymous, three rounds | 5 MB | +4.5 MB (3.6-5.7) | +3.3 (2.1-3.9) |
+| malloc's bytes in use after each round | | +0.48, +0.92, +1.29 MB | +0.18, +0.33, +0.42 |
+| Albums scrolled to the bottom: work a frame, mean / 90th / longest | no frame over 16.7 ms | 3.1 (2.8-3.3) / 3.9 / 9.0 ms, none over | 2.7 (2.6-2.9) / 3.5 / 7.7, none over |
+| Songs, 40,000 px | no frame over 16.7 ms | 5.7 (5.3-6.6) / 7.6 / 12.4 ms, none over | 3.8 (3.7-4.1) / 4.9 / 8.3, none over |
+| the 5,000-song playlist, 40,000 px | no frame over 16.7 ms | 3.3 (3.1-3.4) / 4.6 / 6.8 ms, none over | 3.2 (3.1-3.4) / 4.4 / 6.4, none over |
+
+Nothing regressed: every median of main is within v1.2.0's range or better. Two are better
+by more than the noise. The pages step, by #585's two leak fixes (Memory, below: malloc's
+bytes in use a third of v1.2.0's, as #585 measured under load). And Songs: v1.2.0 on GTK
+4.24 prints about 97,000 "Trying to measure GtkColumnViewCellWidget … for width of 0"
+warnings a Songs scroll, which main's constant-size SongTitle (b1d6bbc, #565) stopped; its
+Python layout manager costs less than the warnings did. The earlier figures, for
+reference: startup's own share 172-220 ms (2026-10-20, issue 476); Favourite Songs' first
+switch 77-91 ms and 226-229 MB after browsing (2026-10-21, issue 527); Albums' scroll 2.3 /
+3.5 / 9.6 ms (docs/history/build-plan.md), Songs' 4.6 ms (longest 12.6) and the long
+playlist's 4.3-4.5 (issues 527 and 363); the pages step +2.8 MB under load (issue 541).
+Swap grew from 1.3 to 2.2 GB over the four series from something else on the desktop; the
+memory readings agree with each other across it.
+
+How these were taken, from a tree's root (the main checkout's or the scratch copy of
+v1.2.0's), the build installed into its own build/install:
+
+```
+scripts/demo_library.py --cache build/demo-big --albums 3000 --playlists 300 --tracks 40000 \
+    --videos 1000 --long-playlist 5000                 # once, by the newest tree's generator
+meson setup build --prefix="$PWD/build/install" -Dprofile=development; meson install -C build
+uptime; vmstat 5 3; top -b -n 2 -d 3 | head -20       # quiet: idle 93 % or more, nothing
+                                                      # else over half a core
+scripts/headless.sh scripts/bench.py --runs 5 --cache "$PWD/build/demo-big"
+for list in "--page albums" "--page songs --distance 40000" \
+            "--open playlist:l.pllong --distance 40000"; do
+    for run in 1 2 3 4 5; do
+        APPLE_MUSIC_CACHE="$PWD/build/demo-big" scripts/headless.sh scripts/scroll_test.py $list
+    done
+done
+```
+
+`bench.py` prints each run's startup, longest switch and pages step and the medians of the
+rest; to keep every run's figures (the ranges above), the same runs went through a wrapper
+that records each child's `bench-result:` line (kept, with the raw runs and the summary
+scripts, in the main checkout's git-ignored build/perf-pass/).
+
 ## GTK and libadwaita, measured
 
 - AdwSidebar at about 150 playlist rows (162 playlists and 7 folders in one test library):
