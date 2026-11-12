@@ -4,6 +4,7 @@
 """The Playlists section's entries (applemusic.sidebar), from invented playlist trees."""
 
 import unittest
+from unittest import mock
 
 import gi
 
@@ -408,6 +409,27 @@ class RowDepthTest(unittest.TestCase):
         self.assertFalse(set(self.controller.rows()) & set(old_rows))
         self.assertDepths()
         self.widget.set_mode(self.Adw.SidebarMode.SIDEBAR)
+        self.assertDepths()
+
+    def test_a_mode_switch_names_the_rows_once(self):
+        # The window's breakpoint switches the mode at each crossing of a resize: the rows
+        # are walked in the handler, and the idle after it only places the New button.
+        from gi.repository import GLib
+
+        from tests.gtk import pump
+
+        walks = []
+        name_rows = self.controller._name_rows
+        self.controller._name_rows = lambda: walks.append(1) or name_rows()
+        idles = []
+        idle_add = GLib.idle_add
+        with mock.patch('applemusic.sidebar_view.GLib.idle_add',
+                        lambda *args, **kwargs: idles.append(args[0])
+                        or idle_add(*args, **kwargs)):
+            self.widget.set_mode(self.Adw.SidebarMode.PAGE)
+            pump()
+        self.assertEqual(len(walks), 1)
+        self.assertNotIn(self.controller.update_rows, idles)
         self.assertDepths()
 
     def test_style_css_indents_the_rows_content(self):
