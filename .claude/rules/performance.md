@@ -7,6 +7,7 @@ paths:
   - "src/window.py"
   - "scripts/bench.py"
   - "scripts/scroll_test.py"
+  - "scripts/resize_test.py"
   - "scripts/lyrics_test.py"
 ---
 
@@ -21,7 +22,12 @@ pages, 5 See All, 2 Charts, 2 Replay and 2 of a search's See All a round, three 
 after a warm-up round) leaving at most 5 MB of anonymous memory behind; malloc's bytes in
 use, which bench.py reports after each round, grow only by libadwaita's breakpoints (about
 0.1 MB a round): more is a leak, and the rest of the growth fragmentation (docs/notes.md).
-bench.py checks all but scrolling. The numbers behind these rules are in docs/notes.md.
+bench.py checks all but scrolling. And resizing: the window dragged from 1400 px to 360 and
+back on any page (`scripts/resize_test.py`, its defaults) with no frame's work over 50 ms and no
+more than 4 % of its frames over 16.7 ms, what Nautilus manages on the same display with a
+grid of 3,000 files (its breakpoints cost it a gap of three or four frames, nothing more).
+Every page misses it for now, by the split view's collapse (issue 590). The numbers behind
+these rules are in docs/notes.md.
 
 ## Measure
 
@@ -33,7 +39,12 @@ bench.py checks all but scrolling. The numbers behind these rules are in docs/no
   playlist:l.pllong` for the long playlist, or `--sidebar`; a list that fits the window is
   reported so). The headless display's
   virtual monitor shows the window (a hidden one gets no frames); compare only headless runs.
-  `python3 -X importtime` for imports. The lyrics view's stepping and sweep:
+  `python3 -X importtime` for imports. Before and after a change to what a width change
+  runs (a breakpoint's setters, a page's `do_realize` or `do_map`, a widget that measures or
+  allocates in Python, a grid's columns): `APPLE_MUSIC_CACHE=build/demo-big
+  scripts/headless.sh scripts/resize_test.py --page albums` (`--open artist:most`, `--page
+  songs`, `--page home`, `--open album:first`, `--open playlist:first`, `--now-playing`),
+  which names what changed in each frame over budget. The lyrics view's stepping and sweep:
   `scripts/headless.sh scripts/lyrics_test.py` (frames, work a frame, CPU, the lyrics list's
   allocations while the syllable fixture plays). Put the numbers in the commit message.
 - `Application.mark(name)` notes a startup moment (logged with `--debug`); the grid and Songs

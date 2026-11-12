@@ -120,8 +120,87 @@ rest; to keep every run's figures (the ranges above), the same runs went through
 that records each child's `bench-result:` line (kept, with the raw runs and the summary
 scripts, in the main checkout's git-ignored build/perf-pass/).
 
+## Resizing the window, against v1.2.0 and Nautilus (2026-11-12, issue 590)
+
+`scripts/resize_test.py` with its defaults: the width 1400 px down to 360 and back three
+times at 1000 px/s, 760 px high, a frame at a time (`set_default_size()` from a tick),
+then a fourth round under cProfile for the Python time. v1.2.0 from `git archive v1.2.0`
+with main's resize_test.py copied in, main at b017fee, one build/demo-big; the same
+machine, toolkit and headless display as the section above. Each series ran alone, five
+runs a page, medians and the runs' range; the owner's music played throughout. Work is a
+frame's main-thread work (before-paint to the end of paint); "over" counts frames over
+16.7 ms.
+
+| page | v1.2.0: mean / 90th / longest work, over | main: the same | Python a frame, main |
+|---|---|---|---|
+| the series' machine: load, idle, available, swap | 2.1-2.2, idle 95-96, 9.8 GB, 3.6-3.7 GB | 2.1-2.4, idle 96, 9.5-9.6 GB, 3.5-3.6 GB | |
+| Albums | 9.0 / 14.1 / 137 ms (136-155), 9.5 % | 9.2 / 14.6 / 138 (136-142), 9.9 % | 1.9 ms |
+| a library artist (`--open artist:most`) | 6.5 / 7.7 / 102 (101-108), 5.2 % | 6.8 / 8.0 / 108 (103-111), 5.2 % | 0.8 |
+| Songs | 15.7 / 27.4 / 224 (221-224), 12.4 % | 14.1 / 23.0 / 234 (226-235), 11.6 % | 13.2 |
+| Home | 7.0 / 8.1 / 104 (98-107), 5.2 % | 7.2 / 8.5 / 105 (104-106), 5.2 % | 0.9 |
+| an album (`--open album:first`) | 7.7 / 9.0 / 125 (123-126), 6.3 % | 8.0 / 9.0 / 126 (120-127), 6.3 % | 1.3 |
+| a playlist (`--open playlist:first`) | 8.8 / 10.8 / 137 (133-143), 7.1 % | 8.6 / 11.1 / 134 (132-141), 7.1 % | 1.5 |
+| Albums, Now Playing open | 11.2 / 21.9 / 159 (143-166), 11.1 % | 10.7 / 20.9 / 157 (143-166), 10.0 % | 2.6 |
+
+Main is v1.2.0 within the noise: the stutter the owner saw on 1.2.0 is all still there.
+Every page's longest frame is the one where the window's 640sp breakpoint collapses or
+expands the split view (625-655 px), and the frame after it is the next longest (50-60 ms,
+Songs 95); the rest of the frames over budget are a grid's column count rising (20-29 ms)
+and, on Songs, its own breakpoints (33-44 ms) and a re-sort landing (75 ms). The causes,
+each measured with the scripts kept in build/perf-pass/resize/ (one width change at a time,
+25 frames apart, the frame that lays it out timed and profiled):
+
+- The split view collapsing or expanding: 115-140 ms on a page with a grid or list,
+  200-230 ms on Songs. `Adw.NavigationSplitView` moves the content page into its own
+  navigation view and back, and a `Gtk.GridView`, `ListView` or `ColumnView` that is moved
+  drops every row and builds them all again (GTK below). The grid's 65-97 tiles cost about
+  25 ms of Python (`Tile.__init__`, its template) and as much again in GTK; Songs' 205 rows
+  about 100 ms of Python (SongTitle, the cells' setup, the artist line). The same
+  breakpoint's `sidebar.mode: page` has `Adw.Sidebar` build all its rows again for the new
+  mode: alone, at a fixed width, 61-113 ms with build/demo-big's 300 playlists, plus
+  `SidebarController.update_rows()` (about 8 ms, then again from an idle). On build/demo
+  the whole crossing takes 32-34 ms; with the grid's model taken away 84-92 ms.
+- Songs re-sorts each time: the move unrealizes and realizes the page, and `do_realize`
+  calls `_on_songs_changed()`, which makes a new `SongOrder` and prepares its keys over
+  frames (about 0.6 s of Python a collapse and expand, 13 ms a frame on average over the
+  sweep), then splices the new order in, a 75 ms frame.
+- A grid's columns: widening past a column, the grid page raises `max-columns` at once and
+  the grid builds a column of about 30 tiles in that frame, 20-29 ms (about 9 ms of it
+  `Tile.__init__`); narrowing lowers it from an idle, which drops them, so every widening
+  builds them again.
+- Songs' narrow breakpoint (560sp of the page, a window about 770 px wide with the sidebar):
+  showing the album and artist columns again makes their 410 cells anew (GTK below), 33-44
+  ms, 18 ms of it `TrackLinks.__init__`.
+- Between those, a resized frame costs 3-4 ms below about 890 px and 7-9 ms above (four
+  columns of tiles, or Songs' seven columns): GTK's layout and render, inside the budget.
+
+Nautilus 51.1, for the target: a separate instance on the same headless display, its own
+session bus activating nothing (so no indexer, and nothing reaches the desktop's bus or the
+owner's Nautilus), a scratch home and settings in memory, showing a folder of 3,000 invented
+empty files in its default grid. A program that is not ours cannot be resized from inside,
+so it was resized the compositor's way, mutter's keyboard resize (`begin-resize` through
+`remote_keys.py`, 10 px a key every 10 ms: the same range and speed, three rounds), and its
+frames read from its `GDK_DEBUG=frames` lines, whose times are when each frame ended. The
+two ways agree: Music Sleeve's Albums resized by the keyboard, with both its own timing and
+those lines, gave 138 and 118 ms at the split view (the lines' gaps 140 and 129 ms).
+Nautilus, five runs (load 1.5-1.7, idle 95-96, swap 3.7 GB): about 350 frames a sweep, 12-17
+of the gaps between them over 16.7 ms (3.4-4.9 %), 12 of those of two frames or more, three
+or four frames (50-67 ms) as the window crosses its breakpoints, and no frame's work over 20
+ms. Its first run of the day had one 217 ms gap at its first crossing, as caches filled.
+
+The target (`.claude/rules/performance.md`) is Nautilus's: no frame's work over 50 ms, and
+no more than 4 % of a sweep's frames over 16.7 ms.
+
 ## GTK and libadwaita, measured
 
+- `Adw.NavigationSplitView` collapsing or expanding moves its content, and a list view that
+  is moved tears down and builds again every row it keeps (GTK 4.24.1, libadwaita 1.10.0,
+  2026-11-12): a bare window with a `Gtk.GridView` of 3,000 items (simple tiles, the default
+  12 columns) in the content tore down and set up all 385 tiles at each crossing, 87-102 ms a
+  frame; the same window with `Adw.OverlaySplitView`, which keeps the content in place, and
+  without a split view, 3-4 ms. A `Gtk.ColumnView` column shown again (`visible`) makes its
+  cells anew, one per row kept. `Adw.Sidebar` builds all its rows again when its mode
+  changes (300 playlists: 61-113 ms).
 - AdwSidebar at about 150 playlist rows (162 playlists and 7 folders in one test library):
   splicing them in took about 24 ms, then one 15-17 ms frame; scrolling the list at 2,000-4,000
   px/s cost about 0.5 ms of work a frame. A reload with the same shapes keeps the items and costs

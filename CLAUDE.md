@@ -103,7 +103,7 @@ scripts/headless.sh scripts/screenshot.py build/shot.png --demo [--page KEY]
                              [--open album:first] [--light] [--size WxH]: a PNG (--help for more)
 scripts/headless.sh scripts/a11y_check.py [--size 360x640] [--names]   the keyboard checklist
 scripts/demo_library.py --cache build/demo-big --albums 3000 --playlists 300 --tracks 40000
-  --videos 1000 --long-playlist 5000   a big invented library: bench.py and scroll_test.py on it
+  --videos 1000 --long-playlist 5000   big library: bench.py, scroll_test.py, resize_test.py on it
 scripts/am.py --help         the engine, no GUI: its own Chrome on the real profile, or --attach
 meson setup _build --prefix=/usr …   a system install, never into build/ (docs/release.md)
 ```
