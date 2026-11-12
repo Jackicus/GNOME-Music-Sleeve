@@ -582,8 +582,8 @@ class SongModel(GObject.Object, Gio.ListModel):
     """A list model of Tracks held as SongEntries (`entries`, in order; Tracks may be among
     them), each wrapped in its Track only when a view asks for that item (song_track()), so
     a list of 40,000 songs makes Tracks for the rows it shows. splice() changes it as a
-    Gio.ListStore's does (apply_diff() takes it), with the entries; find() looks for a
-    Track or an entry by song_key().
+    Gio.ListStore's does (apply_diff() takes it), with the entries, and counts itself in
+    `changes`; find() looks for a Track or an entry by song_key().
 
     Library.songs is one, the Songs page's rows another, and the Search page's and Add
     Songs…'s matches others: GLib and Gio only, the item type Track."""
@@ -593,6 +593,9 @@ class SongModel(GObject.Object, Gio.ListModel):
     def __init__(self, entries=()):
         super().__init__()
         self.entries = list(entries)
+        # How many splices have changed it: a page that stopped following its items-changed
+        # (the Songs page while unrealized) tells by this whether it missed one.
+        self.changes = 0
 
     def do_get_item_type(self):
         return Track.__gtype__
@@ -609,6 +612,7 @@ class SongModel(GObject.Object, Gio.ListModel):
         """Remove `removed` entries at `position` and put `entries` there (items-changed)."""
         entries = list(entries)
         self.entries[position:position + removed] = entries
+        self.changes += 1
         self.items_changed(position, removed, len(entries))
 
     def find(self, song):

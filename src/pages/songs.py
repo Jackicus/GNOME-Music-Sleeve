@@ -137,6 +137,13 @@ def play_target(tracks, shuffle=False, limit=PLAY_LIMIT, sample=random.sample):
     return {'kind': 'songs', 'id': ','.join(ids)} if ids else None
 
 
+def resorted(sorted_from, changes):
+    """Whether the page realized again sorts again: its order was made from the songs
+    store's `changes` `sorted_from` (None: not made, or cancelled half made), and the store
+    has made `changes` since its start."""
+    return sorted_from is None or sorted_from != changes
+
+
 def songs_state(total, library_state, songs_ready, song_count, syncing=False):
     """What the Songs page shows: 'items' once it has ordered songs (`total`); 'loading' while
     the library loads, before the songs are built, while songs exist that are not ordered yet
@@ -184,6 +191,9 @@ class SongsPage(Adw.NavigationPage):
         self._library = library
         self._songs_handler = None
         self._order = None  # a SongOrder over the songs as they are, made when first needed
+        # The songs store's `changes` the order was made from, None while it is being made:
+        # realized again with none missed, the page keeps its order and rows.
+        self._sorted_from = None
         self._ordered = []  # every song, in the chosen order
         self._search = ''  # the filter's text, folded
         self._favourites_only = False  # the menu's Favourites Only
@@ -349,15 +359,24 @@ class SongsPage(Adw.NavigationPage):
     # it is shown (self._handlers), and to the songs store, which the rows must follow even
     # while the page is hidden, while it is realized.
 
+    # The window's split view unrealizes and realizes its content as it collapses and
+    # expands, at each crossing of its breakpoint while the window is resized: realized
+    # again, the page sorts again only when the songs changed meanwhile, or an order was
+    # still being prepared (resorted(): a new SongOrder is 0.3 s of keys over frames on
+    # 40,000 songs, then a splice).
+
     def do_realize(self):
         Adw.NavigationPage.do_realize(self)
-        self._songs_handler = self._library.songs.connect('items-changed',
-                                                          self._on_songs_changed)
-        self._on_songs_changed()
+        songs = self._library.songs
+        self._songs_handler = songs.connect('items-changed', self._on_songs_changed)
+        if resorted(self._sorted_from, songs.changes):
+            self._on_songs_changed()
 
     def do_unrealize(self):
         self._library.songs.disconnect(self._songs_handler)
         self._songs_handler = None
+        if self._prepare_task is not None and not self._prepare_task.done():
+            self._sorted_from = None  # cancelled half made: made again when realized
         self._cancel_prepare()
         Adw.NavigationPage.do_unrealize(self)
 
@@ -383,6 +402,7 @@ class SongsPage(Adw.NavigationPage):
 
     def _on_songs_changed(self, *_args):
         self._order = None
+        self._sorted_from = None
         self._cancel_prepare()
         self._follow = True  # a sync's change: the rows keep their place
         self._sort()
@@ -449,6 +469,7 @@ class SongsPage(Adw.NavigationPage):
         key = self._columns.get(sorter.get_primary_sort_column())
         if key is None:
             self._ordered = list(self._library.songs.entries)
+            self._sorted_from = self._library.songs.changes
         else:
             if self._order is None:
                 # A new order over new songs: its keys are made a few thousand tracks at a
@@ -459,6 +480,7 @@ class SongsPage(Adw.NavigationPage):
                 return
             descending = sorter.get_primary_sort_order() == Gtk.SortType.DESCENDING
             self._ordered = self._order.tracks(key, descending)
+            self._sorted_from = self._library.songs.changes
         self._filter()
 
     async def _prepare(self, order, key):

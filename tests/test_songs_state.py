@@ -42,6 +42,18 @@ class SongsStateTest(PageTestCase):
         self.assertIsNone(resized_fixed_width(50, 260, 90, 2))  # narrower than its share
         self.assertIsNone(resized_fixed_width(300, 260, 90, 0))
 
+    def test_realized_again_it_sorts_again_only_when_the_songs_changed(self):
+        from applemusic.library import SongModel
+        from applemusic.pages.songs import resorted
+
+        songs = SongModel(['a', 'b'])
+        self.assertEqual(songs.changes, 0)
+        self.assertTrue(resorted(None, songs.changes))  # never sorted, or cancelled
+        self.assertFalse(resorted(0, songs.changes))  # sorted from these: kept
+        songs.splice(1, 1, ['c'])
+        self.assertEqual(songs.changes, 1)
+        self.assertTrue(resorted(0, songs.changes))  # one missed while unrealized
+
     def test_play_takes_the_first_songs_and_shuffle_a_draw_of_all_of_them(self):
         from types import SimpleNamespace
 
@@ -132,6 +144,24 @@ class SongsPageTest(PageTestCase):
         await self.turn()
         # Within a pixel: the view's anchor is a row and a fraction of its height.
         self.assertAlmostEqual(adjustment.get_value(), 2000, delta=1)
+
+    async def test_realized_again_it_keeps_its_order_unless_the_songs_changed(self):
+        # The window's split view unrealizes and realizes the page as it collapses and
+        # expands: nothing is sorted again for that, but a sync missed meanwhile is.
+        page = await self.songs_page(5)
+        self.assertTrue(await self.until(lambda: page._sorted_from is not None, 2))
+        order, first = page._order, page._rows.get_item(0)
+        page.unrealize()
+        page.realize()
+        await self.turn()
+        self.assertIs(page._order, order)
+        self.assertIs(page._rows.get_item(0), first)
+        page.unrealize()
+        library_json(self.cache, 6)
+        await self.library.reload()
+        page.realize()
+        self.assertIsNot(page._order, order)
+        self.assertTrue(await self.until(lambda: page._rows.get_n_items() == 6, 2))
 
     async def test_the_sort_menu_sorts_as_a_header_does(self):
         page = await self.songs_page(5)
