@@ -33,12 +33,16 @@ touches widgets.
   accelerators; the dialogs; quitting; demo mode. Signing out and clearing the cache are
   `account.py`'s, background playback `background.py`'s, the startup marks `timing.py`'s,
   the mini player (`app.mini-player`: a small window of its own in the main window's place,
-  built as it shows) `mini_player.py`'s and `widgets/mini_player.py`'s.
+  built as it shows, its Lyrics and Up Next panes the Now Playing sheet's own views lent to
+  it) `mini_player.py`'s and `widgets/mini_player.py`'s. What the user is told of an
+  engine failure is `errors.py`'s; every shortcut is in `shortcuts.py`.
 - **Window** (`window.py`): an `AdwBottomSheet` whose content is the split view (an
   `AdwOverlaySplitView`: the `AdwSidebar` beside an `AdwNavigationView`, or over it below
   640sp) and whose bottom bar and sheet are the player bar and
   Now Playing; the banners sit under the visible page's header bar. The bottom sheet is one page
-  of a `Gtk.Stack`; the other, built on first use, is the full-screen player
+  of a `Gtk.Stack`; Now Playing (`widgets/now_playing.py`) holds the lyrics (`lyrics.py`'s
+  model, `widgets/lyrics.py`'s view) and Up Next (`widgets/queue.py`). The stack's other
+  page, built on first use, is the full-screen player
   (`widgets/fullscreen_player.py`), which `fullscreen.py`'s host shows, the window fullscreened,
   moving Now Playing's one lyrics view into it and back; both draw the artwork behind them
   with one widget (`widgets/backdrop.py`: a tint in the sheet, under a scrim full screen)
@@ -99,7 +103,8 @@ touches widgets.
   old, `Throttle`; one shelf brought up to date in place, `RecentlyPlayed`, placed after the
   first shelf by `arrange()`; an update that would move the page or take the focus kept
   for the next visit, `hold_back()`). New, Made for You, Radio, Search, the Charts page
-  (pushed from New's More to Explore and Search's categories), the Replay page (pushed from
+  (pushed from New's More to Explore and Search's categories; its genre menu `charts.py`'s),
+  the Replay page (pushed from
   More for You, the link that ends Made for You and Home: `pages/replay.py`, its year menu
   over `src/replay.py`) and the pages New's links
   open (`pages/editorial.py`: a room's grid, a `GridPage` with a `fetch`, a grouping's or
@@ -128,9 +133,11 @@ touches widgets.
   (`dialogs/credits.py`, worded by `credits.py`) over `Engine.credits`, kept for a day.
   An album's header names its artist, a playlist's its curator and when it was updated
   (`release.py`), and a catalog one's offers Add, or In Library once the library holds it (`Library.holds()`, from what is loaded).
-- **Library** (`library/`, a package: the Library in `model.py`, the objects pages bind in
-  `objects.py`, the Songs store in `songs.py`, the playlist tree in `folders.py`, the read of
-  library.json in `reading.py`): the model. GObjects in `Gio.ListStore`s, filled from the
+- **Library** (`library/`, a package, one idea a module, which its `__init__.py` lists: the
+  Library in `model.py`, the objects pages bind in `objects.py`, the Songs store in
+  `songs.py`, the playlist tree in `folders.py`, the read of library.json in `reading.py`,
+  what a drag carries in `refs.py`, a reload's splices in `diff.py`, `yield_to_frames()` and
+  the paused collector in `pacing.py`): the model. GObjects in `Gio.ListStore`s, filled from the
   cache's library.json. It has no GTK, so it is tested without a display. A reload after a sync keeps
   every object still in the library and says what changed through property notifications and
   `groups-changed`, which open pages follow.
@@ -148,7 +155,14 @@ touches widgets.
   `backend.chrome` and `backend.client`; the commands are mixins of it, one module per area:
   `reads.py` (the API reads and the day-long kept answers), `playback.py`, `edits.py` (the
   account's writes), `catalog.py` and `browse.py`. The backend package is the standard
-  library and asyncio only.
+  library and asyncio only: `chrome.py` (finding Chrome, its argv), `client.py` (the CDP
+  connection) and `cdp.py` (the WebSocket codec, for the developer attach), which only the
+  engine uses; and its pure parts, which the rest of the app may use too: `api.py` (the API
+  apart from any connection), `normalize.py` (Apple's resources as the library's shapes) and
+  beside it the pages' shapers (`search.py`, `editorial.py`, `charts.py`,
+  `recommendations.py`, `item_pages.py`, `banner_art.py`), `art_cache.py` and
+  `cache_files.py` (the artwork files and the kept answers), `store.py` (every cache write),
+  `config.py` (paths and sizes) and `errors.py` (`EngineError` and its codes).
 - **Player** (`player.py`): what is playing, as GObject properties fed by MusicKit's events,
   and the playback commands. The player bar, the Now Playing sheet and MPRIS all follow it.
 - **The last session** (`session.py`): the `SessionKeeper` (`app.session`) writes what the
@@ -201,7 +215,7 @@ touches widgets.
   then asks the engine, which asks MusicKit through the bridge. Nothing comes back from the
   command itself: MusicKit's events arrive through the binding, the engine re-emits them, the
   player updates its properties, and the bar, the sheet and MPRIS follow.
-- **Syncing.** Refresh (Ctrl+R) and a finished sign-in start `sync_library()`; so does the
+- **Syncing.** Refresh Library (Ctrl+R) and a finished sign-in start `sync_library()`; so does the
   scheduler (`LibrarySync.schedule()`) whenever a sync is due while the engine is up and signed
   in: the last one older than the chosen interval, or no current library on disk (missing,
   unreadable, or of an older version), looked at by a timer, when the engine comes up and when
@@ -242,8 +256,9 @@ touches widgets.
   once playback has stayed stopped for 10 seconds.
 - **Demo mode.** `--demo` reads an invented library from build/demo (a release build lists no
   `--demo` and needs `APPLE_MUSIC_CACHE` for it), and its engine is inert (starting it does
-  nothing, every command answers `engine-down`), so every page and screenshot works without
-  Chrome or an account. A playlist's songs still move there (`PlaylistOrder`), shown and
+  nothing; every command answers `engine-down` but for the answers the demo library wrote,
+  marked `demo`, its invented search and an artist's star, which the session remembers), so
+  every page and screenshot works without Chrome or an account. A playlist's songs still move there (`PlaylistOrder`), shown and
   never written. Its settings are its own (settings.ini beside
   the library), it takes no MPRIS name and exports no search provider, so it runs beside
   the real app.
