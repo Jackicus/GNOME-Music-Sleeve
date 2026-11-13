@@ -14,7 +14,8 @@
     "dbus-1/services, the service's Exec rewritten to flatpak run), so the overview's search",
     "should reach the sandboxed app too. Built with flatpak-builder against GNOME 51 (whose",
     "SDK has blueprint-compiler 0.22) and installed as a user Flatpak; the sandboxed app has",
-    "run in demo mode (docs/release.md says how), not yet with the host's Chrome."
+    "run in demo mode (docs/release.md says how), and flatpak-spawn's descriptors, bus and",
+    "signals with a host shell in Chrome's place, not yet with the host's Chrome."
   ],
   "id": "io.github.jackicus.MusicSleeve.Devel",
   "runtime": "org.gnome.Platform",

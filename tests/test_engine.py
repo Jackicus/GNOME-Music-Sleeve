@@ -1110,12 +1110,70 @@ class KeyringTest(EngineFixture):
         self.assertEqual(self.chrome.chromes[-1]['bus'],
                          os.environ.get('DBUS_SESSION_BUS_ADDRESS'))
 
-    async def test_nothing_is_checked_in_a_flatpak_sandbox(self):
-        # Chrome is the host's there, on the host's session, which this cannot see; the spawn
-        # itself would go through flatpak-spawn, so the check alone is called.
+    def host_here(self):
+        """chrome.host_secret_service() with flatpak-spawn --host stood in for: the host part
+        run here, its --env applied, so the host's gdbus (or busctl) asks the test's bus."""
+        real = chrome.host_secret_service
+        asked = []
+
+        def run_here(argv, **kwargs):
+            self.assertEqual(argv[:2], ['flatpak-spawn', '--host'])
+            argv, env = argv[2:], dict(os.environ)
+            while argv[0].startswith('--env='):
+                name, _, value = argv.pop(0).removeprefix('--env=').partition('=')
+                env[name] = value
+            asked.append(env.get('DBUS_SESSION_BUS_ADDRESS'))
+            return subprocess.run(argv, env=env, **kwargs)
+
+        patcher = mock.patch.object(
+            chrome, 'host_secret_service',
+            lambda host_bus, timeout: real(host_bus, timeout, run=run_here))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return asked
+
+    @unittest.skipUnless(shutil.which('gdbus') or shutil.which('busctl'), 'no gdbus or busctl')
+    async def test_in_a_flatpak_sandbox_the_host_is_asked(self):
+        # Chrome is the host's there, on the bus flatpak-spawn gives it, which the sandbox
+        # cannot reach: the host's own tool asks that bus, as Chrome would.
+        asked = self.host_here()
+        with mock.patch.object(chrome, 'in_flatpak', lambda: True):
+            with self.assertLogs('applemusic.engine', 'WARNING'):
+                error = await self.refused()
+            self.assertIn('org.freedesktop.secrets did not start on the host', error.message)
+            self.assertIn('APPLE_MUSIC_HOST_SESSION_BUS', error.message)
+            self.own_the_name()
+            self.assertIsNone(await self.engine._check_keyring(self.address))
+        self.assertEqual(asked, [self.address, self.address])
+
+    async def test_in_a_flatpak_sandbox_a_fresh_profile_asks_nothing(self):
+        self.record_keyring_use(False)
+        asked = self.host_here()
         with mock.patch.object(chrome, 'in_flatpak', lambda: True):
             self.assertIsNone(await self.engine._check_keyring(self.address))
-            self.assertIsNone(await self.engine._check_keyring(None))
+        self.assertEqual(asked, [])
+
+    async def test_in_a_flatpak_sandbox_chrome_gets_the_host_bus_through_flatpak_spawn(self):
+        # The argv carries the bus (flatpak-spawn --env), not Chrome's environment; the
+        # spawn itself runs here, off the host, so only the argv is built as the sandbox's.
+        self.own_the_name()
+        self.host_here()
+        built = []
+        real_args = chrome.chrome_args
+
+        def args(binary, profile, headless, debug_port=None, host_bus=None):
+            built.append(real_args(binary, profile, headless, debug_port=debug_port,
+                                   host=True, host_bus=host_bus))
+            return real_args(binary, profile, headless, debug_port=debug_port, host=False)
+
+        with mock.patch.object(chrome, 'in_flatpak', lambda: True), \
+                mock.patch.object(core_module, 'with_pdeathsig', list), \
+                mock.patch.object(chrome, 'chrome_args', args):
+            await self.engine.start()
+        self.assertIn(f'--env=DBUS_SESSION_BUS_ADDRESS={self.address}', built[0][:4])
+        # Its environment gets nothing in the sandbox: Chrome there is flatpak-spawn's child.
+        self.assertEqual(self.chrome.chromes[-1]['bus'],
+                         os.environ.get('DBUS_SESSION_BUS_ADDRESS'))
 
 
 class PdeathsigTest(unittest.TestCase):

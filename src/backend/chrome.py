@@ -23,14 +23,17 @@ a thread, so nothing blocks the loop.
 Inside a Flatpak sandbox (/.flatpak-info exists; the development manifest only) Chrome is the
 host's: find_chrome() asks the host's shell for it and chrome_args() runs it through
 `flatpak-spawn --host`, forwarding the pipe's descriptors 3 and 4 (the manifest's
---talk-name=org.freedesktop.Flatpak). flatpak-spawn relays SIGTERM to Chrome, and --watch-bus
-ends Chrome when flatpak-spawn itself goes (a SIGKILL, the sandbox closing). The profile (under
-~/.var/app) is the same path on both sides. Not yet run against a host Chrome (docs/release.md).
+--talk-name=org.freedesktop.Flatpak) and, when the app runs on a private bus, giving Chrome the
+desktop's (host_environment_args()); host_secret_service() checks the keyring on that bus.
+flatpak-spawn relays SIGTERM to Chrome, and --watch-bus ends Chrome when flatpak-spawn itself
+goes (a SIGKILL, the sandbox closing). The profile (under ~/.var/app) is the same path on both
+sides. Checked with a host shell in Chrome's place, not yet with Chrome (docs/release.md).
 """
 
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -68,6 +71,22 @@ FLATPAK_INFO = '/.flatpak-info'
 HOST_SPAWN = ('flatpak-spawn', '--host', '--watch-bus')
 # The DevTools pipe's descriptors, passed on to the host's Chrome.
 HOST_PIPE = ('--forward-fd=3', '--forward-fd=4')
+# The host's shell asks its session bus whether the Secret Service has an owner and, if not, to
+# start it, as Chrome would ask for it (dbus-daemon refuses to start a name that is owned but
+# not activatable, so the owner is asked first): with GLib's gdbus, else systemd's busctl (one
+# of them is on any desktop Chrome runs on). It exits 0 when the name is owned or started, else
+# non-zero with the tool's error; $1 is the timeout in seconds, $2 the name.
+HOST_SECRETS_CHECK = (
+    'if command -v gdbus >/dev/null; then '
+    'call() { gdbus call --session --timeout "$1" --dest org.freedesktop.DBus '
+    '--object-path /org/freedesktop/DBus --method "org.freedesktop.DBus.$2" "$3" $4; }; '
+    'elif command -v busctl >/dev/null; then '
+    'call() { busctl --user --timeout="$1" call org.freedesktop.DBus /org/freedesktop/DBus '
+    'org.freedesktop.DBus "$2" "s${4:+u}" "$3" $4; }; '
+    'else echo "neither gdbus nor busctl on the host" >&2; exit 127; fi; '
+    'owned=$(call "$1" NameHasOwner "$2") || exit; '
+    'case $owned in *true*) exit 0;; esac; '
+    'call "$1" StartServiceByName "$2" 0 >/dev/null')
 # The host's shell prints the first of its arguments that resolves to an executable.
 HOST_LOOKUP = ('for name do p=$(command -v "$name") && [ -x "$p" ] '
                '&& { printf "%s\\n" "$p"; exit 0; }; done; exit 1')
@@ -133,13 +152,40 @@ def find_host_chrome(names, run=subprocess.run):
     return lines[0]
 
 
-def chrome_args(binary, profile, headless=True, debug_port=None, host=None):
+def host_environment_args(host_bus):
+    """flatpak-spawn's options that set the host command's DBUS_SESSION_BUS_ADDRESS to
+    `host_bus` (config.host_session_bus()), or none without one. A command flatpak-spawn
+    starts has the environment of the flatpak-session-helper on the sandbox's session bus,
+    not the sandbox's: under scripts/headless.sh that bus is the private one, where no
+    keyring answers."""
+    return [f'--env=DBUS_SESSION_BUS_ADDRESS={host_bus}'] if host_bus else []
+
+
+def host_secret_service(host_bus, timeout, run=subprocess.run):
+    """None when org.freedesktop.secrets is up, or comes up when asked, on the host's session
+    bus Chrome will use (`host_bus`'s, else the host command's own), asked through
+    flatpak-spawn; else why not, in a few words. Blocking (a process): call it in a thread."""
+    argv = [*HOST_SPAWN[:2], *host_environment_args(host_bus), 'sh', '-c', HOST_SECRETS_CHECK,
+            'sh', str(max(1, math.ceil(timeout))), SECRETS_NAME]
+    try:
+        result = run(argv, capture_output=True, text=True, timeout=timeout + 5)
+    except (OSError, subprocess.SubprocessError) as e:
+        return f'could not ask the host for {SECRETS_NAME} ({e})'
+    if result.returncode == 0:
+        return None
+    lines = (result.stderr or '').strip().splitlines()
+    detail = lines[-1] if lines else f'exit status {result.returncode}'
+    return f'{SECRETS_NAME} did not start on the host ({detail})'
+
+
+def chrome_args(binary, profile, headless=True, debug_port=None, host=None, host_bus=None):
     """The argv that runs `binary` on `profile` showing music.apple.com, with DevTools on the
     pipe of its descriptors 3 (commands in) and 4 (answers and events out); headless (no
     window, audio still out) or a visible window for sign-in. `debug_port` also opens DevTools
     on 127.0.0.1:`debug_port`, for a developer to attach (APPLE_MUSIC_DEBUG_PORT): any local
     program can then drive the signed-in session. With `host` (by default when in_flatpak())
-    it runs on the host through flatpak-spawn."""
+    it runs on the host through flatpak-spawn, on `host_bus` when one is given
+    (host_environment_args())."""
     if host is None:
         host = in_flatpak()
     args = [
@@ -168,7 +214,7 @@ def chrome_args(binary, profile, headless=True, debug_port=None, host=None):
         # bar.
         args.append(f'--app={START_URL}')
     if host:
-        args[:0] = [*HOST_SPAWN, *HOST_PIPE]
+        args[:0] = [*HOST_SPAWN, *host_environment_args(host_bus), *HOST_PIPE]
     return args
 
 
@@ -176,8 +222,8 @@ def chrome_environment(host_bus=None, host=None):
     """The variables set in Chrome's environment over this process's: DBUS_SESSION_BUS_ADDRESS
     when `host_bus` names the session bus Chrome is to use (config.host_session_bus(): the
     desktop's, while the app runs on a private one), so that it reaches the keyring its
-    profile is encrypted with. Nothing with `host` (by default when in_flatpak()): the host's
-    Chrome has the host's session already."""
+    profile is encrypted with. Nothing with `host` (by default when in_flatpak()): Chrome's
+    environment there is flatpak-spawn's to set (chrome_args()'s `host_bus`)."""
     if host is None:
         host = in_flatpak()
     if host_bus and not host:

@@ -82,6 +82,20 @@ class ChromeArgsTest(unittest.TestCase):
         self.assertEqual(args[6:], chrome.chrome_args('/usr/bin/google-chrome', '/p/chrome',
                                                       headless=True, host=False)[1:])
 
+    def test_host_bus_given_to_the_host_command(self):
+        # flatpak-spawn's host command has the session helper's environment, not the
+        # sandbox's: the desktop's bus is set on it, before the descriptors it forwards.
+        args = chrome.chrome_args('/usr/bin/google-chrome', '/p/chrome', host=True,
+                                  host_bus='unix:path=/run/user/1000/bus')
+        self.assertEqual(args[:7], ['flatpak-spawn', '--host', '--watch-bus',
+                                    '--env=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus',
+                                    '--forward-fd=3', '--forward-fd=4', '/usr/bin/google-chrome'])
+        # Off the host, the bus is the environment's (chrome_environment()), not the argv's.
+        self.assertEqual(chrome.chrome_args('chrome', '/p', host=False, host_bus='unix:path=/b'),
+                         chrome.chrome_args('chrome', '/p', host=False))
+        self.assertEqual(chrome.chrome_args('chrome', '/p', host=True, host_bus=''),
+                         chrome.chrome_args('chrome', '/p', host=True))
+
     def test_describe_argv_leaves_the_profile_out(self):
         argv = chrome.chrome_args('chrome', '/home/someone/.local/share/apple-music/chrome')
         line = chrome.describe_argv(argv)
@@ -199,6 +213,104 @@ class HostChromeTest(unittest.TestCase):
                                   lambda names: seen.append(names) or '/usr/bin/x'):
             self.assertEqual(chrome.find_chrome('my-chrome'), '/usr/bin/x')
         self.assertEqual(seen, [['my-chrome', *chrome.CANDIDATES]])
+
+
+class HostSecretServiceTest(unittest.TestCase):
+    """host_secret_service(): the host's shell asks its session bus whether
+    org.freedesktop.secrets has an owner and, if not, to start it, with gdbus or else busctl.
+    The runner stands in for flatpak-spawn by running the host part here, its --env applied,
+    with stand-ins for gdbus and busctl on PATH that record each call and its bus and answer
+    as told. test_engine's KeyringTest runs the real tools against a private bus."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.bin = pathlib.Path(self.tmp.name) / 'bin'
+        self.bin.mkdir()
+        self.record = pathlib.Path(self.tmp.name) / 'record'
+        self.argvs = []
+
+    def tool(self, name, owned='false', start=0, error=''):
+        """A stand-in tool: NameHasOwner prints `owned` the tool's way, StartServiceByName
+        exits `start`, printing `error`."""
+        answer = f'({owned},)' if name == 'gdbus' else f'b {owned}'
+        path = self.bin / name
+        path.write_text(
+            '#!/bin/sh\n'
+            f'echo "$DBUS_SESSION_BUS_ADDRESS $*" >> {self.record}\n'
+            f'case "$*" in *NameHasOwner*) echo "{answer}"; exit 0;; esac\n'
+            f'echo "{error}" >&2\nexit {start}\n')
+        path.chmod(0o755)
+
+    def calls(self):
+        return [line.split() for line in self.record.read_text().splitlines()]
+
+    def run_here(self, argv, **kwargs):
+        self.argvs.append(argv)
+        self.assertEqual(argv[:2], ['flatpak-spawn', '--host'])
+        argv = argv[2:]
+        env = {'PATH': str(self.bin), 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/helper-bus'}
+        while argv[0].startswith('--env='):
+            name, _, value = argv.pop(0).removeprefix('--env=').partition('=')
+            env[name] = value
+        self.assertEqual(argv[0], 'sh')
+        return subprocess.run(['/bin/sh', *argv[1:]], env=env, **kwargs)
+
+    def ask(self, host_bus=None, timeout=5.0):
+        return chrome.host_secret_service(host_bus, timeout, run=self.run_here)
+
+    def test_gdbus_finds_the_name_owned_on_the_host_bus(self):
+        self.tool('gdbus', owned='true')
+        self.tool('busctl', start=1)
+        self.assertIsNone(self.ask('unix:path=/run/user/1000/bus', timeout=4.5))
+        self.assertEqual(self.calls(), [[
+            'unix:path=/run/user/1000/bus', 'call', '--session', '--timeout', '5', '--dest',
+            'org.freedesktop.DBus', '--object-path', '/org/freedesktop/DBus', '--method',
+            'org.freedesktop.DBus.NameHasOwner', 'org.freedesktop.secrets']])
+
+    def test_gdbus_starts_the_name(self):
+        self.tool('gdbus')
+        self.assertIsNone(self.ask('unix:path=/b'))
+        self.assertEqual(self.calls()[1][-3:],
+                         ['org.freedesktop.DBus.StartServiceByName', 'org.freedesktop.secrets',
+                          '0'])
+
+    def test_without_a_host_bus_the_host_command_s_own(self):
+        self.tool('gdbus', owned='true')
+        self.assertIsNone(self.ask(None))
+        self.assertEqual(self.calls()[0][0], 'unix:path=/helper-bus')
+        self.assertFalse(any(arg.startswith('--env=') for arg in self.argvs[0]))
+
+    def test_busctl_without_gdbus(self):
+        self.tool('busctl')
+        self.assertIsNone(self.ask('unix:path=/b', timeout=2))
+        self.assertEqual(self.calls(), [
+            ['unix:path=/b', '--user', '--timeout=2', 'call', 'org.freedesktop.DBus',
+             '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'NameHasOwner', 's',
+             'org.freedesktop.secrets'],
+            ['unix:path=/b', '--user', '--timeout=2', 'call', 'org.freedesktop.DBus',
+             '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'StartServiceByName', 'su',
+             'org.freedesktop.secrets', '0']])
+
+    def test_a_name_that_does_not_start(self):
+        self.tool('gdbus', start=1,
+                  error='Error: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown')
+        reason = self.ask('unix:path=/b')
+        self.assertIn('org.freedesktop.secrets did not start on the host', reason)
+        self.assertIn('ServiceUnknown', reason)
+
+    def test_neither_tool_on_the_host(self):
+        self.assertIn('neither gdbus nor busctl', self.ask('unix:path=/b'))
+
+    def test_flatpak_spawn_failing_or_hanging(self):
+        def fails(argv, **kwargs):
+            raise FileNotFoundError('flatpak-spawn')
+
+        def hangs(argv, **kwargs):
+            raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+
+        self.assertIn('could not ask the host', chrome.host_secret_service(None, 5, run=fails))
+        self.assertIn('could not ask the host', chrome.host_secret_service(None, 5, run=hangs))
 
 
 class CandidatesTest(unittest.TestCase):

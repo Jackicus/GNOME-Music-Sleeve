@@ -21,7 +21,8 @@ keyring holding the key that encrypts the profile's cookies answers there. A sta
 profile whose Local State records that key (chrome.profile_used_keyring) first checks that
 org.freedesktop.secrets is up on that bus, or comes up when asked, and is
 EngineError('no-keyring') otherwise, Chrome never spawned: without its key Chrome deletes the
-cookies it cannot decrypt, the sign-in among them.
+cookies it cannot decrypt, the sign-in among them. In a Flatpak sandbox the bus is given to
+the host's Chrome through flatpak-spawn, and the host is asked (chrome.host_secret_service()).
 """
 
 import asyncio
@@ -288,7 +289,8 @@ class Engine(ApiReads, PlaybackCommands, AccountEdits, CatalogCommands, BrowseCo
                         '127.0.0.1:%d and any local program can control the signed-in '
                         'session', debug_port)
         argv = with_pdeathsig(
-            chrome.chrome_args(binary, self.profile_dir, headless, debug_port=debug_port))
+            chrome.chrome_args(binary, self.profile_dir, headless, debug_port=debug_port,
+                               host_bus=host_bus))
         log.debug('exec %s', chrome.describe_argv(argv))  # the profile's path left out
         environment = chrome.chrome_environment(host_bus)
         if environment:
@@ -350,21 +352,26 @@ class Engine(ApiReads, PlaybackCommands, AccountEdits, CatalogCommands, BrowseCo
         Chrome will use (`host_bus`, or this process's own), or comes up when asked as Chrome
         would ask, within KEYRING_WAIT seconds. Started on such a profile without its key,
         Chrome encrypts with a fallback one and deletes the cookies it cannot decrypt: the
-        sign-in. Not in a Flatpak sandbox: Chrome is the host's, on the host's session."""
-        if chrome.in_flatpak():
-            return
+        sign-in. In a Flatpak sandbox Chrome is the host's, on the bus flatpak-spawn gives it
+        (`host_bus`, else the host's session), which the sandbox cannot reach: the host is
+        asked (chrome.host_secret_service())."""
         if not await asyncio.to_thread(chrome.profile_used_keyring, self.profile_dir):
             return
-        cancellable = Gio.Cancellable()
-        try:
-            reason = await asyncio.wait_for(self._secret_service(host_bus, cancellable),
-                                            KEYRING_WAIT)
-        except TimeoutError:
-            cancellable.cancel()
-            reason = f'{chrome.SECRETS_NAME} did not answer within {KEYRING_WAIT:g} s'
+        if chrome.in_flatpak():
+            reason = await asyncio.to_thread(chrome.host_secret_service, host_bus, KEYRING_WAIT)
+        else:
+            cancellable = Gio.Cancellable()
+            try:
+                reason = await asyncio.wait_for(self._secret_service(host_bus, cancellable),
+                                                KEYRING_WAIT)
+            except TimeoutError:
+                cancellable.cancel()
+                reason = f'{chrome.SECRETS_NAME} did not answer within {KEYRING_WAIT:g} s'
         if reason is None:
             return
-        where = 'APPLE_MUSIC_HOST_SESSION_BUS' if host_bus else "the app's session bus"
+        where = ('APPLE_MUSIC_HOST_SESSION_BUS' if host_bus
+                 else "the host's session bus" if chrome.in_flatpak()
+                 else "the app's session bus")
         log.warning('not starting Chrome: %s on %s, and the profile is encrypted with the '
                     "keyring's key, so Chrome would drop its sign-in", reason, where)
         raise EngineError('no-keyring',

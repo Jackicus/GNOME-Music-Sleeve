@@ -185,8 +185,10 @@ paths:
   Chrome's own MPRIS player off the bus (the app owns MPRIS); `--headless=new`; the visible
   window is an `--app=` window. In a Flatpak sandbox `find_chrome()` asks the host (blocking:
   call it in a thread), and the argv starts
-  `flatpak-spawn --host --watch-bus --forward-fd=3 --forward-fd=4` (untested), without setpriv
-  (`--watch-bus` ends Chrome); `profile_owner()` answers None there.
+  `flatpak-spawn --host --watch-bus [--env=DBUS_SESSION_BUS_ADDRESS=…] --forward-fd=3
+  --forward-fd=4`, without setpriv (`--watch-bus` ends Chrome); `profile_owner()` answers None
+  there. With a host shell in Chrome's place the descriptors, the bus, SIGTERM's relay and
+  `--watch-bus` work (docs/release.md); Chrome itself has not been run so.
 - Chrome's environment (`chrome.chrome_environment()`, applied in `Engine._spawn`): the app's,
   plus `DBUS_SESSION_BUS_ADDRESS` set to `APPLE_MUSIC_HOST_SESSION_BUS` when that is set
   (`config.host_session_bus()`; scripts/headless.sh sets it to the desktop's bus). Chrome
@@ -200,9 +202,13 @@ paths:
   "activatable" alone was what the incident's private bus had), or the bus does not answer
   within `KEYRING_WAIT` (5 s), the start is `EngineError('no-keyring')`, logged with the
   reason, and Chrome is never spawned. A profile without the record (never run, or never
-  reached the keyring) starts as before. Not in a Flatpak sandbox: Chrome runs on the host
-  with the host's session, which the sandbox cannot check, and gets no bus variable. The check
-  is Gio D-Bus, async, in engine/core.py; the file read and the environment are the backend's.
+  reached the keyring) starts as before. In a Flatpak sandbox Chrome runs on the host, with
+  the environment of the flatpak-session-helper on the sandbox's bus (under headless.sh, the
+  private one): `chrome_args(host_bus=…)` gives it the bus through flatpak-spawn's `--env`,
+  and the check, which the sandbox cannot make on that bus, runs on the host
+  (`chrome.host_secret_service()`: gdbus, else busctl, NameHasOwner then
+  StartServiceByName, through flatpak-spawn). Elsewhere the check is Gio D-Bus, async, in
+  engine/core.py; the file read and the environment are the backend's.
 - Logs: Chrome's argv is logged through `chrome.describe_argv()`, which leaves the profile's
   path out; never log tokens, API URLs with their queries, or the account name.
 - CDP: `Runtime.addBinding('__amEvent')` is per CDP session, so every connection registers it

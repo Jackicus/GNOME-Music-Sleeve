@@ -165,10 +165,22 @@ What has been run (2026-11-13), and what has not:
   desktop-file-validate and `appstreamcli validate`. The settings schema is not exported (a
   sandboxed app reads its own, in `/app`, and keeps its settings in a keyfile under
   `~/.var/app`); it passes `glib-compile-schemas --strict`.
-- **Not run yet**: the engine (the host's Chrome through flatpak-spawn), playback, MPRIS, the
-  Shell's search, notifications, Discord, and which finish-args can go. A host command
-  flatpak-spawn starts has the environment of the flatpak-session-helper on the sandbox's
-  session bus: under scripts/headless.sh that is the private bus, where no keyring answers.
+- **The engine's parts that start no browser: work, one fixed.** From the sandbox,
+  `find_chrome()` finds the host's Google Chrome through the host's shell, and its
+  `--version` runs through flatpak-spawn. The .Devel profile is
+  `~/.var/app/io.github.jackicus.MusicSleeve.Devel/data/apple-music/chrome-devel`, a new one,
+  the same path on the host. With a host shell in Chrome's place, flatpak-spawn as
+  `chrome_args()` builds it carries NUL-ended messages both ways on descriptors 3 and 4,
+  relays SIGTERM to the host command, and ends it when flatpak-spawn is killed
+  (`--watch-bus`). What was wrong: a host command has the environment of the
+  flatpak-session-helper on the sandbox's session bus, so under scripts/headless.sh Chrome
+  would have had the private bus, where no keyring answers, and the keyring check was
+  skipped in the sandbox. Now flatpak-spawn gives it `APPLE_MUSIC_HOST_SESSION_BUS`
+  (`--env=DBUS_SESSION_BUS_ADDRESS=…`) and the check asks the host
+  (`chrome.host_secret_service()`).
+- **Not run yet**: Chrome itself from the sandbox (the CDP connection, the bridge, `drm()`,
+  quitting and killing the app), playback, MPRIS, the Shell's search, notifications, Discord,
+  and which finish-args can go.
 
 Nothing installed may set `APPLE_MUSIC_DEBUG_PORT`: the launcher, the desktop file, the
 PKGBUILD and the manifest leave the engine on its pipe alone.
