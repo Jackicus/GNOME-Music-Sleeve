@@ -86,6 +86,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   typed), then your songs as a list, then artists, albums and playlists as shelves. When
   there are more songs than it lists, the songs' **See All** opens Songs filtered by what
   you typed.
+- In a narrow window the page fills the window and the sidebar is tucked away: the
+  **Show Sidebar** button at the start of the header bar, <kbd>F9</kbd> or a swipe from the
+  window's edge slides it over the page. Choosing a destination closes it again, and so do
+  <kbd>Esc</kbd>, <kbd>F9</kbd> and a click on the page behind it; a folder's row opens the
+  folder and leaves the sidebar open, so you can choose what is in it. On an album's or an
+  artist's page the header bar has **Back** instead: <kbd>F9</kbd> and the swipe still
+  open the sidebar there.
 - On Albums, Artists, Songs, Music Videos and a playlist's page (Favourite Songs too),
   just start typing to filter what the page lists (or press <kbd>Ctrl</kbd>+<kbd>F</kbd>,
   or click the search button in the header bar): it keeps what has the text in its title,

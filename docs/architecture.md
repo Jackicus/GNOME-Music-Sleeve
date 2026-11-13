@@ -34,8 +34,9 @@ touches widgets.
   `account.py`'s, background playback `background.py`'s, the startup marks `timing.py`'s,
   the mini player (`app.mini-player`: a small window of its own in the main window's place,
   built as it shows) `mini_player.py`'s and `widgets/mini_player.py`'s.
-- **Window** (`window.py`): an `AdwBottomSheet` whose content is the split view (the
-  `AdwSidebar` and an `AdwNavigationView`) and whose bottom bar and sheet are the player bar and
+- **Window** (`window.py`): an `AdwBottomSheet` whose content is the split view (an
+  `AdwOverlaySplitView`: the `AdwSidebar` beside an `AdwNavigationView`, or over it below
+  640sp) and whose bottom bar and sheet are the player bar and
   Now Playing; the banners sit under the visible page's header bar. The bottom sheet is one page
   of a `Gtk.Stack`; the other, built on first use, is the full-screen player
   (`widgets/fullscreen_player.py`), which `fullscreen.py`'s host shows, the window fullscreened,
@@ -71,7 +72,8 @@ touches widgets.
   (`item_actions.drop()`: an album's or a playlist's through `tracks_of()`), and All
   Playlists makes a new playlist of the songs, music videos and albums dropped on it
   (`item_actions.drop_new_playlist()`, through New Playlist's dialog).
-- **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
+- **Pages** (`pages/`): one module per destination or pushed page, built when first shown (the
+  album and playlist page's parts are mixins beside it, `src/pages/detail_*.py`). The
   library pages bind the library's stores (Artists is a list beside the library's page of
   the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow).
   Albums, Artists, Music Videos, Songs and a playlist's songs filter as the user types

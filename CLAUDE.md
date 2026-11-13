@@ -33,7 +33,7 @@ One thread runs GTK and asyncio: the GLib main loop is the asyncio loop
 ```
 Application (main.py)    app.settings, .library, .engine, .player, .mpris, .session, .library_sync,
 │                        .demo; app.spawn(coro), app.toast(), app.report(error), .player_command()
-├─ Window (window.py)    Stack: AdwBottomSheet > AdwToastOverlay > AdwNavigationSplitView, or
+├─ Window (window.py)    Stack: AdwBottomSheet > AdwToastOverlay > AdwOverlaySplitView, or
 │  │                     the full-screen player (fullscreen.py); keys as keyboard.py decides
 │  ├─ sidebar            AdwSidebar run by sidebar_view.SidebarController: sections.py's
 │  │                     destinations, then the Playlists (sidebar.py over playlist_tree())
@@ -69,7 +69,7 @@ src/*.py                        services and logic (engine, player, mpris, searc
                                 remote, recent_searches, radio, home, search_pager, timing,
                                 shortcuts, keyboard, sidebar, sections; new ones go here)
 src/library/                    the data model, a package: GLib, GObject and Gio only, no GTK
-src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
+src/pages/<name>.py + .blp      one per page (PAGES in pages/__init__.py); detail_*.py: its parts
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
 src/dialogs/                    sign-in, preferences, keyboard shortcuts, about, the playlist dialogs
 src/backend/                    Chrome, the CDP client, bridge.js, API normalising: stdlib and

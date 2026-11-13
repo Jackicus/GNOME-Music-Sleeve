@@ -178,7 +178,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - Artists (pages/artists.py) is a root page with an `AdwNavigationSplitView` of its own, in
   an `Adw.BreakpointBin` that collapses it. The window asks a root page of two panes, when it
   has them, for `can_go_back()`/`go_back()` (Back, before its own sidebar), `focus_content()`
-  (Ctrl+2) and `banner_host()` (the banners' toolbar view), and follows its `panes-changed`.
+  (Ctrl+2), `banner_host()` (the banners' toolbar view) and `sidebar_headers()` (the header
+  bars that get Show Sidebar), and follows its `panes-changed`.
 - A tile or row offers a context menu by exposing `context_item` (its Item or Track, None when
   unbound) and having `context_menu.attach(view)` called on its view (`drag=True` for tracks).
   The item actions take their object as a `(ss)` target (kind, id), not as state. Go to Album
@@ -188,7 +189,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - A playlist's page is a table from 720sp (`DetailPage.table`, set by detail.blp's
   breakpoint): TrackRow's table rows under a `TrackTableHeader` (the tracks' section header);
   an album's tracks stay a numbered list. A playlist's Sort By (at the header bar's end, as
-  Songs' is: `detail.PLAYLIST_SORTS` through `playlist_sorter()`, a `Gtk.SortListModel` before the
+  Songs' is: `detail_sort_filter.PLAYLIST_SORTS` through `playlist_sorter()`, a `Gtk.SortListModel` before the
   filter, for the page's life) orders the view only. A playlist of the user's
   (`DetailPage.can_reorder()`: in Playlist Order, first to last, unfiltered) takes a
   drop of one of its own songs (`dnd.current()`'s origin is the playlist) with an insertion
@@ -196,7 +197,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   Alt+Home and Alt+End on the focused song (`keyboard.move_place()`), as its menu's Move Up,
   Move Down, Move to Top and Move to Bottom; all go through `item_actions.move_in_playlist()` (playlist_order.py),
   and the focus follows the moved song (`scroll_to(…, FOCUS)`). Under a playlist the user can change
-  (`detail.wants_suggestions()`) its last section holds the songs Apple suggests adding
+  (`detail_suggestions.wants_suggestions()`) its last section holds the songs Apple suggests adding
   (`Engine.playlist_suggestions`) in a `widgets.suggested_songs.SuggestedSongs` (Add
   buttons, Refresh, a song plays alone), less the songs it holds: six, or twelve with
   `more-suggestions`, in a grid whose columns divide the count (`suggestions.columns_for`),
@@ -232,7 +233,19 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   a group per kind of credit (Apple's title, else `credits.heading()`; a group's title is
   markup, so escaped), an `Adw.ActionRow` per person (`use-markup` off), the spinner, No
   Credits, and `EngineStatus`'s states with its button.
-- The window's keyed actions (`win.back`, `win.search`, `win.refresh`, `win.focus-*`,
+- The window's split view is an `Adw.OverlaySplitView` (docs/decisions.md): below 640sp it
+  is collapsed, the page fills the window and the sidebar slides over it
+  (`Window.sidebar_open()`), from a root page's Show Sidebar button (the window packs one
+  at the start of each root page's header bar, `_add_sidebar_button()`, shown by a
+  binding to `collapsed`; a pushed page has Back alone), `win.toggle-sidebar` (F9, enabled
+  only while collapsed), Ctrl+1 or libadwaita's swipe; it opens with the focus on the
+  selected row and closes with it back where it was in the page. `Window.hide_sidebar()`
+  closes it (never the sidebar beside the page): the sidebar's activated row calls it, and
+  so does whatever shows a page or moves the focus into one (`open_item()`, Ctrl+2, Ctrl+F),
+  as it calls `_close_sheet()`; `win.back` closes it before it pops anything. The page is
+  never moved or unmapped by the collapse, so nothing a page does may assume a map at the
+  breakpoint, and no code sets `show-sidebar` FALSE in the wide layout.
+- The window's keyed actions (`win.back`, `win.search`, `win.refresh`, `win.toggle-sidebar`, `win.focus-*`,
   `win.fullscreen-player`, `win.new-playlist`, `win.go-to-current-song`, and
   `win.show-lyrics` and `win.show-queue` through `TabActions.set_free()`) are disabled while a dialog is open over the window
   (`Window._update_actions`); add a new keyed window action there. `Window._close_sheet()`
@@ -249,7 +262,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   the library's `favourites-changed`. Albums, Music Videos and Songs have Favourites Only
   in their Sort and Filter menu (`grid.favourites_only()`, the favourites-only setting);
   a sort the data may lack (a video's Date Added) is a grid's `data_sorts`.
-- Albums, Artists, Music Videos, Songs and a playlist's songs (`detail.filters_songs()`)
+- Albums, Artists, Music Videos, Songs and a playlist's songs (`detail_sort_filter.filters_songs()`)
   filter through one `widgets.filter_bar.FilterBar`: a `Gtk.SearchBar` added under the
   page's header bar in code (`add_top_bar`), its toggle `button` packed in the header bar,
   `set_available(has_items, capture)` (the button, and typing on `capture` starting it),
@@ -303,7 +316,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   are disabled), shown only where the table has room: Songs above its `medium_breakpoint`
   (760sp) and narrow one, a playlist in its table (TrackRow's `genre_label` among the equal
   columns, `year_label` beside the time, `TrackTableHeader.set_columns()`). Their sorts are
-  `SongOrder`'s `genre` and `year` and `detail.PLAYLIST_SORTS`'.
+  `SongOrder`'s `genre` and `year` and `detail_sort_filter.PLAYLIST_SORTS`'.
 
 ## HIG, style and icons
 

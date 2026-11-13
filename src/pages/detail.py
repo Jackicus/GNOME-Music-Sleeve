@@ -21,98 +21,34 @@ columns chosen in Sort By (song_columns.py, the song-columns setting the Songs t
 whose items Sort By lists only while the songs are a table. An album's stay a numbered list,
 and so does any page in a narrower window.
 
-Under a playlist the user can change (wants_suggestions()), the songs Apple suggests adding
-to it (Engine.playlist_suggestions), as music.apple.com shows them: one more section after
-the tracks, a store of one marker item whose row holds a SuggestedSongs of them
-(widgets/suggested_songs.py: an Add button on each, and Refresh), six at a time, or twelve
-with the `more-suggestions` setting, less the songs the playlist holds. What is shown, the
-spares that fill an added song's place and what Apple has offered are a
-suggestions.Suggestions, one a playlist. The section is left out while there are none to
-show, the engine unable to answer among them: a failure is only logged.
-
-An album's tracks end as Apple Music's clients end an album: a section of one marker item
-whose row holds the footer (release.py: the release date in full, the songs and their time,
-the ℗ line), then, once the catalog has answered (Engine.album_page, asked after the
-tracks' first paint, kept for a day), one more whose row holds the catalog's shelves (Other
-Versions, Music Videos, More By, Featured On, You Might Also Like) in a ShelfColumn, as an
-artist page's are. An album the catalog cannot answer for shows the footer's counts alone:
-the failure is only logged.
-
-A catalog playlist (release.playlist_target(): one of Apple's or a curator's, in the library or
-not) ends the same way, without the footer: once the catalog has answered
-(Engine.playlist_page, asked after the tracks' first paint, kept for a day), a section whose row
-holds its shelves (Featured Artists, More By <curator>, You Might Also Like), and the curator's
-name under the title becomes a link to their page (release.curator_item(): an Apple curator's
-category page, a third party's page on music.apple.com in the browser).
-
-On a playlist of the user's (PlaylistOrder.can_reorder(): not Favourite Songs, nor one of
-Apple's) a song moves within the list: dragged (the row's own drag, widgets/dnd.py, dropped
-here as a MOVE: an insertion line where it would go, the list scrolling near its edges, a
-drop written at once) or with Alt+Up, Alt+Down, Alt+Home and Alt+End on the focused song
-(keyboard.move_step(), the focus following it), as the row's menu's Move Up, Move Down, Move
-to Top and Move to Bottom do; all through
-ItemActions.move_in_playlist(), which announces where it went. A click without a drag
-still plays the song: the drag starts only past GTK's drag threshold, and then cancels the
-row's click. Delete on the focused song takes it out of the playlist (remove_focused():
-keyboard.remove_key(), ItemActions.remove_entries()'s one write with Undo; in the selection
-mode, the songs selected), one removal at a time, the focus going to the row in its place
-once the songs show again; an empty playlist of the user's offers Add Songs… in its status.
-
-A playlist's Sort By (sort_button, the header bar's, beside the filter's: PLAYLIST_SORTS,
-Genre and Year among them, either way round) orders what the page shows, never the
-playlist: each group's store passes through a Gtk.SortListModel of playlist_sorter() before
-the filter, a text's descending order shown backwards (ShownModel), as the grids sort. It
-lasts for the page's life; in any order but Playlist Order, first to last, no song moves
-(can_reorder()).
-
-A playlist's songs (Favourite Songs' too) have the library pages' filter bar
-(widgets/filter_bar.py: Filter Songs, Ctrl+F through focus_filter(), typing on the page,
-Escape), matching each song's title, artist and album: each group's store passes through a
-Gtk.FilterListModel of the bar's text, shown through a ShownModel (filters_songs(); an
-album's tracks are never filtered), and the sections' positions are worked out again as it
-changes. While it filters, the songs cannot be moved (can_reorder()): the order shown is not
-the playlist's. A filter that leaves none shows No Results Found in the status box, and the
-new count is announced. Go to Current Song (reveal_playing()) clears a filter that hides the
-song playing.
+The page's parts with a state and requests of their own are mixins beside it, each described
+there: a playlist's Sort By and filter (detail_sort_filter.py), what the catalog shows under
+the tracks (detail_catalog.py), the songs Apple suggests adding (detail_suggestions.py), and
+moving and removing a playlist's songs (detail_reorder.py); the list's rows are
+detail_rows.py's.
 
 The tracks have the selection mode of the track lists (widgets/selection_mode.py): Select
 in the header bar, a Ctrl+click or Shift+click on a song, Ctrl+A; the hero, the footer and the
 suggestions are never selected (the mode selects among _selectable(), the tracks shown), a
 playlist of the user's offers Remove from Playlist, and while selecting no song moves
 (can_reorder()). The bar's narrow layout follows the hero's narrow breakpoints.
-
-A suggested song clicked plays in full, as a track row's song does, or, with the
-`preview-suggestions` setting, Apple's 30-second preview of it (Player.start_preview(): the
-queue pauses for it), clicked again to stop; a song without a preview plays in full. The
-row of the song previewing is marked while the Player's `preview` names it, every song
-previewed is told to Apple with the next request (Suggestions.preview()), and a preview
-started here stops when the page is left.
 """
 
-import asyncio
 import bisect
-import contextlib
 import logging
 from gettext import gettext as _
-from gettext import ngettext
 
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
 
 from ..backend.api import is_library_id
 from .. import keyboard, song_columns
 from ..backend.errors import EngineError
-from ..library import (HELD_KINDS, TRACK_REF_KINDS, Item, ItemRefs, ShelfModel, Track,
-                       drop_index)
+from ..library import HELD_KINDS, ItemRefs, Track
 from ..actions import adds_to, is_manageable
-from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
-from ..release import (album_artist, album_shelves, album_target, curator, curator_item,
-                       footer_lines, hero_caption, is_prerelease, playlist_shelves,
-                       playlist_target, released_play, unbroken)
-from ..suggestions import SPARES, Suggestions, preview_url
-from ..suggestions import basis as suggestion_basis
-from ..suggestions import count as suggestion_count
-from ..remote import fetch_cover, fetch_shelf_art, remote_item
+from ..release import (album_artist, curator, hero_caption, is_prerelease, playlist_target,
+                       released_play, unbroken)
+from ..remote import fetch_cover
 from ..selection import Places
 from ..widgets import context_menu, dnd, track_links
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
@@ -120,16 +56,19 @@ from ..widgets.engine_status import EngineStatus
 from ..widgets.filter_bar import FilterBar, SearchText, ShownModel
 from ..widgets.selection_mode import SelectionMode, row_description
 from ..widgets.labels import track_label
-from ..widgets.suggested_songs import SuggestedSongs
-from ..widgets.track_row import PlayingMark, TrackRow, TrackTableHeader, is_playing
+from ..widgets.track_row import PlayingMark, TrackTableHeader, is_playing
 from ..widgets.util import (HeaderTitle, MappedHandlers, connect_weak, focus_position,
                             next_frame, shared_section, weak_method)
 from . import SignInOffer, app, show_notes
+from .detail_catalog import FETCHED_KINDS, CatalogPart
+from .detail_reorder import ReorderPart
+from .detail_rows import _Footer, _Hero, _Row, _row_of, _Shelves, _Suggestions
+from .detail_sort_filter import (OWN_ORDER, PLAYLIST_SORTS, SortFilterPart, filters_songs,
+                                 playlist_sorter)
+from .detail_suggestions import SuggestionsPart, held_songs, wants_suggestions
 
 log = logging.getLogger(__name__)
 
-# The kinds whose tracks the engine's item() fetches when an Item came without them.
-FETCHED_KINDS = ('album', 'playlist')
 # Frames Go to Current Song waits, at most, for the row of the song playing to take the focus
 # (the list lays the row out a frame after scroll_to()).
 REVEAL_FRAMES = 10
@@ -154,45 +93,6 @@ def text_scale():
     settings = Gtk.Settings.get_default()
     dpi = settings.get_property('gtk-xft-dpi') if settings is not None else 0
     return dpi / (96 * 1024) if dpi and dpi > 0 else 1.0
-
-# A playlist's Sort By, the order its page shows (never the playlist's own: Duplicate, Play
-# and a reorder keep that): key -> (its menu label, the Track properties compared in turn;
-# none, the playlist's order). Labels are looked up when a page is built; their mnemonics
-# differ from one another's and from grid.sort_labels()' directions, as they share a menu.
-PLAYLIST_SORTS = {
-    'playlist': (lambda: _('_Playlist Order'), ()),
-    'title': (lambda: _('_Title'), ('title', 'artist', 'album')),
-    'artist': (lambda: _('_Artist'), ('artist', 'album', 'disc-number', 'track-number')),
-    'album': (lambda: _('Al_bum'), ('album', 'disc-number', 'track-number')),
-    'genre': (lambda: _('_Genre'), ('genre', 'artist', 'album', 'disc-number', 'track-number')),
-    'year': (lambda: _('_Year'), ('year', 'artist', 'album', 'disc-number', 'track-number')),
-    'time': (lambda: _('T_ime'), ('duration-ms', 'title')),
-}
-# The Track properties compared as numbers; the rest are text.
-TRACK_NUMBERS = frozenset({'disc-number', 'track-number', 'duration-ms', 'year'})
-# Playlist Order, first to last: the one order a playlist's songs can be moved in.
-OWN_ORDER = ('playlist', False)
-
-
-def playlist_sorter(key, descending=False):
-    """The Gtk.Sorter that shows a playlist's songs by PLAYLIST_SORTS[key] (None for its own
-    order), and whether that order is shown backwards (ShownModel), as grid.make_sorter()
-    does: a number first (Time) is sorted the other way, its ties as they are; a text's or
-    the playlist's own order is shown last to first."""
-    names = PLAYLIST_SORTS[key][1]
-    if not names:
-        return None, descending
-    sorter = Gtk.MultiSorter()
-    for name in names:
-        expression = Gtk.PropertyExpression.new(Track, None, name)
-        if name in TRACK_NUMBERS:
-            down = descending and name == names[0]
-            sorter.append(Gtk.NumericSorter(
-                expression=expression,
-                sort_order=Gtk.SortType.DESCENDING if down else Gtk.SortType.ASCENDING))
-        else:
-            sorter.append(Gtk.StringSorter(expression=expression))
-    return sorter, descending and names[0] not in TRACK_NUMBERS
 
 
 def playing_ordinal(tracks, ids, index):
@@ -247,12 +147,6 @@ def library_state(library, item):
     return 'held' if library.holds(item) else 'add'
 
 
-def filters_songs(item):
-    """Whether a page showing `item` offers a filter of its songs: a playlist's, not an
-    album's (its tracks are a disc's, numbered)."""
-    return item is not None and item.kind == 'playlist'
-
-
 def should_fetch(item, fetched):
     """Whether a page showing `item` asks the engine for its tracks: it came without them (a
     shelf's, a search's, an artist's album the library lacks), it is of a kind the engine
@@ -262,169 +156,8 @@ def should_fetch(item, fetched):
             and fetched is not item)
 
 
-def wants_suggestions(item):
-    """Whether a page showing `item` offers the songs Apple suggests adding to it: a library
-    playlist the user can change (Item.editable: not Favourite Songs, not one of Apple's), as
-    music.apple.com offers them."""
-    return item is not None and item.kind == 'playlist' and item.editable
-
-
-def held_songs(item):
-    """The ids of the songs a playlist holds: its tracks' catalog ids and their own."""
-    held = set()
-    for group in item.groups:
-        for track in group.entries:
-            held.update(song_id for song_id in (track.catalog_id, track.id) if song_id)
-    return held
-
-
-def suggestion_items(answer):
-    """The song Items of an Engine.playlist_suggestions answer, in Apple's order."""
-    return [Item(remote_item(entry)) for entry in (answer or {}).get('items') or []
-            if isinstance(entry, dict) and entry.get('id') and entry.get('kind') == 'song']
-
-
-def album_completer(answer, shelf):
-    """See All's coroutine function for a shelf under an album Apple has more of: the whole
-    view (Engine.album_view; for More By the artist's albums, Engine.artist_view, less the
-    album), the Items shown kept. None for a shelf Apple sent whole."""
-    if not getattr(shelf, 'more', False) or not isinstance(answer, dict):
-        return None
-    album_id = str(answer.get('id') or '')
-    artist_id = str(answer.get('artistId') or '')
-    if shelf.key == 'more-by-artist':
-        if not artist_id:
-            return None
-        return _completer(shelf, artist_id, album_id,
-                          lambda engine: engine.artist_view(artist_id, 'full-albums'))
-    if album_id:
-        return _completer(shelf, album_id, album_id,
-                          lambda engine: engine.album_view(album_id, shelf.key))
-    return None
-
-
-def playlist_completer(answer, shelf):
-    """See All's coroutine function for a shelf under a catalog playlist Apple has more of:
-    the whole view (Engine.playlist_view; for More By the curator's playlists,
-    Engine.curator_playlists), less the playlist, the Items shown kept. None for a shelf
-    Apple sent whole."""
-    if not getattr(shelf, 'more', False) or not isinstance(answer, dict):
-        return None
-    playlist_id = str(answer.get('id') or '')
-    if not playlist_id:
-        return None
-    if shelf.key == 'more-by-curator':
-        curator = answer.get('curator')
-        curator_id = str(curator.get('id') or '') if isinstance(curator, dict) else ''
-        if not curator_id or curator.get('kind') != 'category':
-            return None
-        return _completer(shelf, playlist_id, playlist_id,
-                          lambda engine: engine.curator_playlists(curator_id))
-    return _completer(shelf, playlist_id, playlist_id,
-                      lambda engine: engine.playlist_view(playlist_id, shelf.key))
-
-
-def _completer(shelf, key, own_id, fetch):
-    """See All's coroutine function: `fetch(engine)`'s Items for the shelf, the one with
-    `own_id` (the page's own album or playlist) left out, the Items shown kept; a failure
-    is only logged (by `key` and the shelf's)."""
-    async def complete():
-        try:
-            dicts = await fetch(app().engine)
-        except EngineError as error:
-            log.info('%s, %s: %s', key, shelf.key, error)
-            return
-        shown = {item.id: item for item in shelf.items}
-        items = [shown.get(data.get('id')) or Item(remote_item(data)) for data in dicts
-                 if isinstance(data, dict) and data.get('id') and data.get('kind')
-                 and own_id not in (data.get('id'), data.get('catalogId'))]
-        if items:
-            shelf.more = False
-            shelf.update(shelf.title, items)
-            await fetch_shelf_art([shelf])
-    return complete
-
-
-class _Hero(GObject.Object):
-    """The first item of a detail page's list: where the hero goes."""
-
-    __gtype_name__ = 'AppleMusicDetailHero'
-
-
-class _Suggestions(GObject.Object):
-    """The last item of a playlist's list, while it has suggestions: where they go."""
-
-    __gtype_name__ = 'AppleMusicDetailSuggestions'
-
-
-class _Footer(GObject.Object):
-    """The item after an album's tracks: where its release footer goes."""
-
-    __gtype_name__ = 'AppleMusicDetailFooter'
-
-
-class _Shelves(GObject.Object):
-    """The last item of an album's or a catalog playlist's list, while the catalog has
-    shelves of it: where they go."""
-
-    __gtype_name__ = 'AppleMusicDetailShelves'
-
-
-class _Row(Gtk.Box):
-    """A row of a detail page's list: a TrackRow, or a widget of the page's (the hero, the
-    suggestions) in its place."""
-
-    def __init__(self):
-        # Vertical, though it shows one child at a time: a horizontal box measures its
-        # children's height without the width (for its minimum), and the suggestions' grid
-        # is taller the narrower it is, which made the row's minimum height above its natural
-        # one (GTK's "natural size must be >= min size").
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
-        # Given the row's whole height (the list's rows keep a minimum, style.css), which
-        # the track row centres itself in: a vertical box would otherwise leave the rest
-        # under it.
-        self.track_row = TrackRow(hexpand=True, vexpand=True)
-        self.append(self.track_row)
-
-    def show_widget(self, widget):
-        self._remove_widgets(keep=widget)
-        parent = widget.get_parent()
-        if parent is not self:
-            if parent is not None:
-                parent.remove(widget)
-            self.append(widget)
-        self.track_row.set_visible(False)
-
-    def show_track(self, track, album_artist, table=False, playing=False, favourite=False,
-                   columns=frozenset()):
-        self._remove_widgets()
-        self.track_row.set_visible(True)
-        self.track_row.bind(track, album_artist, table, playing, favourite, columns)
-
-    def clear(self):
-        self._remove_widgets()
-        self.track_row.unbind()
-
-    def _remove_widgets(self, keep=None):
-        child = self.get_first_child()
-        while child is not None:
-            following = child.get_next_sibling()
-            if child is not self.track_row and child is not keep:
-                self.remove(child)
-            child = following
-
-
-def _row_of(widget):
-    """The _Row a widget is in (picked or focused in the list: the list item's own widget
-    holds its row), or None."""
-    row = widget if isinstance(widget, _Row) else widget.get_ancestor(_Row)
-    if row is None and isinstance(widget.get_first_child(), _Row):
-        row = widget.get_first_child()
-    return row
-
-
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/detail.ui')
-class DetailPage(Adw.NavigationPage):
+class DetailPage(SortFilterPart, CatalogPart, SuggestionsPart, ReorderPart, Adw.NavigationPage):
     """An album's or a playlist's page.
 
     DetailPage(library, item) shows item, pushed over the page it was opened from, and titled
@@ -939,25 +672,6 @@ class DetailPage(Adw.NavigationPage):
                 self._start_reveal()  # the tracks Go to Current Song waited for
         self._take_refocus(item)
 
-    # A playlist's filter.
-
-    def _on_filter_changed(self, bar):
-        """The filter's text changed (after the entry's delay): the songs that match it
-        shown, the sections after them placed again, the new count announced."""
-        with contextlib.ExitStack() as stack:
-            for model in self._track_models:
-                stack.enter_context(model.replacing(self._scroll_top))
-            self._text.set_search(bar.search, self._filtered)
-        self._place_sections()
-        self._update_filter()
-        self.selection_mode.prune()
-        if bar.search and self._track_models:
-            # The filter's own count: the list may still be growing back to it (ShownModel).
-            shown = sum(model.get_n_items() for model in self._filtered)
-            total = self._track_total
-            words = ngettext('{shown} of {total} song', '{shown} of {total} songs', total)
-            bar.announce(words.format(shown=f'{shown:n}', total=f'{total:n}'))
-
     def _place_sections(self, *_args):
         """The positions of the sections of tracks, and of the suggestions or the catalog's
         shelves after them, as the filter changes what they show."""
@@ -973,407 +687,8 @@ class DetailPage(Adw.NavigationPage):
             footer = self.item is not None and self.item.kind == 'album'
             self._shelves_start = position + (1 if footer else 0)
 
-    def _scroll_top(self):
-        self.list_view.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
-
     def _shown_tracks(self):
         return sum(model.get_n_items() for model in self._track_models)
-
-    def _update_filter(self):
-        """The filter offered while a playlist's songs show (closed otherwise); No Results
-        Found in the status box while it leaves none."""
-        offered = filters_songs(self.item) and bool(self._track_models)
-        self.filter_bar.set_available(offered, self)
-        if not offered:
-            self.filter_bar.close()
-        self._update_sort_button()
-        none = offered and bool(self.filter_bar.search) and not self._shown_tracks()
-        if none:
-            self._show_status('no-results', _('No Results Found'), _('Try a different filter'),
-                              None)
-        self.status_box.set_visible(none or not self._groups)
-
-    def focus_filter(self):
-        """Ctrl+F: the filter bar shown with the cursor in its entry; False on a page with no
-        songs to filter (an album's)."""
-        return self.filter_bar.focus()
-
-    def _focus_tracks(self, track):
-        """Where Escape puts the focus once the filter bar has closed: the track's row (the
-        one the focus was on), else the first song's; False while no songs show."""
-        if self.stack.get_visible_child_name() != 'item' or not self._shown_tracks():
-            return False
-        position = None
-        for model in self._track_models:
-            if isinstance(model, ShownModel):
-                model.finish()  # every row there, if the songs were growing back
-        for start, model in zip(self._starts, self._track_models, strict=True):
-            index = model.find(track) if isinstance(model, ShownModel) else None
-            if index is not None:
-                position = start + index
-                break
-        focus_position(self.list_view, self._starts[0] if position is None else position)
-        return True
-
-    # A playlist's Sort By: the order shown, not the playlist's.
-
-    @property
-    def order(self):
-        """The order the songs show in: (PLAYLIST_SORTS key, descending)."""
-        return self._order
-
-    def _update_sort_button(self):
-        """Sort By while a playlist's songs show, and not while selecting (Cancel takes its
-        room, as on Songs)."""
-        self.sort_button.set_visible(filters_songs(self.item) and bool(self._track_models)
-                                     and not self.selection_mode.active)
-
-    def _set_order_state(self, order):
-        self._order = order
-        self._sort_action.set_state(GLib.Variant('s', order[0]))
-        self._order_action.set_state(GLib.Variant('s', 'descending' if order[1]
-                                                  else 'ascending'))
-
-    def _on_sort_chosen(self, _action, value):
-        self.sort(value.get_string(), self._order[1])
-
-    def _on_order_chosen(self, _action, value):
-        self.sort(self._order[0], value.get_string() == 'descending')
-
-    def sort(self, key, descending=False):
-        """Show the songs by `key` (PLAYLIST_SORTS), `descending` or not: the view's order
-        only, from the top. In any order but the playlist's own, first to last, no song
-        moves (can_reorder())."""
-        if key not in PLAYLIST_SORTS:
-            return
-        order = (key, bool(descending))
-        if order == self._order:
-            return
-        self._set_order_state(order)
-        sorter, backwards = playlist_sorter(*order)
-        # One change of the same items each (a list keeps their rows), then the backwards.
-        for model in self._sorted:
-            model.set_sorter(sorter)
-        for model in self._track_models:
-            if isinstance(model, ShownModel):
-                model.set_backwards(backwards)
-        if self._track_models:
-            self._scroll_top()
-
-    # What the catalog shows under an album's tracks: the footer and the shelves.
-
-    def _update_footer(self, item, groups):
-        """The footer's lines: the release date, the songs shown and their time, the
-        copyright (release.footer_lines), from the catalog's answer once it has come."""
-        count = sum(group.entries.get_n_items() for group in groups)
-        duration = sum(track.duration_ms for group in groups for track in group.entries)
-        answer = self._catalog_answer if self._catalog_asked_for is item else None
-        lines = footer_lines(item, answer, count, duration)
-        self.footer_label.set_label('\n'.join(lines))
-        self.footer_label.set_visible(bool(lines))
-
-    def _forget_catalog(self):
-        """The catalog's answer for another Item than the one shown let go of."""
-        self._catalog_answer = None
-        self._catalog_shelves = []
-        self._curator = None
-
-    def _ask_catalog(self):
-        """Ask the catalog for the rest of the album or catalog playlist shown
-        (release.album_target, release.playlist_target), once, while the page is mapped and
-        its tracks are shown: the page's first build never waits for it."""
-        item = self.item
-        if (item is None or item.kind not in FETCHED_KINDS or self._catalog_asked_for is item
-                or not self.get_mapped() or not self._groups):
-            return
-        self._catalog_asked_for = item
-        if item.kind == 'album':
-            target = album_target(item)
-            load = self._load_album(item, *target) if target is not None else None
-        else:
-            target = playlist_target(item)
-            load = self._load_playlist(item, target) if target is not None else None
-        if load is None:
-            return
-        if self._catalog_task is not None and not self._catalog_task.done():
-            self._catalog_task.cancel()
-        self._catalog_task = app().spawn(load)
-
-    async def _load_album(self, item, album_id, song_id):
-        """Engine.album_page()'s answer, after the tracks' first paint. An album it cannot
-        answer for (offline, the engine down, one the catalog lacks) shows what it has: the
-        failure is only logged."""
-        await next_frame(self.list_view)
-        try:
-            answer = await app().engine.album_page(album_id, song_id=song_id)
-        except EngineError as error:
-            log.info('the rest of album %s: %s', item.id, error)
-            return
-        if self.item is item and self._catalog_asked_for is item:
-            self._take_album(item, answer)
-
-    def _take_album(self, item, answer):
-        """Show Engine.album_page()'s answer: the footer's release lines, the shelves after
-        it (appended, the tracks' rows left as they are), and their thumbnails."""
-        self._catalog_answer = answer
-        self._catalog_shelves = album_shelves(answer, album_artist(item))
-        for shelf in self._catalog_shelves:
-            shelf.complete = album_completer(answer, shelf)
-        groups = [group for group in item.groups if group.entries.get_n_items()]
-        if not groups:
-            return
-        self._update_footer(item, groups)
-        self._show_catalog_shelves()
-
-    async def _load_playlist(self, item, playlist_id):
-        """Engine.playlist_page()'s answer, after the tracks' first paint. A playlist it
-        cannot answer for (offline, the engine down, one the catalog lacks) keeps its plain
-        curator and no shelves: the failure is only logged."""
-        await next_frame(self.list_view)
-        try:
-            answer = await app().engine.playlist_page(playlist_id)
-        except EngineError as error:
-            log.info('the rest of playlist %s: %s', item.id, error)
-            return
-        if self.item is item and self._catalog_asked_for is item:
-            self._take_playlist(item, answer)
-
-    def _take_playlist(self, item, answer):
-        """Show Engine.playlist_page()'s answer: the curator's name a link to their page,
-        the shelves after the tracks (appended, the tracks' rows left as they are), and
-        their thumbnails."""
-        self._catalog_answer = answer
-        self._curator = curator_item(answer)
-        self._catalog_shelves = playlist_shelves(answer, curator(item))
-        for shelf in self._catalog_shelves:
-            shelf.complete = playlist_completer(answer, shelf)
-        self._show_curator(item)
-        if any(group.entries.get_n_items() for group in item.groups):
-            self._show_catalog_shelves()
-
-    def _show_catalog_shelves(self):
-        """The catalog's shelves (_catalog_shelves) in the last section, appended or taken
-        away as there are some or none, and their thumbnails fetched."""
-        if self._shelf_column is None and self._catalog_shelves:
-            from ..widgets.shelf import ShelfColumn
-
-            self._shelf_column = ShelfColumn(self.shelves_box)
-        if self._shelf_column is not None:
-            self._shelf_column.show(self._catalog_shelves)
-        count = self._sections.get_n_items()
-        present = count > 0 and self._sections.get_item(count - 1) is self._shelves_section
-        if self._catalog_shelves and not present:
-            self._shelves_start = self._rows.get_n_items()
-            self._sections.append(self._shelves_section)
-        elif present and not self._catalog_shelves:
-            self._shelves_start = None
-            self._sections.remove(count - 1)
-        if self._catalog_shelves:
-            if self._catalog_art_task is not None and not self._catalog_art_task.done():
-                self._catalog_art_task.cancel()
-            self._catalog_art_task = app().spawn(fetch_shelf_art(list(self._catalog_shelves)))
-
-    # The songs Apple suggests adding to a playlist.
-
-    def _suggestions_widget(self):
-        """The section of suggestions, made the first time there are some."""
-        if self.suggested_songs is None:
-            # In a track list's row, which keeps the page's margins.
-            section = SuggestedSongs(margin_top=18, margin_bottom=12)
-            connect_weak(section, 'play-song', self._on_play_suggestion)
-            connect_weak(section, 'add-song', self._on_add_suggestion)
-            connect_weak(section, 'refresh', self._on_refresh_suggestions)
-            player = self._playing.player
-            section.set_previewing(player.preview if player is not None else '')
-            self.suggested_songs = section
-        return self.suggested_songs
-
-    def _count(self):
-        """How many suggestions to show: the `more-suggestions` setting's (suggestions.py)."""
-        more = self._settings is not None and self._settings.get_boolean('more-suggestions')
-        return suggestion_count(more)
-
-    def _suggest(self):
-        """Ask for the suggestions of the playlist shown, once (wants_suggestions), while
-        the page is mapped."""
-        item = self.item
-        if not wants_suggestions(item) or self._suggested_for is item or not self.get_mapped():
-            return
-        self._suggested_for = item
-        self._suggestions = Suggestions(self._count())
-        self._fetch_suggestions(item)
-
-    def _fetch_suggestions(self, item, refresh=False):
-        for task in (self._suggestions_task, self._more_task):
-            if task is not None and not task.done():
-                task.cancel()
-        self._suggestions_task = app().spawn(
-            self._load_suggestions(item, self._suggestions, refresh))
-
-    async def _load_suggestions(self, item, suggestions, refresh):
-        """The first answer (kept for a day), or a Refresh's: new songs, none of those
-        offered so far, as many as are shown and SPARES more. A Refresh Apple cannot answer
-        shows the next spares instead, when there are some. The answer kept is for what the
-        playlist holds now (suggestion_basis): once it holds other songs, it is asked again."""
-        basis = suggestion_basis(held_songs(item))
-        try:
-            if refresh:
-                answer = await app().engine.playlist_suggestions(
-                    item.id, refresh=True, limit=suggestions.count + SPARES,
-                    offered=list(suggestions.offered), selected=list(suggestions.selected),
-                    previewed=list(suggestions.previewed), basis=basis)
-            else:
-                answer = await app().engine.playlist_suggestions(item.id, basis=basis)
-        except EngineError as error:
-            log.info('suggestions for playlist %s: %s', item.id, error)
-            if (refresh and self.item is item and self._suggestions is suggestions
-                    and suggestions.rotate(held_songs(item))):
-                self._update_suggestions()
-            return
-        if self.item is not item or self._suggestions is not suggestions:
-            return
-        suggestions.take(suggestion_items(answer), held_songs(item))
-        self._update_suggestions()
-        self._want_more()
-
-    def _want_more(self):
-        """Ask for a few more songs when the spares have run out (and Apple had more the
-        last time it was asked), to fill the places of the next songs added."""
-        suggestions = self._suggestions
-        loading = self._suggestions_task  # an answer on its way, unless this is it
-        if (suggestions is None or not suggestions.wants_more() or suggestions.exhausted
-                or self.item is None or not self.get_mapped()
-                or (self._more_task is not None and not self._more_task.done())
-                or (loading is not None and not loading.done()
-                    and loading is not asyncio.current_task())):
-            return
-        self._more_task = app().spawn(self._load_more(self.item, suggestions))
-
-    async def _load_more(self, item, suggestions):
-        limit = max(suggestions.count - len(suggestions.shown), 0) + SPARES
-        try:
-            answer = await app().engine.playlist_suggestions(
-                item.id, limit=limit, offered=list(suggestions.offered),
-                selected=list(suggestions.selected), previewed=list(suggestions.previewed),
-                more=True)
-        except EngineError as error:
-            log.info('more suggestions for playlist %s: %s', item.id, error)
-            suggestions.exhausted = True
-            return
-        if self.item is not item or self._suggestions is not suggestions:
-            return
-        if not suggestions.extend(suggestion_items(answer), held_songs(item)):
-            suggestions.exhausted = True
-        self._update_suggestions()
-
-    def _update_suggestions(self):
-        """Show the suggestions as they are now: the section's songs, its place in the list
-        while it has some, and their thumbnails."""
-        item = self.item
-        shown = []
-        if (item is not None and self._groups and wants_suggestions(item)
-                and self._suggestions is not None and self._suggested_for is item):
-            shown = list(self._suggestions.shown)
-        if shown or self.suggested_songs is not None:
-            self._suggestions_widget().set_items(shown)
-        count = self._sections.get_n_items()
-        present = count > 0 and self._sections.get_item(count - 1) is self._suggestions_section
-        if shown and not present:
-            self._suggestions_start = self._rows.get_n_items()
-            self._sections.append(self._suggestions_section)
-        elif present and not shown:
-            self._suggestions_start = None
-            self._sections.remove(count - 1)
-        if shown:
-            if self._suggestion_art_task is not None and not self._suggestion_art_task.done():
-                self._suggestion_art_task.cancel()
-            self._suggestion_art_task = app().spawn(
-                fetch_shelf_art([ShelfModel('suggested', '', shown)]))
-
-    def _on_count_changed(self, *_args):
-        """The `more-suggestions` setting: as many shown as it says, from the spares, and a
-        few more asked for when they run out."""
-        if self._suggestions is None or self.item is None:
-            return
-        self._suggestions.set_count(self._count(), held_songs(self.item))
-        self._update_suggestions()
-        self._want_more()
-
-    def _on_refresh_suggestions(self, _section):
-        if wants_suggestions(self.item) and self._suggestions is not None:
-            self._fetch_suggestions(self.item, refresh=True)
-
-    def _on_play_suggestion(self, _section, song):
-        """A suggested song clicked: in full, or its preview with the `preview-suggestions`
-        setting (stopped instead when it is the one previewing). A song without a preview
-        plays in full."""
-        url = preview_url(song)
-        wanted = self._settings is not None and self._settings.get_boolean('preview-suggestions')
-        player = self._playing.player
-        if not (url and wanted and player is not None):
-            self.get_root().play_request(song.play)
-            return
-        application = app()
-        if application.refuse_in_demo():
-            return
-        if player.preview == song.id:
-            self._previewing = ''
-            application.player_command(player.stop_preview())
-            return
-        self._previewing = song.id
-        application.player_command(player.start_preview(song.id, url))
-
-    def _on_preview_changed(self, *_args):
-        """The Player's preview: its row marked, and the song told to Apple next time as one
-        previewed."""
-        player = self._playing.player
-        song_id = player.preview if player is not None else ''
-        if self.suggested_songs is not None:
-            self.suggested_songs.set_previewing(song_id)
-        if song_id and self._suggestions is not None:
-            song = next((item for item in self._suggestions.shown if item.id == song_id), None)
-            if song is not None:
-                self._suggestions.preview(song)
-        if not song_id:
-            self._previewing = ''
-
-    def _stop_preview(self):
-        """Stop the preview this page started, if it still plays: the page is left, and its
-        row with it."""
-        player = self._playing.player
-        song_id, self._previewing = self._previewing, ''
-        if song_id and player is not None and player.preview == song_id:
-            app().player_command(player.stop_preview())
-
-    def _on_add_suggestion(self, _section, song):
-        """Add a suggested song to the playlist (the item actions' Add to Playlist, which
-        fetches the playlist again), and give its place to the next suggestion at once; an
-        add that fails gives it back (_on_suggestion_written)."""
-        actions = getattr(self.get_root(), 'item_actions', None)
-        if actions is None or self.item is None or self._suggestions is None:
-            return
-        task = actions.add_to_playlist(self.item.id, song.id, song.title)
-        if task is None:
-            return
-        suggestions = self._suggestions
-        suggestions.fill(song, held_songs(self.item))
-        self._update_suggestions()
-        self._want_more()
-        # The task outlives a page that may be popped meanwhile: it holds the page weakly.
-        written = weak_method(self._on_suggestion_written)
-        task.add_done_callback(lambda done: written(done, song, suggestions))
-
-    def _on_suggestion_written(self, task, song, suggestions):
-        """An add from the suggestions ended: when it failed (reported already, by the item
-        actions), the song is not selected and goes back to its place, while this page still
-        shows the suggestions it was added from."""
-        if task.cancelled() or task.exception() is not None or task.result() is not False:
-            return
-        if suggestions is not self._suggestions or self.item is None:
-            suggestions.restore(song)  # not reported to Apple as chosen, wherever it is
-            return
-        if suggestions.restore(song, held_songs(self.item)):
-            self._update_suggestions()
 
     def _on_breakpoint(self, bin_, _pspec):
         """The bin's breakpoint changed: a playlist's table from the wide one, the selection
@@ -1905,93 +1220,6 @@ class DetailPage(Adw.NavigationPage):
         track = context_menu.focused(self.list_view, focus)
         return track if isinstance(track, Track) else None
 
-    # Moving a playlist's songs.
-
-    def can_reorder(self):
-        """Whether the songs shown can be moved: a playlist of the user's with its one list
-        (PlaylistOrder.can_reorder()), shown in its own order, first to last (no Sort By),
-        and all of it (no filter), and not while its selection mode is on."""
-        return (self._groups == 1 and self._order == OWN_ORDER and not self.filter_bar.search
-                and not self.selection_mode.active and PlaylistOrder.can_reorder(self.item))
-
-    def _move(self, from_index, to_index, at_once=False):
-        """Move the song at from_index to to_index (ItemActions.move_in_playlist()): False
-        when it did not move."""
-        actions = getattr(self.get_root(), 'item_actions', None)
-        move = getattr(actions, 'move_in_playlist', None)
-        return move is not None and move(self.item, from_index, to_index, at_once)
-
-    def _move_focused(self, focus, step):
-        """Alt+Up or Alt+Down: the focused song one place up (-1) or down (1); Alt+Home or
-        Alt+End: to the top or the bottom (keyboard.TOP, BOTTOM); the focus going with it.
-        False (the key not taken) when the focus is on no song or the songs cannot be moved;
-        True otherwise, at either end too, where nothing moves."""
-        row = _row_of(focus) if focus is not None else None
-        track = row.track_row.context_item if row is not None else None
-        if not isinstance(track, Track) or not self.can_reorder():
-            return False
-        index, count = track.index, len(self.item.track_ids())
-        to_index = keyboard.move_place(step, index, 0, count - 1)
-        if to_index is not None and self._move(index, to_index):
-            self.list_view.scroll_to(self._starts[0] + to_index, Gtk.ListScrollFlags.FOCUS,
-                                     None)
-        return True
-
-    # Delete: a song taken out of the playlist.
-
-    def removes_songs(self):
-        """Whether Delete takes songs out of the playlist shown: one of the user's (not
-        Favourite Songs, nor one of Apple's), in whatever order and filter it shows."""
-        item = self.item
-        return item is not None and item.kind == 'playlist' and is_manageable(item)
-
-    def remove_focused(self, focus):
-        """Delete on a song: Remove from Playlist (ItemActions.remove_entries(): one write,
-        Undo on its toast) of the focused song or, in the selection mode, of the songs
-        selected (the bar's Remove from Playlist); the focus goes to the row in its place
-        once the songs show again. False (the key not taken) when the focus is on no song or
-        the playlist is not the user's; True otherwise, while a removal is under way too,
-        when nothing more is asked (one at a time: a second would be made on a list Apple
-        has changed meanwhile)."""
-        row = _row_of(focus) if focus is not None else None
-        track = row.track_row.context_item if row is not None else None
-        actions = getattr(self.get_root(), 'item_actions', None)
-        if not isinstance(track, Track) or not self.removes_songs() or actions is None:
-            return False
-        if self._removing is not None and not self._removing.done():
-            return True
-        position = self._shown_position(track)
-        if self.selection_mode.active:
-            tracks = self.selection_mode.selection.ordered(self._selectable())
-            if not tracks:
-                return True
-            self.selection_mode.leave()
-        else:
-            tracks = [track]
-        task = actions.remove_entries(self.item, tracks)
-        if task is None:
-            return True  # the demo library, which says so
-        self._removing = task
-        self._refocus = (self.item, position) if position is not None else None
-        done = weak_method(self._on_removed)
-        task.add_done_callback(lambda finished: done(finished))
-        return True
-
-    def _shown_position(self, track):
-        """The list position of the row showing `track` (among the tracks shown), or None."""
-        for start, model in zip(self._starts, self._track_models, strict=True):
-            index = model.find(track) if isinstance(model, ShownModel) else None
-            if index is not None:
-                return start + index
-        return None
-
-    def _on_removed(self, task):
-        """Delete's removal ended: when it failed (reported already), the focus stays as it
-        is; either way, no later showing of the songs moves it."""
-        if self._removing is task:
-            self._removing = None
-        self._refocus = None
-
     def _take_refocus(self, item):
         """The songs show again after Delete's removal: the focus, lost with its row, goes to
         the row now in its place (the last when it was the last), while it is nowhere else."""
@@ -2018,102 +1246,6 @@ class DetailPage(Adw.NavigationPage):
             if self._has_focus_at(target):
                 return
             focus_position(self.list_view, target)
-
-    def dragged_index(self):
-        """The index of the song the in-app drag in progress carries (dnd.current()) when it
-        is one of this playlist's own, to move within it; else None."""
-        refs = dnd.current()
-        if refs is None or len(refs) != 1 or not self.can_reorder():
-            return None
-        ref = refs.refs[0]
-        if refs.origin != ('playlist', self.item.id) or ref.kind not in TRACK_REF_KINDS:
-            return None
-        ids = self.item.track_ids()
-        return ref.index if 0 <= ref.index < len(ids) and ids[ref.index] == ref.id else None
-
-    def drop_place(self, x, y):
-        """Where a song dropped at (x, y) in the list goes: (gap, row, after), `gap` 0
-        before the first song to n after the last of n, `row` the row the insertion line is
-        drawn on (None when it is not made) and `after` whether on its bottom edge. Over a
-        song, the gap above it or below it, by the half; over the hero, before the first;
-        anywhere else (the suggestions, the footer, below the list), after the last."""
-        count = len(self.item.track_ids() or ())
-        picked = self.list_view.pick(x, y, Gtk.PickFlags.DEFAULT)
-        row = _row_of(picked) if picked is not None else None
-        track = row.track_row.context_item if row is not None else None
-        if isinstance(track, Track) and 0 <= track.index < count:
-            point = Graphene.Point()
-            point.x, point.y = x, y
-            ok, local = self.list_view.compute_point(row, point)
-            after = ok and local.y >= row.get_height() / 2
-            return track.index + (1 if after else 0), row, after
-        if row is not None and self.hero.get_parent() is row:
-            return 0, self._row_at(0), False
-        return count, self._row_at(count - 1), True
-
-    def show_insertion(self, index, after=False):
-        """Draw the insertion line on the top (or, `after`, the bottom) edge of the row of
-        the song at index, as a drag over it does (scripts/screenshot.py's --drop-line: no
-        headless script can drag). False when the songs cannot be moved or the row is not
-        made."""
-        row = self._row_at(index) if self.can_reorder() else None
-        if row is None:
-            return False
-        self._drop_feedback.insert(row.get_parent() or row, after)
-        return True
-
-    def _row_at(self, index):
-        """The row showing the song at index, or None when the list has not made it."""
-        position = self._starts[0] + index if self._starts else -1
-        for list_item in self._bound:
-            if list_item.get_position() == position:
-                return list_item.get_child()
-        return None
-
-    def _on_drop_accept(self, _target, _drop):
-        return self.dragged_index() is not None
-
-    def _on_drop_motion(self, _target, x, y):
-        """A drag over the list: the insertion line where the song would go (none in the
-        gaps beside it, where it is), the list scrolled near its edges; the action."""
-        from_index = self.dragged_index()
-        if from_index is None:
-            self._drop_feedback.clear()
-            return 0
-        point = Graphene.Point()
-        point.x, point.y = x, y
-        ok, scrolled = self.list_view.compute_point(self.scrolled_window, point)
-        if ok:
-            self._drop_feedback.motion(scrolled.y)
-        gap, row, after = self.drop_place(x, y)
-        if drop_index(from_index, gap) is None or row is None:
-            self._drop_feedback.highlight(None)
-            return 0
-        # On the list's row, around the song's own padding: on the song's widget the line
-        # would run behind its cover.
-        self._drop_feedback.insert(row.get_parent() or row, after)
-        return Gdk.DragAction.MOVE
-
-    def _on_drop_leave(self, _target):
-        self._drop_feedback.clear()
-
-    def _on_drop(self, _target, _value, x, y):
-        """A song of this playlist dropped on it: moved there, written at once."""
-        self._drop_feedback.clear()
-        from_index = self.dragged_index()
-        if from_index is None:
-            return False
-        to_index = drop_index(from_index, self.drop_place(x, y)[0])
-        return to_index is not None and self._move(from_index, to_index, at_once=True)
-
-    async def _focus_shelves(self):
-        """The first shelf's first focusable widget, once the list has laid out the row
-        scroll_to() brought into view (a frame or two)."""
-        for _attempt in range(3):
-            await next_frame(self.list_view)
-            if (self.shelves_box.get_mapped()
-                    and self.shelves_box.child_focus(Gtk.DirectionType.TAB_FORWARD)):
-                return
 
     def _on_unbind(self, _factory, list_item):
         self._bound.discard(list_item)
