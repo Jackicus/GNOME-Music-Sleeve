@@ -9,7 +9,7 @@
 #   with a Gtk.Template without `@requires_gtk` errors here, where check.sh's suite, whose
 #   widget tests have registered build/'s gresource by then, passes it (#543).
 #
-# The app needs GTK 4.22 and libadwaita 1.9, which the Ubuntu runner images do not ship, so
+# The app needs GTK 4.20 and libadwaita 1.9, which the Ubuntu runner images do not ship, so
 # the jobs run in an Arch Linux container, the distribution the app is developed on.
 name: CI
 
