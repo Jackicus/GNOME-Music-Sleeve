@@ -757,11 +757,11 @@ class DetailPageTest(PageTestCase):
             self.assertFalse(page.add_button.get_visible(), kind)
             self.assertFalse(page.in_library_box.get_visible(), kind)
 
-    def upcoming(self, out=(1,)):
+    def upcoming(self, out=(1,), date='2099-12-04'):
         """An invented pre-release catalog album of three songs, those at the places `out`
-        released already, the others not out yet (`unreleased`)."""
+        released already, the others not out yet (`unreleased`), out on `date`."""
         data = self.catalog(album(1, tracks=3))
-        data.update(prerelease=True, releaseDate='2026-12-04', trackCount=3,
+        data.update(prerelease=True, releaseDate=date, trackCount=3,
                     durationMs=540000)
         for number, entry in enumerate(data['groups'][0]['entries']):
             entry['id'] = entry['catalogId'] = f'17240499{number:02d}'
@@ -772,9 +772,9 @@ class DetailPageTest(PageTestCase):
     async def test_a_prerelease_album_says_when_and_plays_what_is_out(self):
         page = await self.push(self.page(self.upcoming()))
         self.assertEqual(caption(page),
-                         'Pop · Coming 4 December 2026 · 3 songs, 9 min')
+                         'Pop · Coming 4 December 2099 · 3 songs, 9 min')
         self.assertEqual(page.footer_label.get_label().split('\n'),
-                         ['Coming 4 December 2026', '3 songs, 9 minutes'])
+                         ['Coming 4 December 2099', '3 songs, 9 minutes'])
         # Pre-Add, as Apple Music words it.
         self.assertTrue(page.add_button.get_visible())
         self.assertEqual(page.add_content.get_label(), 'Pre-Add')
@@ -799,6 +799,22 @@ class DetailPageTest(PageTestCase):
             page._on_activate(page.list_view, 2)
         self.assertEqual(self.window.played[2:], [(songs, 0, None)])
         self.assertEqual(self.window.started_with[2:], ['1724049901'])
+
+    async def test_a_prerelease_album_out_since_its_sync_plays(self):
+        # #606: its date was yesterday and no sync has said it is out: no "Coming", nothing
+        # dimmed, Add as any album's, and Play plays the album.
+        from gi.repository import GLib
+        yesterday = GLib.DateTime.new_now_local().add_days(-1).format('%Y-%m-%d')
+        page = await self.push(self.page(self.upcoming(out=(), date=yesterday)))
+        self.assertNotIn('Coming', caption(page))
+        self.assertNotIn('Coming', page.footer_label.get_label())
+        self.assertEqual(page.add_content.get_label(), 'Add')
+        self.assertTrue(await self.until(lambda: len(page._bound) == 3))
+        row = self.bound_row(page, '1724049900')
+        self.assertFalse(row.get_child().track_row.has_css_class('dimmed'))
+        self.assertTrue(page.play_button.get_sensitive())
+        page.play_button.emit('clicked')
+        self.assertEqual(self.window.played, [(page.item.play, None, False)])
 
     async def test_nothing_out_yet_plays_nothing(self):
         page = await self.push(self.page(self.upcoming(out=())))

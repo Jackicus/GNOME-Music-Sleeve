@@ -170,6 +170,25 @@ def _number(value):
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+_RELEASE_DAY = re.compile(r'\d{4}(-\d{2}-\d{2})?')
+
+
+def release_passed(date, today=None):
+    """Whether a release date (Apple's releaseDate: '2026-12-04', or a year alone) has come:
+    it is `today` or before, a year alone once its year is over. `today` is a 'YYYY-MM-DD'
+    (the local date when None: Apple releases at midnight, local time). False for anything
+    that is not such a date, so an album with none stays to come until Apple says it is out.
+    """
+    if not isinstance(date, str):
+        return False
+    date = date.strip()
+    if not _RELEASE_DAY.fullmatch(date):
+        return False
+    if today is None:
+        today = GLib.DateTime.new_now_local().format('%Y-%m-%d')
+    return date <= today if len(date) == 10 else date < today[:4]
+
+
 def _reader(type, default=None):
     """The function turning a raw value into a raw_property's value, as its getter does."""
     if type is bool:
@@ -428,7 +447,13 @@ class Track(GObject.Object):
     explicit = raw_property('explicit', bool, False)
     index = raw_property('index', int, 0)
     # A track of a pre-release album that is not out yet (`unreleased`): shown, not played.
-    unreleased = raw_property('unreleased', bool, False)
+    # It is out once its album's release date (`_release`, its Group's) has come, before a
+    # sync says so (release_passed()).
+    unreleased = GObject.Property(
+        type=bool, default=False, flags=GObject.ParamFlags.READABLE,
+        getter=lambda self: (bool(self.raw.get('unreleased'))
+                             and not release_passed(self._release)))
+    _release = None  # the release date of its album when that is to come (Group's `release`)
     # Its genre (the first of Apple's genreNames) and its release's year: the tables' Genre
     # and Year columns. '' and 0 for a library.json from before version 5.
     genre = raw_property('genre', str, '')
@@ -527,6 +552,8 @@ class SongEntry:
                         return track
         self._track = Track(self.raw, play, thumb)
         self._track._search_key = self._search_key
+        if item is not None and item.raw.get('prerelease'):
+            self._track._release = item.raw.get('releaseDate')
         return self._track
 
     def __repr__(self):
@@ -853,14 +880,17 @@ class Group(GObject.Object):
 
     name = model_property('name', str, '')
 
-    def __init__(self, data, thumb=None):
+    def __init__(self, data, thumb=None, release=None):
         super().__init__()
         self._name = _text(data.get('name')) or ''
         self.raw = data
         self.play = data.get('play') or {}
         self.entries = Gio.ListStore(item_type=Track)
-        self.entries.splice(0, 0, [Track(entry, self.play, thumb)
-                                   for entry in _entries(data.get('entries'))])
+        tracks = [Track(entry, self.play, thumb) for entry in _entries(data.get('entries'))]
+        if release:  # a pre-release album's: its tracks not out yet are out on that day
+            for track in tracks:
+                track._release = release
+        self.entries.splice(0, 0, tracks)
 
 
 class Item(GObject.Object):
@@ -912,8 +942,13 @@ class Item(GObject.Object):
     explicit = raw_property('explicit', bool, False, writable=True)
     catalog_id = raw_property('catalogId', str, writable=True)
     url = raw_property('url', str, writable=True)
-    # An album not out yet (Apple's isPrerelease, `prerelease`), out on its `releaseDate`.
-    prerelease = raw_property('prerelease', bool, False, writable=True)
+    # An album not out yet (Apple's isPrerelease, `prerelease`), out on its `releaseDate`:
+    # once that day has come it reads as out (release_passed()), before a sync says so.
+    prerelease = GObject.Property(
+        type=bool, default=False,
+        getter=lambda self: (bool(self.raw.get('prerelease'))
+                             and not release_passed(self.raw.get('releaseDate'))),
+        setter=lambda self, value: self.raw.__setitem__('prerelease', value))
     # Whether the account has it as a favourite: set by the Library from library.json's
     # `favourites` and as the app favourites it (Library.set_favourite), notified as it
     # changes.
@@ -1013,7 +1048,9 @@ class Item(GObject.Object):
             # An album's tracks draw the album's cover; an artist's groups are albums, whose
             # covers the artist Item does not have.
             thumb = self.thumb if self.kind == 'album' else None
-            self._groups = [Group(group, thumb) for group in _dicts(self.raw.get('groups'))]
+            release = self.raw.get('releaseDate') if self.raw.get('prerelease') else None
+            self._groups = [Group(group, thumb, release)
+                            for group in _dicts(self.raw.get('groups'))]
         return self._groups
 
     # The properties an `item` answer refreshes: the name, the raw key it reads, and how its

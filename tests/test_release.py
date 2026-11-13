@@ -173,7 +173,7 @@ def upcoming(out=(1, 3), count=4, **extra):
         entries.append(entry)
     data = {'id': '1724049300', 'kind': 'album', 'title': 'Invented Album To Come',
             'subtitle': 'Invented Artist', 'genre': 'Pop', 'year': 2026, 'trackCount': count,
-            'durationMs': count * 180000, 'prerelease': True, 'releaseDate': '2026-12-04',
+            'durationMs': count * 180000, 'prerelease': True, 'releaseDate': '2099-12-04',
             'play': play, 'groups': [{'name': '', 'play': play, 'entries': entries}]}
     data.update(extra)
     return Item(data)
@@ -189,28 +189,28 @@ class PrereleaseTest(unittest.TestCase):
         self.assertFalse(is_prerelease(None))
 
     def test_the_caption_and_the_footer_say_when_it_comes(self):
-        self.assertEqual(coming_text('4 December 2026'), 'Coming 4 December 2026')
+        self.assertEqual(coming_text('4 December 2099'), 'Coming 4 December 2099')
         self.assertEqual(coming_text(''), 'Coming Soon')
         self.assertEqual(hero_caption(upcoming()),
-                         'Pop · Coming 4 December 2026 · 4 songs, 12 min')
+                         'Pop · Coming 4 December 2099 · 4 songs, 12 min')
         self.assertEqual(hero_caption(upcoming(releaseDate=None)),
                          'Pop · Coming Soon · 4 songs, 12 min')
         # As the page shows it: a narrow page wraps it between its parts only.
         self.assertEqual(unbroken(hero_caption(upcoming())),
-                         'Pop · Coming\u00a04\u00a0December\u00a02026 · 4\u00a0songs,'
+                         'Pop · Coming\u00a04\u00a0December\u00a02099 · 4\u00a0songs,'
                          '\u00a012\u00a0min')
         self.assertEqual(unbroken(''), '')
         self.assertEqual(footer_lines(upcoming(), None, 4, 720000),
-                         ['Coming 4 December 2026', '4 songs, 12 minutes'])
+                         ['Coming 4 December 2099', '4 songs, 12 minutes'])
         # The catalog's answer's date over the Item's; a date always, a year alone too.
-        answer = {'release': {'releaseDate': '2026-12-11', 'recordLabel': 'Invented Records'}}
+        answer = {'release': {'releaseDate': '2099-12-11', 'recordLabel': 'Invented Records'}}
         self.assertEqual(footer_lines(upcoming(), answer, 4, 720000),
-                         ['Coming 11 December 2026', '4 songs, 12 minutes', 'Invented Records'])
+                         ['Coming 11 December 2099', '4 songs, 12 minutes', 'Invented Records'])
         self.assertEqual(footer_lines(upcoming(releaseDate=None), None, 4, 0),
                          ['Coming Soon', '4 songs'])
         # Out now (an answer without the flag): the date as any album's.
-        self.assertEqual(footer_lines(album(releaseDate='2026-12-04'), None, 0, 0),
-                         ['4 December 2026'])
+        self.assertEqual(footer_lines(album(releaseDate='2099-12-04'), None, 0, 0),
+                         ['4 December 2099'])
 
     def test_play_plays_the_released_songs_by_id(self):
         record = upcoming()
@@ -224,6 +224,27 @@ class PrereleaseTest(unittest.TestCase):
         self.assertIsNone(released_play(record, tracks[0]))
         self.assertTrue(tracks[0].unreleased)
         self.assertFalse(tracks[1].unreleased)
+
+    def test_out_on_its_date_without_a_sync(self):
+        # #606: the album's release date has come since the sync that wrote it (today, or
+        # yesterday): it reads as out, says its year, and Play plays the whole album.
+        now = GLib.DateTime.new_now_local()
+        for day in (now, now.add_days(-1)):
+            with self.subTest(date=day.format('%F')):
+                record = upcoming(releaseDate=day.format('%Y-%m-%d'))
+                self.assertFalse(is_prerelease(record))
+                self.assertEqual(hero_caption(record), 'Pop · 2026 · 4 songs, 12 min')
+                self.assertNotIn('Coming', ' '.join(footer_lines(record, None, 4, 720000)))
+                tracks = list(record.groups[0].entries)
+                self.assertFalse(any(track.unreleased for track in tracks))
+                self.assertEqual(released_play(record), (record.play, None, None))
+                self.assertEqual(released_play(record, tracks[0]),
+                                 (record.play, 0, '1724049300'))
+        # Tomorrow it is still to come.
+        record = upcoming(releaseDate=now.add_days(1).format('%Y-%m-%d'))
+        self.assertTrue(is_prerelease(record))
+        self.assertTrue(record.groups[0].entries.get_item(0).unreleased)
+        self.assertIn('Coming', hero_caption(record))
 
     def test_none_out_plays_nothing(self):
         record = upcoming(out=())
