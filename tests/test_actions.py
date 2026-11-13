@@ -939,6 +939,23 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
         await self.settle()
         self.assertEqual(self.app.toasts[-1], '2 items will play next')
 
+    async def test_a_song_not_out_yet_left_out_is_not_a_limit(self):
+        # Three selected, all taken, one a pre-release album's song not out yet, which
+        # cannot be queued: two go, and the toast says so, not "the first 2 of 3".
+        coming = Track({'id': '1000000012', 'catalogId': '1000000012', 'title': 'Soon',
+                        'unreleased': True, 'index': 1},
+                       play={'kind': 'album', 'id': '1000000002'})
+        coming._release = '2099-12-04'
+        self.actions.queue_objects([LIBRARY_TRACK, coming, CATALOG_TRACK], total=3)
+        await self.settle()
+        self.assertEqual(self.calls('play_next'),
+                         [('play_next', 'songs', '1000000001,1000000009')])
+        self.assertEqual(self.app.toasts[-1], '2 items will play next')
+        # Over the limit, the toast still says of how many.
+        self.actions.queue_objects([LIBRARY_TRACK, coming, CATALOG_TRACK], total=900)
+        await self.settle()
+        self.assertEqual(self.app.toasts[-1], 'The first 2 of 900 items will play next')
+
     async def test_tracks_of_many_songs_lets_frames_in(self):
         yielded = []
 

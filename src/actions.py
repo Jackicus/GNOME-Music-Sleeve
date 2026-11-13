@@ -882,14 +882,17 @@ class ItemActions(PlaylistActions):
         """Play Next (or, `later`, Play Later) of several songs and music videos, a
         selection's in the order shown (its first PLAY_LIMIT of `total` selected): their
         queue targets as queue_commands() (a run of songs one command), one toast that
-        counts them, and says when they are the first of more. The task, or None when none
-        can be queued."""
+        counts them, and says when they are the first of more: only when `total` is more
+        than `objects` (a song left out as it cannot be queued, one not out yet, is not a
+        limit reached). The task, or None when none can be queued."""
         targets = [target for target in map(queue_target, objects) if target is not None]
         if not targets:
             self.app.toast(_('This cannot be queued'))
             return None
         commands = queue_commands(targets)
         title = objects[0].title if len(objects) == 1 else ''
+        if total is not None and total <= len(objects):
+            total = None  # every one selected was taken
         message = queue_message(title, later, queued_count(commands), total)
         return self._run(self._send_queue, (commands, later), message, ensure=False)
 
