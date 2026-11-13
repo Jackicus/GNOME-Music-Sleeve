@@ -622,7 +622,8 @@ def watch(name, calls):
 
 async def moving_songs(window):
     """Step 12: Alt+Down and Alt+Up on a playlist's focused song, announced, the focus
-    staying on it; Move Up and Move Down in its menu."""
+    staying on it, and Alt+End and Alt+Home to the bottom and the top; Move to Top, Move Up,
+    Move Down and Move to Bottom in its menu."""
     playlist = first_playlist()
     window.select_page(f'playlist:{playlist.id}')
     await asyncio.sleep(0.8)
@@ -653,13 +654,28 @@ async def moving_songs(window):
     found = context_menu.find(page.list_view, window.get_focus())
     check('Alt+Up moves it back up', song.index == 1 and found is not None and found[1] is song,
           (song.index, describe(window.get_focus())))
+    count = len(page.item.track_ids())
+    await key(window, '<alt>End', 0.4)
+    found = context_menu.find(page.list_view, window.get_focus())
+    check('Alt+End moves it to the bottom, the focus with it, said',
+          song.index == count - 1 and found is not None and found[1] is song
+          and said[-1:] == [f'“{song.title}” moved to position {count} of {count}'],
+          (song.index, describe(window.get_focus()), said[-1:]))
+    await key(window, '<alt>Home', 0.4)
+    found = context_menu.find(page.list_view, window.get_focus())
+    check('Alt+Home moves it to the top, the focus with it, said',
+          song.index == 0 and found is not None and found[1] is song
+          and said[-1:] == [f'“{song.title}” moved to position 1 of {count}'],
+          (song.index, describe(window.get_focus()), said[-1:]))
+    await key(window, '<alt>Down', 0.4)  # back to its place
     del window.announce
     await key(window, 'Menu', 0.6)
     shown = [each for each in harness.popovers(page.list_view)
              if isinstance(each, Gtk.PopoverMenu)]
     labels = menu_labels(shown[0].get_menu_model()) if shown else []
-    check('Menu on it lists Move Up and Move Down', '_Move Up' in labels
-          and 'Move _Down' in labels, labels)
+    check('Menu on it lists Move to Top, Move Up, Move Down and Move to Bottom',
+          song.index == 1 and {'Move to T_op', '_Move Up', 'Move _Down',
+                               'Mov_e to Bottom'} <= set(labels), labels)
     await key(window, 'Escape', 0.4)
     check('Escape closes it', not any(each.get_visible() for each in shown))
 
@@ -721,9 +737,9 @@ async def view_credits(window, detail):
     shown = [each for each in harness.popovers(detail.list_view)
              if isinstance(each, Gtk.PopoverMenu) and each.get_visible()]
     labels = menu_labels(shown[0].get_menu_model()) if shown else []
-    check('Menu on a track lists View Credits', 'Vi_ew Credits' in labels, labels)
+    check('Menu on a track lists View Credits', 'View _Credits' in labels, labels)
     if keyboard is not None:
-        await key(window, 'e', 1.0)  # its mnemonic
+        await key(window, 'c', 1.0)  # its mnemonic
     else:
         for each in shown:
             each.popdown()
@@ -732,7 +748,7 @@ async def view_credits(window, detail):
     await until(lambda: dialog_shown(window, CreditsDialog) is not None
                 and dialog_shown(window, CreditsDialog).status == 'credits')
     dialog = dialog_shown(window, CreditsDialog)
-    check('E opens the credits', dialog is not None and dialog.status == 'credits',
+    check('C opens the credits', dialog is not None and dialog.status == 'credits',
           dialog.status if dialog is not None else None)
     if dialog is None:
         return
@@ -2460,18 +2476,22 @@ async def up_next_remove(window, queue_view):
 
 
 async def up_next_move(window, queue_view):
-    """Up Next's moves: the next entry's menu offers Move Down (not Move Up: it is the first
-    after the one playing), Alt+Down moves it one place with the focus on it and says where
-    it went, Alt+Up moves it back, Alt+Up again moves nothing, nor does Alt+Down on the entry
-    playing (the Player's own move_in_queue(), MusicKit's answer stood in for: the demo has
-    no engine). Starts and leaves the focus on the first row."""
+    """Up Next's moves: the next entry's menu offers Move Down and Move to Bottom (not Move
+    Up, Move to Top or Play Next: it is the first after the one playing), Alt+Down moves it
+    one place with the focus on it and says where it went, Alt+Up moves it back, Alt+Up again
+    moves nothing; Alt+End moves it to its section's bottom, and Play Next in its menu then
+    back to just after the one playing; Alt+Down on the entry playing moves nothing (the
+    Player's own move_in_queue(), MusicKit's answer stood in for: the demo has no engine).
+    Starts and leaves the focus on the first row."""
     player, engine = app.player, app.engine
     await key(window, 'Down')
     await key(window, 'Menu', 0.6)
     shown = harness.popovers(queue_view)
     labels = menu_labels(shown[0].get_menu_model()) if shown else []
-    check("the next entry's menu offers Move Down, not Move Up",
-          'Move _Down' in labels and '_Move Up' not in labels, labels)
+    check("the next entry's menu offers Move Down and Move to Bottom, not Move Up, Move to "
+          "Top or Play Next",
+          {'Move _Down', 'Mov_e to Bottom'} <= set(labels)
+          and not {'_Move Up', 'Move to T_op', 'Play _Next'} & set(labels), labels)
     await key(window, 'Escape', 0.4)
     moves = []
 
@@ -2500,9 +2520,33 @@ async def up_next_move(window, queue_view):
     await key(window, '<alt>Up', 0.4)
     check('Alt+Up on the first entry after the one playing moves nothing', len(moves) == 2,
           moves)
+    bounds = player.move_range(player.queue_index + 1)
+    bottom = bounds[1] if bounds is not None else -1
+    await key(window, '<alt>End', 0.3)
+    await until(lambda: entry is not None and entry.index == bottom
+                and focused_entry(queue_view) is entry)
+    check("Alt+End moves it to its section's bottom, the focus with it, said",
+          entry is not None and entry.index == bottom > player.queue_index + 2
+          and focused_entry(queue_view) is entry and said[-1:] == [
+              f'“{title}” moved to position {bottom - player.queue_index} of {count} '
+              'in Up Next'], (moves, describe(window.get_focus()), said[-1:]))
+    await key(window, 'Menu', 0.6)
+    shown = harness.popovers(queue_view)
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check('its menu offers Play Next and Move to Top, not Move to Bottom',
+          {'Play _Next', 'Move to T_op', '_Move Up'} <= set(labels)
+          and 'Mov_e to Bottom' not in labels, labels)
+    await key(window, 'n', 0.3)  # Play Next's mnemonic
+    await until(lambda: entry is not None and entry.index == player.queue_index + 1
+                and focused_entry(queue_view) is entry)
+    check('Play Next moves it to just after the one playing, the focus with it, said',
+          entry is not None and entry.index == player.queue_index + 1
+          and focused_entry(queue_view) is entry and len(moves) == 4 and said[-1:] == [
+              f'“{title}” moved to position 1 of {count} in Up Next'],
+          (moves, describe(window.get_focus()), said[-1:]))
     await key(window, 'Up')
     await key(window, '<alt>Down', 0.4)
-    check('Alt+Down on the entry playing moves nothing', len(moves) == 2, moves)
+    check('Alt+Down on the entry playing moves nothing', len(moves) == 4, moves)
     del window.announce
     del engine.queue_move
 

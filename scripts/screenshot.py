@@ -14,7 +14,7 @@
                           [--autoplay] [--history] [--album N] [--live]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
                            [--see-all KEY]] [--filter TEXT]
-                          [--context-menu [KIND] [--submenu NAME]]
+                          [--context-menu [KIND] [--submenu NAME] [--menu-of N]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
                                     remove-from-library|credits|add-songs] [--song N]
@@ -118,7 +118,9 @@ that kind, such as category), as a right click on it would, and
 draws the popover into the shot where the compositor put it. --submenu NAME
 shows its submenu labelled NAME (a GtkPopoverMenu names each submenu by its
 label, mnemonic underscore and all: "Add to Pla_ylist" or "Mov_e to Folder",
-the only two) rather than its top level.
+the only two) rather than its top level. --menu-of N pops up the Nth such widget's
+menu instead of the first's (0 the first: a playlist's second song is 1), and with
+--now-playing queue the menu of the Up Next entry N places after the one playing.
 --preferences opens the Preferences dialog (app.preferences) on its General page, or
 on Engine, and shoots it: inside the window when libadwaita put it there, else its
 own window (a fixed-size window that is neither maximized nor tiled gets one), at
@@ -245,6 +247,9 @@ parser.add_argument('--context-menu', metavar='KIND', nargs='?', const=True,
                     help="pop up the context menu of the page's first tile or row (of KIND)")
 parser.add_argument('--submenu', metavar='NAME',
                     help='with --context-menu, show the submenu labelled NAME')
+parser.add_argument('--menu-of', metavar='N', type=int,
+                    help="with --context-menu, the Nth tile's or row's menu (0: the first); "
+                         'with --now-playing queue, the Up Next entry N after the one playing')
 parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
                     choices=['general', 'engine'],
                     help='open Preferences on PAGE and shoot the dialog')
@@ -599,19 +604,34 @@ def invented_link(kind, item_id):
     return link_item({'title': page.get('title') or item_id, 'kind': kind, 'id': item_id})
 
 
-def first_context_widget(widget, kind=None):
+def first_context_widget(widget, kind=None, skip=0):
     """The first mapped widget under `widget` with a context_item (of `kind`, when given),
-    depth first."""
+    depth first, after `skip` others."""
+    found = context_widgets(widget, kind, skip + 1)
+    return found[skip] if len(found) > skip else None
+
+
+def context_widgets(widget, kind, count):
+    """Up to `count` mapped widgets under `widget` with a context_item (of `kind`), in
+    order, depth first."""
     item = getattr(widget, 'context_item', None)
     if item is not None and widget.get_mapped() and kind in (None, getattr(item, 'kind', None)):
-        return widget
+        return [widget]
+    found = []
     child = widget.get_first_child()
-    while child is not None:
+    while child is not None and len(found) < count:
         if child.get_mapped():
-            found = first_context_widget(child, kind)
-            if found is not None:
-                return found
+            found += context_widgets(child, kind, count - len(found))
         child = child.get_next_sibling()
+    return found
+
+
+def queue_row(window, after):
+    """The Up Next row of the entry `after` places after the one playing, or None."""
+    for row in window.now_playing.queue_view._rows:
+        if (not row.history and row.list_item is not None and row.entry is not None
+                and row.list_item.get_position() == after):
+            return row
     return None
 
 
@@ -620,7 +640,11 @@ def open_context_menu(window):
     from applemusic.widgets import context_menu
 
     kind = args.context_menu if isinstance(args.context_menu, str) else None
-    widget = first_context_widget(window.navigation_view.get_visible_page(), kind)
+    if args.now_playing == 'queue':
+        widget = queue_row(window, args.menu_of if args.menu_of is not None else 1)
+    else:
+        widget = first_context_widget(window.navigation_view.get_visible_page(), kind,
+                                      args.menu_of or 0)
     if widget is None:
         sys.exit('screenshot: nothing on the page has a context menu')
     x, y = widget.get_width() * 0.6, widget.get_height() * 0.35
@@ -984,7 +1008,8 @@ def _shoot():
         filter_page(window)
         GLib.timeout_add(1200, shoot)  # filtered, laid out, the artwork decoded
         return GLib.SOURCE_REMOVE
-    if args.context_menu and not menu_opened:
+    if args.context_menu and not menu_opened and (not args.scroll or scrolled):
+        # After --scroll, when given: a row scrolled into view (a narrow window's songs).
         menu_opened = True
         open_context_menu(window)
         GLib.timeout_add(800, shoot)  # the popover shown and placed

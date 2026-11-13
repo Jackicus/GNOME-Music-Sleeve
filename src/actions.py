@@ -82,9 +82,10 @@ named in a dialog and made beside it (Move to Folder's New Folder…); item-remo
 "(is)" (the queue index, the entry's id): an Up Next entry after the one playing taken out
 of the queue (Player.remove_from_queue); item-move-in-queue, "(iis)" (the queue index, the
 index to move it to, the entry's id): an Up Next entry moved within its section
-(Player.move_in_queue: Move Up, Move Down, Alt+Up, Alt+Down, a drop), announced to assistive
-technology; item-move-in-playlist, "(ssii)" (playlist id, track
-id, the track's index, -1 or 1): Move Up or Move Down, one place in a playlist of the user's
+(Player.move_in_queue: Move Up, Move Down, Move to Top, Move to Bottom, an Up Next entry's
+Play Next, their keys, a drop), announced to assistive technology; item-move-in-playlist,
+"(ssii)" (playlist id, track id, the track's index, the index to move it to): Move Up, Move
+Down, Move to Top or Move to Bottom in a playlist of the user's
 (playlist_order.PlaylistOrder: shown at once, written after a pause, so a burst is one
 write); item-undo-reorder, "s" (playlist id), the toast's Undo of a new order;
 item-undo-remove, "s" (playlist id), the toast's Undo of a selection's Remove from Playlist
@@ -116,7 +117,9 @@ once, ahead of Apple's listing) and a quick sync reads it back.
 The menus are built in code, per kind (build_menu): Play, Play Next, Play Later (none for a
 pre-release album's track not out yet: Track.unreleased), Create
 Station (a song's or an artist's whose catalog id is known: station_target), and for an Up
-Next entry Move Up, Move Down (where it can go in its section) and Remove from Up Next; Go to
+Next entry Move to Top, Move Up, Move Down, Move to Bottom (where it can go in its section)
+and Remove from Up Next, its Play Next moving it to just after the entry playing where its
+section begins there (queue_play_next()); Go to
 Album, Go to Artist (not where the page shown is that album or artist already), View Credits
 (a song's whose catalog id is known: credits_target); Favourite or Remove from Favourites,
 then Suggest Less or Undo Suggest Less (all four, of which the menu shows those whose actions
@@ -130,18 +133,17 @@ library's playlists that take songs, each folder a submenu, or a section headed 
 name where a submenu's page would not be its own: playlist_submenu(); a playlist not
 offered to itself, then New Playlist…), Move to Folder (a playlist's or folder's: Top
 Level, the folders it can go into in one list, then New Folder…: move_targets()), Remove from
-Playlist and, where it can go, Move Up and Move Down (a track shown in a playlist of the
-user's: `container`); Open in Browser, Copy Link (only an address anyone can open: not
-the web player's library routes; a library artist's is the catalog artist's page, which
-the engine finds through their songs); Add Songs… (a playlist of the user's: adds_to()),
-Duplicate (a library playlist: duplicates()), Edit Details… and Delete Playlist… (a
-playlist of the user's, Item.editable) or Rename… and Delete Folder… (a folder of theirs),
-Remove from Library… (what the library holds: removal_target; a playlist of Apple's, which
-cannot be deleted as the user's own are; a catalog album or playlist held, as the library's
-own it was found as, Library.held_item()); a folder's menu starts with New Playlist… and New
-Folder… (in it); each only where it applies. A category (an Apple curator: a genre's page, a
-radio show) has Open in Browser and Copy Link alone (curator_menu): Apple gives a curator
-nothing to play or favourite.
+Playlist and, where it can go, Move to Top, Move Up, Move Down and Move to Bottom (a track shown
+in a playlist of the user's: `container`); Open in Browser, Copy Link (only an address anyone
+can open: not the web player's library routes; a library artist's is the catalog artist's page,
+which the engine finds through their songs); Add Songs… (a playlist of the user's: adds_to()),
+Duplicate (a library playlist: duplicates()), Edit Details… and Delete Playlist… (a playlist of
+the user's, Item.editable) or Rename… and Delete Folder… (a folder of theirs), Remove from
+Library… (what the library holds: removal_target; a playlist of Apple's, which cannot be deleted
+as the user's own are; a catalog album or playlist held, as the library's own it was found as,
+Library.held_item()); a folder's menu starts with New Playlist… and New Folder… (in it); each
+only where it applies. A category (an Apple curator: a genre's page, a radio show) has Open in
+Browser and Copy Link alone (curator_menu): Apple gives a curator nothing to play or favourite.
 
 Remove from Library takes the item out of the library's models at once (Library.hide), then
 asks Apple; a refusal puts it back and is reported. Apple takes a song out of every playlist
@@ -179,7 +181,7 @@ from urllib.parse import urlsplit
 
 from gi.repository import Gio, GLib, Gtk
 
-from . import related
+from . import keyboard, related
 from .backend import api
 from .backend.errors import EngineError
 from .backend.api import is_library_id
@@ -259,8 +261,8 @@ def action_labels():
         'item-add-to-playlist': _('Add to Pla_ylist'),
         'item-go-to-album': _('_Go to Album'),
         'item-go-to-artist': _('Go to Ar_tist'),
-        'item-open-in-browser': _('_Open in Browser'),
-        'item-copy-link': _('_Copy Link'),
+        'item-open-in-browser': _('Open in Bro_wser'),
+        'item-copy-link': _('Copy Lin_k'),
         'item-remove-from-playlist': _('Remo_ve from Playlist'),
         'item-remove-from-queue': _('Remove from Up Ne_xt'),
         'item-new-playlist': _('Ne_w Playlist…'),
@@ -272,7 +274,9 @@ def action_labels():
         'item-create-station': _('Create Stat_ion'),
         'item-move-up': _('_Move Up'),
         'item-move-down': _('Move _Down'),
-        'item-view-credits': _('Vi_ew Credits'),
+        'item-move-to-top': _('Move to T_op'),
+        'item-move-to-bottom': _('Mov_e to Bottom'),
+        'item-view-credits': _('View _Credits'),
         'item-duplicate': _('Dupl_icate'),
         'item-add-songs': _('Add Son_gs…'),
     }
@@ -811,43 +815,78 @@ def entry_target(container, obj):
     return GLib.Variant('(ssi)', (container.id, obj.id, obj.index))
 
 
+# The moves a song's or an Up Next entry's menu offers, in its order: the step (as
+# keyboard.move_step() names it) and the action whose label it has.
+MOVES = ((keyboard.TOP, 'item-move-to-top'), (-1, 'item-move-up'), (1, 'item-move-down'),
+         (keyboard.BOTTOM, 'item-move-to-bottom'))
+
+
+def move_places(index, first, last):
+    """{step: the index it moves to} for the song or entry at `index` in a list from `first`
+    to `last` (keyboard.move_place()): each of MOVES' steps that moves it somewhere. Move to
+    Top and Move to Bottom are offered also where Move Up or Move Down goes to the same
+    place, so the menu's items stay where they are from one song to the next."""
+    places = {}
+    for step, _action in MOVES:
+        to_index = keyboard.move_place(step, index, first, last)
+        if to_index is not None:
+            places[step] = to_index
+    return places
+
+
 def move_items(container, obj):
-    """Move Up and Move Down for the Track obj shown in the playlist Item `container`, where
-    its songs can be reordered (PlaylistOrder.can_reorder()): each only where the track can
-    go, not up from the first or down from the last. Their targets are
-    item-move-in-playlist's (playlist id, track id, its index, -1 or 1)."""
+    """Move to Top, Move Up, Move Down and Move to Bottom for the Track obj shown in the
+    playlist Item `container`, where its songs can be reordered
+    (PlaylistOrder.can_reorder()): each only where the track can go, not up from the first
+    or down from the last. Their targets are item-move-in-playlist's (playlist id, track id,
+    its index, the index to move it to)."""
     if not isinstance(obj, Track) or not obj.id or not PlaylistOrder.can_reorder(container):
         return []
     ids = container.track_ids()
     index = obj.index
     if not 0 <= index < len(ids) or ids[index] != obj.id:
         return []
+    places = move_places(index, 0, len(ids) - 1)
     items = []
-    for step, action in ((-1, 'item-move-up'), (1, 'item-move-down')):
-        if 0 <= index + step < len(ids):
+    for step, action in MOVES:
+        if step in places:
             item = Gio.MenuItem.new(action_labels()[action], None)
             item.set_action_and_target_value(
                 'win.item-move-in-playlist',
-                GLib.Variant('(ssii)', (container.id, obj.id, index, step)))
+                GLib.Variant('(ssii)', (container.id, obj.id, index, places[step])))
             items.append(item)
     return items
 
 
-def queue_move_items(queue_entry, steps):
-    """Move Up and Move Down for the Up Next entry `queue_entry` ((index, id)), each where
-    it is one of `steps` (-1, 1: the entry's context_queue_moves). Their targets are
-    item-move-in-queue's (index, the index to move it to, id)."""
+def queue_move_items(queue_entry, moves):
+    """Move to Top, Move Up, Move Down and Move to Bottom for the Up Next entry
+    `queue_entry` ((index, id)), each where `moves` (the entry's context_queue_moves: {step:
+    the index it moves to}) has its step. Their targets are item-move-in-queue's (index, the
+    index to move it to, id)."""
     if queue_entry is None:
         return []
     index, entry_id = int(queue_entry[0]), str(queue_entry[1])
     items = []
-    for step, action in ((-1, 'item-move-up'), (1, 'item-move-down')):
-        if step in steps:
+    for step, action in MOVES:
+        if step in moves:
             item = Gio.MenuItem.new(action_labels()[action], None)
             item.set_action_and_target_value(
-                'win.item-move-in-queue', GLib.Variant('(iis)', (index, index + step, entry_id)))
+                'win.item-move-in-queue',
+                GLib.Variant('(iis)', (index, int(moves[step]), entry_id)))
             items.append(item)
     return items
+
+
+def queue_play_next(queue_entry, moves):
+    """What Play Next is on the Up Next entry `queue_entry` ((index, id)), by its `moves`
+    (context_queue_moves): 'move' when it moves the entry to just after the one playing
+    (moves' 'next', item-move-in-queue's target), None when the entry plays next already
+    (moves' 'next' is None: no Play Next), or 'queue' when it queues the song again after
+    the one playing, as on any other song (no queue entry, or an Autoplay entry behind the
+    songs the user queued, which MusicKit's queue cannot move out of its section)."""
+    if queue_entry is None or 'next' not in moves:
+        return 'queue'
+    return None if moves['next'] is None else 'move'
 
 
 def adds_to(obj):
@@ -1217,7 +1256,7 @@ def main_menu_section():
 
 def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, container=None,
                moves=None, removable=None, queue_entry=None, reorder=True, held=False,
-               queue_moves=()):
+               queue_moves=None):
     """The menu for obj (an Item or a Track), or None when nothing applies; a category's is
     curator_menu(). It is the one menu of an item wherever it shows: a tile's or row's, a
     page's More Options, a sidebar row's (a folder's, All Playlists' too: New Playlist… and
@@ -1230,13 +1269,16 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     or folder can be moved (move_targets(): Move to Folder; None, not at all); `removable`,
     obj's removal_target (Remove from Library…, and no Add to Library); `queue_entry`,
     (index, id) of the queue's entry obj is when it may be taken out of Up Next (Remove from
-    Up Next) and `queue_moves` the steps it can take there (-1: Move Up, 1: Move Down, as
-    item-move-in-queue moves it); `reorder` false leaves out a playlist's Move Up and Move
-    Down (the playlist's page shows a
+    Up Next) and `queue_moves` where it can go there ({step: the index it moves to}, step
+    'top', -1, 1, 'bottom' for Move to Top, Move Up, Move Down, Move to Bottom, and 'next'
+    for Play Next, None when it plays next already: queue_play_next()), as
+    item-move-in-queue moves it; `reorder` false leaves out a playlist's moves (the
+    playlist's page shows a
     filter of its songs); `held`, the library holds obj, a catalog album or playlist
     (Library.holds(), as its page's In Library says: no Add to Library)."""
     if is_curator(obj):
         return curator_menu(obj, storefront)
+    queue_moves = queue_moves or {}
     named = describe(obj)
     if named is None or (isinstance(obj, Item) and obj.kind not in MENU_KINDS):
         return None
@@ -1249,7 +1291,16 @@ def build_menu(obj, playlists=(), storefront=None, here=None, queued=False, cont
     if can_play(obj) and not queued:
         play.append_item(menu_item('item-play', target))
     if queue_target(obj) is not None:
-        play.append_item(menu_item('item-play-next', target))
+        play_next = queue_play_next(queue_entry, queue_moves)
+        if play_next == 'move':
+            item = Gio.MenuItem.new(action_labels()['item-play-next'], None)
+            item.set_action_and_target_value(
+                'win.item-move-in-queue',
+                GLib.Variant('(iis)', (int(queue_entry[0]), int(queue_moves['next']),
+                                       str(queue_entry[1]))))
+            play.append_item(item)
+        elif play_next == 'queue':
+            play.append_item(menu_item('item-play-next', target))
         play.append_item(menu_item('item-play-later', target))
     for item in station_items(obj):
         play.append_item(item)
@@ -1465,7 +1516,7 @@ class ItemActions:
 
     # -- menus -----------------------------------------------------------------------------
 
-    def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
+    def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=None):
         """The menu for obj (build_menu), obj remembered for its actions; None when nothing
         applies. `queued`: obj is in the player's queue (now_playing_track()); `queue_entry`
         its (index, id) there when Up Next may take it out (build_menu). The rating actions'
@@ -1505,9 +1556,9 @@ class ItemActions:
         return playlist if is_manageable(playlist) else None
 
     def _can_reorder(self, obj):
-        """Whether a menu offers Move Up and Move Down for the Track obj: not while the page
-        shown lists its playlist filtered (DetailPage.can_reorder()), where the order shown
-        is not the playlist's."""
+        """Whether a menu offers the moves (Move Up and the rest) for the Track obj: not while
+        the page shown lists its playlist filtered (DetailPage.can_reorder()), where the
+        order shown is not the playlist's."""
         view = getattr(self.window, 'navigation_view', None)
         page = view.get_visible_page() if view is not None else None
         container = self.container(obj)
@@ -1986,12 +2037,12 @@ class ItemActions:
         return True
 
     def _on_move_in_playlist(self, _action, parameter):
-        playlist_id, track_id, index, step = parameter.unpack()
+        playlist_id, track_id, index, to_index = parameter.unpack()
         playlist = self.library.by_id('playlist', playlist_id)
         ids = playlist.track_ids() if playlist is not None else None
         if not ids or not 0 <= index < len(ids) or ids[index] != track_id:
             return False  # the list changed since the menu was made
-        return self.move_in_playlist(playlist, index, index + step)
+        return self.move_in_playlist(playlist, index, to_index)
 
     def _on_undo_reorder(self, _action, parameter):
         return self.playlist_order.undo(parameter.get_string())

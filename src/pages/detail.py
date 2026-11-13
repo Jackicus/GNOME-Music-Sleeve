@@ -48,8 +48,9 @@ category page, a third party's page on music.apple.com in the browser).
 On a playlist of the user's (PlaylistOrder.can_reorder(): not Favourite Songs, nor one of
 Apple's) a song moves within the list: dragged (the row's own drag, widgets/dnd.py, dropped
 here as a MOVE: an insertion line where it would go, the list scrolling near its edges, a
-drop written at once) or with Alt+Up and Alt+Down on the focused song (keyboard.move_step(),
-the focus following it), as the row's menu's Move Up and Move Down do; all through
+drop written at once) or with Alt+Up, Alt+Down, Alt+Home and Alt+End on the focused song
+(keyboard.move_step(), the focus following it), as the row's menu's Move Up, Move Down, Move
+to Top and Move to Bottom do; all through
 ItemActions.move_in_playlist(), which announces where it went. A click without a drag
 still plays the song: the drag starts only past GTK's drag threshold, and then cancels the
 row's click. Delete on the focused song takes it out of the playlist (remove_focused():
@@ -1692,8 +1693,9 @@ class DetailPage(Adw.NavigationPage):
         after the focused item (tab-behavior item), and the hero and the suggestions are
         its first and last items, so the tracks would otherwise be reached only with Down,
         the hero's buttons backwards only with Up, and the suggestions only with Down from
-        the last track. Before them, the focused song's own keys: Alt+Up and Alt+Down move
-        it (keyboard.move_step()), Delete takes it out of the playlist (remove_key())."""
+        the last track. Before them, the focused song's own keys: Alt+Up, Alt+Down, Alt+Home and
+        Alt+End move it (keyboard.move_step()), Delete takes it out of the playlist
+        (remove_key())."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
         root = self.get_root()
         focused = root.get_focus() if root is not None else None
@@ -1896,16 +1898,18 @@ class DetailPage(Adw.NavigationPage):
         return move is not None and move(self.item, from_index, to_index, at_once)
 
     def _move_focused(self, focus, step):
-        """Alt+Up or Alt+Down: the focused song one place up (-1) or down (1), the focus
-        going with it. False (the key not taken) when the focus is on no song or the songs
-        cannot be moved; True otherwise, at either end too, where nothing moves."""
+        """Alt+Up or Alt+Down: the focused song one place up (-1) or down (1); Alt+Home or
+        Alt+End: to the top or the bottom (keyboard.TOP, BOTTOM); the focus going with it.
+        False (the key not taken) when the focus is on no song or the songs cannot be moved;
+        True otherwise, at either end too, where nothing moves."""
         row = _row_of(focus) if focus is not None else None
         track = row.track_row.context_item if row is not None else None
         if not isinstance(track, Track) or not self.can_reorder():
             return False
         index, count = track.index, len(self.item.track_ids())
-        if 0 <= index + step < count and self._move(index, index + step):
-            self.list_view.scroll_to(self._starts[0] + index + step, Gtk.ListScrollFlags.FOCUS,
+        to_index = keyboard.move_place(step, index, 0, count - 1)
+        if to_index is not None and self._move(index, to_index):
+            self.list_view.scroll_to(self._starts[0] + to_index, Gtk.ListScrollFlags.FOCUS,
                                      None)
         return True
 
