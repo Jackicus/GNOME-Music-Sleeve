@@ -140,8 +140,67 @@ binary through `flatpak-spawn --host`, and `chrome_args()` prefixes
 on to the host's Chrome. The pid the engine holds is flatpak-spawn's, which relays SIGTERM to
 Chrome and whose end ends Chrome (`--watch-bus`), so `setpriv` is not used there; the profile's
 `SingletonLock` names a host pid, which the sandbox cannot check, so a Chrome left on the
-profile is not ended at the next start. It targets GNOME 51 (org.gnome.Sdk//51). The
-sandboxed app has not been run yet, so what this section says of it is the design, untested.
+profile is not ended at the next start. It targets GNOME 51 (org.gnome.Sdk//51).
+
+What has been run (2026-11-13), and what has not:
+
+- **Build and install: works.** `flatpak run org.flatpak.Builder --user --install
+  --force-clean --state-dir=STATE BUILDDIR build-aux/flatpak/io.github.jackicus.MusicSleeve.Devel.json`
+  (org.flatpak.Builder is a user Flatpak; a state directory outside the source tree, since
+  the module's source is the whole tree; Builder's sandbox sees the home directory but not
+  /tmp, so a directory there needs `flatpak run --filesystem=DIR org.flatpak.Builder …`).
+  `--install` adds a user remote, `devel-origin`, pointing at the state directory's cache.
+- **Demo mode: works**, on scripts/headless.sh's display. `flatpak run` inside it hands the
+  sandbox the headless mutter's Wayland socket (the one `WAYLAND_DISPLAY` names, as the
+  sandbox's `wayland-0`) and proxies the private session bus, so nothing reaches the desktop.
+  The launcher's `DEMO_DIR` is a path in the build sandbox, so the demo library is named and
+  exposed: `scripts/headless.sh flatpak run --filesystem=$PWD/build/demo
+  --env=APPLE_MUSIC_CACHE=$PWD/build/demo io.github.jackicus.MusicSleeve.Devel --demo`.
+  scripts/screenshot.py runs in the sandbox against its `/app` with `--command=python3`, from
+  a copy of scripts/ beside a `build/install` that is a link to `/app`, given the same
+  `--filesystem` and `APPLE_MUSIC_CACHE`.
+- **Exports: valid.** The desktop file, both icons, the metainfo, the search provider's .ini
+  and the D-Bus service file are in `~/.local/share/flatpak/exports/share`, named by the app
+  ID, the service's and the desktop file's `Exec` rewritten to `flatpak run`; they pass
+  desktop-file-validate and `appstreamcli validate`. The settings schema is not exported (a
+  sandboxed app reads its own, in `/app`, and keeps its settings in a keyfile under
+  `~/.var/app`); it passes `glib-compile-schemas --strict`.
+- **The engine: works, one fix.** From the sandbox, on its own new profile
+  (`~/.var/app/io.github.jackicus.MusicSleeve.Devel/data/apple-music/chrome-devel`, the same
+  path on the host), headless: `find_chrome()` finds the host's Google Chrome through the
+  host's shell; the CDP connection comes up over the pipe flatpak-spawn forwards; the bridge
+  loads (`status()` answers, not signed in); `drm()` answers Widevine. A clean stop, and
+  `app.quit`, leave no process on the profile; nor does a SIGKILL of the app's own process
+  (`--watch-bus` ends Chrome, its helpers and its crashpad handler within three seconds).
+  What was wrong: a command flatpak-spawn starts has the environment of the
+  flatpak-session-helper on the sandbox's session bus, so under scripts/headless.sh Chrome
+  would have had the private bus, where no keyring answers, and the keyring check was skipped
+  in the sandbox. Now flatpak-spawn gives it `APPLE_MUSIC_HOST_SESSION_BUS`
+  (`--env=DBUS_SESSION_BUS_ADDRESS=…`) and the check asks the host
+  (`chrome.host_secret_service()`); the new profile's Local State records the keyring's key,
+  and later starts pass the check. Chrome's processes rewrite their command lines and are not
+  dumpable: find them by `--user-data-dir=` with the full path, in /proc, not by owner.
+- **Without a sign-in: works.** The app (not `--demo`, on a copy of the demo library named
+  by `APPLE_MUSIC_CACHE`) owns its name and `org.mpris.MediaPlayer2.<app id>` on the session
+  bus (MPRIS's `Identity` answers); the search provider answers `GetInitialResultSet` and
+  `GetResultMetas`; with the app not running, a query starts it through the exported D-Bus
+  service file (`flatpak run … --gapplication-service`, no window), which answers from its
+  own empty cache, and `app.quit` ends it. A native Discord's `discord-ipc-0` is reachable
+  from the sandbox (connected and closed, nothing sent).
+- **finish-args.** `--share=ipc` is gone (X11's shared memory, which nothing of the app's
+  needs; the app ran without it). `--talk-name=org.freedesktop.Flatpak` is needed
+  (flatpak-spawn --host fails without it). `--share=network` stays: the app downloads artwork
+  itself (backend/art_cache.py). Wayland, fallback-x11 and `--device=dri` are GTK's. Discord:
+  every socket discord.py tries, `discord-ipc-0` to `-9` in the runtime directory and the
+  Flatpak (stable, Canary, PTB) and snap directories; only the stable Flatpak's is created
+  when missing (`:create`, as Discord's Flatpak documents), since a socket file or directory
+  that is missing when the app starts is not in its sandbox, and a Discord restarted after
+  the app starts has a new socket the sandbox does not see.
+- **Not run: needs the owner's sign-in in the sandboxed profile**: playback (and with it the
+  sound from the host's Chrome), MPRIS with something playing, the song notifications, and
+  Discord's presence (a SET_ACTIVITY to a socket). Not run either: a Flatpak Discord, and the
+  real GNOME Shell's overview search (the query above came over the private bus, as the
+  Shell sends one).
 
 Nothing installed may set `APPLE_MUSIC_DEBUG_PORT`: the launcher, the desktop file, the
 PKGBUILD and the manifest leave the engine on its pipe alone.

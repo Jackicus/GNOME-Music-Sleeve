@@ -79,6 +79,23 @@ class DevelopmentNameTest(unittest.TestCase):
                        for opt in module['config-opts']])
 
 
+    def test_the_flatpak_sandbox_sees_every_discord_socket_tried(self):
+        # A path the sandbox is not given is a socket the presence can never reach: each name
+        # discord.py tries in the runtime directory itself, and each directory of a packaged
+        # Discord's (a Flatpak's, a snap's), whose names inside it then all show.
+        from applemusic import discord
+        args = json.loads(MANIFEST.read_text(encoding='utf-8'))['finish-args']
+        exposed = {arg.removeprefix('--filesystem=xdg-run/').partition(':')[0] for arg in args
+                   if arg.startswith('--filesystem=xdg-run/')}
+        for directory in discord.SOCKET_DIRS:
+            wanted = discord.SOCKET_NAMES if directory == '' else [directory]
+            for path in wanted:
+                self.assertIn(path, exposed)
+        self.assertEqual(len(args), len(set(args)))
+        # The app has nothing of its own that X11's shared memory would serve.
+        self.assertNotIn('--share=ipc', args)
+
+
 class MetainfoTest(unittest.TestCase):
     def test_the_help_link_is_the_user_guide(self):
         text = METAINFO.read_text(encoding='utf-8')

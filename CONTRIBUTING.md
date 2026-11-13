@@ -50,8 +50,8 @@ dependencies, no display): a test that imports a module with a widget template h
 marked `@requires_gtk` (`tests/gtk.py`) even when it builds no widget, or it fails there.
 GNOME Builder can also build the
 development profile through the Flatpak manifest in `build-aux/flatpak/`, which runs the
-host's Chrome from the sandbox; it builds against GNOME 51, but the sandboxed app has never
-been run, so it is untested.
+host's Chrome from the sandbox; it builds against GNOME 51 and runs (docs/release.md says
+what has been run there and how), but playback in it has not been tried.
 
 ## Conventions
 
