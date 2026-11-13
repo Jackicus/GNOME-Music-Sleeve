@@ -20,6 +20,22 @@
     <key name="mini-player-height" type="i">
       <default>500</default>
       <summary>Mini player height</summary>
+      <description>The height of the mini player without its lyrics or Up Next pane.</description>
+    </key>
+    <key name="mini-player-pane" type="s">
+      <choices>
+        <choice value=''/>
+        <choice value='lyrics'/>
+        <choice value='queue'/>
+      </choices>
+      <default>''</default>
+      <summary>Mini player pane shown</summary>
+      <description>The pane open under the mini player's controls when it was last used: the lyrics, Up Next, or none.</description>
+    </key>
+    <key name="mini-player-pane-height" type="i">
+      <default>320</default>
+      <summary>Mini player pane height</summary>
+      <description>The height of the mini player's lyrics or Up Next pane; the mini player's own height is without it.</description>
     </key>
     <key name="last-page" type="s">
       <default>'home'</default>

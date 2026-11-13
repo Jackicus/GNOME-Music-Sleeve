@@ -50,7 +50,8 @@ paths:
   `--fullscreen-player [lyrics|localized|syllable|none]` enters the full-screen player on
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;
   `--mini-player` puts it on the Player and shoots the mini player's window (at `--size` when
-  given, else at its settings' size; `--restored`, `--live`, `--lost` with it);
+  given, else at its settings' size; `--restored`, `--live`, `--lost` with it; `--mini-pane
+  lyrics|queue` with its pane open, the window taller than `--size` by the pane);
   `--filter TEXT` types into the page's filter bar; `--frame` keeps the window's shadow and
   rounded corners, on a transparent background (its render node without the clip to the
   window's size: 25 px of shadow each side at libadwaita 1.10, none when fullscreen);
@@ -67,7 +68,9 @@ paths:
   by default) through the open sheet with animations on, feeding the Player whole-second
   positions about four times a second as MusicKit does, and reports the frames, the work in
   each, the CPU, the lyrics list's allocations, the Python time in the stepping and the
-  estimate's error; `--shot PNG` saves the window at the end (a sweep mid-piece).
+  estimate's error; `--shot PNG` saves the window at the end (a sweep mid-piece);
+  `--mini-player [none|lyrics|queue]` plays it in the mini player, no pane open or one, the
+  frames its window's, with the Up Next view's work beside the lyrics'.
 - `resize_test.py` drags the window's width (`--wide` 1400 down to `--narrow` 360 and back,
   `--rounds` 3 times at `--speed` 1000 px/s) over a page (`--page`, `--open KIND:ID` with
   `artist:most` the library's artist with the most albums, `--now-playing` the sheet open)

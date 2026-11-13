@@ -2829,8 +2829,9 @@ async def mini_player(window):
     """The mini player: Ctrl+Shift+M in, the window hidden, the focus on its Play; Tab
     through its controls (Favourite, Shuffle, Repeat and Volume among them) and never out of
     it; Space plays or pauses, Ctrl+Right skips, Ctrl+Up turns the volume up; Ctrl+Shift+M
-    back to the window, the focus as it was; in again, and Ctrl+W (its close) back too; and
-    at its smallest size, where the four extras are hidden, Tab goes through the rest."""
+    back to the window, the focus as it was; in again, and Ctrl+W (its close) back too; its
+    panes (mini_player_panes()); and at its smallest size, where the four extras are hidden,
+    Tab goes through the rest and a pane still opens."""
     print('-- mini player')
     host = app.mini_player
     resting = window.get_focus()
@@ -2847,7 +2848,7 @@ async def mini_player(window):
     if keyboard is not None:
         await until(mini.is_active, 3.0)
     seen, stayed = set(), True
-    for _ in range(10):
+    for _ in range(12):
         await key(mini, 'Tab', 0.05)
         focus = mini.get_focus()
         stayed = stayed and inside(focus, view)
@@ -2856,6 +2857,11 @@ async def mini_player(window):
           stayed and {view.main_window_button, view.seek_scale, view.previous_button,
                       view.play_button, view.next_button} <= seen,
           sorted(describe(widget) for widget in seen))
+    check('and through the Lyrics and Up Next toggles, named with their keys',
+          {view.lyrics_button, view.queue_button} <= seen
+          and view.lyrics_button.get_tooltip_text() == 'Lyrics (Shift+Ctrl+L)'
+          and view.queue_button.get_tooltip_text() == 'Up Next (Shift+Ctrl+U)',
+          (view.lyrics_button.get_tooltip_text(), view.queue_button.get_tooltip_text()))
     extras = (view.heart_button, view.shuffle_button, view.repeat_button, view.volume_button)
     check('and through Favourite, Shuffle, Repeat and Volume, in their row',
           view.extras == 'row' and all(any(focus is button or focus.is_ancestor(button)
@@ -2914,6 +2920,7 @@ async def mini_player(window):
     check('Ctrl+W closes it: back to the window', not host.shown and window.get_mapped())
     if keyboard is not None:
         await until(window.is_active, 3.0)
+    await mini_player_panes(window)
     # At its smallest: the extras hidden, everything else still reached.
     size = {name: app.settings.get_int(name)
             for name in ('mini-player-width', 'mini-player-height')}
@@ -2927,19 +2934,124 @@ async def mini_player(window):
         if keyboard is not None:
             await until(mini.is_active, 3.0)
         seen = set()
-        for _ in range(6):
+        for _ in range(8):
             await key(mini, 'Tab', 0.05)
             seen.add(mini.get_focus())
         check('At 280 by 240 the extras are hidden, and Tab goes through the rest',
               view.extras == 'none' and not view.heart_button.get_mapped()
-              and seen == {view.main_window_button, view.seek_scale, view.previous_button,
-                           view.play_button, view.next_button},
+              and seen == {view.main_window_button, view.lyrics_button, view.queue_button,
+                           view.seek_scale, view.previous_button, view.play_button,
+                           view.next_button},
               (mini.get_width(), mini.get_height(), view.extras,
                sorted(describe(widget) for widget in seen)))
+        await key(mini, '<primary><shift>u', 0.8)
+        check('and Ctrl+Shift+U opens Up Next under it, the window grown for it',
+              view.pane == 'queue' and view.extras == 'none'
+              and mini.get_default_size()[1] == 240 + app.settings.get_int(
+                  'mini-player-pane-height'),
+              (view.pane, view.extras, mini.get_default_size()))
+        await key(mini, '<primary><shift>u', 0.8)
         await key(mini, '<primary><shift>m', 0.8)
         await until(lambda: not host.shown and window.get_visible())
     for name, value in size.items():
         app.settings.set_int(name, value)
+    if keyboard is not None:
+        await until(window.is_active, 3.0)
+
+
+async def mini_player_panes(window):
+    """The mini player's panes: Ctrl+Shift+U opens Up Next under the controls, the window
+    grown, the list the Now Playing sheet's own, lent; its entries move, and say so, and
+    their menus open there as in the sheet (up_next_move(): Alt+Down, Alt+Up, Alt+End, Play
+    Next), Delete removes one (up_next_remove()); Ctrl+Shift+L swaps it for the lyrics, the
+    sheet's own view, active there, and again closes the pane, the window as it was; with a
+    pane open Ctrl+Shift+M brings the window back, both views in the sheet again, the lyrics
+    active there once the sheet shows them."""
+    print('-- mini player: the panes')
+    host = app.mini_player
+    sheet = window.now_playing
+    lyrics_view, queue_view = sheet.lyrics_view, sheet.queue_view
+    app.player.apply(harness.invented_playing_state(app, lyrics=True))
+    await asyncio.sleep(0.3)
+    resting = window.get_focus()
+    await key(window, '<primary><shift>m', 0.8)
+    await until(lambda: host.shown and host.window.get_focus() is not None)
+    mini = host.window
+    if mini is None:
+        check('Ctrl+Shift+M shows the mini player', False)
+        return
+    view = mini.view
+    if keyboard is not None:
+        await until(mini.is_active, 3.0)
+    check('no pane until asked for, the toggles not pressed',
+          view.pane == '' and not view.pane_slot.get_visible()
+          and not view.lyrics_button.get_active() and not view.queue_button.get_active())
+    width, base = mini.get_default_size()
+    pane_height = app.settings.get_int('mini-player-pane-height')
+    await key(mini, '<primary><shift>u', 0.8)
+    await until(lambda: queue_view.list_view.get_mapped())
+    check("Ctrl+Shift+U opens Up Next under the controls: the sheet's own list, lent, the "
+          'window taller by the pane, the toggle pressed, the focus where it was',
+          view.pane == 'queue' and queue_view.get_parent() is view.pane_slot
+          and queue_view.list_view.get_mapped() and view.queue_button.get_active()
+          and mini.get_default_size() == (width, base + pane_height)
+          and mini.get_focus() is view.play_button,
+          (view.pane, mini.get_default_size(), describe(mini.get_focus())))
+    # Tab from the last control into the pane: History, Autoplay, Clear, then the entries.
+    view.volume_button.grab_focus()
+    tabbed = []
+    for _ in range(4):
+        await key(mini, 'Tab', 0.1)
+        tabbed.append(mini.get_focus())
+    check('Tab goes on into the pane: History, Autoplay, Clear, then the entries',
+          tabbed[:3] == [queue_view.history_button, queue_view.autoplay_button,
+                         queue_view.clear_button]
+          and inside(tabbed[3], queue_view.list_view),
+          [describe(widget) for widget in tabbed])
+    # The list's own focus item is where the sheet left it: start from the entry playing.
+    from applemusic.widgets.util import focus_position
+    focus_position(queue_view.list_view, 0)
+    await asyncio.sleep(0.3)
+    await up_next_move(mini, queue_view)
+    await up_next_remove(mini, queue_view)
+    await key(mini, '<primary><shift>l', 0.8)
+    check("Ctrl+Shift+L swaps it for the lyrics: Up Next back in the sheet, the sheet's own "
+          'LyricsView in the pane and active, the window the same size',
+          view.pane == 'lyrics' and queue_view.get_parent() is sheet.queue_slot
+          and lyrics_view.get_parent() is view.pane_slot and lyrics_view._active
+          and view.lyrics_button.get_active() and not view.queue_button.get_active()
+          and mini.get_default_size() == (width, base + pane_height),
+          (view.pane, describe(lyrics_view.get_parent()), mini.get_default_size()))
+    await key(mini, '<primary><shift>l', 0.8)
+    check('Ctrl+Shift+L again closes it: the view back in the sheet and inactive, the window '
+          'as it was, the focus still in the window',
+          view.pane == '' and lyrics_view.get_parent() is sheet.lyrics_slot
+          and not lyrics_view._active and mini.get_default_size() == (width, base)
+          and inside(mini.get_focus(), view),
+          (view.pane, mini.get_default_size(), describe(mini.get_focus())))
+    await key(mini, '<primary><shift>l', 0.8)
+    await key(mini, '<primary><shift>m', 0.8)
+    await until(lambda: not host.shown and window.get_visible())
+    check('With the lyrics pane open, Ctrl+Shift+M: the window back, the focus as it was, '
+          'both views in the sheet again',
+          not host.shown and window.get_mapped() and window.get_focus() is resting
+          and lyrics_view.get_parent() is sheet.lyrics_slot
+          and queue_view.get_parent() is sheet.queue_slot and not lyrics_view._active,
+          describe(window.get_focus()))
+    if keyboard is not None:
+        await until(window.is_active, 3.0)
+    await key(window, '<primary><shift>l', 0.8)
+    await until(lambda: lyrics_view._active)
+    check('and Ctrl+Shift+L there shows them in the sheet, active',
+          window.bottom_sheet.get_open() and lyrics_view._active)
+    await key(window, '<primary><shift>l', 0.8)
+    await until(lambda: not window.bottom_sheet.get_open())
+    check('the pane open is remembered, its height too',
+          app.settings.get_string('mini-player-pane') == 'lyrics'
+          and app.settings.get_int('mini-player-height') == base,
+          (app.settings.get_string('mini-player-pane'),
+           app.settings.get_int('mini-player-height')))
+    app.settings.reset('mini-player-pane')
     if keyboard is not None:
         await until(window.is_active, 3.0)
 
@@ -3064,6 +3176,11 @@ async def names(window):
     app.activate_action('mini-player', None)
     await asyncio.sleep(1.0)
     total += await unnamed('Mini Player')
+    for pane in ('show-queue', 'show-lyrics'):
+        app.mini_player.window.activate_action('win.' + pane, None)
+        await asyncio.sleep(0.8)
+        total += await unnamed(f'Mini Player, {pane[5:]}')
+    app.mini_player.window.activate_action('win.show-lyrics', None)
     app.activate_action('mini-player', None)
     await asyncio.sleep(0.8)
     dialog = app.show_preferences()

@@ -292,6 +292,23 @@ class MiniPlayerTest(AppTestCase):
     def test_the_main_window_is_never_the_mini_player(self):
         self.assertIsNone(self.app.main_window())  # no window yet
 
+    def test_an_announcement_goes_through_the_window_in_sight(self):
+        # Up Next's edits run the main window's actions from the mini player's pane too,
+        # and GTK drops what a hidden window announces.
+        said = []
+        main_window = mock.Mock(announce=lambda text, _priority: said.append(('main', text)))
+        self.host.window = mock.Mock(
+            announce=lambda text, _priority: said.append(('mini', text)))
+        self.app.main_window = lambda: main_window
+        self.app.announce('Removed from Up Next')
+        self.host.shown = True
+        self.app.announce('Removed from Up Next')
+        self.assertEqual(said, [('main', 'Removed from Up Next'),
+                                ('mini', 'Removed from Up Next')])
+        self.host.shown = False
+        self.app.main_window = lambda: None
+        self.app.announce('Nobody to tell')  # no window yet: nothing
+
 
 class BackgroundTest(AppTestCase):
     def test_a_closed_window_gets_a_notification_instead_of_a_toast(self):

@@ -9,7 +9,7 @@
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|localized|syllable|queue]]
                           [--fullscreen-player [lyrics|localized|syllable|none]]
-                          [--mini-player]
+                          [--mini-player] [--mini-pane lyrics|queue]
                           [--idle] [--position SECONDS] [--playing] [--restored] [--lost]
                           [--autoplay] [--history] [--album N] [--live]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
@@ -103,7 +103,9 @@ that size. --idle shoots it with the controls and the cursor hidden. With --demo
 --mini-player puts the same item on the Player (as --playing does; --restored, --live and
 --lost as they say) and switches to the mini player (app.mini-player, Ctrl+Shift+M's): the
 shot is the mini player's window, at --size when given, else at its default size (the
-mini-player-width and mini-player-height settings). With --demo only.
+mini-player-width and mini-player-height settings). --mini-pane lyrics or queue opens that
+pane under its controls (the mini-player-pane setting, set before it is entered): the
+window is then taller than --size by the pane (mini-player-pane-height). With --demo only.
 --search TERM shows the Search page in Your Library mode with TERM typed (the
 results of the offline filter; the engine is never started here). --search-in music
 searches Apple Music instead, as Enter does: with --demo, the demo's invented catalog
@@ -214,6 +216,8 @@ parser.add_argument('--fullscreen-player', metavar='LYRICS', nargs='?', const='s
                     help='an invented item playing, in the full-screen player')
 parser.add_argument('--mini-player', action='store_true',
                     help='an invented item playing, in the mini player (its window shot)')
+parser.add_argument('--mini-pane', choices=['lyrics', 'queue'],
+                    help='with --mini-player: its lyrics or Up Next pane open')
 parser.add_argument('--idle', action='store_true',
                     help='with --fullscreen-player, the controls hidden as when idle')
 parser.add_argument('--playing', action='store_true',
@@ -327,6 +331,8 @@ if args.position is not None and not (args.now_playing or args.playing or args.r
 if args.live and not (args.now_playing or args.playing or args.fullscreen_player
                       or args.mini_player):
     parser.error('--live needs --now-playing, --playing, --fullscreen-player or --mini-player')
+if args.mini_pane and not args.mini_player:
+    parser.error('--mini-pane needs --mini-player')
 if args.lost and not (args.playing or args.mini_player):
     parser.error('--lost needs --playing or --mini-player')
 if args.idle and not args.fullscreen_player:
@@ -368,6 +374,8 @@ def on_activate(_app):
     if args.mini_player and args.size:
         app.settings.set_int('mini-player-width', width)
         app.settings.set_int('mini-player-height', height)
+    if args.mini_pane:
+        app.settings.set_string('mini-player-pane', args.mini_pane)
     for setting in args.setting:
         key, _sep, text = setting.partition('=')
         kind = app.settings.get_value(key).get_type_string()

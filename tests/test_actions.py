@@ -1510,6 +1510,35 @@ class ItemActionsTest(unittest.IsolatedAsyncioTestCase):
         await self.run_action('item-move-in-queue', 3, 4, 'i.gone')
         self.assertEqual(len(self.window.announced), 1)  # nothing moved
 
+    async def test_from_the_mini_player_up_next_is_announced_by_the_app(self):
+        # The mini player's Up Next pane runs these actions with the window hidden: the
+        # app tells assistive technology through the window in sight.
+        said = []
+        self.app.announce = said.append
+        await self.run_action('item-remove-from-queue', 4, 'i.song1')
+        await self.run_action('item-move-in-queue', 4, 2, 'i.q4')
+        self.assertEqual(said[0], 'Removed from Up Next')
+        self.assertIn('moved to position', said[1])
+        self.assertEqual(self.window.announced, [])
+
+    def test_what_shows_a_page_or_a_dialog_leaves_the_mini_player_first(self):
+        shown = []
+
+        class Host:
+            shown = True
+
+        self.app.mini_player = Host()
+        self.app.show_main_window = lambda: shown.append(True)
+        self.assertIs(self.actions.shown_window(), self.window)
+        self.assertEqual(shown, [True])
+        Host.shown = False
+        self.assertIs(self.actions.shown_window(), self.window)
+        self.assertEqual(shown, [True])  # the window is in sight: nothing to leave
+        Host.shown = True
+        album = Item({'kind': 'album', 'id': 'l.shown', 'title': 'Shown'})
+        self.actions._show_page(album)
+        self.assertEqual((shown, self.window.opened), ([True, True], [album]))
+
     async def test_love_a_track_by_its_catalog_id(self):
         self.actions.menu_for(LIBRARY_TRACK)  # the menu names the track; its action finds it
         await self.run_action('item-love', 'song', 'i.song1')

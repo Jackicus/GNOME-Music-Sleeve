@@ -277,7 +277,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   large as you like: the artwork follows, and in a low window it sits beside the title;
   those four sit under the transport, around it in a wide window, and a window both low
   and narrow keeps the transport alone (<kbd>Ctrl</kbd>+<kbd>↑</kbd> and
-  <kbd>Ctrl</kbd>+<kbd>↓</kbd> still change the volume). **Return to Main Window** (the
+  <kbd>Ctrl</kbd>+<kbd>↓</kbd> still change the volume). **Lyrics** and **Up Next**, at
+  its top right (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> and
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd>, as in the main window), each open a pane
+  under the controls, one at a time: the window grows to make room and shrinks back when
+  you close it, and what you resize while a pane is open is the pane. Up Next there is
+  the same list as in Now Playing: play an entry, move it, remove it, or open its menu
+  (going to its album or artist brings the main window back). The mini player opens with
+  the pane it last had. **Return to Main Window** (the
   button at its top left),
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> again or closing it brings the main window
   back as it was; it remembers its size for next time. GNOME does not let an app keep its

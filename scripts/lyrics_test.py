@@ -7,7 +7,8 @@ it cost: the frames, the work in each, the CPU, the lyrics list's allocations.
 
     scripts/lyrics_test.py [--fixture NAME] [--start SECONDS] [--seconds N] [--size WxH]
                            [--no-animations] [--pronunciations] [--event-period SECONDS]
-                           [--rtl] [--fullscreen-player] [--shot PNG]
+                           [--rtl] [--fullscreen-player] [--mini-player [PANE]]
+                           [--shot PNG]
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) on the demo
 library (scripts/harness.py), with animations on unless --no-animations (the word-timed
@@ -39,6 +40,12 @@ moment it played:
 
 --fullscreen-player plays it in the full-screen player instead of the sheet, its larger
 lines over the backdrop (the window kept at --size, as screenshot.py's is).
+--mini-player plays it in the mini player instead (the sheet closed, its window hidden), at
+the mini player's own size: with `none` (the default) no pane open, which is what shows that
+the hidden lyrics and Up Next cost nothing (about a frame a second, the seek row's; no
+timeout for the next change, no sweep, no allocation of the lyrics list); with `lyrics` or
+`queue` that pane open, to set beside the sheet's own numbers. The frames counted are the
+mini player's window's, and the report adds the Up Next view's own work.
 --shot saves the window as it is at the end (a sweep caught mid-piece, which screenshot.py,
 with animations off, cannot show); --rtl lays it out right to left. Compare only headless
 runs. Settings go to a memory backend.
@@ -64,6 +71,10 @@ parser.add_argument('--event-period', type=float, default=0.25,
 parser.add_argument('--rtl', action='store_true', help='lay the window out right to left')
 parser.add_argument('--fullscreen-player', action='store_true',
                     help='in the full-screen player rather than the sheet')
+parser.add_argument('--mini-player', nargs='?', const='none', metavar='PANE',
+                    choices=['none', 'lyrics', 'queue'],
+                    help='in the mini player, with no pane (the default), or `lyrics` or '
+                         '`queue` open')
 parser.add_argument('--shot', metavar='PNG', help='save the window at the end')
 args = parser.parse_args()
 width, height = (int(n) for n in args.size.split('x'))
@@ -74,6 +85,7 @@ app = harness.make_app('LyricsTest', animations=not args.no_animations,
 from gi.repository import GLib, Gtk  # noqa: E402  (after make_app)
 
 from applemusic.widgets import lyrics as lyrics_view  # noqa: E402
+from applemusic.widgets import queue as queue_view  # noqa: E402
 
 allocations = [0]
 timed = {}      # method name -> [calls, seconds]
@@ -97,11 +109,11 @@ class GtkWithCountingList:
 lyrics_view.Gtk = GtkWithCountingList()
 
 
-def timing(name):
-    method = getattr(lyrics_view.LyricsView, name, None)
+def timing(name, cls=lyrics_view.LyricsView, label=None):
+    method = getattr(cls, name, None)
     if method is None:
         return
-    record = timed.setdefault(name, [0, 0.0])
+    record = timed.setdefault(label or name, [0, 0.0])
 
     def wrapper(*method_args, **kwargs):
         began = time.perf_counter()
@@ -111,11 +123,14 @@ def timing(name):
             record[0] += 1
             record[1] += time.perf_counter() - began
 
-    setattr(lyrics_view.LyricsView, name, wrapper)
+    setattr(cls, name, wrapper)
 
 
-for name in ('_follow', '_paint', '_on_sweep_tick'):
+for name in ('_follow', '_paint', '_on_sweep_tick', '_on_next_change'):
     timing(name)
+if args.mini_player:
+    for name in ('_on_items_changed', '_on_index', '_refresh_rows'):
+        timing(name, queue_view.QueueView, 'queue' + name)
 
 
 def on_activate(_app):
@@ -135,7 +150,12 @@ def begin():
     app.player.apply(harness.invented_playing_state(app, lyrics=True, fixture=args.fixture,
                                                     position=args.start))
     window.now_playing.tab_stack.set_visible_child_name('lyrics')
-    if args.fullscreen_player:
+    if args.mini_player:
+        pane = '' if args.mini_player == 'none' else args.mini_player
+        app.settings.set_string('mini-player-pane', pane)
+        app.activate_action('mini-player', None)
+        window = app.mini_player.window
+    elif args.fullscreen_player:
         window.activate_action('win.fullscreen-player', None)
     else:
         window.bottom_sheet.set_open(True)
@@ -216,8 +236,13 @@ def report(wall, cpu, work, layouts, frames, errors):
     options = ' '.join(option for option, on in (('no animations', args.no_animations),
                                                  ('pronunciations', args.pronunciations))
                        if on)
+    where = args.size
+    if args.mini_player:
+        mini = app.mini_player.window
+        where = (f'{mini.get_width()}x{mini.get_height()} in the mini player, '
+                 f'{"no pane" if args.mini_player == "none" else args.mini_player}')
     print(f'lyrics-test: {args.fixture} from {args.start:g} s for {wall:.1f} s at '
-          f'{args.size}{", " + options if options else ""}', flush=True)
+          f'{where}{", " + options if options else ""}', flush=True)
     print(f'  frames {len(work)}, {len(work) / wall:.1f} a second; work per frame: mean '
           f'{1000 * statistics.mean(work):.2f} ms, 90th percentile '
           f'{1000 * work[int(len(work) * 0.9)]:.2f} ms, longest {1000 * work[-1]:.2f} ms, '

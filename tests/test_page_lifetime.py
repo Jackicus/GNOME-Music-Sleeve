@@ -1689,6 +1689,66 @@ class MiniPlayerLifetimeTest(WidgetTestCase):
         self.assertFalse(GObject.signal_has_handler_pending(
             engine, GObject.signal_lookup('rated', type(engine)), 0, False))
 
+    async def test_the_mini_player_closed_with_a_pane_open(self):
+        # A pane shows the Now Playing sheet's own LyricsView or QueueView, lent: the mini
+        # player closed with one open is freed all the same (its toggles, its pane slot,
+        # the main window's actions it carried), and the view is back in the sheet, alive.
+        from gi.repository import Adw, Gtk
+
+        from applemusic.mini_player import MiniPlayerHost
+        from applemusic.player import Player
+        from applemusic.widgets.mini_player import MiniPlayer
+        from applemusic.widgets.now_playing import NowPlayingSheet
+        from tests.test_player import LYRICS, TRACK, FakeApp, FakeEngine
+
+        player = Player(FakeApp(FakeEngine()))
+        player.track_grace_ms = 0
+        sheet = NowPlayingSheet()
+        bottom_sheet = Adw.BottomSheet(sheet=sheet, content=Gtk.Label())
+        main = Gtk.ApplicationWindow(child=bottom_sheet)
+        main.now_playing = sheet
+        main.put_away = lambda: None
+        sheet.set_player(player, self.app, bottom_sheet)
+        player.apply({'state': 'playing', 'track': dict(TRACK, artUrl=None), 'position': 30,
+                      'duration': 214, 'lyrics': LYRICS,
+                      'queue': {'index': 0, 'items': [dict(TRACK, artUrl=None, index=0)]}})
+
+        def make_window(_app):
+            window = MiniPlayer(application=self.app)
+            window.set_player(player, self.app)
+            return window
+
+        class HostApp:
+            settings = self.app.settings
+
+            @staticmethod
+            def main_window():
+                return main
+
+        host = MiniPlayerHost(HostApp, make_window)
+        try:
+            for pane, lent, slot in (('queue', sheet.queue_view, sheet.queue_slot),
+                                     ('lyrics', sheet.lyrics_view, sheet.lyrics_slot)):
+                self.app.settings.set_string('mini-player-pane', pane)
+                host.enter()
+                window = host.window
+                self.assertTrue(await self.until(window.get_mapped))
+                view = window.view
+                self.assertIs(lent.get_parent(), view.pane_slot, pane)
+                await self.turn()
+                refs = (window.weak_ref(), view.weak_ref(), view.pane_slot.weak_ref(),
+                        view.lyrics_button.weak_ref(), view.queue_button.weak_ref(),
+                        view.volume_button.weak_ref())
+                del view, window
+                host.leave()
+                await self.assert_freed(*refs)
+                self.assertIs(lent.get_parent(), slot, pane)
+        finally:
+            for key in ('mini-player-pane', 'mini-player-width', 'mini-player-height',
+                        'mini-player-pane-height'):
+                self.app.settings.reset(key)
+            main.destroy()
+
 
 class NowPlayingLifetimeTest(WidgetTestCase):
     """The Now Playing sheet and the full-screen player live as long as the window (they

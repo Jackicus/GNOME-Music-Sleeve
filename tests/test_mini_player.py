@@ -2,11 +2,14 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """mini_player.py: the mini player's layout (the cover, and where Favourite, Shuffle, Repeat
-and Volume go at each size), and its host with stand-ins (one window at a
-time, the main window put away and back, its size kept, closing it as leaving it); then the
-window itself following a real Player (the item, live radio, the low layout, the extras and
-the volume keys) and letting go of it. That a closed mini player is freed is
-test_page_lifetime's; its keys are scripts/a11y_check.py's."""
+and Volume go at each size), its panes (how a window with one divides, what is remembered of
+its size, the lending and its order: Panes with stand-ins), and its host with stand-ins
+(one window at a time, the main window put away and back, its size kept, closing it as
+leaving it); then the window itself following a real Player (the item, live radio, the low
+layout, the extras and the volume keys) and letting go of it. That a closed mini player is freed is
+test_page_lifetime's; its keys are scripts/a11y_check.py's. Last, the panes with the real
+Now Playing sheet: its one LyricsView and one QueueView lent and given back, active in one
+place at a time, and Up Next's edits and menus reaching the main window's actions."""
 
 import unittest
 
@@ -24,7 +27,7 @@ from tests.test_player import TRACK, FakeApp  # noqa: E402
 from tests.test_transport import RatingEngine  # noqa: E402
 
 from applemusic import mini_player  # noqa: E402
-from applemusic.mini_player import MiniPlayerHost, layout_for  # noqa: E402
+from applemusic.mini_player import MiniPlayerHost, Panes, layout_for, split  # noqa: E402
 from applemusic.player import Player  # noqa: E402
 
 # No artwork URL: nothing is fetched.
@@ -85,13 +88,98 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(with_row, (False, mini_player.MIN_ART, 'row'))
 
 
+class SplitTest(unittest.TestCase):
+    def test_the_body_keeps_its_height_and_the_pane_has_the_rest(self):
+        self.assertEqual(split(820, 500), (500, 320))
+        self.assertEqual(split(920, 500), (500, 420))  # dragged taller: the pane's
+        self.assertEqual(split(700, 500), (500, 200))
+
+    def test_a_window_too_low_gives_the_pane_its_least_and_the_body_the_rest(self):
+        least = mini_player.PANE_MIN
+        self.assertEqual(split(500 + least, 500), (500, least))
+        self.assertEqual(split(600, 500), (600 - least, least))
+        self.assertEqual(split(500, 500), (500 - least, least))  # it never grew
+        self.assertEqual(split(100, 500), (0, 100))
+
+
+class FakeView:
+    """A view the sheet lends (the LyricsView, the QueueView): set_active() recorded."""
+
+    def __init__(self, calls, name):
+        self.calls = calls
+        self.name = name
+
+    def set_active(self, active):
+        self.calls.append((self.name, 'active' if active else 'inactive'))
+
+
+class FakeSheet:
+    """The Now Playing sheet as the host and the panes see it."""
+
+    def __init__(self, calls):
+        self.calls = calls
+        self.views = {'lyrics': FakeView(calls, 'lyrics'), 'queue': FakeView(calls, 'queue')}
+        self.out = set()
+
+    def set_covered(self, covered):
+        self.calls.append(('sheet', 'covered' if covered else 'uncovered'))
+
+    def _lend(self, name):
+        if name in self.out:
+            return None
+        self.out.add(name)
+        self.calls.append(('sheet', 'lend', name))
+        return self.views[name]
+
+    def _return(self, name, view):
+        assert view is self.views[name]
+        self.out.discard(name)
+        self.calls.append(('sheet', 'return', name))
+
+    def lend_lyrics(self):
+        return self._lend('lyrics')
+
+    def lend_queue(self):
+        return self._lend('queue')
+
+    def return_lyrics(self, view):
+        self._return('lyrics', view)
+
+    def return_queue(self, view):
+        self._return('queue', view)
+
+
 class FakeWindow:
-    """A window as the host sees it: what it was asked, recorded."""
+    """A window as the host and the panes see it: what it was asked, recorded."""
 
     def __init__(self, calls, name, size=(0, 0)):
         self.calls = calls
         self.name = name
         self.size = size
+        self.fixed = False
+        self.showable = {'lyrics', 'queue'}
+        self.pane = None       # (name, the widget, base) of the pane shown
+        self.panes = None
+
+    def can_show(self, pane):
+        return pane in self.showable
+
+    def set_lender(self, sheet, main, base):
+        self.calls.append((self.name, 'lender'))
+        if sheet is not None:
+            self.panes = Panes(self, sheet, self.settings, base)
+
+    def fixed_size(self):
+        return self.fixed
+
+    def show_pane(self, name, widget, base):
+        self.pane = (name, widget, base)
+        self.calls.append((self.name, 'show', name, self.size))
+
+    def hide_pane(self):
+        if self.pane is not None:
+            self.calls.append((self.name, 'hide', self.pane[0]))
+        self.pane = None
 
     def set_default_size(self, width, height):
         self.size = (width, height)
@@ -109,10 +197,115 @@ class FakeWindow:
         self.calls.append((self.name, 'release'))
 
 
+PANE_KEYS = ('mini-player-width', 'mini-player-height', 'mini-player-pane',
+             'mini-player-pane-height')
+
+
+class PanesTest(unittest.TestCase):
+    """Panes with a stand-in window and sheet: a window 320 by 500, the pane 320."""
+
+    def setUp(self):
+        self.calls = []
+        self.settings = Gio.Settings.new(SCHEMA_ID)
+        for key in PANE_KEYS:
+            self.addCleanup(self.settings.reset, key)
+        self.window = FakeWindow(self.calls, 'mini', (320, 500))
+        self.sheet = FakeSheet(self.calls)
+        self.panes = Panes(self.window, self.sheet, self.settings, 500)
+
+    def test_opening_lends_shows_grows_then_makes_active(self):
+        self.assertTrue(self.panes.show('lyrics'))
+        self.assertEqual(self.calls, [('sheet', 'lend', 'lyrics'),
+                                      ('mini', 'show', 'lyrics', (320, 820)),
+                                      ('lyrics', 'active')])
+        self.assertEqual(self.panes.shown, 'lyrics')
+        self.assertEqual(self.window.pane[2], 500)  # the body keeps the window's height
+        self.assertEqual(self.settings.get_string('mini-player-pane'), 'lyrics')
+
+    def test_closing_makes_inactive_returns_then_shrinks(self):
+        self.panes.show('queue')
+        self.calls.clear()
+        self.panes.close()
+        self.assertEqual(self.calls, [('queue', 'inactive'), ('mini', 'hide', 'queue'),
+                                      ('sheet', 'return', 'queue')])
+        self.assertEqual(self.window.size, (320, 500))
+        self.assertEqual(self.panes.shown, '')
+        self.assertEqual(self.settings.get_string('mini-player-pane'), '')
+        self.panes.close()  # nothing to close
+        self.assertEqual(len(self.calls), 3)
+
+    def test_the_other_toggle_swaps_with_no_resize(self):
+        self.panes.show('lyrics')
+        self.calls.clear()
+        self.panes.toggle('queue')
+        self.assertEqual(self.calls, [('lyrics', 'inactive'), ('mini', 'hide', 'lyrics'),
+                                      ('sheet', 'return', 'lyrics'),
+                                      ('sheet', 'lend', 'queue'),
+                                      ('mini', 'show', 'queue', (320, 820)),
+                                      ('queue', 'active')])
+        self.assertEqual(self.sheet.out, {'queue'})
+        self.panes.toggle('queue')  # the one shown: closed
+        self.assertEqual(self.panes.shown, '')
+        self.assertEqual(self.sheet.out, set())
+        self.assertEqual(self.window.size, (320, 500))
+
+    def test_a_resize_with_a_pane_open_is_the_panes(self):
+        self.panes.show('lyrics')
+        self.window.size = (360, 920)  # dragged 100 px taller, and wider
+        self.panes.close()
+        self.assertEqual(self.window.size, (360, 500))  # the mini player as it was
+        self.assertEqual(self.settings.get_int('mini-player-pane-height'), 420)
+        self.panes.show('queue')
+        self.assertEqual(self.window.size, (360, 920))  # and the pane as it was left
+
+    def test_dragged_lower_than_its_base_the_body_gives_way(self):
+        self.panes.show('lyrics')
+        self.window.size = (320, 400)
+        self.panes.close()
+        least = mini_player.PANE_MIN
+        self.assertEqual(self.window.size, (320, 400 - least))
+        self.assertEqual(self.settings.get_int('mini-player-pane-height'), least)
+
+    def test_the_window_resized_without_a_pane_is_the_base_it_grows_from(self):
+        self.window.size = (320, 300)
+        self.panes.show('lyrics')
+        self.assertEqual(self.window.size, (320, 620))
+        self.assertEqual(self.window.pane[2], 300)
+
+    def test_a_window_that_cannot_grow_keeps_its_size_and_remembers_nothing(self):
+        self.window.fixed = True
+        self.panes.show('lyrics')
+        self.assertEqual(self.window.size, (320, 500))
+        self.assertEqual(self.calls[-1], ('lyrics', 'active'))
+        self.panes.close()
+        self.assertEqual(self.window.size, (320, 500))
+        self.assertEqual(self.settings.get_int('mini-player-pane-height'), 320)
+
+    def test_nothing_to_lend_shows_nothing(self):
+        self.sheet.out.add('lyrics')  # the full-screen player has it
+        self.assertFalse(self.panes.show('lyrics'))
+        self.assertEqual(self.panes.shown, '')
+        self.assertEqual(self.window.size, (320, 500))
+        self.assertFalse(Panes(self.window, None, self.settings, 500).show('queue'))
+        self.assertFalse(self.panes.show('videos'))
+
+    def test_giving_back_as_the_mini_player_goes_keeps_the_pane_for_next_time(self):
+        self.panes.show('queue')
+        self.window.size = (340, 900)
+        self.calls.clear()
+        self.assertEqual(self.panes.give_back(), (340, 500))
+        self.assertEqual(self.calls, [('queue', 'inactive'), ('mini', 'hide', 'queue'),
+                                      ('sheet', 'return', 'queue')])
+        self.assertEqual(self.settings.get_string('mini-player-pane'), 'queue')
+        self.assertEqual(self.settings.get_int('mini-player-pane-height'), 400)
+        self.assertIsNone(self.panes.give_back())  # nothing lent any more
+
+
 class FakeHostApp:
     def __init__(self, calls):
         self.settings = Gio.Settings.new(SCHEMA_ID)
         self.main = FakeWindow(calls, 'main')
+        self.main.now_playing = FakeSheet(calls)
 
     def main_window(self):
         return self.main
@@ -122,13 +315,14 @@ class HostTest(unittest.TestCase):
     def setUp(self):
         self.calls = []
         self.app = FakeHostApp(self.calls)
-        for key in ('mini-player-width', 'mini-player-height'):
+        for key in PANE_KEYS:
             self.addCleanup(self.app.settings.reset, key)
         self.made = []
 
         def make_window(app):
             self.assertIs(app, self.app)
             window = FakeWindow(self.calls, f'mini{len(self.made)}')
+            window.settings = app.settings
             self.made.append(window)
             return window
 
@@ -141,7 +335,9 @@ class HostTest(unittest.TestCase):
         self.assertTrue(self.host.shown)
         self.assertIs(self.host.window, self.made[0])
         self.assertEqual(self.made[0].size, (300, 420))
-        self.assertEqual(self.calls, [('mini0', 'present'), ('main', 'put_away')])
+        # The sheet of the hidden window covered: its views inactive, to lend.
+        self.assertEqual(self.calls, [('mini0', 'present'), ('main', 'put_away'),
+                                      ('sheet', 'covered'), ('mini0', 'lender')])
 
     def test_one_at_a_time(self):
         self.host.enter()
@@ -155,11 +351,76 @@ class HostTest(unittest.TestCase):
         self.calls.clear()
         self.host.leave()
         self.assertFalse(self.host.shown)
-        self.assertEqual(self.calls, [('main', 'present'), ('mini0', 'release')])
+        self.assertEqual(self.calls, [('sheet', 'uncovered'), ('main', 'present'),
+                                      ('mini0', 'release')])
         self.assertEqual(self.app.settings.get_int('mini-player-width'), 340)
         self.assertEqual(self.app.settings.get_int('mini-player-height'), 380)
         self.host.leave()  # nothing to leave
-        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len(self.calls), 3)
+
+    def test_the_pane_it_last_had_opens_with_it_at_the_grown_size(self):
+        settings = self.app.settings
+        settings.set_string('mini-player-pane', 'queue')
+        settings.set_int('mini-player-pane-height', 300)
+        self.host.enter()
+        mini = self.made[0]
+        # Made at its grown size, lent only once the main window is away and covered.
+        self.assertEqual(self.calls, [('mini0', 'present'), ('main', 'put_away'),
+                                      ('sheet', 'covered'), ('mini0', 'lender'),
+                                      ('sheet', 'lend', 'queue'),
+                                      ('mini0', 'show', 'queue', (320, 800)),
+                                      ('queue', 'active')])
+        self.assertEqual(mini.pane[2], 500)
+
+    def test_a_pane_with_nothing_to_show_stays_closed_but_remembered(self):
+        self.app.settings.set_string('mini-player-pane', 'lyrics')
+        shown = []
+
+        def make_window(app):
+            window = FakeWindow(self.calls, 'mini')
+            window.settings = app.settings
+            window.showable = {'queue'}  # a song without lyrics
+            shown.append(window)
+            return window
+
+        host = MiniPlayerHost(self.app, make_window)
+        host.enter()
+        self.assertEqual(shown[0].size, (320, 500))
+        self.assertIsNone(shown[0].pane)
+        self.assertEqual(self.app.settings.get_string('mini-player-pane'), 'lyrics')
+
+    def test_leaving_with_a_pane_open_gives_the_view_back_first(self):
+        self.app.settings.set_string('mini-player-pane', 'lyrics')
+        self.host.enter()
+        mini = self.made[0]
+        mini.size = (320, 900)  # the user made the pane taller
+        self.calls.clear()
+        self.host.leave()
+        self.assertEqual(self.calls, [('lyrics', 'inactive'), ('mini0', 'hide', 'lyrics'),
+                                      ('sheet', 'return', 'lyrics'), ('sheet', 'uncovered'),
+                                      ('main', 'present'), ('mini0', 'release')])
+        settings = self.app.settings
+        self.assertEqual(settings.get_int('mini-player-height'), 500)
+        self.assertEqual(settings.get_int('mini-player-pane-height'), 400)
+        self.assertEqual(settings.get_string('mini-player-pane'), 'lyrics')
+
+    def test_quitting_with_a_pane_open_gives_the_view_back_and_stays_covered(self):
+        self.app.settings.set_string('mini-player-pane', 'queue')
+        self.host.enter()
+        self.calls.clear()
+        self.host.quit()
+        self.assertEqual(self.calls, [('queue', 'inactive'), ('mini0', 'hide', 'queue'),
+                                      ('sheet', 'return', 'queue'), ('mini0', 'release')])
+        self.assertEqual(self.app.settings.get_int('mini-player-height'), 500)
+
+    def test_no_main_window_no_panes(self):
+        self.app.settings.set_string('mini-player-pane', 'queue')
+        self.app.main = None
+        self.host.enter()
+        self.assertEqual(self.made[0].size, (320, 500))
+        self.assertIsNone(self.made[0].panes)
+        self.host.leave()
+        self.assertEqual(self.calls[-1], ('mini0', 'release'))
 
     def test_toggle(self):
         self.host.toggle()
@@ -454,6 +715,289 @@ class WindowTest(unittest.TestCase):
         self.assertTrue(wait_for(dialog.get_mapped))
         self.close()
         self.assertTrue(wait_for(lambda: closed))
+
+
+FIXTURES = ROOT / 'tests' / 'fixtures'
+QUEUE = {'index': 0, 'items': [
+    dict(SONG, index=0),
+    dict(SONG, id='i.demo0002', catalogId='1000000002', title='Pilot Light', index=1),
+    dict(SONG, id='i.demo0003', catalogId='1000000003', title='Shoreline', index=2),
+]}
+
+
+class FakeItemActions:
+    """The main window's item actions, as a context menu asks them."""
+
+    def __init__(self):
+        self.asked = []
+
+    def menu_for(self, obj, **kwargs):
+        self.asked.append((obj, kwargs))
+        menu = Gio.Menu()
+        menu.append('Go to Album', 'win.item-go-to-album')
+        return menu
+
+
+@requires_gtk
+class PaneWindowTest(unittest.TestCase):
+    """The real Now Playing sheet in a main window and the real mini player, through the
+    host: the sheet's one LyricsView and one QueueView in the panes."""
+
+    def setUp(self):
+        from gi.repository import Adw, GLib, Gtk
+
+        from applemusic.widgets.mini_player import MiniPlayer
+        from applemusic.widgets.now_playing import NowPlayingSheet
+
+        self.app = FakeApp(RatingEngine())
+        self.app.settings = Gio.Settings.new(SCHEMA_ID)
+        for key in PANE_KEYS:
+            self.addCleanup(self.app.settings.reset, key)
+        self.player = Player(self.app)
+        self.player.track_grace_ms = 0
+        self.sheet = NowPlayingSheet()
+        self.bottom_sheet = Adw.BottomSheet(sheet=self.sheet, content=Gtk.Label())
+        self.stack = Gtk.Stack()
+        self.stack.add_named(self.bottom_sheet, 'main')
+        # The main window: its sheet, its item actions, and the two Up Next runs.
+        self.main = Gtk.ApplicationWindow(default_width=900, default_height=640,
+                                          child=self.stack)
+        self.addCleanup(self.main.destroy)
+        self.main.now_playing = self.sheet
+        self.main.item_actions = FakeItemActions()
+        self.main.put_away = lambda: self.main.set_visible(False)
+        self.ran = []
+        for name, kind in (('item-move-in-queue', '(iis)'), ('item-remove-from-queue', '(is)')):
+            action = Gio.SimpleAction.new(name, GLib.VariantType.new(kind))
+            action.connect('activate', lambda action, parameter: self.ran.append(
+                (action.get_name(), parameter.unpack())))
+            self.main.add_action(action)
+        self.sheet.set_player(self.player, self.app, self.bottom_sheet)
+        self.main.present()
+        self.assertTrue(wait_for(self.main.get_mapped))
+        self.app.main_window = lambda: self.main
+
+        def make_window(app):
+            window = MiniPlayer()
+            window.set_player(app.player, app)
+            return window
+
+        self.app.player = self.player
+        self.host = MiniPlayerHost(self.app, make_window)
+        self.addCleanup(self.host.quit)
+        self.mini = None
+        self.lyrics = self.sheet.lyrics_view
+        self.queue = self.sheet.queue_view
+        self.active = []
+        for name, view in (('lyrics', self.lyrics), ('queue', self.queue)):
+            def set_active(active, name=name, view=view, real=view.set_active):
+                self.active.append((name, active, self.place(view)))
+                real(active)
+            view.set_active = set_active
+
+    def place(self, view):
+        parent = view.get_parent()
+        if parent in (self.sheet.lyrics_slot, self.sheet.queue_slot):
+            return 'sheet'
+        if self.mini is not None and parent is self.mini.view.pane_slot:
+            return 'mini'
+        return None
+
+    def of(self, name):
+        """What `name`'s view was told (the sheet tells both of its own as it changes)."""
+        return [event for event in self.active if event[0] == name]
+
+    def play(self, lyrics='lyrics_syllable.json'):
+        import json
+
+        answer = None
+        if lyrics:
+            with open(FIXTURES / lyrics, encoding='utf-8') as file:
+                answer = json.load(file)
+        self.player.apply({'state': 'playing', 'track': SONG, 'position': 40,
+                           'duration': 214, 'lyrics': answer, 'queue': QUEUE})
+
+    def enter(self):
+        self.host.enter()
+        self.mini = self.host.window  # kept: the host forgets it as it leaves
+        self.assertTrue(wait_for(self.mini.get_mapped))
+        return self.mini
+
+    def toggle(self, mini, tab):
+        mini.activate_action('win.' + ('show-lyrics' if tab == 'lyrics' else 'show-queue'),
+                             None)
+
+    def pressed(self, mini):
+        return tuple(mini.pane_actions[tab].get_state().get_boolean()
+                     for tab in ('lyrics', 'queue'))
+
+    def test_the_toggles_are_off_until_there_is_something_to_show(self):
+        mini = self.enter()
+        view = mini.view
+        self.assertFalse(view.lyrics_button.get_sensitive())
+        self.assertFalse(view.queue_button.get_sensitive())
+        self.play(lyrics=None)
+        self.assertFalse(view.lyrics_button.get_sensitive())  # a song without lyrics
+        self.assertTrue(view.queue_button.get_sensitive())
+        self.play()
+        self.assertTrue(view.lyrics_button.get_sensitive())
+        self.assertEqual(self.pressed(mini), (False, False))
+        self.assertFalse(view.pane_slot.get_visible())
+        self.assertEqual(view.lyrics_button.get_tooltip_text(), 'Lyrics (Shift+Ctrl+L)')
+        self.assertEqual(view.queue_button.get_tooltip_text(), 'Up Next (Shift+Ctrl+U)')
+
+    def test_one_lyrics_view_active_in_one_place(self):
+        """The sheet open on Lyrics, the mini player, its lyrics pane, back: the sheet's
+        own view, active only where it shows."""
+        self.play()
+        self.bottom_sheet.set_open(True)
+        self.assertTrue(wait_for(lambda: self.lyrics._active))
+        self.active.clear()
+        mini = self.enter()
+        # The window hidden: its sheet covered, the view inactive there, lent to no one.
+        self.assertEqual(self.of('lyrics'), [('lyrics', False, 'sheet')])
+        self.assertEqual(self.place(self.lyrics), 'sheet')
+        self.active.clear()
+        self.toggle(mini, 'lyrics')
+        self.assertEqual(self.of('lyrics'), [('lyrics', True, 'mini')])
+        self.assertIs(mini.view.pane_slot.get_child(), self.lyrics)
+        self.assertTrue(mini.view.pane_slot.get_visible())
+        self.assertEqual(self.pressed(mini), (True, False))
+        self.assertEqual(mini.get_default_size(), (320, 500 + 320))
+        self.active.clear()
+        self.toggle(mini, 'lyrics')  # again: closed, the view back and inactive
+        self.assertEqual(self.of('lyrics'), [('lyrics', False, 'mini')])
+        self.assertEqual(self.place(self.lyrics), 'sheet')
+        self.assertEqual(self.pressed(mini), (False, False))
+        self.assertEqual(mini.get_default_size(), (320, 500))
+        self.assertEqual(self.lyrics._next_change_source, 0)
+        self.assertIsNone(self.lyrics._sweep_tick)
+        # Open again, and leave with it open: back in the sheet, active there (it is open
+        # on Lyrics), after the mini player let it go.
+        self.toggle(mini, 'lyrics')
+        self.active.clear()
+        self.host.leave()
+        self.assertEqual(self.of('lyrics'),
+                         [('lyrics', False, 'mini'), ('lyrics', True, 'sheet')])
+        self.assertEqual(self.place(self.lyrics), 'sheet')
+        self.assertTrue(self.main.get_visible())
+
+    def test_the_other_toggle_swaps_the_views(self):
+        self.play()
+        mini = self.enter()
+        self.toggle(mini, 'queue')
+        self.assertEqual(self.place(self.queue), 'mini')
+        self.assertEqual(self.pressed(mini), (False, True))
+        size = mini.get_default_size()
+        self.active.clear()
+        self.toggle(mini, 'lyrics')
+        self.assertEqual(self.active, [('queue', False, 'mini'), ('lyrics', True, 'mini')])
+        self.assertEqual(self.place(self.queue), 'sheet')
+        self.assertEqual(self.place(self.lyrics), 'mini')
+        self.assertEqual(self.pressed(mini), (True, False))
+        self.assertEqual(mini.get_default_size(), size)
+        self.host.leave()
+        self.assertEqual(self.place(self.lyrics), 'sheet')
+        self.assertEqual(self.place(self.queue), 'sheet')
+        self.assertFalse(self.lyrics._active)  # the sheet is closed
+        self.assertEqual(self.app.settings.get_string('mini-player-pane'), 'lyrics')
+
+    def test_the_pane_remembered_opens_with_the_mini_player(self):
+        self.app.settings.set_string('mini-player-pane', 'queue')
+        self.app.settings.set_int('mini-player-pane-height', 240)
+        self.play()
+        mini = self.enter()
+        self.assertEqual(self.place(self.queue), 'mini')
+        self.assertEqual(mini.get_default_size(), (320, 740))
+        self.assertEqual(self.pressed(mini), (False, True))
+        # The controls keep the layout of the window without the pane.
+        self.assertTrue(wait_for(lambda: mini.view.shown_layout is not None))
+        self.assertEqual(mini.view.shown_layout, layout_for(320, 500 - 46))
+
+    def test_no_full_screen_while_a_view_is_lent(self):
+        from applemusic.fullscreen import FullscreenHost
+
+        fullscreen = FullscreenHost(self.main, self.stack, self.sheet, self.player, self.app)
+        self.addCleanup(fullscreen.release)
+        self.play()
+        mini = self.enter()
+        self.toggle(mini, 'lyrics')
+        self.assertFalse(self.sheet.holds_lyrics())
+        self.assertIsNone(self.sheet.lend_lyrics())  # one borrower at a time
+        fullscreen.enter()
+        self.assertFalse(fullscreen.shown)
+        self.assertEqual(self.place(self.lyrics), 'mini')
+        self.host.leave()
+        fullscreen.enter()
+        self.assertTrue(fullscreen.shown)
+        fullscreen.leave()
+
+    def test_up_next_in_the_pane_runs_the_main_windows_actions(self):
+        from gi.repository import GLib
+
+        self.play()
+        mini = self.enter()
+        self.toggle(mini, 'queue')
+        self.assertTrue(wait_for(self.queue.list_view.get_mapped))
+        # Alt+Down, a drop (QueueView.move()) and Delete activate win.item-*: the main
+        # window's, through the pane slot's group, not the mini player's own `win`.
+        self.queue.move(1, 2, 'i.demo0002')
+        self.queue.list_view.activate_action('win.item-remove-from-queue',
+                                             GLib.Variant('(is)', (2, 'i.demo0003')))
+        self.assertEqual(self.ran, [('item-move-in-queue', (1, 2, 'i.demo0002')),
+                                    ('item-remove-from-queue', (2, 'i.demo0003'))])
+        # The header's toggles are outside the slot: the mini player's own actions.
+        self.assertTrue(mini.view.queue_button.get_sensitive())
+        self.assertIsNone(mini.lookup_action('item-move-in-queue'))
+
+    def test_an_entrys_menu_is_the_main_windows(self):
+        from applemusic.widgets import context_menu
+
+        self.play()
+        mini = self.enter()
+        self.toggle(mini, 'queue')
+        self.assertTrue(wait_for(self.queue.list_view.get_mapped))
+        entry = self.player.queue.get_item(1)
+        popover = context_menu.popup(self.queue.list_view, entry)
+        self.assertIsNotNone(popover)
+        self.assertEqual(self.main.item_actions.asked[0][0], entry)
+        popover.popdown()
+        self.assertTrue(wait_for(lambda: popover.get_parent() is None))
+
+    def test_the_keys_toggle_the_panes(self):
+        from gi.repository import Gdk
+
+        self.play()
+        mini = self.enter()
+        mini.get_application = lambda: self.app
+        self.app.lookup_action = lambda _name: None
+        mods = Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK
+        mini.view.play_button.grab_focus()
+        self.assertTrue(mini._on_key_pressed(None, Gdk.KEY_U, 0, mods))
+        self.assertEqual(self.pressed(mini), (False, True))
+        self.assertTrue(mini._on_key_pressed(None, Gdk.KEY_L, 0, mods))
+        self.assertEqual(self.pressed(mini), (True, False))
+        self.assertTrue(mini._on_key_pressed(None, Gdk.KEY_L, 0, mods))
+        self.assertEqual(self.pressed(mini), (False, False))
+
+    def test_closing_a_pane_that_holds_the_focus_puts_it_on_its_toggle(self):
+        self.play()
+        mini = self.enter()
+        self.toggle(mini, 'queue')
+        self.assertTrue(wait_for(self.queue.history_button.get_mapped))
+        self.assertTrue(self.queue.history_button.grab_focus())
+        self.toggle(mini, 'queue')
+        self.assertIs(mini.get_focus(), mini.view.queue_button)
+
+    def test_released_with_a_pane_open_the_view_is_back_in_the_sheet(self):
+        # Whatever closes the window: never a lent view in a window being destroyed.
+        self.play()
+        mini = self.enter()
+        self.toggle(mini, 'lyrics')
+        self.host.window = None
+        mini.release()
+        self.assertEqual(self.place(self.lyrics), 'sheet')
+        self.assertFalse(self.lyrics._active)
 
 
 if __name__ == '__main__':

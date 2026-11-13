@@ -241,7 +241,8 @@ paths:
   LyricsView: `lend_lyrics()`/`return_lyrics()` move it between the sheet's `lyrics_slot`
   and the player's, the sheet covered meanwhile (`set_covered`), so `set_active` is called
   by whichever holds it and never by the other; a second LyricsView would follow the Player
-  for good and paint twice. The player does nothing while hidden (no idle timeout, no fetch,
+  for good and paint twice (the mini player's panes borrow it, and the QueueView, the same
+  way). The player does nothing while hidden (no idle timeout, no fetch,
   no field: `_show_item()` catches up as it shows) and leaves only when the Player's item
   goes (after its grace), never from one song to the next; tests/test_fullscreen.py.
   Its layout is `fullscreen.layout_for()` (a pure function, applied as the view is
@@ -262,14 +263,34 @@ paths:
   window has no room for the row; one set of buttons, moved by `place_extras()`). Its
   heart is lazy (the bar's reads answer it), its volume a popover button at every size; a
   piece that connects to an object its own widget owns lets go of it in `detach()`
-  (`VolumeControl`'s adjustment), or the window is never freed. No lyrics or Up Next yet
-  (#589). The playback and volume keys as the window has them, its own toasts while it shows
+  (`VolumeControl`'s adjustment), or the window is never freed. Lyrics and Up Next are a
+  pane under the controls, one at a time (`mini_player.Panes`, no GTK: tested with
+  stand-ins): the header bar's two toggles are the mini player's own `win.show-lyrics` and
+  `win.show-queue` (the sheet's names, keys and `can_show_tab()`), the window grows by
+  `mini-player-pane-height` as one opens and shrinks back (`mini-player-height` stays the
+  height without one; `split()` says how a window with a pane divides and what a resize
+  with one open leaves each; a maximized or tiled window keeps its size), and
+  `mini-player-pane` remembers which. The pane holds the sheet's own LyricsView or
+  QueueView (`lend_lyrics()`, `lend_queue()` out of `lyrics_slot` and `queue_slot`; one
+  borrower at a time, so no full screen while one is out: `holds_lyrics()`), never a
+  second: both follow the Player for good with no detach. The host covers the sheet as it
+  enters (`set_covered()`: a hidden window's views are inactive) and gives a lent view back
+  before it uncovers it, presents the main window and destroys its own. Up Next reaches
+  its window by `win.item-*` and `item_actions`, which the mini player lacks: its pane
+  slot carries the main window as its `win` action group and the window answers
+  `borrowed_item_actions` (context_menu.popup()); so `ItemActions` announces through
+  `Application.announce()` (the window in sight) and shows a page or a dialog through
+  `shown_window()`, which leaves the mini player first. A new window action Up Next uses
+  needs nothing more; one that shows something goes through `shown_window()`. The playback
+  and volume keys as the window has them, its own toasts while it shows
   (`get_active_window()` is it; a `win.*` button there runs through `app.window-action`),
   and announces each new item itself (the bar does not
   announce from a hidden window: `transport.announcement()`). What needs the main window
   asks `app.main_window()`, and the Shell's search results `app.show_main_window()`, which
   leaves the mini player. Nothing keeps it on top (Wayland has no way to ask).
-  tests/test_mini_player.py; `scripts/screenshot.py --demo --mini-player` shows it.
+  tests/test_mini_player.py; `scripts/screenshot.py --demo --mini-player [--mini-pane
+  lyrics|queue]` shows it, `scripts/lyrics_test.py --mini-player [none|lyrics|queue]`
+  counts what it costs while a song plays (none: a frame a second, the seek row's).
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with
   `Gio.DBusConnection.register_object_with_closures2` (the older call is deprecated since GLib

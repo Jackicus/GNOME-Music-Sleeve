@@ -693,6 +693,14 @@ class Application(Adw.Application):
                 toast.set_action_target_value(action_target)
         target.add_toast(toast)
 
+    def announce(self, text):
+        """Tell assistive technology `text` through the window in sight: the mini player
+        while it shows, else the main window (GTK drops an announcement from a hidden
+        window)."""
+        window = self.mini_player.window if self.mini_player.shown else self.main_window()
+        if window is not None:
+            window.announce(text, Gtk.AccessibleAnnouncementPriority.MEDIUM)
+
     def _on_window_action(self, _action, parameter):
         """app.window-action: the window action app_action() named, run with its target on
         the window that has it (hidden for background playback, or under Preferences)."""
