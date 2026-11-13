@@ -3219,10 +3219,11 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actions_module.queue_commands([]), [])
 
     async def test_the_first_of_a_bigger_selection_are_queued(self):
-        # A selection's Play Next takes its first PLAY_LIMIT: the toast says of how many.
-        self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK], total=40000)
+        # A selection's Play Next takes its first PLAY_LIMIT: the toast says of how many
+        # (a total under 1,000: the count's digits are grouped by the locale's rules).
+        self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK], total=500)
         await self.settle()
-        self.assertEqual(self.app.toasts[-1], 'The first 2 of 40,000 items will play next')
+        self.assertEqual(self.app.toasts[-1], 'The first 2 of 500 items will play next')
         self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK], later=True, total=300)
         await self.settle()
         self.assertEqual(self.app.toasts[-1], 'The first 2 of 300 items will play later')
