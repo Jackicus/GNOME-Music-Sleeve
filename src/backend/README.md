@@ -885,7 +885,6 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
 | `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `replay.json`, `replay/`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Replay only in its shape, `charts.REPLAY_SHAPE`; Radio's only until its `expires`); not one an older version kept in another shape (`shape`, `cache_files.ANSWER_SHAPE`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`cache_files.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
-
 | `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
 | `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |
 
@@ -908,6 +907,6 @@ Read by `config.py` on every call:
 ## Provenance
 
 Forked on 2026-09-27 from the backend of the owner's GNOME Shell extension, Apple Music
-Library, at its commit 906bfa9 (`cdp.py`, `bridge.js`, `sync.py`, later `normalize.py` and now
-split from it, and this README). This app has rewritten most of it since and maintains it for
+Library, at its commit 906bfa9 (`cdp.py`, `bridge.js`, `sync.py`, which became `normalize.py`
+and has since been split into the shaping modules above, and this README). This app has rewritten most of it since and maintains it for
 itself; the history is `git log -- src/backend`.

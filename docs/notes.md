@@ -1,8 +1,13 @@
 # Lab notes
 
 Findings and measurements that explain the code but are not rules. Each was true when it was
-written down (September 2026: GTK 4.22, libadwaita 1.9, PyGObject 3.56, Python 3.14, Chrome
-154, on the development machine); re-check one before building on it, and date what you add.
+written down, on the development machine: the September and October entries on GTK 4.22,
+libadwaita 1.9, PyGObject 3.56 and Chrome 154, those from 2026-11-11 on GTK 4.24.1,
+libadwaita 1.10.0, GLib 2.90.1, PyGObject 3.58.1 and Python 3.14.8. Re-check one before
+building on it, and date what you add. Absolute timings and memory figures are only
+comparable within one table: the app, build/demo-big's generator and the toolkit have all
+changed under the older ones. The current figures are the tables of 2026-11-12 and
+2026-11-13 below; an older figure marked *superseded* says by which.
 
 The measurements behind the list and model code live in the module docstrings, next to the
 code they justify: `pages/songs.py` (GTK's sorters and filters over Python objects, row
@@ -21,7 +26,8 @@ its "Performance pass" section.
   the startup target is the app's own share over it (performance.md: content painted within
   250 ms of the bare window's first frame, `scripts/bench.py` pairing each run with a bare
   window's).
-- Startup on build/demo-big, headless, 2026-10-20 (issue 476), `bench.py --runs 5`, the
+- *Superseded* as figures by the 2026-11-12 and 2026-11-13 tables below (what it explains
+  still holds). Startup on build/demo-big, headless, 2026-10-20 (issue 476), `bench.py --runs 5`, the
   base (main) and the branch benched in turns three times each, medians: a bare window's
   first frame 805-842 ms, run by run 790-860 (the first start after a while is cold,
   1.7-1.9 s: bench.py now starts one untimed first). The bare window: its imports 120 ms,
@@ -181,7 +187,7 @@ each measured with the scripts kept in build/perf-pass/resize/ (one width change
   tiles again), so there each widening still builds them.
 - Songs' narrow breakpoint (560sp of the page, a window about 770 px wide with the sidebar):
   showing the album and artist columns again makes their 410 cells anew (GTK below), 33-44
-  ms (55-76 ms when it follows the expand), 17-18 ms of it `TrackLinks.__init__`. Left as
+  ms (55-76 ms when it follows the expand), 17-18 ms of it `TrackLink.__init__`. Left as
   it is: a cheaper label would take about 8 ms off a frame that would still be over
   budget.
 - Between those, a resized frame costs 3-4 ms below about 890 px and 7-9 ms above (four
@@ -202,7 +208,8 @@ or four frames (50-67 ms) as the window crosses its breakpoints, and no frame's 
 ms. Its first run of the day had one 217 ms gap at its first crossing, as caches filled.
 
 The target (`.claude/rules/performance.md`) is Nautilus's: no frame's work over 50 ms, and
-no more than 4 % of a sweep's frames over 16.7 ms. After the fixes no page meets it in the
+no more than 4 % of a sweep's frames over 16.7 ms. (*Superseded* by #664: after the overlay
+split view six pages of seven meet it, the next section.) After the fixes no page meets it in the
 default sweep: every page's longest frame (102-217 ms) and most of its frames over budget
 are the split view's collapse and the frame after it, which only a change of design
 removes (#593: `Adw.OverlaySplitView`, or keeping the sidebar's mode). A drag that stays
@@ -215,6 +222,63 @@ runs unmoved (the app's own share 197 ms (182-226) against 198, the longest firs
 against +3.3); scroll_test.py on Albums five runs, 2.7 / 3.4 / 5.5 ms, none over (2.7 /
 3.5 / 7.7), and Songs two runs, 3.6-3.8 / 4.6-5.0 / 8.3-12.7 ms, none over (3.8 / 4.9 /
 8.3); the rest of that series was stopped as the session ended.
+
+### After the overlay split view (2026-11-13, issues 590 and 593)
+
+The same sweep after #664 made the window's split view an `Adw.OverlaySplitView`: 105f772
+(main before #664) against 7916ecd (main after it and the five module splits, #651 to
+#657), five runs a page, medians and the runs' range, one after the other on one
+build/demo-big (regenerated that day by the new cover generator), with
+`build/perf-pass/resize/resize_series.sh` (the main checkout's, git-ignored). The same
+machine, toolkit and headless display as above; nobody's music playing, but the load
+average stayed at 3 to 4 from something else on the desktop.
+
+| page | target | before #664: mean / 90th / longest work, over; Python a frame | after #664: the same |
+|---|---|---|---|
+| the series' machine: load, idle, available, swap | | 3.4-3.8, idle 96-98, 8.5-8.7 GB, 5.2 GB | 3.2-3.8, idle 98, 8.6-9.3 GB, 4.1-5.2 GB |
+| Albums | longest 50 ms, 4 % | 8.6 / 11.2 / 136 ms (136-138), 9.1 %; 1.7 ms | 4.8 / 7.4 / 40 (38-40), 1.9 %; 0.3 |
+| a library artist (`--open artist:most`) | | 6.4 / 7.7 / 103 (101-108), 5.2 %; 0.7 | 4.3 / 7.3 / 29 (29-30), 1.6 %; 0.2 |
+| Songs | | 13.0 / 21.2 / 219 (218-221), 10.3 %; 4.2 | 7.9 / 13.4 / 109 (106-113), 7.7 %; 1.4 |
+| Home | | 6.9 / 8.1 / 103 (100-110), 5.2 %; 0.8 | 4.5 / 7.0 / 28 (27-30), 1.6 %; 0.3 |
+| an album (`--open album:first`) | | 7.9 / 9.3 / 123 (122-133), 6.3 %; 1.1 | 4.6 / 7.3 / 36 (34-37), 1.6 %; 0.3 |
+| a playlist (`--open playlist:first`) | | 8.2 / 9.9 / 133 (128-137), 6.4 %; 1.3 | 5.2 / 8.3 / 37 (35-38), 1.9 %; 0.4 |
+| Albums, Now Playing open | | 10.3 / 15.2 / 139 (139-141), 9.2 %; 2.2 | 6.2 / 8.8 / 40 (40-42), 3.3 %; 0.7 |
+
+Before #664 is the previous section's "main after" within the noise. After it, six pages of
+the seven meet the target in every run: Albums, the library artist, Home, an album, a
+playlist and Albums with Now Playing open, the longest frame 28-42 ms and 1.6-3.3 % of
+frames over 16.7 ms. The window's crossing at 640sp no longer moves the page: on Albums the
+frames at the collapse and the expand are 34-39 ms, on Songs 22-23 ms. Songs does not meet
+it, 109 ms longest and 7.7 % over: its frames over 33 ms are all its own breakpoints
+(`resize_test.py` names them), 105-106 ms at 760sp, 71-73 ms at 560sp and 33-42 ms at
+the others, a `Gtk.ColumnView`'s columns shown again and making their cells anew (GTK
+below). With the overlay the content's width jumps by the sidebar's as the window crosses
+640sp, so those two are crossed close to it. That is issue 662.
+
+## The module splits and startup (2026-11-13, issues 651 to 657)
+
+`bench.py --runs 5` on build/demo-big (regenerated that day, as above) at four commits, one
+series after the other, in the order of the columns: 11e94f7 before the splits, 105f772
+after the detail page's (#651), b983251 after #664, 7916ecd after all five (detail, the
+library and engine packages, normalize and actions), then 11e94f7 again 30 minutes after
+its first series, as a check of the machine's drift. Medians, the runs' range in brackets.
+
+| | 11e94f7 | 105f772 | b983251 | 7916ecd | 11e94f7 again |
+|---|---|---|---|---|---|
+| the series' machine: load, idle | 3.7 to 3.4, 93-96 | 3.4 to 3.6, 97-98 | 3.6 to 3.2, 97 | 3.0 to 2.5, 98-99 | 2.4 to 3.5, 98-99 |
+| first frame, content painted | 978 ms (934-987) | 971 (933-995) | 950 (919-992) | 942 (923-954) | 933 (918-943) |
+| a bare window's first frame | 784 ms | 743 | 736 | 736 | 730 |
+| the app's own share (bench.py's line) | 183 ms | 204 | 193 | 203 | 202 |
+| longest first switch (Favourite Songs) | 77 ms (67-78) | 72 (69-80) | 70 (69-74) | 69 (68-77) | 68 (67-75) |
+| anonymous memory, every page browsed twice | 229 MB | 229 | 227 | 229 | 229 |
+| pages step, anonymous, three rounds | +3.4 MB | +4.0 | +3.3 | +3.8 | +3.1 |
+
+The same commit read 45 ms apart in its two series (978 and 933 ms), more than any two
+commits differ, and its longest switch 77 and 68 ms: the drift of the machine over the hour,
+not the code. So the splits, about 30 more modules imported at startup, cost nothing these
+runs can see, and neither did #664. build/demo-big was made again that day by the new cover
+generator, so these absolute figures are not comparable to the millisecond with the
+2026-11-12 table above; within this table they are.
 
 ## GTK and libadwaita, measured
 
@@ -248,7 +312,8 @@ against +3.3); scroll_test.py on Albums five runs, 2.7 / 3.4 / 5.5 ms, none over
   focus satisfies.
 - `Gio.Settings.bind_with_mapping` exists in PyGObject 3.56, but its get-mapping closure got
   the GValue as a plain int it could not set, and GLib aborted on the rejected default; the
-  refresh-interval row in Preferences is bound by hand instead.
+  refresh-interval row in Preferences is bound by hand instead (not checked again on 3.58;
+  the minimum, 3.50, is older still).
 - A sidebar row's context menu opens from a script through
   `SidebarController.popup_menu(key)`, as Menu on the focused row opens it. A
   `Gtk.PopoverMenu` submenu is named by its label, mnemonic underscore and all:
@@ -295,9 +360,11 @@ against +3.3); scroll_test.py on Albums five runs, 2.7 / 3.4 / 5.5 ms, none over
   change), but falls back to the last whole second on a pause, hence the view's hold.
   `Pango.LayoutLine.get_x_ranges()` is unusable from PyGObject 3.56: its array's length
   annotation counts pairs, so it returns half the values (one number for one range);
-  `Layout.index_to_line_x()` and the line's extents give the same edges. bench.py (5 runs,
+  `Layout.index_to_line_x()` and the line's extents give the same edges (PyGObject 3.56;
+  not checked again on 3.58). bench.py (5 runs,
   medians) and scroll_test.py before and after: content 924 / 927 ms, longest switch 65 / 67
-  ms, anonymous memory after browsing 196 / 195 MB, pages +1.4 / +1.1 MB; Albums 4.0 / 4.1 ms
+  ms, anonymous memory after browsing 196 / 195 MB (a smaller library then: no music videos
+  or long playlist), pages +1.4 / +1.1 MB; Albums 4.0 / 4.1 ms
   a frame (longest 7.4 / 7.2), Songs 2.9 / 3.0-3.2 ms (longest 5.3 / 7.0-8.7), no frame over
   16.7 ms: the same, within the runs' spread (the lyrics view is not on those paths).
 - The lyrics' faded edges (issue 356), headless, 2026-10-20: `scripts/lyrics_test.py` as
@@ -319,6 +386,26 @@ against +3.3); scroll_test.py on Albums five runs, 2.7 / 3.4 / 5.5 ms, none over
   (the middle drawn plainly under a clip) would render less offscreen, but two clips that
   meet off the pixel grid at a fractional scale leave a faint seam, and the whole-view
   mask costs too little to need it.
+- The mini player's panes (#589, 2026-11-13, headless): `scripts/lyrics_test.py
+  --mini-player [none|queue|lyrics]` and the sheet for comparison, the syllable fixture from
+  12 s for 36 s, three runs a mode, medians and ranges. The quiet-machine series (load
+  average 2.9 to 3.9, 95-98 % idle), which replace #649's under-load figures; the no-pane
+  runs started as a busy spell ended (load 9.3, 92 % idle, one other process at 90 % of a
+  core), which their figures, a frame a second, do not show.
+
+  | | size | frames (a second) | work a frame, mean (longest) | CPU (one core) | list allocations |
+  |---|---|---|---|---|---|
+  | mini player, no pane | 320x500 | 35 (1.0) | 0.55 ms (0.70-0.90) | 0.3 % | 0 |
+  | mini player, Up Next pane | 320x820 | 83 (2.3) | 0.53 ms (1.34-1.47) | 0.4 % (0.3-0.4) | 0 |
+  | mini player, lyrics pane | 320x820 | 1880 (52.2) | 1.04 ms (3.7-6.2) | 6.5 % (6.2-6.9) | 135 |
+  | the sheet's Lyrics tab | 1100x760 | 1878 (52.2) | 1.26 ms (5.1-7.4) | 7.8 % (7.4-7.9) | 81-84 |
+
+  No frame over 16.7 ms in any mode. With no pane open nothing steps but the seek row, once
+  a second; the Up Next pane adds its own redraws and nothing more, its handlers run 0 times
+  (the queue did not change). The lyrics pane sweeps as the sheet does, a little cheaper a
+  frame at its smaller size, though its list is allocated more often (135 times against
+  81). The same session's three sheet runs after the no-pane ones gave 1.16-1.20 ms and
+  7.2-7.4 %.
 - Hidden root pages keep their list and grid widgets (the window keeps each fixed
   destination's root page once visited, and the last eight playlist and folder pages).
   Letting the six hidden views' item widgets go while they are hidden, and rebuilding them on a
@@ -464,6 +551,8 @@ it, tell a leak from fragmentation: below). RSS is not the target: it adds what
 the libraries and the GL driver map, which the app cannot shrink (a bare `Adw.ApplicationWindow`
 is 158 MB on the desktop, 105 of it file-backed; 192 MB headless, 64 of it anonymous).
 
+- *Superseded* as figures: on today's pages and library, 227-229 MB (the 2026-11-12 and
+  2026-11-13 tables above); the two entries below explain how it got there.
 - Measured headless, 2026-09-29: anonymous memory 212-215 MB after every page browsed twice
   (RSS about 367 MB); the pages step (20 albums, 5 artists, 5 See All opened and popped;
   measured before bench.py also opened 5 of Apple Music's artist pages)
