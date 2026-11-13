@@ -14,7 +14,16 @@ import gi
 
 from tests import ROOT
 
-from applemusic.backend import config, normalize
+from applemusic.backend import (
+    art_cache,
+    banner_art,
+    cache_files,
+    charts,
+    config,
+    editorial,
+    item_pages,
+    normalize,
+)
 from applemusic.library import release_passed
 
 gi.require_version('GdkPixbuf', '2.0')
@@ -201,12 +210,12 @@ class TestDemoLibrarySchema(unittest.TestCase):
             self.assertTrue(os.path.exists(item['art']), f"Art file does not exist: {item['art']}")
             self.assertGreater(os.path.getsize(item['art']), 1000)
             # And its thumbnail beside it, under the same name (a video's marked wide, as a
-            # sync names it: normalize.thumb_name()).
+            # sync names it: art_cache.thumb_name()).
             self.assertTrue(os.path.exists(item['thumb']),
                             f"Thumb file does not exist: {item['thumb']}")
             self.assertEqual(os.path.basename(item['thumb']),
-                             normalize.thumb_name(os.path.basename(item['art']),
-                                                  normalize.wide_art(item)))
+                             art_cache.thumb_name(os.path.basename(item['art']),
+                                                  art_cache.wide_art(item)))
             _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(item['thumb'])
             _fmt, art_width, art_height = GdkPixbuf.Pixbuf.get_file_info(item['art'])
             self.assertLess(width * height, art_width * art_height)
@@ -301,8 +310,8 @@ class TestDemoLibrarySchema(unittest.TestCase):
 
     def test_playlist_suggestions(self):
         # Each playlist has the songs Apple would suggest for it, as the engine keeps them
-        # (normalize.playlist_suggestions' keys), none of them one it holds.
-        real = normalize.playlist_suggestions({'results': {'suggested': [
+        # (item_pages.playlist_suggestions' keys), none of them one it holds.
+        real = item_pages.playlist_suggestions({'results': {'suggested': [
             {'id': '1', 'type': 'songs',
              'attributes': {'name': 'S', 'artistName': 'A', 'albumName': 'B'}}]}},
             None)['items'][0]
@@ -321,9 +330,9 @@ class TestDemoLibrarySchema(unittest.TestCase):
 
     def test_song_credits(self):
         # Each hand-written album's song has the credits Apple would answer for it, as the
-        # engine keeps them (normalize.song_credits' keys): its artist first among the
+        # engine keeps them (item_pages.song_credits' keys): its artist first among the
         # performers, then writers, producers and engineers; the last song none.
-        real = normalize.song_credits({}, None)
+        real = item_pages.song_credits({}, None)
         songs = [(entry, album) for album in self.data['sections']['albums']
                  for group in album['groups'] for entry in group['entries']]
         for number, (entry, album) in enumerate(songs):
@@ -349,9 +358,9 @@ class TestDemoLibrarySchema(unittest.TestCase):
 
     def test_artist_pages(self):
         # Each hand-written artist has the catalog's page of them, as the engine keeps it
-        # (normalize.artist_page's keys); every third one an invented banner on disk, 3:1,
+        # (item_pages.artist_page's keys); every third one an invented banner on disk, 3:1,
         # the first artist's among them, the second without one (the screenshots show both).
-        real = normalize.artist_page({}, None)
+        real = item_pages.artist_page({}, None)
         banners = []
         for artist in self.data['sections']['artists']:
             with self.subTest(id=artist['id']):
@@ -375,7 +384,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertEqual((link['kind'], link['video']), ('link', True))
                     _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(link['thumb'])
                     self.assertEqual((width, height),
-                                     normalize.thumb_box(config.THUMB_SIZE, wide=True))
+                                     art_cache.thumb_box(config.THUMB_SIZE, wide=True))
         self.assertIsNotNone(banners[0])
         self.assertIsNone(banners[1])
         self.assertEqual(sum(banner is not None for banner in banners), 5)
@@ -406,7 +415,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
         with open(os.path.join(self.out_dir, 'albums', f"{coming['id']}.json"),
                   encoding='utf-8') as f:
             page = json.load(f)
-        self.assertEqual(set(page) - {'demo', 'cached'}, set(normalize.album_page({}, None)))
+        self.assertEqual(set(page) - {'demo', 'cached'}, set(item_pages.album_page({}, None)))
         self.assertEqual(page['release']['releaseDate'], coming['releaseDate'])
         # Only that artist's: every other's latest release is out.
         for other in self.data['sections']['artists'][1:]:
@@ -416,9 +425,9 @@ class TestDemoLibrarySchema(unittest.TestCase):
 
     def test_playlist_pages(self):
         # Each catalog playlist of the artists' pages has what the catalog would show under
-        # its tracks (normalize.playlist_page's keys): its curator, whose page is there too,
+        # its tracks (item_pages.playlist_page's keys): its curator, whose page is there too,
         # and every shelf in Apple's order, the playlist itself on none of them.
-        real = normalize.playlist_page({}, None)
+        real = item_pages.playlist_page({}, None)
         playlists = []
         for name in sorted(os.listdir(os.path.join(self.out_dir, 'artists'))):
             with open(os.path.join(self.out_dir, 'artists', name), encoding='utf-8') as f:
@@ -436,17 +445,17 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 curator = answer['curator']
                 self.assertEqual((curator['kind'], curator['title']),
                                  ('category', playlist['subtitle']))
-                self.assertTrue(os.path.isfile(normalize.category_cache_path(
+                self.assertTrue(os.path.isfile(cache_files.category_cache_path(
                     self.out_dir, curator['id'])))
                 self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                                 list(normalize.PLAYLIST_SHELVES))
+                                 list(item_pages.PLAYLIST_SHELVES))
                 for shelf in answer['shelves']:
                     self.assertTrue(shelf['title'])
                     self.assertTrue(shelf['items'])
                     self.assertNotIn(playlist['id'], [item['id'] for item in shelf['items']])
                 for artist in answer['shelves'][0]['items']:  # each with a page of theirs
                     self.assertEqual(artist['kind'], 'artist')
-                    self.assertTrue(os.path.isfile(normalize.artist_cache_path(
+                    self.assertTrue(os.path.isfile(cache_files.artist_cache_path(
                         self.out_dir, artist['id'])))
                 for item in answer['shelves'][2]['items']:  # with their tracks: they open
                     self.assertEqual(item['kind'], 'playlist')
@@ -454,8 +463,8 @@ class TestDemoLibrarySchema(unittest.TestCase):
 
     def test_album_pages(self):
         # Each album has what the catalog would show under its tracks, as the engine keeps
-        # it (normalize.album_page's keys), every shelf in Apple's order, More By untitled.
-        real = normalize.album_page({}, None)
+        # it (item_pages.album_page's keys), every shelf in Apple's order, More By untitled.
+        real = item_pages.album_page({}, None)
         for album in self.data['sections']['albums']:
             with self.subTest(id=album['id']):
                 path = os.path.join(self.out_dir, 'albums', f"{album['catalogId']}.json")
@@ -468,7 +477,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                                  {'releaseDate', 'copyright', 'recordLabel'})
                 self.assertTrue(answer['release']['releaseDate'].startswith(str(album['year'])))
                 keys = [shelf['key'] for shelf in answer['shelves']]
-                self.assertEqual(keys, [key for key in normalize.ALBUM_SHELVES if key in keys])
+                self.assertEqual(keys, [key for key in item_pages.ALBUM_SHELVES if key in keys])
                 self.assertIn('other-versions', keys)
                 self.assertIn('you-might-also-like', keys)
                 for shelf in answer['shelves']:
@@ -480,10 +489,10 @@ class TestDemoLibrarySchema(unittest.TestCase):
         with open(os.path.join(self.out_dir, 'albums', f"{first['catalogId']}.json"),
                   encoding='utf-8') as f:
             self.assertEqual([shelf['key'] for shelf in json.load(f)['shelves']],
-                             list(normalize.ALBUM_SHELVES))
+                             list(item_pages.ALBUM_SHELVES))
 
     def test_radio_page(self):
-        # The Radio page's answer, as the engine keeps it (normalize.radio_shelves' shape):
+        # The Radio page's answer, as the engine keeps it (editorial.radio_shelves' shape):
         # the live stations first, every shelf something in it, each station and show with
         # the keys the normaliser gives one, and each show's page beside it.
         with open(os.path.join(self.out_dir, 'radio.json'), encoding='utf-8') as f:
@@ -495,7 +504,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                          [True] + [False] * (len(shelves) - 1))
         station = set(normalize.normalize_station({'id': 'ra.1', 'attributes': {'name': 'S'}}))
         category = set(normalize.normalize_category({'id': '1', 'attributes': {'name': 'C'}}))
-        page_keys = set(normalize.category_page(None, self.out_dir))
+        page_keys = set(editorial.category_page(None, self.out_dir))
         kinds = set()
         banners = []
         for shelf in shelves:
@@ -523,12 +532,12 @@ class TestDemoLibrarySchema(unittest.TestCase):
         for banner in banners[:-1]:
             self.assertEqual(set(banner), {'url', 'art', 'crop', 'width', 'height', 'color'})
             self.assertIsNone(banner['url'])
-            self.assertEqual(banner['crop'], normalize.CURATOR_BANNER_CROP)
+            self.assertEqual(banner['crop'], banner_art.CURATOR_BANNER_CROP)
             _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(banner['art'])
             self.assertEqual((width, height), (banner['width'], banner['height']))
 
     def test_new_page_and_its_links_pages(self):
-        # The New page's answer, as the engine keeps it (normalize.editorial_shelves' shape):
+        # The New page's answer, as the engine keeps it (editorial.editorial_shelves' shape):
         # the banners first (Apple's label and line on each, a 16:9 banner drawn on disk for
         # all but the last), then shelves of the library's own items; its links, each to a
         # page written beside it, or the charts, or the web.
@@ -586,7 +595,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 with open(path, encoding='utf-8') as f:
                     answer = json.load(f)
                 keys = [shelf['key'] for shelf in answer['shelves']]
-                self.assertEqual(keys, [key for key in normalize.ARTIST_SHELVES if key in keys])
+                self.assertEqual(keys, [key for key in item_pages.ARTIST_SHELVES if key in keys])
                 shows = [shelf for shelf in answer['shelves'] if shelf['key'] == 'radio-shows']
                 hosts.append(bool(shows))
                 if not shows:
@@ -604,7 +613,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
         self.assertEqual(hosts, [True, False])
 
     def test_charts_page(self):
-        # The Charts page's answer, as the engine keeps it (normalize.charts_shelves' shape):
+        # The Charts page's answer, as the engine keeps it (charts.charts_shelves' shape):
         # every chart in the page's order, the rankings ranked, Top Songs a list of songs with
         # their albums, and the Daily Top 100 and City Charts playlists with their tracks, so
         # their pages open in the demo.
@@ -613,12 +622,12 @@ class TestDemoLibrarySchema(unittest.TestCase):
         self.assertIs(answer['demo'], True)
         self.assertEqual(set(answer) - {'demo', 'cached'}, {'shelves'})
         shelves = answer['shelves']
-        self.assertEqual([shelf['chart'] for shelf in shelves], list(normalize.CHART_ORDER))
+        self.assertEqual([shelf['chart'] for shelf in shelves], list(charts.CHART_ORDER))
         for shelf in shelves:
             self.assertEqual(shelf['key'], 'charts-' + shelf['chart'])
             self.assertTrue(shelf['title'] and shelf['items'])
             self.assertEqual(shelf.get('ranked', False),
-                             shelf['chart'] in normalize.RANKED_CHARTS)
+                             shelf['chart'] in charts.RANKED_CHARTS)
             self.assertEqual(shelf.get('form'), 'songs' if shelf['chart'] == 'songs' else None)
         songs = shelves[0]['items']
         self.assertEqual({item['kind'] for item in songs}, {'song'})
@@ -630,7 +639,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 self.assertTrue(os.path.exists(item['thumb']))
 
     def test_charts_genres(self):
-        # The genres the Charts page offers (normalize.catalog_genres' shape) and each one's
+        # The genres the Charts page offers (charts.catalog_genres' shape) and each one's
         # charts (charts/<id>.json): its rankings alone, of the library's albums of it.
         def read(*parts):
             with open(os.path.join(self.out_dir, *parts), encoding='utf-8') as f:
@@ -655,7 +664,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                                      albums)
 
     def test_replay(self):
-        # Replay's answers, as the engine keeps them (normalize.replay_page's shape): the
+        # Replay's answers, as the engine keeps them (charts.replay_page's shape): the
         # latest year's in replay.json, each earlier year's in replay/<year>.json, every one
         # listing the years, its views ranked and untitled (the app names them), Top Songs a
         # list of songs with their albums, the artists and albums the library's own, and
@@ -677,12 +686,12 @@ class TestDemoLibrarySchema(unittest.TestCase):
                 self.assertIs(answer['demo'], True)
                 self.assertEqual(set(answer) - {'demo', 'cached'},
                                  {'year', 'years', 'shelves', 'basis'})
-                self.assertEqual(answer['basis'], normalize.REPLAY_SHAPE)
+                self.assertEqual(answer['basis'], charts.REPLAY_SHAPE)
                 self.assertEqual((answer['year'], answer['years']), (year, years))
                 shelves = answer['shelves']
                 self.assertEqual([shelf['chart'] for shelf in shelves],
-                                 [chart for _name, chart in normalize.REPLAY_VIEWS]
-                                 + [normalize.REPLAY_PLAYLISTS])
+                                 [chart for _name, chart in charts.REPLAY_VIEWS]
+                                 + [charts.REPLAY_PLAYLISTS])
                 for shelf in shelves:
                     self.assertEqual(shelf['key'], 'replay-' + shelf['chart'].removeprefix(
                         'replay-'))
@@ -704,7 +713,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
                     self.assertTrue(os.path.exists(item['thumb']))
 
     def test_recently_played(self):
-        # Home's Recently Played, as the engine keeps it (normalize.recently_played's
+        # Home's Recently Played, as the engine keeps it (recommendations.recently_played's
         # shape): the library's own albums, playlists and station, without track lists.
         with open(os.path.join(self.out_dir, 'recent-played.json'), encoding='utf-8') as f:
             answer = json.load(f)
@@ -815,7 +824,7 @@ class TestDemoLibrarySchema(unittest.TestCase):
             # Its thumbnail by its shorter edge, as a sync scales a video's (#383): the
             # thumbnail size high, so a 160 px frame at 2x is drawn without enlarging.
             _fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(video['thumb'])
-            self.assertEqual((width, height), normalize.thumb_box(config.THUMB_SIZE, wide=True))
+            self.assertEqual((width, height), art_cache.thumb_box(config.THUMB_SIZE, wide=True))
 
     def test_the_demo_has_the_normalisers_shapes(self):
         # Each kind of Item has the keys the real sync gives it (normalize), no more, no less,

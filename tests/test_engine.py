@@ -35,7 +35,7 @@ from gi.events import GLibEventLoop
 from gi.repository import Gio, GLib
 
 from applemusic import engine as engine_module
-from applemusic.backend import api, chrome, normalize, store
+from applemusic.backend import api, art_cache, cache_files, charts, chrome, store
 from applemusic.backend import client as client_module
 from applemusic.backend.errors import EngineError
 from applemusic.engine import Engine
@@ -903,7 +903,7 @@ class LifecycleTest(EngineFixture):
                 json.load(f))
         await self.engine.start()
         fetched = []
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation:
                                fetched.append(cache_dir) or item):
             item = await self.engine.item('album', '1724040700')
@@ -941,7 +941,7 @@ class LifecycleTest(EngineFixture):
                  'attributes': {'name': 'Unreachable'}}]}}}]}
         self.page.api_answers['/v1/catalog/us/albums/1724040700?include=tracks'] = album
         await self.engine.start()
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation: item):
             item = await self.engine.item('artist', '42')
         self.assertEqual(self.page.api_calls, [
@@ -970,7 +970,7 @@ class LifecycleTest(EngineFixture):
         self.page.api_answers[f'{base}/albums?offset=4'] = {'data': stubs(5)}
         await self.engine.start()
         with mock.patch.object(engine_module, 'ALBUM_BATCH', 2), \
-                mock.patch.object(normalize, 'download_item_art',
+                mock.patch.object(art_cache, 'download_item_art',
                                   lambda item, cache_dir, art_urls, generation: item):
             item = await self.engine.item('artist', '42')
         self.assertEqual([group['name'] for group in item['groups']],
@@ -997,7 +997,7 @@ class LifecycleTest(EngineFixture):
                                          'next': f'{path}/tracks?offset=100'}}}]}
         self.page.api_answers[f'{path}/tracks?offset=100'] = {'data': tracks(100, 150)}
         await self.engine.start()
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation: item):
             item = await self.engine.item('playlist', 'pl.u-1')
         entries = [entry for group in item['groups'] for entry in group['entries']]
@@ -1013,7 +1013,7 @@ class LifecycleTest(EngineFixture):
             'id': 'ra.1', 'type': 'stations', 'attributes': {'name': 'Harbour Radio'}}]}
         await self.engine.start()
         reads = self.page.status_reads
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation: item):
             await self.engine.item('station', 'ra.1')
             await self.engine.item('station', 'ra.1')
@@ -1494,7 +1494,7 @@ class PlaybackTest(EngineFixture):
         await self.up_for_lyrics()
         path = self.cache / 'lyrics' / '1000000006.json'
         older = {'synced': False, 'lines': [{'startMs': 0, 'endMs': 0, 'text': 'Kept'}]}
-        normalize.write_answer(str(path), older, str(self.cache))  # before pronunciations
+        cache_files.write_answer(str(path), older, str(self.cache))  # before pronunciations
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': [
             {'startMs': 0, 'endMs': 0, 'text': '\u6f6e', 'pronunciation': 'Shio',
              'translation': 'Tide'}]}
@@ -1564,7 +1564,7 @@ class PlaybackTest(EngineFixture):
         older = {'synced': True, 'languages': self.LANGUAGES, 'lines': [
             {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights (lights)'}]}
         path = self.cache / 'lyrics' / '1000000012.json'
-        normalize.write_answer(str(path), older, str(self.cache))  # before the words
+        cache_files.write_answer(str(path), older, str(self.cache))  # before the words
         self.assertEqual(engine_module.lyrics_answer(older)['format'], 1)
         self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
             {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights',
@@ -1579,7 +1579,7 @@ class PlaybackTest(EngineFixture):
         # An older file is still the answer while the engine cannot give a new one, and
         # when Apple answers none.
         path = self.cache / 'lyrics' / '1000000013.json'
-        normalize.write_answer(str(path), older, str(self.cache))
+        cache_files.write_answer(str(path), older, str(self.cache))
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
         kept = await self.engine.lyrics('1000000013')
         self.assertEqual((kept['format'], kept['lines'][0]['text']),
@@ -1603,8 +1603,8 @@ class PlaybackTest(EngineFixture):
             {'startMs': 2000, 'endMs': 3000, 'text': 'Again'}])
         # A file an older version kept with the entities in it reads decoded.
         path = self.cache / 'lyrics' / '1000000005.json'
-        normalize.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES,
-                                           'format': 2, 'lines': [
+        cache_files.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES,
+                                             'format': 2, 'lines': [
             {'startMs': 0, 'endMs': 0, 'text': 'Salt &amp; &quot;air&quot;',
              'pronunciation': 'Shio &amp; kaze'}]}, str(self.cache))
         line = (await self.engine.lyrics('1000000005'))['lines'][0]
@@ -1796,7 +1796,7 @@ class ArtistTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049001'))
+        path = pathlib.Path(cache_files.artist_cache_path(str(self.cache), '1724049001'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'id': '1724049001', 'shelves': [], 'demo': True,
                                     'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
@@ -1804,7 +1804,7 @@ class ArtistTest(EngineFixture):
         self.assertEqual(answer['id'], '1724049001')
         self.assertNotIn('stale', answer)
         # One of Apple's, kept by the app before: not the demo's to show.
-        apple = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049002'))
+        apple = pathlib.Path(cache_files.artist_cache_path(str(self.cache), '1724049002'))
         apple.write_text(json.dumps({'id': '1724049002', 'shelves': [],
                                      'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
         for coro in (demo.artist_page('1724049002'), demo.artist_page('1724049003'),
@@ -1908,7 +1908,7 @@ class FavouriteArtistTest(EngineFixture):
 
     async def test_the_demo_remembers_it_for_the_session(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049001'))
+        path = pathlib.Path(cache_files.artist_cache_path(str(self.cache), '1724049001'))
         path.parent.mkdir(parents=True)
         page = {'id': '1724049001', 'shelves': [], 'favourite': False, 'demo': True,
                 'cached': '2020-01-01T00:00:00Z'}
@@ -1965,7 +1965,7 @@ class AlbumPageTest(EngineFixture):
     async def test_an_answer_kept_with_other_views_is_asked_again(self):
         # An older app asked for `related-albums`, which Apple has no view of: what it kept
         # lacks You Might Also Like, so it is not fresh, however young.
-        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
+        path = pathlib.Path(cache_files.album_cache_path(str(self.cache), '1724049100'))
         path.parent.mkdir(parents=True)
         old = {'id': '1724049100', 'artistId': '', 'artistName': '', 'release': {},
                'shelves': [], 'cached': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
@@ -2059,7 +2059,7 @@ class AlbumPageTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
+        path = pathlib.Path(cache_files.album_cache_path(str(self.cache), '1724049100'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'id': '1724049100', 'shelves': [], 'release': {},
                                     'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
@@ -2235,7 +2235,7 @@ class PlaylistPageTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.playlist_cache_path(str(self.cache), 'pl.demo001'))
+        path = pathlib.Path(cache_files.playlist_cache_path(str(self.cache), 'pl.demo001'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'id': 'pl.demo001', 'curator': None, 'shelves': [],
                                     'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
@@ -2306,7 +2306,7 @@ class CreditsTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.credits_cache_path(str(self.cache), '1724049201'))
+        path = pathlib.Path(cache_files.credits_cache_path(str(self.cache), '1724049201'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'categories': [], 'demo': True,
                                     'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
@@ -2425,7 +2425,7 @@ class SuggestionsTest(EngineFixture):
 
     async def test_the_demo_answers_its_own(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.suggestions_cache_path(str(self.cache), 'l.pl001'))
+        path = pathlib.Path(cache_files.suggestions_cache_path(str(self.cache), 'l.pl001'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'items': [], 'demo': True,
                                     'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
@@ -3099,7 +3099,7 @@ class SearchTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'engine-down')
         songs = [{'id': f'17240{n:05d}', 'kind': 'song', 'title': f'Tide Song {n}',
                   'subtitle': 'Invented Artist'} for n in range(30)]
-        path = pathlib.Path(normalize.demo_search_path(str(self.cache)))
+        path = pathlib.Path(cache_files.demo_search_path(str(self.cache)))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({'demo': True, 'cached': '2020-01-01T00:00:00Z',
                                     'shelves': [
@@ -3236,9 +3236,9 @@ class SearchTest(EngineFixture):
         answer = await self.engine.browse()
         self.assertEqual(self.page.api_calls, [path])
         self.assertTrue(answer['shelves'][0]['featured'])
-        self.assertEqual(answer['shape'], normalize.ANSWER_SHAPE)
+        self.assertEqual(answer['shape'], cache_files.ANSWER_SHAPE)
         kept = json.loads((self.cache / 'browse.json').read_text(encoding='utf-8'))
-        self.assertEqual(kept['shape'], normalize.ANSWER_SHAPE)
+        self.assertEqual(kept['shape'], cache_files.ANSWER_SHAPE)
         await self.engine.browse()
         self.assertEqual(self.page.api_calls, [path])  # this shape's: kept a day
 
@@ -3320,8 +3320,8 @@ class SearchTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'api')
         self.assertFalse((self.cache / 'charts.json').exists())
         # An older answer kept there is the answer then, as no longer fresh.
-        normalize.write_answer(str(self.cache / 'charts.json'), {'shelves': []},
-                               str(self.cache))
+        cache_files.write_answer(str(self.cache / 'charts.json'), {'shelves': []},
+                                 str(self.cache))
         self.expire(self.cache / 'charts.json')
         with self.assertLogs('applemusic.engine', 'WARNING'):
             answer = await self.engine.charts()
@@ -3440,7 +3440,7 @@ class SearchTest(EngineFixture):
             'recently_played': (self.engine.recently_played, self.cache / 'recent-played.json'),
         }
         for name, (_command, path) in commands.items():
-            normalize.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))
+            cache_files.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))
             self.expire(path)
         # Down: each answers its old answer, marked stale, stamped when it was fetched.
         for name, (command, _path) in commands.items():
@@ -3477,14 +3477,14 @@ class SearchTest(EngineFixture):
         # with the engine down still has it to answer, stale; one past the keep age goes.
         two_days = time.time() - 2 * 24 * 3600
         path = self.cache / 'radio.json'
-        normalize.write_answer(str(path), {'shelves': [], 'name': 'radio'}, str(self.cache))
+        cache_files.write_answer(str(path), {'shelves': [], 'name': 'radio'}, str(self.cache))
         self.expire(path)
         os.utime(path, (two_days, two_days))
         old = self.cache / 'charts.json'
-        normalize.write_answer(str(old), {'shelves': []}, str(self.cache))
-        long_ago = time.time() - normalize.ANSWER_KEEP_AGE - 60
+        cache_files.write_answer(str(old), {'shelves': []}, str(self.cache))
+        long_ago = time.time() - cache_files.ANSWER_KEEP_AGE - 60
         os.utime(old, (long_ago, long_ago))
-        gone = normalize.prune_caches(str(self.cache))
+        gone = cache_files.prune_caches(str(self.cache))
         self.assertEqual(gone['answers'], 1)
         self.assertFalse(old.exists())
         answer = await self.engine.radio()
@@ -3494,7 +3494,7 @@ class SearchTest(EngineFixture):
         await self.up()
         self.page.bridge_answers['searchLanding'] = {'data': []}
         path = self.cache / 'landing.json'
-        normalize.write_answer(str(path), {'categories': [{'id': 'old'}]}, str(self.cache))
+        cache_files.write_answer(str(path), {'categories': [{'id': 'old'}]}, str(self.cache))
         self.expire(path)
         answer = await self.engine.landing()
         self.assertEqual(self.page.bridge_calls, [('searchLanding',)])
@@ -3633,7 +3633,7 @@ class SearchTest(EngineFixture):
                          ['replay-songs', 'replay-albums', 'replay-playlists'])
         self.assertEqual([item['title'] for item in answer['shelves'][0]['items']],
                          ['Invented Song 900000302', 'Invented Song 900000301'])  # its rank
-        self.assertEqual(answer['basis'], normalize.REPLAY_SHAPE)
+        self.assertEqual(answer['basis'], charts.REPLAY_SHAPE)
         self.assertTrue((self.cache / 'replay.json').is_file())
         await self.engine.stop()
         self.assertEqual((await self.engine.replay())['year'], '2026')  # kept
@@ -3658,15 +3658,15 @@ class SearchTest(EngineFixture):
     async def test_a_replay_kept_in_an_older_shape_is_asked_again(self):
         await self.up()
         self.replay_answers()
-        path = normalize.replay_cache_path(str(self.cache))
-        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
-                               str(self.cache))
+        path = cache_files.replay_cache_path(str(self.cache))
+        cache_files.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
+                                 str(self.cache))
         answer = await self.engine.replay()
         self.assertEqual(self.page.api_calls[0], api.REPLAY_ENDPOINT)
         self.assertEqual(answer['shelves'][0]['key'], 'replay-songs')
         # Apple out of reach, the older one is still the answer, as no longer fresh.
-        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
-                               str(self.cache))
+        cache_files.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
+                                 str(self.cache))
         await self.engine.stop()
         answer = await self.engine.replay()
         self.assertIs(answer.get('stale'), True)
@@ -3997,8 +3997,8 @@ class DemoEngineTest(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         # A kept answer is not served either: a demo has none of Apple's.
-        normalize.write_answer(normalize.landing_cache_path(tmp.name), {'categories': []},
-                               tmp.name)
+        cache_files.write_answer(cache_files.landing_cache_path(tmp.name), {'categories': []},
+                                 tmp.name)
         engine = Engine(profile_dir='/nowhere/chrome', demo=True)
         await engine.start()
         await engine.start(visible=True)
@@ -4027,8 +4027,8 @@ class KeptAfterWipeTest(unittest.TestCase):
                                                str(cache / 'browse.json'), str(cache),
                                                generation)
         self.assertEqual(answer['shelves'], [])
-        normalize.write_answer(str(cache / 'lyrics' / '1.json'), {'lines': []}, str(cache),
-                               generation)
+        cache_files.write_answer(str(cache / 'lyrics' / '1.json'), {'lines': []}, str(cache),
+                                 generation)
         self.assertEqual(list(cache.iterdir()), [])
 
 

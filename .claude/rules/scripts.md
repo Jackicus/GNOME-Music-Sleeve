@@ -121,10 +121,10 @@ paths:
   artists, records and songs (none known), its editors' labels are invented (Harbourlight),
   and its covers are drawn (`draw_cover`: a design by genre, seeded by the words, film
   grain): no Apple mark and no real artwork, in it or in a screenshot of it. Its last write is `.demo-stamp`, a
-  hash of `demo_stamp.SOURCES` (the script, the backend's normalize.py and config.py) and of
-  the options it was given; the harness and `demo.sh` write build/demo again whenever
-  `demo_stamp.py build/demo` says it is missing or out of date (an older checkout's demo lacks
-  what newer steps open, such as an artist's Top Songs). A new source the demo's output
+  hash of `demo_stamp.SOURCES` (the script, the backend's normalize.py and the modules split
+  from it, and config.py) and of the options it was given; the harness and `demo.sh` write
+  build/demo again whenever `demo_stamp.py build/demo` says it is missing or out of date (an
+  older checkout's demo lacks what newer steps open, such as an artist's Top Songs). A new source the demo's output
   depends on goes in `SOURCES`. Its options only add: `--albums`, `--tracks` and `--playlists`
   generated albums, songs and playlists, `--videos N` generated music videos (Music Videos
   only: the other pages keep the six) and `--long-playlist N` one playlist of N songs,

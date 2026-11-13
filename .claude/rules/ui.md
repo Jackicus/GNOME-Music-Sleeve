@@ -114,7 +114,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   (pages/editorial.py), the charts, or the browser. New's featured shelf is `form:
   'banners'` when Apple's answer has their art (`widgets.banner_tile.BannerTile`, as wide
   as the row fits: `card_width()`; its image a fixed-size `BannerArt`). A category page (a
-  radio show's) whose answer has a `banner` (`normalize.curator_banner()`) puts its title
+  radio show's) whose answer has a `banner` (`banner_art.curator_banner()`) puts its title
   and `host` over it as the artist page does (`ShelvesPage._show_header()`, the same
   `ArtistBanner`, `banner.shown_banner()`, `banner.TEXT_TOP`). They,
   Search and the album and artist pages show what the engine's failure means through one

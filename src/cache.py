@@ -11,8 +11,8 @@ sign-out). No GTK; every function blocks, so call it in a thread.
     answer = await asyncio.to_thread(read_kept, path, allow_stale=True)   # older: `stale`
     await asyncio.to_thread(remove_trees, engine.profile_dir)   # a directory, retried
 
-Every file in it is written through backend/store.py (normalize.write_answer for the kept
-answers and lyrics); what is here reads and removes. normalize.prune_caches trims it.
+Every file in it is written through backend/store.py (cache_files.write_answer for the kept
+answers and lyrics); what is here reads and removes. cache_files.prune_caches trims it.
 """
 
 import logging
@@ -21,7 +21,7 @@ import os
 import shutil
 import time
 
-from .backend import normalize, store
+from .backend import cache_files, store
 
 log = logging.getLogger(__name__)
 
@@ -95,14 +95,14 @@ def clear(path):
     return removed
 
 
-def read_kept(path, max_age=normalize.ANSWER_MAX_AGE, touch=False, allow_stale=False):
-    """The answer kept at path (normalize.write_answer's, stamped `cached`) when it is younger
+def read_kept(path, max_age=cache_files.ANSWER_MAX_AGE, touch=False, allow_stale=False):
+    """The answer kept at path (cache_files.write_answer's, stamped `cached`) when it is younger
     than `max_age` seconds, else None. With `allow_stale`, an older one too, marked
     `stale: True` (what the Engine answers when Apple cannot be asked). With `touch`, a hit
     sets the file's mtime to now, so the pruner keeps what was used last (the lyrics)."""
-    answer = normalize.read_answer(path, max_age)
+    answer = cache_files.read_answer(path, max_age)
     if answer is None and allow_stale:
-        answer = normalize.read_answer(path, math.inf)
+        answer = cache_files.read_answer(path, math.inf)
         if isinstance(answer, dict):
             answer['stale'] = True
     if not isinstance(answer, dict):

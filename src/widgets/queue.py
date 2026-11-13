@@ -64,7 +64,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango
 
 from .. import keyboard, shortcuts
 from ..actions import move_places, now_playing_track
-from ..backend import config, normalize, store
+from ..backend import art_cache, config, store
 from ..library import ItemRefs, drop_index
 from ..player import NowPlaying, format_time
 from ..remote import fetch_remote, on_disk, remote_art_path, sized_url
@@ -250,9 +250,9 @@ def art_candidates(url, cache_dir=None):
     if not url:
         return []
     cache_dir = cache_dir or str(config.cache_dir())
-    cover_url = sized_url(url, normalize.ART_SIZES['cover'])
+    cover_url = sized_url(url, art_cache.ART_SIZES['cover'])
     return [path for path in (remote_art_path(url, config.THUMB_SIZE),
-                              normalize.thumb_cache_path(cover_url, cache_dir) if cover_url
+                              art_cache.thumb_cache_path(cover_url, cache_dir) if cover_url
                               else None,
                               remote_art_path(url, config.COVER_SIZE)) if path]
 

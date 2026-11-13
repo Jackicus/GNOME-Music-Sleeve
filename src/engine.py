@@ -123,7 +123,7 @@ UI awaits.
     # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
     # suggestions are kept with `basis`, what the playlist held, and asked again once it holds
     # something else; Radio's until its live programmes run out (`expires`), whatever its age.
-    # Each is stamped `shape` too (normalize.ANSWER_SHAPE): one an older version kept in
+    # Each is stamped `shape` too (cache_files.ANSWER_SHAPE): one an older version kept in
     # another shape is asked again, whatever its age.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole
@@ -187,7 +187,20 @@ from gi.repository import Gio, GLib, GObject
 
 from . import cache
 from . import lyrics as lyrics_model
-from .backend import api, chrome, config, normalize, store
+from .backend import (
+    api,
+    art_cache,
+    cache_files,
+    charts,
+    chrome,
+    config,
+    editorial,
+    item_pages,
+    normalize,
+    recommendations,
+    search,
+    store,
+)
 from .backend.api import is_library_id, resource_type
 from .backend.client import EVENT_PREFIX, CDPClient, PipeTransport
 from .backend.errors import EngineError
@@ -285,7 +298,7 @@ def _folder(folder_id):
 
 def _shape_item(raw, cache_dir, generation):
     """In a thread: the API's resource as an Item with groups, its artwork fetched into
-    <cache>/remote-art/ (normalize.place_in_remote_art; for the cache of `generation`:
+    <cache>/remote-art/ (art_cache.place_in_remote_art; for the cache of `generation`:
     store.py)."""
     art_urls = {}
     item = normalize.normalize_item(raw, cache_dir, include_groups=True, art_urls=art_urls)
@@ -293,8 +306,8 @@ def _shape_item(raw, cache_dir, generation):
 
 
 def _fetch_item_art(item, art_urls, cache_dir, generation):
-    placed = normalize.place_in_remote_art(item, art_urls, cache_dir)
-    normalize.download_item_art(item, cache_dir, placed, generation=generation)
+    placed = art_cache.place_in_remote_art(item, art_urls, cache_dir)
+    art_cache.download_item_art(item, cache_dir, placed, generation=generation)
     return item
 
 
@@ -405,8 +418,8 @@ def _shape_and_keep(shaper, raw, path, cache_dir, generation, basis=None):
     if not keep:
         log.info('not keeping the answer for %s: one of its reads failed',
                  os.path.basename(path))
-        return normalize.stamp_answer(answer)
-    return normalize.write_answer(path, answer, cache_dir, generation)
+        return cache_files.stamp_answer(answer)
+    return cache_files.write_answer(path, answer, cache_dir, generation)
 
 
 async def _read_pages(read, path, params, page, limit, progress, concurrency):
@@ -452,7 +465,7 @@ async def _read_pages(read, path, params, page, limit, progress, concurrency):
 
 
 def _made_for_you(raw, cache_dir):
-    return {'shelves': normalize.made_for_you_shelves(raw.get('data'), cache_dir)}
+    return {'shelves': recommendations.made_for_you_shelves(raw.get('data'), cache_dir)}
 
 
 # The demo's Top Results: the first hit of each of its first kinds, at most this many.
@@ -1706,7 +1719,7 @@ class Engine(GObject.Object):
         """A catalog song's lyrics: {synced, lines: [{startMs, endMs, text, words?,
         background?, agent?, pronunciation?, translation?…}], languages, format}
         (lyrics_answer's shape), from <cache>/lyrics/<id>.json when they were fetched in the
-        last normalize.LYRICS_MAX_AGE in today's lyrics.FORMAT, with their translations and
+        last cache_files.LYRICS_MAX_AGE in today's lyrics.FORMAT, with their translations and
         pronunciations in `lyrics_languages` (no engine needed then; the read marks the
         file as played, for prune_caches), else through the bridge (the catalog's TTML with
         its translations and transliterations, parsed in the page) and kept there, stamped,
@@ -1721,7 +1734,7 @@ class Engine(GObject.Object):
             raise EngineError('usage', 'lyrics need a catalog song id')
         languages = dict(self.lyrics_languages)
         path = self.lyrics_path(catalog_song_id)
-        cached = await asyncio.to_thread(cache.read_kept, path, normalize.LYRICS_MAX_AGE, True)
+        cached = await asyncio.to_thread(cache.read_kept, path, cache_files.LYRICS_MAX_AGE, True)
         kept = lyrics_answer(cached) if cached is not None and cached.get('lines') else None
         if (kept is not None and kept['languages'] == languages
                 and kept['format'] == lyrics_model.FORMAT):
@@ -1736,7 +1749,7 @@ class Engine(GObject.Object):
                 raise
             return kept
         if answer['lines']:
-            await asyncio.to_thread(normalize.write_answer, str(path), answer,
+            await asyncio.to_thread(cache_files.write_answer, str(path), answer,
                                     str(self.cache_dir), generation)
         elif kept is not None:
             return kept
@@ -1797,7 +1810,7 @@ class Engine(GObject.Object):
         """Make the catalog artist one of the account's favourites (POST
         /v1/me/favorites?ids[artists]=<id>, the bridge's favourite()). It does not add them
         to the library. `rated('artist', id, 1)` follows, and the artist's kept page says so
-        (normalize.patch_answer). In demo mode only this session remembers it."""
+        (cache_files.patch_answer). In demo mode only this session remembers it."""
         await self._favourite_artist(artist_id, True)
 
     async def unfavourite_artist(self, artist_id):
@@ -1811,7 +1824,8 @@ class Engine(GObject.Object):
             client = await self._require_signed_in('favourite artists')
             await client.bridge('favourite', 'artists', artist_id, favourite)
             await asyncio.to_thread(
-                normalize.patch_answer, normalize.artist_cache_path(str(self.cache_dir), artist_id),
+                cache_files.patch_answer,
+                cache_files.artist_cache_path(str(self.cache_dir), artist_id),
                 {'favourite': favourite}, str(self.cache_dir), generation)
         self._favourite_artists[artist_id] = favourite
         self.emit('rated', 'artist', artist_id, 1 if favourite else 0)
@@ -2253,8 +2267,9 @@ class Engine(GObject.Object):
     # -- search and browsing -------------------------------------------------------------
     # The Search page's search, suggestions, landing and categories, the New page (browse)
     # and Made for You. Every one needs a signed-in engine, but a kept answer (the landing, a
-    # category, browse and made-for-you are kept for normalize.ANSWER_MAX_AGE) is answered
-    # without one. The shaping (backend.normalize) runs in a thread: it stats the artwork cache.
+    # category, browse and made-for-you are kept for cache_files.ANSWER_MAX_AGE) is answered
+    # without one. The shaping (backend.search and the others) runs in a thread: it stats the
+    # artwork cache.
 
     async def search(self, term, limit=SEARCH_LIMIT, kind=None, offset=0):
         """A search of the catalog (the Search page's Apple Music mode): {shelves: [{key,
@@ -2284,14 +2299,14 @@ class Engine(GObject.Object):
             raw = await client.bridge('search', term, int(limit), api.SEARCH_KIND_TYPES[kind],
                                       offset, False, timeout=SEARCH_TIMEOUT)
         _raise_api_errors(raw, 'search')
-        return await asyncio.to_thread(normalize.search_results, raw, str(self.cache_dir),
+        return await asyncio.to_thread(search.search_results, raw, str(self.cache_dir),
                                        kind)
 
     async def _demo_catalog(self):
-        """The demo's invented catalog (normalize.demo_search_path(), marked `demo`), or
+        """The demo's invented catalog (cache_files.demo_search_path(), marked `demo`), or
         EngineError('engine-down') without one, as for any other command in the demo."""
         catalog = await asyncio.to_thread(
-            cache.read_kept, normalize.demo_search_path(str(self.cache_dir)), allow_stale=True)
+            cache.read_kept, cache_files.demo_search_path(str(self.cache_dir)), allow_stale=True)
         if catalog is None or catalog.get('demo') is not True:
             raise EngineError('engine-down', 'the engine is not running')
         return catalog
@@ -2310,11 +2325,11 @@ class Engine(GObject.Object):
         client = await self._require_signed_in('search')
         raw = await client.bridge('suggest', term, int(limit), timeout=SEARCH_TIMEOUT)
         _raise_api_errors(raw, 'suggestions')
-        return await asyncio.to_thread(normalize.search_suggestions, raw, str(self.cache_dir))
+        return await asyncio.to_thread(search.search_suggestions, raw, str(self.cache_dir))
 
     async def _kept_answer(self, path, refresh, fetch, shaper, basis=None):
         """A day-long answer, kept at `path`: from the file while it is younger than
-        normalize.ANSWER_MAX_AGE (no engine needed) unless `refresh`, else `await
+        cache_files.ANSWER_MAX_AGE (no engine needed) unless `refresh`, else `await
         fetch(client)`'s raw answer, shaped by `shaper(raw, cache_dir)` in a thread and kept
         there, stamped `cached`. When Apple cannot be asked (the engine down or signed out,
         the page or the network failing) or its answer cannot be shaped (EngineError('api'),
@@ -2323,8 +2338,8 @@ class Engine(GObject.Object):
         answer was asked about, as a string), the answer is kept with it, and one kept with
         another is not fresh, whatever its age: Apple is asked again (and the old one is
         still answered, stale, when Apple cannot be asked). Nor is one whose `expires` has
-        passed (normalize.answer_expired: Radio's live programmes), or one an older version
-        kept in another shape (normalize.answer_current, ANSWER_SHAPE). Demo mode has none of
+        passed (cache_files.answer_expired: Radio's live programmes), or one an older version
+        kept in another shape (cache_files.answer_current, ANSWER_SHAPE). Demo mode has none of
         Apple's answers: only an invented one the demo library wrote there (marked `demo`), at
         any age, else 'engine-down'."""
         if self.demo:
@@ -2337,7 +2352,7 @@ class Engine(GObject.Object):
         if not refresh:
             kept = await asyncio.to_thread(cache.read_kept, path)
             if (kept is not None and (basis is None or kept.get('basis') == basis)
-                    and normalize.answer_current(kept) and not normalize.answer_expired(kept)):
+                    and cache_files.answer_current(kept) and not cache_files.answer_expired(kept)):
                 return kept
         try:
             client = await self._require_signed_in('browse')
@@ -2352,9 +2367,9 @@ class Engine(GObject.Object):
                 raise
             if basis is not None and stale.get('basis') != basis:
                 stale['stale'] = True  # young, but for what the playlist held before
-            if normalize.answer_expired(stale):
+            if cache_files.answer_expired(stale):
                 stale['stale'] = True  # young, but its programmes are over
-            if not normalize.answer_current(stale):
+            if not cache_files.answer_current(stale):
                 stale['stale'] = True  # young, but kept by a version that shaped it otherwise
             log.info('answering a kept answer no longer fresh: %s', error)
             return stale
@@ -2363,19 +2378,19 @@ class Engine(GObject.Object):
         """The search page's Browse Categories: {categories: [{id, kind: 'category', title,
         subtitle, art, artColor, url}]} in Apple's order, `art` a small catalog URL. From
         <cache>/landing.json for a day (no engine needed then), else the bridge's
-        searchLanding (the search-landing recommendation set) shaped by normalize.search_landing
+        searchLanding (the search-landing recommendation set) shaped by search.search_landing
         and kept there (_kept_answer). `refresh` asks Apple again."""
         async def fetch(client):
             raw = await client.bridge('searchLanding', timeout=SEARCH_TIMEOUT)
             _raise_api_errors(raw, 'search landing')
             return raw
-        return await self._kept_answer(normalize.landing_cache_path(str(self.cache_dir)),
-                                       refresh, fetch, normalize.search_landing)
+        return await self._kept_answer(cache_files.landing_cache_path(str(self.cache_dir)),
+                                       refresh, fetch, search.search_landing)
 
     async def category(self, category_id, refresh=False):
         """A category's page: {id, title, shelves: [{key, title, items}]}, the curator's
         grouping as shelves (Best New Songs, New Releases, Playlists, Stations…; a radio
-        show's episodes), then its own playlists (normalize.category_page). From
+        show's episodes), then its own playlists (editorial.category_page). From
         <cache>/categories/<id>.json for a day, else the bridge's category() and kept."""
         category_id = str(category_id or '')
         if not category_id:
@@ -2386,8 +2401,8 @@ class Engine(GObject.Object):
             _raise_api_errors(raw, f'category {category_id}')
             return raw
         return await self._kept_answer(
-            normalize.category_cache_path(str(self.cache_dir), category_id), refresh, fetch,
-            normalize.category_page)
+            cache_files.category_cache_path(str(self.cache_dir), category_id), refresh, fetch,
+            editorial.category_page)
 
     async def browse(self, refresh=False):
         """The New page: {shelves: [{key, title, items}]}, the editorial groupings behind
@@ -2399,13 +2414,13 @@ class Engine(GObject.Object):
             storefront = await self._current_storefront()
             return await self._api(client, api.BROWSE_ENDPOINT.format(storefront=storefront),
                                    api.BROWSE_PARAMS, timeout=BROWSE_TIMEOUT)
-        return await self._kept_answer(normalize.browse_cache_path(str(self.cache_dir)),
-                                       refresh, fetch, normalize.editorial_shelves)
+        return await self._kept_answer(cache_files.browse_cache_path(str(self.cache_dir)),
+                                       refresh, fetch, editorial.editorial_shelves)
 
     async def radio(self, refresh=False):
         """The Radio page: {shelves: [{key, title, items}], expires?}, the editorial grouping
         behind music.apple.com's own Radio page (api.BROWSE_ENDPOINT with api.RADIO_PARAMS:
-        name=radio, the stations' programmes and shows) as normalize.radio_shelves shapes
+        name=radio, the stations' programmes and shows) as editorial.radio_shelves shapes
         it: the live stations first (`live`, each with its `events`), then the hero's
         others, the shows, episodes and genre stations in Apple's order. From
         <cache>/radio.json for a day or until `expires` (the live programmes run out), else
@@ -2414,13 +2429,13 @@ class Engine(GObject.Object):
             storefront = await self._current_storefront()
             return await self._api(client, api.BROWSE_ENDPOINT.format(storefront=storefront),
                                    api.RADIO_PARAMS, timeout=BROWSE_TIMEOUT)
-        return await self._kept_answer(normalize.radio_cache_path(str(self.cache_dir)),
-                                       refresh, fetch, normalize.radio_shelves)
+        return await self._kept_answer(cache_files.radio_cache_path(str(self.cache_dir)),
+                                       refresh, fetch, editorial.radio_shelves)
 
     async def charts(self, genre=None, refresh=False):
         """The Charts page: {shelves: [{key, title, items, chart[, ranked][, form]}]}, the
         storefront's charts (api.CHARTS_ENDPOINT with api.CHARTS_PARAMS: every kind, most
-        played, with the Daily Top 100 and City Charts playlists) as normalize.charts_shelves
+        played, with the Daily Top 100 and City Charts playlists) as charts.charts_shelves
         shapes them: Top Songs (ranked, a list), Top Albums, Top Playlists (ranked), the Daily
         Top 100 and City Charts playlists, Top Music Videos (ranked). Apple refusing the
         playlists' `with` (a 400) is asked again without it (api.CHARTS_PLAIN_PARAMS). With a
@@ -2445,20 +2460,20 @@ class Engine(GObject.Object):
                 log.info('charts: the daily and city charts refused (%s); without them', error)
                 return await self._api(client, endpoint, api.CHARTS_PLAIN_PARAMS,
                                        timeout=BROWSE_TIMEOUT)
-        return await self._kept_answer(normalize.charts_cache_path(str(self.cache_dir), genre),
-                                       refresh, fetch, normalize.charts_shelves)
+        return await self._kept_answer(cache_files.charts_cache_path(str(self.cache_dir), genre),
+                                       refresh, fetch, charts.charts_shelves)
 
     async def genres(self, refresh=False):
         """The genres the Charts page offers: {genres: [{id, title}]}, the catalog's
         (api.GENRES_ENDPOINT) in Apple's order, Music, every genre's, left out
-        (normalize.catalog_genres). From <cache>/genres.json for a day, else fetched and
+        (charts.catalog_genres). From <cache>/genres.json for a day, else fetched and
         kept."""
         async def fetch(client):
             storefront = await self._current_storefront()
             return await self._api(client, api.GENRES_ENDPOINT.format(storefront=storefront),
                                    api.GENRES_PARAMS, timeout=BROWSE_TIMEOUT)
-        return await self._kept_answer(normalize.genres_cache_path(str(self.cache_dir)),
-                                       refresh, fetch, normalize.catalog_genres)
+        return await self._kept_answer(cache_files.genres_cache_path(str(self.cache_dir)),
+                                       refresh, fetch, charts.catalog_genres)
 
     async def _editorial_page(self, what, page_id, refresh, endpoint, params, path, shaper):
         """One of the pages More to Explore's links open (a room, a grouping, a multiroom):
@@ -2478,35 +2493,35 @@ class Engine(GObject.Object):
 
     async def room(self, room_id, refresh=False):
         """An editorial room (a More to Explore link's collection): {id, title, items}, its
-        contents in Apple's order as normalize.editorial_room shapes them (api.ROOM_ENDPOINT).
+        contents in Apple's order as editorial.editorial_room shapes them (api.ROOM_ENDPOINT).
         From <cache>/rooms/<id>.json for a day, else fetched and kept."""
         return await self._editorial_page('room', room_id, refresh, api.ROOM_ENDPOINT,
-                                          api.ROOM_PARAMS, normalize.room_cache_path,
-                                          normalize.editorial_room)
+                                          api.ROOM_PARAMS, cache_files.room_cache_path,
+                                          editorial.editorial_room)
 
     async def grouping(self, grouping_id, refresh=False):
         """An editorial grouping (a More to Explore link's page, New's shape): {id, title,
-        shelves, links} as normalize.editorial_grouping shapes them (api.GROUPING_ENDPOINT
+        shelves, links} as editorial.editorial_grouping shapes them (api.GROUPING_ENDPOINT
         with api.GROUPING_PARAMS). From <cache>/groupings/<id>.json for a day, else fetched
         and kept."""
         return await self._editorial_page('grouping', grouping_id, refresh,
                                           api.GROUPING_ENDPOINT, api.GROUPING_PARAMS,
-                                          normalize.grouping_cache_path,
-                                          normalize.editorial_grouping)
+                                          cache_files.grouping_cache_path,
+                                          editorial.editorial_grouping)
 
     async def multiroom(self, multiroom_id, refresh=False):
         """An editorial multiroom (a More to Explore link's page of shelves): {id, title,
-        shelves, links} as normalize.editorial_multiroom shapes them
+        shelves, links} as editorial.editorial_multiroom shapes them
         (api.MULTIROOM_ENDPOINT with api.MULTIROOM_PARAMS). From
         <cache>/multirooms/<id>.json for a day, else fetched and kept."""
         return await self._editorial_page('multiroom', multiroom_id, refresh,
                                           api.MULTIROOM_ENDPOINT, api.MULTIROOM_PARAMS,
-                                          normalize.multiroom_cache_path,
-                                          normalize.editorial_multiroom)
+                                          cache_files.multiroom_cache_path,
+                                          editorial.editorial_multiroom)
 
     async def artist_page(self, artist_id, refresh=False):
         """A catalog artist's page: {id, artist, banner, latest, topSongs, shelves}
-        (normalize.artist_page), every section of it in one read (api.ARTIST_ENDPOINT with
+        (item_pages.artist_page), every section of it in one read (api.ARTIST_ENDPOINT with
         all of api.ARTIST_VIEWS), the shelves in music.apple.com's order and titled as Apple
         titles them. From <cache>/artists/<id>.json for a day, else fetched and kept."""
         artist_id = str(artist_id or '')
@@ -2519,8 +2534,8 @@ class Engine(GObject.Object):
                 client, api.ARTIST_ENDPOINT.format(storefront=storefront, id=artist_id),
                 api.ARTIST_PARAMS, timeout=READ_TIMEOUT)
         answer = await self._kept_answer(
-            normalize.artist_cache_path(str(self.cache_dir), artist_id), refresh, fetch,
-            normalize.artist_page)
+            cache_files.artist_cache_path(str(self.cache_dir), artist_id), refresh, fetch,
+            item_pages.artist_page)
         # The favourite as this session last wrote or read it, over a kept answer's.
         known = self._favourite_artists.get(artist_id)
         if known is not None:
@@ -2539,7 +2554,7 @@ class Engine(GObject.Object):
         storefront = await self._current_storefront()
         path = api.ARTIST_VIEW_ENDPOINT.format(storefront=storefront, id=artist_id, view=view)
         resources = await self._whole_view(client, path)
-        return await asyncio.to_thread(normalize.artist_view_items, view, resources,
+        return await asyncio.to_thread(item_pages.artist_view_items, view, resources,
                                        str(self.cache_dir))
 
     async def _whole_view(self, client, path, limit=None):
@@ -2563,7 +2578,7 @@ class Engine(GObject.Object):
 
     async def album_page(self, album_id, song_id=None, refresh=False):
         """The rest of an album's page, under its tracks: {id, artistId, artistName, release,
-        shelves} (normalize.album_page): the footer's release date, copyright and label, and
+        shelves} (item_pages.album_page): the footer's release date, copyright and label, and
         the shelves in music.apple.com's order (Other Versions, Music Videos, More By, Featured
         On, You Might Also Like), titled as Apple titles them (More By untitled: the page
         names it). Two reads: the catalog album with its views (api.ALBUM_ENDPOINT), then a
@@ -2609,8 +2624,8 @@ class Engine(GObject.Object):
                     return _Unkept({'album': album, 'moreBy': None})
             return {'album': album, 'moreBy': more_by}
         return await self._kept_answer(
-            normalize.album_cache_path(str(self.cache_dir), album_id), refresh, fetch,
-            normalize.album_page, basis=api.ALBUM_PARAMS['views'])
+            cache_files.album_cache_path(str(self.cache_dir), album_id), refresh, fetch,
+            item_pages.album_page, basis=api.ALBUM_PARAMS['views'])
 
     async def album_view(self, album_id, view):
         """One of a catalog album's views (api.ALBUM_VIEWS) whole, for its See All: its
@@ -2622,12 +2637,12 @@ class Engine(GObject.Object):
         storefront = await self._current_storefront()
         path = api.ALBUM_VIEW_ENDPOINT.format(storefront=storefront, id=album_id, view=view)
         resources = await self._whole_view(client, path)
-        return await asyncio.to_thread(normalize.album_view_items, view, resources,
+        return await asyncio.to_thread(item_pages.album_view_items, view, resources,
                                        str(self.cache_dir))
 
     async def playlist_page(self, playlist_id, refresh=False):
         """The rest of a catalog playlist's page, under its tracks: {id, curator, shelves}
-        (normalize.playlist_page): the curator its title names, for the link to their page,
+        (item_pages.playlist_page): the curator its title names, for the link to their page,
         and the shelves in music.apple.com's order (Featured Artists, More By the curator,
         You Might Also Like), titled as Apple titles them. Two reads: the catalog playlist
         with its curator and views (api.PLAYLIST_PARAMS), asked again with the documented
@@ -2670,8 +2685,8 @@ class Engine(GObject.Object):
                     return _Unkept({'playlist': playlist, 'curatorPlaylists': None})
             return {'playlist': playlist, 'curatorPlaylists': curator_playlists}
         return await self._kept_answer(
-            normalize.playlist_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
-            normalize.playlist_page, basis=api.PLAYLIST_PARAMS['views'])
+            cache_files.playlist_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
+            item_pages.playlist_page, basis=api.PLAYLIST_PARAMS['views'])
 
     async def playlist_view(self, playlist_id, view):
         """One of a catalog playlist's views (api.PLAYLIST_READABLE_VIEWS) whole, for its See
@@ -2686,7 +2701,7 @@ class Engine(GObject.Object):
         path = api.PLAYLIST_VIEW_ENDPOINT.format(storefront=storefront, id=playlist_id,
                                                  view=view)
         resources = await self._whole_view(client, path)
-        return await asyncio.to_thread(normalize.playlist_view_items, resources, playlist_id,
+        return await asyncio.to_thread(item_pages.playlist_view_items, resources, playlist_id,
                                        str(self.cache_dir))
 
     async def curator_playlists(self, curator_id):
@@ -2701,14 +2716,14 @@ class Engine(GObject.Object):
         storefront = await self._current_storefront()
         path = api.CURATOR_PLAYLISTS_ENDPOINT.format(storefront=storefront, id=curator_id)
         resources = await self._whole_view(client, path, api.CURATOR_PLAYLISTS_LIMIT)
-        return await asyncio.to_thread(normalize.playlist_view_items, resources, '',
+        return await asyncio.to_thread(item_pages.playlist_view_items, resources, '',
                                        str(self.cache_dir))
 
     async def playlist_suggestions(self, playlist_id, refresh=False, limit=SUGGESTIONS_LIMIT,
                                    offered=(), selected=(), more=False, basis=None,
                                    previewed=()):
         """The songs Apple suggests adding to a library playlist, as music.apple.com shows
-        them under it: {items} (normalize.playlist_suggestions), at most `limit` song Items
+        them under it: {items} (item_pages.playlist_suggestions), at most `limit` song Items
         in Apple's order, which may include songs the playlist holds already. One read (the
         bridge's playlistSuggestions()), from <cache>/suggestions/<id>.json for a day, else
         fetched and kept; `refresh` asks Apple for new ones, which are kept instead. `basis`
@@ -2736,15 +2751,15 @@ class Engine(GObject.Object):
             if self.demo:
                 raise EngineError('engine-down', 'the engine is not running')
             raw = await fetch(await self._require_signed_in('browse'))
-            return await asyncio.to_thread(normalize.playlist_suggestions, raw,
+            return await asyncio.to_thread(item_pages.playlist_suggestions, raw,
                                            str(self.cache_dir))
         return await self._kept_answer(
-            normalize.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
-            normalize.playlist_suggestions, basis=basis)
+            cache_files.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
+            item_pages.playlist_suggestions, basis=basis)
 
     async def credits(self, song_id, refresh=False):
         """A catalog song's credits, as View Credits shows them: {categories: [{kind, title,
-        people: [{name, roles}]}]} (normalize.song_credits), the performers, the composition
+        people: [{name, roles}]}]} (item_pages.song_credits), the performers, the composition
         and lyrics, the production and engineering, in Apple's order and titled as Apple
         titles them. One read (api.SONG_CREDITS_ENDPOINT); Apple's 404, a song it has no
         credits for, is no categories. From <cache>/credits/<id>.json for a day, else fetched
@@ -2766,8 +2781,8 @@ class Engine(GObject.Object):
                 log.info('no credits for song %s', song_id)
                 return {'data': []}
         return await self._kept_answer(
-            normalize.credits_cache_path(str(self.cache_dir), song_id), refresh, fetch,
-            normalize.song_credits)
+            cache_files.credits_cache_path(str(self.cache_dir), song_id), refresh, fetch,
+            item_pages.song_credits)
 
     async def catalog_artist(self, name, song_ids):
         """The id of the catalog artist a library artist stands for, or None. The library
@@ -2813,7 +2828,7 @@ class Engine(GObject.Object):
     async def related(self, kind, item_id):
         """Where Go to Album and Go to Artist go for a catalog song, music video or album
         (`kind` 'song', 'video' or 'album') the library cannot place: {album, artists}
-        (normalize.related), its album (None for an album) and its artists as Items without
+        (item_pages.related), its album (None for an album) and its artists as Items without
         groups, from one read of it with its relationships (api.RELATED_ENDPOINTS).
         Remembered for the session. A library id is EngineError('usage')."""
         item_id = str(item_id or '')
@@ -2829,23 +2844,23 @@ class Engine(GObject.Object):
         answer = await self._api(client, endpoint.format(storefront=storefront, id=item_id),
                                  api.RELATED_PARAMS[kind], timeout=READ_TIMEOUT)
         # Off the loop: a hit's artwork is looked for on disk, as a search's are.
-        found = await asyncio.to_thread(normalize.related, answer, str(self.cache_dir))
+        found = await asyncio.to_thread(item_pages.related, answer, str(self.cache_dir))
         self._related[key] = found
         return found
 
     async def replay(self, year=None, refresh=False):
-        """Replay, the account's year in music: {year, years, shelves} (normalize.replay_page:
+        """Replay, the account's year in music: {year, years, shelves} (charts.replay_page:
         the year's Top Songs, a list, then Top Artists and Top Albums, each ranked, then each
         year's Replay playlist), the summary of the latest year, or of `year` (four digits;
         anything else is 'usage'; api.replay_request() has how each is asked), its top songs
         read from the catalog by id (Apple's summary names them by id alone:
-        normalize.replay_song_ids, api.replay_songs_params, one read), beside the years Apple
+        charts.replay_song_ids, api.replay_songs_params, one read), beside the years Apple
         has a Replay of (api.REPLAY_YEARS_ENDPOINT: the year menu's choice). Apple refusing
         the summary (a 400 or a 404: no listening history for the year) is a summary of
         nothing, a 404 for the songs none of them, and the years failing are none (that
         answer shown, not kept); anything else is the command's. From <cache>/replay.json
         (a past year's replay/<year>.json) for a day, else fetched and kept, with
-        normalize.REPLAY_SHAPE as its basis, so one kept in an older shape is asked
+        charts.REPLAY_SHAPE as its basis, so one kept in an older shape is asked
         again."""
         year = str(year or '')
         if year and not api.is_replay_year(year):
@@ -2861,7 +2876,7 @@ class Engine(GObject.Object):
                 log.info('replay: no summary of %s (%s)', year or 'the latest year', error)
                 summary = None
             songs = None
-            params = api.replay_songs_params(normalize.replay_song_ids(summary))
+            params = api.replay_songs_params(charts.replay_song_ids(summary))
             if params is not None:
                 storefront = await self._current_storefront()
                 try:
@@ -2882,9 +2897,9 @@ class Engine(GObject.Object):
                 return _Unkept({'summary': summary, 'songs': songs, 'years': None,
                                 'year': year})
             return {'summary': summary, 'songs': songs, 'years': years, 'year': year}
-        return await self._kept_answer(normalize.replay_cache_path(str(self.cache_dir), year),
-                                       refresh, fetch, normalize.replay_page,
-                                       basis=normalize.REPLAY_SHAPE)
+        return await self._kept_answer(cache_files.replay_cache_path(str(self.cache_dir), year),
+                                       refresh, fetch, charts.replay_page,
+                                       basis=charts.REPLAY_SHAPE)
 
     async def made_for_you(self, refresh=False):
         """Made for You: {shelves: [{key, title, items}]}, the recommendations
@@ -2894,11 +2909,11 @@ class Engine(GObject.Object):
         async def fetch(client):
             return await self._api(client, api.RECOMMENDATIONS_ENDPOINT,
                                    api.RECOMMENDATIONS_PARAMS, timeout=BROWSE_TIMEOUT)
-        return await self._kept_answer(normalize.made_for_you_cache_path(str(self.cache_dir)),
+        return await self._kept_answer(cache_files.made_for_you_cache_path(str(self.cache_dir)),
                                        refresh, fetch, _made_for_you)
 
     async def recently_played(self, refresh=False):
-        """Home's Recently Played: {items: [Item]} (normalize.recently_played), the albums,
+        """Home's Recently Played: {items: [Item]} (recommendations.recently_played), the albums,
         playlists and stations played last, newest first, from api.RECENT_PLAYED_ENDPOINT,
         api.RECENT_PLAYED_PAGE a read by offset, up to api.RECENT_PLAYED_LIMIT. A later page
         that fails answers the ones in hand, not kept; the first must answer. From
@@ -2923,5 +2938,5 @@ class Engine(GObject.Object):
                     break
             return resources[:api.RECENT_PLAYED_LIMIT]
         return await self._kept_answer(
-            normalize.recent_played_cache_path(str(self.cache_dir)), refresh, fetch,
-            normalize.recently_played)
+            cache_files.recent_played_cache_path(str(self.cache_dir)), refresh, fetch,
+            recommendations.recently_played)

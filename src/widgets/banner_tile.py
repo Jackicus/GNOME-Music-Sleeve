@@ -52,7 +52,7 @@ def drawn_edge(width, aspect):
 class BannerArt(Gtk.Widget):
     """The card's image, `width` (set_width()) by image_height() whatever it shows (a
     recycled card never changes size for what it shows): the Item's banner (`banner`:
-    normalize.featured_extras' dict, its file fetched for the widest card,
+    banner_art.featured_extras' dict, its file fetched for the widest card,
     remote.fetch_banner, or on disk as `art`, the demo's) cut to cover it, else its cover
     whole on its colour, until then that colour (or the card colour). Decorative: the card's
     name says what it is."""

@@ -95,7 +95,7 @@ def page_shelves(dicts):
 class ArtistPage(Adw.NavigationPage):
     """An artist Item's page: a round portrait, the name and genre, Play (the catalog
     artist's top songs, actions.can_play()) and the artist's menu, or, once the catalog
-    answers with the artist's banner (normalize.artist_banner: about half of Apple's artists
+    answers with the artist's banner (banner_art.artist_banner: about half of Apple's artists
     have one), the name, genre and buttons in white over the foot of that wide image
     (widgets.banner.ArtistBanner), edge to edge, as music.apple.com shows it; then what
     Apple's catalog has for the artist (Engine.artist_page, kept for a day): the latest or

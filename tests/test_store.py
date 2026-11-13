@@ -15,7 +15,7 @@ from unittest import mock
 
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
-from applemusic.backend import normalize, store
+from applemusic.backend import art_cache, cache_files, store
 
 
 class StoreTest(unittest.TestCase):
@@ -123,7 +123,7 @@ class GenerationTest(StoreTest):
 
     def test_a_wiped_cache_is_a_cancellation(self):
         self.assertTrue(issubclass(store.CacheGone, store.Cancelled))
-        self.assertIs(normalize.Cancelled, store.Cancelled)
+        self.assertIs(art_cache.Cancelled, store.Cancelled)
 
     def test_the_bump(self):
         generation = store.cache_generation()
@@ -181,16 +181,16 @@ class GenerationTest(StoreTest):
     def test_the_cache_writers_after_a_wipe(self):
         generation = self.old_generation()
         cache = str(self.cache)
-        answer = normalize.write_answer(str(self.cache / 'landing.json'), {'categories': []},
-                                        cache, generation=generation)
+        answer = cache_files.write_answer(str(self.cache / 'landing.json'), {'categories': []},
+                                          cache, generation=generation)
         self.assertIn('cached', answer)  # the answer is the caller's, only not kept
         with self.assertRaises(store.CacheGone):
-            normalize.save_library({'version': 1}, cache, generation=generation)
+            cache_files.save_library({'version': 1}, cache, generation=generation)
         with mock.patch('urllib.request.urlopen') as urlopen:
-            self.assertIsNone(normalize.cache_artwork('https://x.invalid/a.jpg', cache,
+            self.assertIsNone(art_cache.cache_artwork('https://x.invalid/a.jpg', cache,
                                                       generation=generation))
             with self.assertRaises(store.CacheGone):
-                normalize.download_art({str(self.cache / 'thumb' / 'b.jpg'): 'https://x/b.jpg'},
+                art_cache.download_art({str(self.cache / 'thumb' / 'b.jpg'): 'https://x/b.jpg'},
                                        cache, generation=generation)
         urlopen.assert_not_called()
         self.assertEqual(self.names(), [])
@@ -214,7 +214,7 @@ class GenerationTest(StoreTest):
             def __exit__(self, *exc):
                 return False
         with mock.patch('urllib.request.urlopen', lambda request, timeout: Answer()):
-            self.assertIsNone(normalize.cache_artwork('https://x.invalid/a.jpg', str(self.cache),
+            self.assertIsNone(art_cache.cache_artwork('https://x.invalid/a.jpg', str(self.cache),
                                                       generation=generation))
         self.assertEqual(self.names(self.cache / 'art'), [])
 
@@ -238,8 +238,8 @@ class ConfinedTest(StoreTest):
 
     def test_cache_artwork_writes_only_in_the_cache(self):
         with mock.patch('urllib.request.urlopen') as urlopen:
-            with self.assertLogs('applemusic.backend.normalize', 'WARNING'):
-                self.assertIsNone(normalize.cache_artwork(
+            with self.assertLogs('applemusic.backend.art_cache', 'WARNING'):
+                self.assertIsNone(art_cache.cache_artwork(
                     'https://x.invalid/a.jpg', str(self.cache),
                     dest_path=str(self.outside / 'autostart' / 'evil.desktop')))
         urlopen.assert_not_called()
@@ -262,7 +262,7 @@ class ConfinedTest(StoreTest):
                 return False
         dest = self.cache / 'remote-art' / 'abc.jpg'
         with mock.patch('urllib.request.urlopen', lambda request, timeout: Answer()):
-            self.assertEqual(normalize.cache_artwork('https://x.invalid/a.jpg', str(self.cache),
+            self.assertEqual(art_cache.cache_artwork('https://x.invalid/a.jpg', str(self.cache),
                                                      dest_path=str(dest)), str(dest))
         self.assertEqual(dest.read_bytes(), b'a cover')
         self.assertEqual(dest.stat().st_mode & 0o777, 0o600)
@@ -276,7 +276,7 @@ class ConfinedTest(StoreTest):
         for folder in (cache, cache / 'lyrics'):
             with self.subTest(folder=str(folder)):
                 self.assertEqual(folder.stat().st_mode & 0o777, 0o700)
-        normalize.save_library({'version': 1}, str(cache))
+        cache_files.save_library({'version': 1}, str(cache))
         self.assertEqual((cache / 'library.json').stat().st_mode & 0o777, 0o600)
 
 
@@ -284,16 +284,16 @@ class WritersTest(StoreTest):
     """The cache's writers go through the one write."""
 
     def test_save_library_that_fails_leaves_the_old_library(self):
-        normalize.save_library({'version': 1, 'sections': {}}, str(self.cache))
+        cache_files.save_library({'version': 1, 'sections': {}}, str(self.cache))
         before = (self.cache / 'library.json').read_text()
 
         def half_dump(data, file, **kwargs):
             file.write('{"version": 1, "sect')
             raise OSError(28, 'No space left on device')
-        with mock.patch.object(normalize.json, 'dump', half_dump):
+        with mock.patch.object(cache_files.json, 'dump', half_dump):
             with self.assertRaises(OSError):
-                normalize.save_library({'version': 1, 'sections': {'albums': []}},
-                                       str(self.cache))
+                cache_files.save_library({'version': 1, 'sections': {'albums': []}},
+                                         str(self.cache))
         self.assertEqual((self.cache / 'library.json').read_text(), before)
         self.assertEqual(self.names(), ['library.json'])
 
@@ -303,16 +303,16 @@ class WritersTest(StoreTest):
         def half_dump(data, file, **kwargs):
             file.write('{"categ')
             raise OSError(28, 'No space left on device')
-        with mock.patch.object(normalize.json, 'dump', half_dump):
-            with self.assertLogs('applemusic.backend.normalize', 'WARNING'):
-                answer = normalize.write_answer(str(path), {'categories': []},
-                                                str(self.cache))
+        with mock.patch.object(cache_files.json, 'dump', half_dump):
+            with self.assertLogs('applemusic.backend.cache_files', 'WARNING'):
+                answer = cache_files.write_answer(str(path), {'categories': []},
+                                                  str(self.cache))
         self.assertIn('cached', answer)  # the answer is still the caller's
         self.assertEqual(self.names(), [])
 
     def test_the_sizes_marker(self):
-        normalize.apply_art_sizes(str(self.cache), 640, 320)
-        self.addCleanup(normalize.ART_SIZES.update, normalize.DEFAULT_ART_SIZES)
+        art_cache.apply_art_sizes(str(self.cache), 640, 320)
+        self.addCleanup(art_cache.ART_SIZES.update, art_cache.DEFAULT_ART_SIZES)
         marker = self.cache / 'art' / '.sizes'
         self.assertEqual(json.loads(marker.read_text()), {'cover': 640, 'thumb': 320})
         self.assertEqual(self.names(self.cache / 'art'), ['.sizes'])
@@ -330,7 +330,7 @@ class PruneTempsTest(StoreTest):
         self.age(old, store.TEMP_MAX_AGE + 60)
         self.age(marker, store.TEMP_MAX_AGE + 60)
         library = {'sections': {}, 'shelves': []}
-        self.assertEqual(normalize.prune_art(library, str(self.cache)), 1)
+        self.assertEqual(cache_files.prune_art(library, str(self.cache)), 1)
         self.assertEqual(self.names(art), ['.a1b2.tmp', '.sizes'])
 
     def test_prune_remote_art_does_the_same(self):
@@ -340,7 +340,7 @@ class PruneTempsTest(StoreTest):
         for path in (fresh, old, cover):
             path.write_bytes(b'x' * 10)
         self.age(old, store.TEMP_MAX_AGE + 60)
-        self.assertEqual(normalize.prune_remote_art(str(self.cache), max_bytes=100), 1)
+        self.assertEqual(cache_files.prune_remote_art(str(self.cache), max_bytes=100), 1)
         self.assertEqual(self.names(remote), ['.a1b2.tmp', 'x.jpg'])
 
 

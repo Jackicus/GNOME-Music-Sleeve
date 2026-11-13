@@ -11,7 +11,7 @@ from unittest import mock
 
 from tests import ROOT, SRC
 
-from applemusic.backend import config, normalize
+from applemusic.backend import art_cache, config
 
 BACKEND = SRC / 'backend'
 TEXT_SUFFIXES = {'.py', '.js', '.json', '.md', '.sh', '.build', '.in', '.xml', '.blp', '.css'}
@@ -90,7 +90,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_sizes(self):
         self.assertEqual((config.THUMB_SIZE, config.COVER_SIZE), (320, 640))
-        self.assertEqual(normalize.DEFAULT_ART_SIZES, {'cover': 640, 'thumb': 320})
+        self.assertEqual(art_cache.DEFAULT_ART_SIZES, {'cover': 640, 'thumb': 320})
 
     def test_bridge_is_beside_the_module(self):
         self.assertEqual(config.BRIDGE_JS, BACKEND / 'bridge.js')
