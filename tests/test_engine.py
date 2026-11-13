@@ -2223,7 +2223,8 @@ class PlaylistPageTest(EngineFixture):
         items = await self.engine.curator_playlists('1724049500')
         self.assertEqual(self.page.api_calls, [self.CURATOR, later])
         self.assertEqual(self.page.api_params[0], {'limit': api.CURATOR_PLAYLISTS_LIMIT})
-        # Every one of them: the page leaves its own playlist out (detail.playlist_completer).
+        # Every one of them: the page leaves its own playlist out
+        # (detail_catalog.playlist_completer).
         self.assertEqual([item['id'] for item in items],
                          ['pl.aW52ZW50ZWRwbA', 'pl.aW52ZW50ZWRwMg', 'pl.aW52ZW50ZWQ4'])
 

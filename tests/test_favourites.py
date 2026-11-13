@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The library's dates added and favourites (library.py): Item.added and Item.favourite,
+"""The library's dates added and favourites (library/): Item.added and Item.favourite,
 Library.is_favourite() and set_favourite(), `favourites-changed`, and the Recently Added store,
 over invented library.json files. No sync, no display."""
 
@@ -12,7 +12,7 @@ from pathlib import Path
 from tests import ROOT  # noqa: F401  (registers src/ as applemusic)
 from tests.test_reload import ReloadCase, album, playlist, shelf
 
-from applemusic import library as library_module
+from applemusic.library import objects as objects_module
 from applemusic.library import Item, Track, added_seconds, favourite_set, recently_added_order
 
 
@@ -71,7 +71,7 @@ class TestAdded(unittest.TestCase):
                          ['added'])
         self.assertEqual(seen, ['added'])
         self.assertEqual(item.added, 1767225600 + 86400)
-        self.assertIn('added', library_module.SORT_KEYS)  # a sort key: the stores place it
+        self.assertIn('added', objects_module.SORT_KEYS)  # a sort key: the stores place it
 
     def test_favourite_set(self):
         self.assertEqual(favourite_set({'songs': ['1', 'i.x'], 'albums': ['l.a', 7, ''],

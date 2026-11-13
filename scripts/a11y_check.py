@@ -515,11 +515,6 @@ def describe(widget):
     return widget.__gtype__.name if widget is not None else 'nothing'
 
 
-def row_title(row):
-    """The title of a page-mode sidebar row (an action row), or '' for anything else."""
-    return getattr(row, 'get_title', lambda: '')() if row is not None else ''
-
-
 async def key(window, accel, wait=0.25):
     """Press accel and wait. With a real keyboard the press goes to the focused window,
     whatever `window` is, and nothing can say what handled it (None); emulated, it is
@@ -862,7 +857,7 @@ async def dialog_focus(window):
         return  # a dialog's own window takes the keys only once it is active
     playlist = first_playlist()
     window.select_page(f'playlist:{playlist.id}')
-    window.split_view.set_show_content(True)
+    window.hide_sidebar()
     await asyncio.sleep(0.8)
     page = window.navigation_view.get_visible_page()
     for opener, mnemonic, kind, name in (
@@ -871,7 +866,7 @@ async def dialog_focus(window):
             (window._sidebar.new_button(), 'w', PlaylistDialog, 'New Playlist… from the '
              "sidebar's New button")):
         if opener is not page.more_button and window.split_view.get_collapsed():
-            window.split_view.set_show_content(False)  # the narrow layout: the sidebar
+            window.split_view.set_show_sidebar(True)  # the narrow layout: over the page
             await asyncio.sleep(0.6)
         if opener is None or not opener.get_mapped():
             check(f'{name}: its button shows', False)
@@ -894,7 +889,7 @@ async def dialog_focus(window):
               describe(window.get_focus()))
     album = app.library.albums.get_item(0)
     window.open_item(album)
-    window.split_view.set_show_content(True)
+    window.hide_sidebar()
     await asyncio.sleep(1.0)
     detail = window.navigation_view.get_visible_page()
     detail.more_button.grab_focus()
@@ -1188,18 +1183,17 @@ async def genres_step(window):
     await asyncio.sleep(0.4)
     check('Show Genres lists it', item.get_visible())
     row = window._sidebar.row(item.get_index())
-    narrow = window.split_view.get_collapsed()  # a page-mode row has its title (an action row)
     check('Its row shows', row is not None and row.get_visible()
-          and (not narrow or row_title(row) == 'Genres'), row_title(row))
+          and sidebar_title(window, row) == 'Genres', sidebar_title(window, row))
     window.select_page('genres')
-    window.split_view.set_show_content(True)
+    window.hide_sidebar()
     await asyncio.sleep(1.0)
     genres = window.navigation_view.get_visible_page()
     check('Genres shows a grid of the genres', getattr(genres, 'grid_view', None) is not None
           and genres.stack.get_visible_child_name() == 'items',
           getattr(genres, 'get_title', lambda: genres)())
     genres.title_label.grab_focus()  # anywhere on the page: Ctrl+2 takes it into the grid
-    window.split_view.set_show_content(True)
+    window.hide_sidebar()
     await key(window, '<primary>2', 0.6)
     check('Ctrl+2 puts the focus on the first genre', inside(window.get_focus(),
                                                              genres.grid_view),
@@ -1232,7 +1226,7 @@ async def song_columns_step(window):
     (the menu's mnemonics all its own); hidden, with their items, in a narrow window."""
     print("-- Songs' Genre and Year columns")
     window.select_page('songs')
-    window.split_view.set_show_content(True)
+    window.hide_sidebar()
     await asyncio.sleep(1.0)
     songs = window.navigation_view.get_visible_page()
     songs.sort_button.grab_focus()
@@ -1269,8 +1263,9 @@ def sidebar_title(window, widget):
 
 
 async def new_button_step(window):
-    """The Playlists heading's New button: named, reached from the rows by Down in the
-    sidebar mode (and Down past it), by Tab in the page mode, Space opening its menu (New
+    """The Playlists heading's New button: named, reached from the rows by Down (and Down
+    past it), in the narrow layout's sidebar as in the wide one's (the window keeps the
+    sidebar mode; in AdwSidebar's page mode Tab would reach it), Space opening its menu (New
     Playlist…, New Folder…), Escape closing it with the focus back on the button."""
     print("-- the Playlists heading's New button")
     sidebar = window._sidebar
@@ -1325,52 +1320,85 @@ async def new_button_step(window):
               sidebar_title(window, window.get_focus()))
 
 
+async def sidebar_overlay_step(window):
+    """The narrow layout's sidebar (an Adw.OverlaySplitView's, over the page): the root
+    page's Show Sidebar button, F9, Escape and Alt+Left, the focus on the selected row as it
+    opens and back where it was as it closes, and the page under it never unmapped."""
+    print("-- the narrow layout's sidebar")
+    grid = window.navigation_view.get_visible_page()
+    buttons = [button for button in descendants(grid.header_bar)
+               if isinstance(button, Gtk.Button)
+               and button.get_action_name() == 'win.toggle-sidebar']
+    check('Albums has a Show Sidebar button named "Show Sidebar"',
+          [button.get_tooltip_text() for button in buttons if button.get_mapped()]
+          == ['Show Sidebar'], [button.get_tooltip_text() for button in buttons])
+    check('The sidebar keeps the sidebar mode',
+          window.sidebar.get_mode() == Adw.SidebarMode.SIDEBAR)
+    unmapped = []
+    handler = grid.grid_view.connect('unmap', lambda *_args: unmapped.append(True))
+    await key(window, '<primary>2', 0.6)
+    tile = window.get_focus()
+    check('Ctrl+2 puts the focus on a tile', inside(tile, grid.grid_view), describe(tile))
+    await key(window, 'F9', 0.8)
+    check('F9 opens the sidebar over the page, the focus on Albums, the selected row',
+          window.sidebar_open() and sidebar_title(window, window.get_focus()) == 'Albums',
+          describe(window.get_focus()))
+    check('Back (Alt+Left) is on while it is open',
+          window.lookup_action('back').get_enabled())
+    await key(window, 'Escape', 0.8)
+    check('Escape closes it, the focus back on the tile',
+          not window.sidebar_open() and window.get_focus() is tile,
+          describe(window.get_focus()))
+    check('Back is off again: a destination has nowhere to go back to',
+          not window.lookup_action('back').get_enabled())
+    if buttons:
+        buttons[0].grab_focus()
+        await key(window, 'Return', 0.8)
+        check('Enter on Show Sidebar opens it, the focus on Albums',
+              window.sidebar_open()
+              and sidebar_title(window, window.get_focus()) == 'Albums',
+              describe(window.get_focus()))
+        await key(window, '<alt>Left', 0.8)
+        check('Alt+Left closes it, the focus back on the button',
+              not window.sidebar_open() and window.get_focus() is buttons[0],
+              describe(window.get_focus()))
+    await key(window, 'F9', 0.8)
+    await key(window, 'F9', 0.8)
+    check('F9, F9 opens and closes it', not window.sidebar_open())
+    await key(window, '<primary>1', 0.8)
+    await key(window, '<primary>2', 0.8)
+    check('Ctrl+1 opens it and Ctrl+2 closes it, the focus on a tile',
+          not window.sidebar_open() and inside(window.get_focus(), grid.grid_view),
+          describe(window.get_focus()))
+    grid.grid_view.disconnect(handler)
+    check('The page stayed mapped under the sidebar throughout', not unmapped
+          and grid.grid_view.get_mapped())
+
+
 async def walkthrough(window):
     narrow = window.split_view.get_collapsed()
     print('-- sidebar')
+    if narrow:
+        check('The narrow layout starts on the page, the sidebar closed',
+              not window.sidebar_open() and window.navigation_view.get_mapped())
     await key(window, '<primary>1', 0.6)
     check('Ctrl+1 puts the focus on the selected sidebar row',
           isinstance(window.get_focus(), Gtk.ListBoxRow) and inside(window.get_focus(),
-                                                                     window.sidebar))
-    if narrow:
-        # The page mode's sidebar is a boxed list per section, and libadwaita passes the focus
-        # from one section to the next on Down from its last row. That needs an active window:
-        # GtkListBoxRow's focus handler reads the row's has-focus, which GTK sets only while
-        # the toplevel has the keyboard. A real key press makes the window active; an emulated
-        # one cannot, so there the script steps over the section's end itself.
-        for _ in range(2):  # Home → New, Radio
-            await key(window, 'Down', 0.15)
-        check('Down moves to Radio', row_title(window.get_focus()) == 'Radio',
-              row_title(window.get_focus()))
-        await key(window, 'Up', 0.15)
-        check('Up moves back to New', row_title(window.get_focus()) == 'New',
-              row_title(window.get_focus()))
-        await key(window, 'Down', 0.15)  # Radio again, the section's last row
-        if keyboard is None:
-            rows = window._sidebar.rows()
-            next((row for row in rows if row_title(row) == 'Recently Added'),
-                 rows[0]).grab_focus()
-            await asyncio.sleep(0.15)
-        else:
-            await key(window, 'Down', 0.15)
-            check("Down from a section's last row moves to the next section",
-                  row_title(window.get_focus()) == 'Recently Added',
-                  row_title(window.get_focus()))
-        for _ in range(2):  # Recently Added → Artists, Albums
-            await key(window, 'Down', 0.15)
-        check('Down moves to Albums', row_title(window.get_focus()) == 'Albums',
-              row_title(window.get_focus()))
-    else:
-        for _ in range(5):  # Home → New, Radio, Recently Added, Artists, Albums
-            await key(window, 'Down', 0.15)
-        check('Down selects Albums and shows it', window.shown == 'albums', window.shown)
-        await key(window, 'Up', 0.15)
-        check('Up selects Artists and shows it', window.shown == 'artists', window.shown)
+                                                                     window.sidebar)
+          and (not narrow or window.sidebar_open()), describe(window.get_focus()))
+    # The narrow layout's sidebar is the wide one's, over the page: the same keys.
+    for _ in range(5):  # Home → New, Radio, Recently Added, Artists, Albums
         await key(window, 'Down', 0.15)
-        check('Down selects Albums again', window.shown == 'albums', window.shown)
+    check('Down selects Albums and shows it', window.shown == 'albums', window.shown)
+    await key(window, 'Up', 0.15)
+    check('Up selects Artists and shows it', window.shown == 'artists', window.shown)
+    await key(window, 'Down', 0.15)
+    check('Down selects Albums again', window.shown == 'albums', window.shown)
     await key(window, 'Return', 0.6)
-    check('Enter shows Albums', window.shown == 'albums' and (
-        not narrow or window.split_view.get_show_content()))
+    check('Enter shows Albums' + (', the sidebar closed' if narrow else ''),
+          window.shown == 'albums' and not window.sidebar_open())
+    if narrow:
+        await sidebar_overlay_step(window)
     print('-- grid')
     await key(window, '<primary>2', 0.6)
     grid = window.navigation_view.get_visible_page()
@@ -1852,7 +1880,7 @@ async def walkthrough(window):
           requests == [('songs', shown, True), ('songs', shown, False)], requests)
     print('-- Artists')
     window.select_page('artists')
-    window.split_view.set_show_content(True)
+    window.hide_sidebar()
     await asyncio.sleep(0.6)
     artists = window.navigation_view.get_visible_page()
     collapsed = artists.split_view.get_collapsed()
@@ -1967,7 +1995,7 @@ async def walkthrough(window):
                            ('artists', 'Artists'), ('songs', 'Songs'),
                            ('favourite-songs', 'Favourite Songs')):
         window.select_page(key_name)
-        window.split_view.set_show_content(True)
+        window.hide_sidebar()
         await asyncio.sleep(0.8)
         await library_filter(window, window.navigation_view.get_visible_page(), name)
     print("-- a playlist's filter, Escape before Back")
@@ -2172,7 +2200,7 @@ async def walkthrough(window):
     await key(window, '<primary>1', 0.6)
     folder_row = sidebar.row(sidebar.item_for(f'folder:{folder.id}').get_index())
     check("Ctrl+1 puts the focus on the folder's row", window.get_focus() == folder_row,
-          (describe(window.get_focus()), row_title(window.get_focus()),
+          (describe(window.get_focus()), sidebar_title(window, window.get_focus()),
            window.sidebar.get_selected(), len(sidebar.rows())))
     child_item = sidebar.item_for(f'{child.kind}:{child.id}')
     await key(window, 'Right', 0.4)
@@ -3075,7 +3103,7 @@ async def names(window):
     for page in ('home', 'new', 'albums', 'artists', 'songs', 'genres', 'radio',
                  'all-playlists', 'favourite-songs'):
         window.select_page(page)
-        window.split_view.set_show_content(True)
+        window.hide_sidebar()
         await asyncio.sleep(1.0)
         total += await unnamed(page)
     app.settings.reset('show-genres')

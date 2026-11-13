@@ -11,17 +11,19 @@ widgets (names, roles, tooltips, focus) are in `.claude/rules/ui.md`; the keys t
 window maximized (a dialog is inside the window only when that is maximized or tiled; else it
 is a window of its own, which the window's keys never reach). The keys are real: the headless
 mutter injects them through its RemoteDesktop interface (`scripts/remote_keys.py`), so the
-window is active and what needs that is walked too — Tab from row to row in Preferences and,
-in the narrow layout, Down from one sidebar section to the next. Of the mnemonics in
+window is active and what needs that is walked too — Tab from row to row in Preferences. Of the mnemonics in
 Preferences it presses Clear's and checks that every labelled button has one, since the demo
 leaves the other buttons insensitive or hidden. When a key or a page changes, change this
 list and the script together.
 
 1. Ctrl+1 puts the focus on the selected sidebar row. Down and Up move through every
-   destination: in the wide layout they select, which shows the page; in the narrow one they
-   only move (each section is a boxed list of its own there, and libadwaita passes the focus
-   on from one to the next). Enter shows the row's page (and, in the wide layout, opens or
-   closes a folder); Right opens a focused folder and Left closes it, without changing the
+   destination and select, which shows the page. Enter shows the row's page (and opens or
+   closes a folder). In the narrow layout the page fills the window and the sidebar slides
+   over it, the same sidebar with the same keys: a destination's header bar starts with
+   Show Sidebar, and F9 or Ctrl+1 opens it too, the focus on the selected row; Enter on a
+   row closes it (a folder's leaves it open, for what the folder holds), and so do Escape,
+   F9, Alt+Left and Ctrl+2, the focus back where it was in the page. Right opens a focused
+   folder and Left closes it, without changing the
    page, and Left on a playlist inside a folder moves to the folder. Menu or Shift+F10 opens
    the focused playlist's or folder's menu under its row (its page's More Options: a
    folder's starts with New Playlist… and New Folder…), and Escape closes it, back on the
@@ -117,11 +119,11 @@ list and the script together.
    then Play: Space or Enter on either plays the songs the table shows (shuffled, or in
    their order).
 7. The sidebar's Playlists heading ends with a New button, named "New Playlist or Folder":
-   Down from the row above the heading reaches it (Tab in the narrow layout's page mode),
+   Down from the row above the heading reaches it,
    Space opens its menu (New Playlist…, New Folder…), Escape closes it with the focus back
    on the button, and Down moves on to All Playlists, Up back.
-   F10 opens the main menu, from a page in the narrow layout too (the sidebar comes back with
-   it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
+   F10 opens the main menu, from a page in the narrow layout too (the sidebar opens over
+   the page with it); it starts with New Playlist… (Ctrl+N, which the menu shows) and New Folder….
    Ctrl+, opens Preferences: Tab through the rows, Alt and the underlined letter for its
    buttons, Escape closes it. Ctrl+? lists every shortcut. A page's Sort By or Sort and
    Filter menu (Enter on its button) has a mnemonic of its own on every item: on Albums, F

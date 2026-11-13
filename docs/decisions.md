@@ -33,17 +33,37 @@ changes, change it here, with the date. The plan they came from is in
   first item (`src/window.py` reveals it from the Player's track, after the Player's grace
   between queues, so a change of queue shows no blink). Ctrl+Shift+N still opens Now
   Playing; Ctrl+3 with no bar leaves the focus and says "Not Playing" to a screen reader.
+- **The narrow layout's sidebar slides over the page** (2026-11-13, #593). Below 640sp the
+  page shown fills the window and the sidebar is an overlay over it, as Files has it: the
+  window's split view is an `Adw.OverlaySplitView`, opened by Show Sidebar at the start of a
+  destination's header bar (`sidebar-show-symbolic`), F9, Ctrl+1 or a swipe from the edge,
+  and closed by choosing a destination, Escape, F9, Alt+Left, a click on the dimmed page or
+  a swipe. A folder's row opens or closes the folder and leaves the sidebar open, so what
+  it holds can be chosen. It was an `Adw.NavigationSplitView` with the sidebar in
+  `AdwSidebar`'s page mode: the sidebar a page of its own, the content pushed onto it with a
+  back button. That layout moved the content at every crossing of the breakpoint, which
+  unrealizes the page and makes every `Gtk.GridView`, `ListView` and `ColumnView` in it
+  build its rows again, and the mode change built the sidebar's rows again: one frame of
+  100 to 230 ms on every page each time a resize crossed 640sp (docs/notes.md), where the
+  target is 50 ms. The breakpoint is in sp, so with large text it is crossed at ordinary
+  window widths (1100 px at a text scale of 2). The overlay never moves the content (3 to
+  4 ms in a bare window), and the sidebar keeps the sidebar mode at every width, so nothing
+  is built again. Given up: page mode's boxed lists, libadwaita's look for a sidebar shown
+  as a page, and Back from a destination to the sidebar (a destination's root has no Back
+  in a narrow window now; a pushed page keeps Back alone in its header bar, and F9, Ctrl+1
+  and the swipe open the sidebar from it). In a wide window the sidebar always shows: F9
+  does nothing there, and only the narrow layout's sidebar can be swiped away.
 - **Playlist folders in the sidebar** (2026-09-27, indented 2026-10-19). Folders are sidebar
   items with a folder icon and a disclosure arrow; activating one shows or hides its playlists
-  and opens the folder's page (in the narrow layout's page mode it only opens the page). A
+  and opens the folder's page (the narrow layout's sidebar stays open over it). A
   folder's contents follow it, indented 28px a level as GNOME Builder's project tree indents
   (a nested item's icon under its folder's title), up to three levels; deeper items keep the
   third level's indent. `AdwSidebar` has no indentation of its own, so the controller gives
   each nested row a `depth-1` to `depth-3` class as it names the rows (and only when the rows
   match the items one to one; else the sidebar stays flat), and `src/style.css` moves the
-  row's content in, mirrored for right-to-left, the selection still the row's full width. The
-  page mode's boxed lists are indented too: there a folder has no arrow and its contents
-  would otherwise look like top-level playlists. The subtitle that used to name a nested
+  row's content in, mirrored for right-to-left, the selection still the row's full width.
+  (`AdwSidebar`'s page mode, which the window no longer sets, is indented too: there a
+  folder has no arrow and its contents would otherwise look like top-level playlists.) The subtitle that used to name a nested
   item's folder is gone (one height for every row, as in Builder); the tooltip keeps the
   whole name, and screen readers hear each row's level.
 - **Folders made and playlists moved, at once** (2026-10-20). New Folder… (the main menu, a
@@ -170,7 +190,7 @@ changes, change it here, with the date. The plan they came from is in
   heading is a `Gtk.Stack` that libadwaita makes again whenever it updates the list's
   headers, so the controller adds a page to it (the title and the button) after every change
   that can remake it. A list's Up and Down pass over a heading, so the controller takes them
-  on the rows beside it; Tab reaches it in the page mode. Every New Playlist… (the +, Ctrl+N,
+  on the rows beside it. Every New Playlist… (the +, Ctrl+N,
   a folder's, Add to Playlist's, a selection's, a drop on All Playlists) opens one
   `Adw.Dialog`, which a playlist's **Edit Details…** (the menus' Rename… before) opens filled
   in: the name, the description (several lines: Apple keeps up to 2,000 characters), the
@@ -203,8 +223,8 @@ changes, change it here, with the date. The plan they came from is in
   (`.navigation-sidebar > .header:not(.first)`, a background line), in the separator's colour,
   inset and spacing; nothing in the rule depends on what libadwaita puts inside the header
   (1.9 and 1.10 differ there; the Playlists heading's **+** is the controller's, above). The first section
-  (Search, Home, New, Radio) stays untitled with no divider; the narrow layout's page mode,
-  whose sections are boxed lists, has none.
+  (Search, Home, New, Radio) stays untitled with no divider (`AdwSidebar`'s page mode,
+  whose sections are boxed lists, has none; the window keeps the sidebar mode).
 - **Playlists in Apple Music's order** (2026-10-03). Apple's API lists a folder's contents in
   an order of its own; its web player sorts them, and so does the app, everywhere playlists
   are listed (the sidebar, a folder's page, All Playlists, Add to Playlist): Favourite Songs,
@@ -961,7 +981,7 @@ changes, change it here, with the date. The plan they came from is in
   already). A key on 3,000 albums went from 48 to 21 ms (docs/notes.md).
 - **The model's own words** (2026-09-28). What the app calls things (an untitled album,
   Home's own shelves, a count caption such as "12 songs, 43 min") is made and translated in
-  `library.py` from the data, not read from English text the backend wrote into
+  `library/words.py` from the data, not read from English text the backend wrote into
   library.json, which gettext cannot reach. The captions are made once per Item, never in a
   list's bind.
 - **Demo mode** (2026-09-27). `--demo` runs the app on a generated, invented library, so UI

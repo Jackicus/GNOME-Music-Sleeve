@@ -1,9 +1,9 @@
 ---
 paths:
-  - "src/library.py"
+  - "src/library/**"
   - "src/sync.py"
   - "scripts/demo_library.py"
-  - "tests/test_library.py"
+  - "tests/test_library*.py"
   - "tests/test_reload.py"
   - "tests/test_normalize.py"
   - "tests/test_sync_app.py"
@@ -13,11 +13,13 @@ paths:
 
 # The library model and the sync
 
-library.py's and sync.py's docstrings (the module's, `Library`'s, `Item.merge()`'s, `reload()`'s,
-`paused_gc`'s) describe the model, the file format additions and the sync step by step; read
+The library package's and sync.py's docstrings (the package's and its modules', `Library`'s,
+`Item.merge()`'s, `reload()`'s, `paused_gc`'s) describe the model, the file format additions and the sync step by step; read
 them before changing either. What matters most:
 
-- `library.py` uses GLib, GObject and Gio only, no GTK, so it works in tests without a display.
+- `src/library/`, every module of it, uses GLib, GObject and Gio only, no GTK, so it works in
+  tests without a display. One idea a module (the package's docstring maps them); the app
+  imports the names it uses from the package itself (`from .library import Item`).
 - The stores (`albums`, `artists`, `playlists`, `radio`, `videos`, `songs`) keep their
   identity for the life of the app: pages bind them once and watch `notify::state` and
   `changed`. `state` is `empty`, `loading` or `ready`; a load that fails or is cancelled ends
@@ -52,7 +54,7 @@ them before changing either. What matters most:
   as a tuple that reads like the dict (`get()`, `[]`, `in`, `keys()`, `items()`,
   `dict(record)`), to save memory. Code reading a Track's `raw` or a group's `entries` must not
   test for a dict or write into it. Items' `raw` stay dicts.
-- The model's words are made and translated in library.py, not taken from the English the
+- The model's words are made and translated in `library/words.py`, not taken from the English the
   backend writes: an album or artist without a title is "Unknown Album" or "Unknown Artist"
   (`unknown_title()`); Home's fixed shelves are titled by key (`shelf_title()`); `count-label`
   ("12 songs, 43 min", "3 albums") is made by `count_text()` from an Item's `trackCount`,

@@ -2,7 +2,7 @@
 paths:
   - "src/pages/**"
   - "src/widgets/**"
-  - "src/library.py"
+  - "src/library/**"
   - "src/main.py"
   - "src/window.py"
   - "scripts/bench.py"
@@ -26,9 +26,15 @@ bench.py checks all but scrolling. And resizing: the window dragged from 1400 px
 back on any page (`scripts/resize_test.py`, its defaults) with no frame's work over 50 ms and no
 more than 4 % of its frames over 16.7 ms, what Nautilus manages on the same display with a
 grid of 3,000 files (its breakpoints cost it a gap of three or four frames, nothing more).
-No page meets it in that sweep yet: the split view's collapse at 640sp costs each one a
-100-220 ms frame (issue 593, a design decision); a drag that stays above 640 px meets it on
-Albums and a library artist. The numbers behind these rules are in docs/notes.md.
+The window's split view is an `Adw.OverlaySplitView` for this (issue 593): its collapse at
+640sp no longer moves the page, where an `Adw.NavigationSplitView` cost every page a
+100-220 ms frame. One run a page on that branch, taken under load (load average 4, 90-97 %
+idle; an indication, the quiet series is in docs/notes.md once run): Albums 43 ms longest
+and 3.0 % of frames over 16.7 ms (origin/main the same hour: 157 ms, 10.5 %), Home 30 ms
+and 1.6 % (137 ms, 8.3 %), an album 37 ms and 1.6 % (131 ms, 8.8 %), a playlist 38 ms and
+3.0 % (152 ms, 7.1 %), which meet it; Songs 111 ms and 7.7 % (227 ms, 11.3 %), which does
+not: its own 560sp and 760sp breakpoints cost 40-110 ms each (issue 662). The numbers
+behind these rules are in docs/notes.md.
 
 ## Measure
 
