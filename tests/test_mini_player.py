@@ -63,11 +63,21 @@ class LayoutTest(unittest.TestCase):
                 (280, 240): (True, 56, 'none'),      # the minimum: the transport alone
                 (280, 290): (True, 56, 'row'),
                 (280, 420): (False, 152, 'row'),
-                (320, 500): (False, 232, 'row'),     # the default
+                (320, 500): (False, 232, 'row'),
+                (320, 540): (False, 272, 'row'),     # the default
                 (372, 240): (True, 56, 'inline'),
                 (480, 640): (False, 416, 'inline')}.items():
             self.assertEqual(tuple(layout_for(width, height - header)), expected,
                              (width, height))
+
+    def test_the_default_size_has_the_cover_the_mini_player_had_before_its_row(self):
+        # The settings' default window, its header bar taken off: the row of extras under
+        # the transport and a 272 px cover, the one 320 by 500 gave before the row came.
+        schema = Gio.SettingsSchemaSource.get_default().lookup(SCHEMA_ID, True)
+        width, height = (schema.get_key(key).get_default_value().get_int32()
+                         for key in ('mini-player-width', 'mini-player-height'))
+        self.assertEqual((width, height), (320, 540))
+        self.assertEqual(tuple(layout_for(width, height - 46)), (False, 272, 'row'))
 
     def test_the_extras_go_inline_from_the_width_the_seven_buttons_take(self):
         self.assertEqual(layout_for(mini_player.INLINE_WIDTH - 1, 600).extras, 'row')
@@ -368,9 +378,9 @@ class HostTest(unittest.TestCase):
         self.assertEqual(self.calls, [('mini0', 'present'), ('main', 'put_away'),
                                       ('sheet', 'covered'), ('mini0', 'lender'),
                                       ('sheet', 'lend', 'queue'),
-                                      ('mini0', 'show', 'queue', (320, 800)),
+                                      ('mini0', 'show', 'queue', (320, 840)),
                                       ('queue', 'active')])
-        self.assertEqual(mini.pane[2], 500)
+        self.assertEqual(mini.pane[2], 540)
 
     def test_a_pane_with_nothing_to_show_stays_closed_but_remembered(self):
         self.app.settings.set_string('mini-player-pane', 'lyrics')
@@ -385,7 +395,7 @@ class HostTest(unittest.TestCase):
 
         host = MiniPlayerHost(self.app, make_window)
         host.enter()
-        self.assertEqual(shown[0].size, (320, 500))
+        self.assertEqual(shown[0].size, (320, 540))
         self.assertIsNone(shown[0].pane)
         self.assertEqual(self.app.settings.get_string('mini-player-pane'), 'lyrics')
 
@@ -400,8 +410,8 @@ class HostTest(unittest.TestCase):
                                       ('sheet', 'return', 'lyrics'), ('sheet', 'uncovered'),
                                       ('main', 'present'), ('mini0', 'release')])
         settings = self.app.settings
-        self.assertEqual(settings.get_int('mini-player-height'), 500)
-        self.assertEqual(settings.get_int('mini-player-pane-height'), 400)
+        self.assertEqual(settings.get_int('mini-player-height'), 540)
+        self.assertEqual(settings.get_int('mini-player-pane-height'), 360)
         self.assertEqual(settings.get_string('mini-player-pane'), 'lyrics')
 
     def test_quitting_with_a_pane_open_gives_the_view_back_and_stays_covered(self):
@@ -411,13 +421,13 @@ class HostTest(unittest.TestCase):
         self.host.quit()
         self.assertEqual(self.calls, [('queue', 'inactive'), ('mini0', 'hide', 'queue'),
                                       ('sheet', 'return', 'queue'), ('mini0', 'release')])
-        self.assertEqual(self.app.settings.get_int('mini-player-height'), 500)
+        self.assertEqual(self.app.settings.get_int('mini-player-height'), 540)
 
     def test_no_main_window_no_panes(self):
         self.app.settings.set_string('mini-player-pane', 'queue')
         self.app.main = None
         self.host.enter()
-        self.assertEqual(self.made[0].size, (320, 500))
+        self.assertEqual(self.made[0].size, (320, 540))
         self.assertIsNone(self.made[0].panes)
         self.host.leave()
         self.assertEqual(self.calls[-1], ('mini0', 'release'))
@@ -863,13 +873,13 @@ class PaneWindowTest(unittest.TestCase):
         self.assertIs(mini.view.pane_slot.get_child(), self.lyrics)
         self.assertTrue(mini.view.pane_slot.get_visible())
         self.assertEqual(self.pressed(mini), (True, False))
-        self.assertEqual(mini.get_default_size(), (320, 500 + 320))
+        self.assertEqual(mini.get_default_size(), (320, 540 + 320))
         self.active.clear()
         self.toggle(mini, 'lyrics')  # again: closed, the view back and inactive
         self.assertEqual(self.of('lyrics'), [('lyrics', False, 'mini')])
         self.assertEqual(self.place(self.lyrics), 'sheet')
         self.assertEqual(self.pressed(mini), (False, False))
-        self.assertEqual(mini.get_default_size(), (320, 500))
+        self.assertEqual(mini.get_default_size(), (320, 540))
         self.assertEqual(self.lyrics._next_change_source, 0)
         self.assertIsNone(self.lyrics._sweep_tick)
         # Open again, and leave with it open: back in the sheet, active there (it is open
@@ -908,11 +918,11 @@ class PaneWindowTest(unittest.TestCase):
         self.play()
         mini = self.enter()
         self.assertEqual(self.place(self.queue), 'mini')
-        self.assertEqual(mini.get_default_size(), (320, 740))
+        self.assertEqual(mini.get_default_size(), (320, 780))
         self.assertEqual(self.pressed(mini), (False, True))
         # The controls keep the layout of the window without the pane.
         self.assertTrue(wait_for(lambda: mini.view.shown_layout is not None))
-        self.assertEqual(mini.view.shown_layout, layout_for(320, 500 - 46))
+        self.assertEqual(mini.view.shown_layout, layout_for(320, 540 - 46))
 
     def test_no_full_screen_while_a_view_is_lent(self):
         from applemusic.fullscreen import FullscreenHost
