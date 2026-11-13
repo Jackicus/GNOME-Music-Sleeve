@@ -606,7 +606,7 @@ class SearchPage(Adw.NavigationPage):
             # Translators: said to a screen reader when a search's results show: how many
             # shelves of them (Top Results, Artists, Albums…) there are.
             text = ngettext('{count} shelf of results', '{count} shelves of results', count)
-            self._announce(text.format(count=count))
+            self._announce(text.format(count=f'{count:n}'))
         else:
             self._show_status('no-results')
 
