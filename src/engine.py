@@ -374,8 +374,16 @@ def _catalog_artist_id(artist_id):
 
 def _shape_and_keep(shaper, raw, path, cache_dir, generation, basis=None):
     """In a thread: `shaper(raw, cache_dir)`'s answer, kept at `path` (stamped `cached`, and
-    `basis` when there is one) unless the cache was cleared since `generation`."""
-    answer = shaper(raw, cache_dir)
+    `basis` when there is one) unless the cache was cleared since `generation`. A shaper that
+    raises (an answer of a type it does not expect, a list where a dict should be) is
+    EngineError('api'), logged, and nothing is kept: only EngineError leaves the Engine."""
+    try:
+        answer = shaper(raw, cache_dir)
+    except Exception as error:
+        what = os.path.basename(path)
+        log.warning('could not read the answer for %s', what, exc_info=True)
+        raise EngineError('api', f'an answer for {what} that could not be read: '
+                                 f'{type(error).__name__}') from error
     if basis is not None:
         answer = dict(answer, basis=basis)
     return normalize.write_answer(path, answer, cache_dir, generation)
@@ -2289,7 +2297,8 @@ class Engine(GObject.Object):
         normalize.ANSWER_MAX_AGE (no engine needed) unless `refresh`, else `await
         fetch(client)`'s raw answer, shaped by `shaper(raw, cache_dir)` in a thread and kept
         there, stamped `cached`. When Apple cannot be asked (the engine down or signed out,
-        the page or the network failing), an older answer kept there is answered instead,
+        the page or the network failing) or its answer cannot be shaped (EngineError('api'),
+        _shape_and_keep), an older answer kept there is answered instead,
         marked `stale: True`; with none, or on a refresh, the error. With a `basis` (what the
         answer was asked about, as a string), the answer is kept with it, and one kept with
         another is not fresh, whatever its age: Apple is asked again (and the old one is
@@ -2313,6 +2322,8 @@ class Engine(GObject.Object):
         try:
             client = await self._require_signed_in('browse')
             raw = await fetch(client)
+            return await asyncio.to_thread(_shape_and_keep, shaper, raw, path,
+                                           str(self.cache_dir), generation, basis)
         except EngineError as error:
             stale = None
             if not refresh and error.code != 'usage':
@@ -2327,8 +2338,6 @@ class Engine(GObject.Object):
                 stale['stale'] = True  # young, but kept by a version that shaped it otherwise
             log.info('answering a kept answer no longer fresh: %s', error)
             return stale
-        return await asyncio.to_thread(_shape_and_keep, shaper, raw, path,
-                                       str(self.cache_dir), generation, basis)
 
     async def landing(self, refresh=False):
         """The search page's Browse Categories: {categories: [{id, kind: 'category', title,

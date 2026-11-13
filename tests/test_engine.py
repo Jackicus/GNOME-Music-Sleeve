@@ -3279,6 +3279,26 @@ class SearchTest(EngineFixture):
         self.assertEqual(self.page.api_calls, [path])  # kept
         self.assertTrue((self.cache / 'charts.json').exists())
 
+    async def test_an_answer_that_cannot_be_shaped_is_an_engine_error_kept_nowhere(self):
+        self.page.storefront = 'gb'
+        await self.up()
+        path = '/v1/catalog/gb/charts'
+        confused = self.fixture('charts.json')
+        confused['results']['albums'][0]['data'][0]['attributes'] = ['junk']
+        self.page.api_answers[path] = confused
+        with self.assertLogs('applemusic.engine', 'WARNING'):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.charts()
+        self.assertEqual(raised.exception.code, 'api')
+        self.assertFalse((self.cache / 'charts.json').exists())
+        # An older answer kept there is the answer then, as no longer fresh.
+        normalize.write_answer(str(self.cache / 'charts.json'), {'shelves': []},
+                               str(self.cache))
+        self.expire(self.cache / 'charts.json')
+        with self.assertLogs('applemusic.engine', 'WARNING'):
+            answer = await self.engine.charts()
+        self.assertIs(answer.get('stale'), True)
+
     async def test_a_genres_charts_are_asked_for_it_and_kept_apart(self):
         self.page.storefront = 'gb'
         await self.up()
