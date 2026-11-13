@@ -125,8 +125,10 @@ touches widgets.
   (`dialogs/credits.py`, worded by `credits.py`) over `Engine.credits`, kept for a day.
   An album's header names its artist, a playlist's its curator and when it was updated
   (`release.py`), and a catalog one's offers Add, or In Library once the library holds it (`Library.holds()`, from what is loaded).
-- **Library** (`library.py`): the model. GObjects in `Gio.ListStore`s, filled from the cache's
-  library.json. It has no GTK, so it is tested without a display. A reload after a sync keeps
+- **Library** (`library/`, a package: the Library in `model.py`, the objects pages bind in
+  `objects.py`, the Songs store in `songs.py`, the playlist tree in `folders.py`, the read of
+  library.json in `reading.py`): the model. GObjects in `Gio.ListStore`s, filled from the
+  cache's library.json. It has no GTK, so it is tested without a display. A reload after a sync keeps
   every object still in the library and says what changed through property notifications and
   `groups-changed`, which open pages follow.
 - **Sync** (`sync.py`): fetches the library through the engine, turns Apple's answers into the

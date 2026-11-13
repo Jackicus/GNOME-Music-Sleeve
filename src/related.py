@@ -117,8 +117,8 @@ def artist_song_ids(item, library=None, limit=SONGS_ASKED):
     """Up to `limit` catalog song ids from an artist's albums, one an album first: what the
     engine asks for their artist (Engine.catalog_artist), a song the artist is credited on
     first (a compilation's first is someone else's). A group whose album the library has is
-    empty (the library drops the artist's copy of its tracks as it loads: library.py), so its
-    tracks are the library album's."""
+    empty (the library drops the artist's copy of its tracks as it loads: library/reading.py),
+    so its tracks are the library album's."""
     ids = []
     for group in item.groups:
         stores = [group.entries]

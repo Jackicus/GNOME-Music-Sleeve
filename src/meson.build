@@ -117,7 +117,6 @@ install_data(
   'home.py',
   'i18n.py',
   'keyboard.py',
-  'library.py',
   'lyrics.py',
   'main.py',
   'mini_player.py',
@@ -146,6 +145,22 @@ install_data(
   'timing.py',
   'window.py',
   install_dir: moduledir,
+)
+
+install_data(
+  'library/__init__.py',
+  'library/diff.py',
+  'library/folders.py',
+  'library/model.py',
+  'library/objects.py',
+  'library/pacing.py',
+  'library/reading.py',
+  'library/records.py',
+  'library/refs.py',
+  'library/songs.py',
+  'library/text_keys.py',
+  'library/words.py',
+  install_dir: moduledir / 'library',
 )
 
 install_data(

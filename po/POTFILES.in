@@ -81,7 +81,7 @@ src/widgets/labels.py
 src/widgets/search_list.py
 src/charts.py
 src/home.py
-src/library.py
+src/library/words.py
 src/radio.py
 src/remote.py
 src/replay.py
