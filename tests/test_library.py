@@ -880,6 +880,44 @@ class TestReorder(unittest.TestCase):
             self.assertIsNone(library.held_order('p.1'))
             self.assertEqual(library.by_id('playlist', 'p.1').track_ids(), ['b', 'c', 'a', 'd'])
 
+    def test_the_tracks_in_hand_kept_through_a_reload(self):
+        # After a write the playlist is read again (refresh_playlist()), and a sync that read
+        # it before the write must not show it as it was (#573).
+        library = Library()
+        with tempfile.TemporaryDirectory() as cache:
+            def reload(track_ids, title='Mix'):
+                raw = dict(playlist_with('p.1', track_ids), title=title)
+                write_library(cache, [], playlists=[raw])
+                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
+                    asyncio.run(library.reload())
+
+            write_library(cache, [], playlists=[playlist_with('p.1', ['a', 'b', 'c'])])
+            load(cache, library)
+            item = library.by_id('playlist', 'p.1')
+            item.merge({'groups': playlist_with('p.1', ['a', 'c'])['groups']})
+            library.hold_tracks('p.1')
+            self.assertTrue(library.tracks_held('p.1'))
+            told = []
+            item.connect('groups-changed', lambda _item: told.append(True))
+            # The file of a sync that read the tracks before the write: the rest of it is
+            # taken, the tracks in hand stay.
+            reload(['a', 'b', 'c'], title='Renamed')
+            self.assertEqual((item.track_ids(), item.title, told), (['a', 'c'], 'Renamed', []))
+            # A pass begun since (sync_tracks()): let go, the file wins.
+            library.release_tracks('p.1')
+            self.assertFalse(library.tracks_held('p.1'))
+            reload(['a', 'c', 'd'])
+            self.assertEqual(item.track_ids(), ['a', 'c', 'd'])
+            # Expired: the file wins; a load forgets what is held.
+            with mock.patch.object(model_module, '_now', return_value=1000.0):
+                library.hold_tracks('p.1')
+            with mock.patch.object(model_module, '_now', return_value=1000.0 + PENDING_HOLD):
+                reload(['a'])
+            self.assertEqual(item.track_ids(), ['a'])
+            library.hold_tracks('p.1')
+            load(cache, library)
+            self.assertFalse(library.tracks_held('p.1'))
+
     def test_an_answer_takes_the_order_held(self):
         library = Library()
         with tempfile.TemporaryDirectory() as cache:

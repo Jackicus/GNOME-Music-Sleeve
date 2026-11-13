@@ -377,6 +377,7 @@ class FakeLibrary:
         self.released = []
         self.hidden = []  # ('hide' or 'unhide', the refs), in order
         self.held = {}  # playlist id -> its order held (reorder())
+        self.tracks_kept = []  # ('hold' or 'release', playlist id), in order
         self.noted = []  # note_added()'s Items
         self.twins = {}  # (kind, catalog id): the library's album or playlist found for it
         self.favourite_ids = set()  # what set_favourites() made favourites
@@ -393,6 +394,12 @@ class FakeLibrary:
 
     def note_added(self, item):
         self.noted.append(item)
+
+    def hold_tracks(self, playlist_id):
+        self.tracks_kept.append(('hold', playlist_id))
+
+    def release_tracks(self, playlist_id):
+        self.tracks_kept.append(('release', playlist_id))
 
     def held_item(self, item):
         """As Library.held_item: the library's own album or playlist that item is found as

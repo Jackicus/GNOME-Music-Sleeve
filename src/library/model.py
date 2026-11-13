@@ -141,6 +141,7 @@ class Library(GObject.Object):
         self._held = None  # holds()'s dictionaries, made at its first question after a load
         self._added = {}  # (kind, id) -> the Item, for what note_added() noted
         self._orders = {}  # playlist id -> _OrderHold: orders shown ahead of Apple's (reorder())
+        self._tracks = {}  # playlist id -> when its tracks in hand stop being kept (hold_tracks())
         self._generation = 0
         self._paused = 0.0  # when a load or Songs build last paused for a frame (_pause())
         self._syncing = False
@@ -328,6 +329,35 @@ class Library(GObject.Object):
             del self._orders[playlist_id]
             return raw
         return dict(raw, groups=[dict(groups[0], entries=reorder_entries(entries, order))])
+
+    def hold_tracks(self, playlist_id, hold=PENDING_HOLD):
+        """Keep a playlist's tracks in hand (and the counts made from them) through reloads:
+        they were read from Apple after a write (playlist_order.refresh_playlist()), and a sync
+        that read them before it would show the playlist as it was. Until release_tracks()
+        (a pass begun since: its file is newer) or `hold` seconds have passed; load() forgets
+        it."""
+        self._tracks[playlist_id] = _now() + hold
+
+    def release_tracks(self, playlist_id):
+        """Stop keeping a playlist's tracks in hand: the next reload shows the file's."""
+        self._tracks.pop(playlist_id, None)
+
+    def tracks_held(self, playlist_id):
+        """Whether a playlist's tracks in hand are kept through reloads (hold_tracks())."""
+        return self._tracks.get(playlist_id, 0) > _now()
+
+    def _with_held_tracks(self, raw, item):
+        """A reload's dict of the playlist Item `item` (None: not in hand) with the tracks
+        in hand while they are kept (hold_tracks()); the dict itself otherwise."""
+        playlist_id = _text(raw.get('id'))
+        if playlist_id not in self._tracks:
+            return raw
+        if not self.tracks_held(playlist_id) or item is None or 'groups' not in item.raw:
+            del self._tracks[playlist_id]
+            return raw
+        kept = {key: item.raw[key] for key in ('groups', *Item._COUNT_KEYS)
+                if key in item.raw}
+        return {**raw, **kept}
 
     def _pending(self, folders):
         """The changes held that library.json's `folders` does not show yet and that have
@@ -646,12 +676,15 @@ class Library(GObject.Object):
 
         if not keep:
             self._orders = {}
+            self._tracks = {}
 
         def wrap(raw):
             key = (_text(raw.get('kind')), _text(raw.get('id')))
             if key[0] == 'playlist' and self._orders:
                 raw = self.with_held_order(raw)
             item = existing.get(key)
+            if key[0] == 'playlist' and self._tracks:
+                raw = self._with_held_tracks(raw, item)
             if item is None:
                 item = Item(raw)
             elif not SORT_KEYS.isdisjoint(item.merge(raw, replace=True)):

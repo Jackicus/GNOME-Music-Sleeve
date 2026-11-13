@@ -105,10 +105,14 @@ library's Item, so an open page shows the change at once. After an album or a pl
 added to the library, the library notes it (Library.note_added(): its page says In Library at
 once, ahead of Apple's listing) and a quick sync reads it back.
 
-A track added or removed has its playlist fetched again, then read into
-library.json by a playlists pass that reads its tracks
-(playlist_order.sync_tracks()); before either, and before a playlist is deleted, its order
-still to be written is (PlaylistOrder.flush()).
+A track added or removed has its playlist fetched again, which ends the action's task (the
+page shows the change), then read into library.json by a playlists pass that reads its
+tracks, in the background (playlist_order.TracksPass: one pass after the last of a run of
+changes; what was fetched is kept through a sync that read the playlist before the write,
+Library.hold_tracks()); before either, and before a playlist is deleted, its order still to
+be written is (PlaylistOrder.flush()). A playlist's removals (remove_entries(): Delete on
+its page, a selection's Remove from Playlist) are made one at a time, in the order asked,
+each from the list the last one left.
 An item's rating (loved, Suggest Less or neither): a menu shows what the engine said last
 this session (its `rated` signal), else whether the library holds it as a favourite
 (library.json's favourites, Library.is_favourite), and asks again (engine.rating) as it
@@ -150,7 +154,7 @@ from .item_targets import (SOURCE_KINDS, _queue_kind, _song_id, _synthetic, adds
 from .library import (FRAME_BUDGET, TRACK_REF_KINDS, Item, ItemRefs, Track, entries_without,
                       yield_to_frames)
 from .playlist_actions import PlaylistActions
-from .playlist_order import PlaylistOrder, refresh_playlist, sync_tracks
+from .playlist_order import PlaylistOrder, TracksPass, refresh_playlist
 from .web_links import (is_apple_music_url, is_shareable, needs_catalog_artist,
                         needs_catalog_url, web_url)
 
@@ -170,6 +174,29 @@ REMEMBERED = 64
 RATING_WRITES = 4
 
 
+class _Removals:
+    """A playlist's removals under way (ItemActions.remove_entries()): the lock that makes
+    them one at a time, how many were asked and have not ended, and the places each took
+    out of the list shown, in the order they went."""
+
+    __slots__ = ('lock', 'asked', 'gone')
+
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.asked = 0
+        self.gone = []
+
+
+def places_after(entries, removals):
+    """Where the entries (id, index) of a list are once each of `removals` (the places one
+    removal took out of the list as it was then, in the order made) has gone: an entry a
+    removal took is left out, one after it moves up."""
+    for gone in removals:
+        entries = [(track_id, index - sum(1 for place in gone if place < index))
+                   for track_id, index in entries if index not in gone]
+    return entries
+
+
 class ItemActions(PlaylistActions):
     """The window's item actions. `window` gives play_request(), get_clipboard() and
     add_action(); `app` the engine, the player, the library, spawn(), toast(), report() and
@@ -185,6 +212,7 @@ class ItemActions(PlaylistActions):
         # playlist id -> (the ids kept, the entries before, how many went) of a selection's
         # Remove from Playlist, for its toast's Undo
         self._removed = {}
+        self._removals = {}  # playlist id -> _Removals, while removals from it are under way
         # the toast's token -> (the rating targets that went, their places, Favourite Songs'
         # Item dict and track ids before, the places that went) of a selection's Remove from
         # Favourites, for its toast's Undo
@@ -228,6 +256,7 @@ class ItemActions(PlaylistActions):
         self._add('item-undo-unfavourite', GLib.VariantType.new('s'),
                   self._on_undo_unfavourite)
         self.playlist_order = PlaylistOrder(app, refresh=self._refresh_playlist)
+        self._tracks_pass = TracksPass(app)
 
     def shown_window(self):
         """The window, for what shows a page or a dialog in it: the mini player, which
@@ -761,15 +790,22 @@ class ItemActions(PlaylistActions):
 
     async def _refresh_playlist(self, playlist_id):
         """Bring a library playlist up to date after it changed on Apple's side
-        (playlist_order.refresh_playlist())."""
-        await refresh_playlist(self.app, playlist_id)
+        (playlist_order.refresh_playlist()): True once it was."""
+        return await refresh_playlist(self.app, playlist_id)
 
     async def _follow_tracks(self, playlist_id):
         """After a playlist's tracks changed (a song added or removed): the playlist read
-        again at once, then into library.json by a playlists pass reading its tracks, so the
-        change is there at the next launch."""
-        await self._refresh_playlist(playlist_id)
-        await sync_tracks(self.app, playlist_id)
+        again at once, which is as far as the caller waits (the page shows the change, and
+        the next write may be made); what was read is kept through a sync that read the
+        playlist before the write (Library.hold_tracks()), and a playlists pass reading its
+        tracks follows in the background (TracksPass: one after the last of a run of
+        changes), so the change is in library.json at the next launch. True once the
+        playlist was read again."""
+        shown = await self._refresh_playlist(playlist_id)
+        if shown:
+            self.library.hold_tracks(playlist_id)
+        self._tracks_pass.after(playlist_id)
+        return shown
 
     def move_in_playlist(self, playlist, from_index, to_index, at_once=False):
         """Move the playlist's song at from_index to to_index (PlaylistOrder.move(): shown
@@ -902,39 +938,56 @@ class ItemActions(PlaylistActions):
         of the user's, by their places in it: Track.index) taken out in one write
         (Engine.remove_playlist_entries()), the order pending written first; a toast that
         counts them (names one), with Undo (item-undo-remove), then the playlist read again.
-        The task, whose result says whether they went, or None (the demo library, or not a
-        playlist of the user's)."""
+        A playlist's removals are made one at a time, in the order asked: one asked while
+        another is under way waits for the playlist to be read again, and takes its entries
+        from where that removal left them (places_after()). The task, whose result says
+        whether they went, or None (the demo library, or not a playlist of the user's)."""
         if not is_manageable(playlist) or playlist.kind != 'playlist':
             return None
         if self.app.refuse_in_demo():
             return None
-        tracks = list(tracks)
+        entries = [(track.id, track.index) for track in tracks]
+        title = tracks[0].title if len(entries) == 1 else ''
+        removals = self._removals.setdefault(playlist.id, _Removals())
+        seen = len(removals.gone)
+        removals.asked += 1
 
         async def run():
             try:
-                await self.app.player.ensure_engine()
-                await self.playlist_order.flush(playlist.id)
-                shown = playlist.track_ids() or []
-                positions = sorted({track.index for track in tracks
-                                    if 0 <= track.index < len(shown)
-                                    and shown[track.index] == track.id})
-                if not positions:
-                    return False
-                before = await self.engine.remove_playlist_entries(playlist.id, shown,
-                                                                   positions)
-            except EngineError as error:
-                self.app.report(error)
-                return False
-            gone = set(positions)
-            kept = [entry['id'] for place, entry in enumerate(before) if place not in gone]
-            self._removed[playlist.id] = (kept, before, len(positions))
-            title = tracks[0].title if len(tracks) == 1 else ''
-            self.app.toast(removed_message(len(positions), playlist.title or '', title),
-                           _('Undo'), 'win.item-undo-remove', GLib.Variant('s', playlist.id))
-            await self._follow_tracks(playlist.id)
-            return True
+                async with removals.lock:
+                    places = places_after(entries, removals.gone[seen:])
+                    return await self._remove_entries(playlist, places, title, removals)
+            finally:
+                removals.asked -= 1
+                if not removals.asked and self._removals.get(playlist.id) is removals:
+                    del self._removals[playlist.id]
 
         return self.app.spawn(run())
+
+    async def _remove_entries(self, playlist, places, title, removals):
+        """remove_entries()'s write of the entries `places` ((id, index) in the list shown
+        now); `removals.gone` is told the places that went once the playlist shows without
+        them."""
+        try:
+            await self.app.player.ensure_engine()
+            await self.playlist_order.flush(playlist.id)
+            shown = playlist.track_ids() or []
+            positions = sorted({index for track_id, index in places
+                                if 0 <= index < len(shown) and shown[index] == track_id})
+            if not positions:
+                return False
+            before = await self.engine.remove_playlist_entries(playlist.id, shown, positions)
+        except EngineError as error:
+            self.app.report(error)
+            return False
+        gone = set(positions)
+        kept = [entry['id'] for place, entry in enumerate(before) if place not in gone]
+        self._removed[playlist.id] = (kept, before, len(positions))
+        self.app.toast(removed_message(len(positions), playlist.title or '', title),
+                       _('Undo'), 'win.item-undo-remove', GLib.Variant('s', playlist.id))
+        if await self._follow_tracks(playlist.id):
+            removals.gone.append(positions)
+        return True
 
     def _on_undo_remove(self, _action, parameter):
         """The toast's Undo after a selection's Remove from Playlist: the entries put back

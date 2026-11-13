@@ -108,7 +108,11 @@ them before changing either. What matters most:
   through reloads, as `hold()` holds a folder change: a reload or an `item()` answer
   (`with_held_order()`) listing the same tracks in another order is arranged in it, until the
   file shows it, lists other tracks, or `PENDING_HOLD` passes; a load forgets it. The pure
-  parts: `moved()`, `drop_index()`, `order_for()`, `reorder_entries()`.
+  parts: `moved()`, `drop_index()`, `order_for()`, `reorder_entries()`. `hold_tracks()` keeps
+  a playlist's tracks in hand through reloads after a write's read
+  (`ItemActions._follow_tracks()`), so a sync that read them before the write does not show
+  the playlist as it was, until a pass begun since starts (`release_tracks()`, in
+  `playlist_order.sync_tracks()`) or `PENDING_HOLD` passes.
 - Garbage collection (`paused_gc`): the collector is paused from the call of `load()` or
   `reload()` (so the parse in the library's thread runs without it) to the load's end, and
   during a Songs build. `load()` and `build_songs()` then freeze the heap (`gc.freeze()`), so
