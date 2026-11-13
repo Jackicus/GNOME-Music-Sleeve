@@ -9,9 +9,17 @@ paths:
   - "src/widgets/now_playing.*"
   - "src/widgets/mini_player.*"
   - "src/mini_player.py"
+  - "src/widgets/fullscreen_player.*"
+  - "src/fullscreen.py"
+  - "src/widgets/backdrop.py"
   - "src/widgets/lyrics.py"
   - "src/widgets/queue.py"
+  - "src/session.py"
   - "tests/test_player.py"
+  - "tests/test_now_playing.py"
+  - "tests/test_fullscreen.py"
+  - "tests/test_mini_player.py"
+  - "tests/test_session.py"
   - "tests/test_mpris.py"
   - "tests/test_transport.py"
   - "tests/test_queue.py"
@@ -250,6 +258,13 @@ paths:
   (widgets/backdrop.py, the sheet's too) over `artwork.field_for()` (the last few covers'
   fields, shared with the sheet) and `scrim_alpha()`. Check it with `scripts/screenshot.py --demo
   --fullscreen-player [lyrics|localized|syllable|none] --size WxH` (and `--idle`).
+- The item playing's menu (`menu_for(track, queued=True)`, as More Options asks) opens on the
+  bar by a right click, a long press or Menu, and in the sheet and the full-screen player by a
+  right click or long press over the artwork, the titles or the lyrics
+  (`context_menu.attach_playing()`: capture phase, claimed, never over a control or a
+  selectable label, `keeps_own_press()`) and by Menu or Shift+F10 anywhere in them
+  (`attach_playing_keys()`). Up Next's and History's rows keep their own menus. Both hold
+  the sheet or the player by a GObject weak reference (tests/test_page_lifetime.py).
 - The mini player (`app.mini-player`, Ctrl+Shift+M, the main menu's and the bar's menu's
   Mini Player) is a window of its own, `widgets/mini_player.MiniPlayer`, in the main
   window's place: `mini_player.MiniPlayerHost` (`app.mini_player`) builds it as it shows and

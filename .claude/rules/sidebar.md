@@ -21,8 +21,9 @@ entry: it is spliced out and in, and the window selects it again by key).
   `Adw.OverlaySplitView` slides the same sidebar over the page (window.py's
   `sidebar_open()`, `hide_sidebar()`; ui.md), and a mode change would build every row again
   (61-113 ms with 300 playlists). What is said of the page mode below is `AdwSidebar`'s
-  behaviour, which the controller still follows (`notify::mode`) and its tests cover, not
-  something a user meets. An activated row closes the narrow layout's sidebar
+  behaviour, which the controller still follows (`notify::mode`, `_page_mode()`) and its
+  tests cover, not something a user meets: only the tests set the page mode, so that code
+  runs in no layout of the window's (issue 674 asks whether to keep it). An activated row closes the narrow layout's sidebar
   (`window.hide_sidebar()`), but a folder's, which opens or closes and leaves it open. The
   overlay unmaps the sidebar while it is closed, so each opening is a map: libadwaita
   centres the selection again, and the window calls `reveal_selected()` after `focus()`.
@@ -64,10 +65,11 @@ entry: it is spliced out and in, and the window selects it again by key).
 - Drops: `setup_drop_target(COPY | MOVE, [ItemRefs])` takes Python GObject classes;
   `drop-enter(index)` returns the action (0 refuses) and is told nothing of the drag, so the
   controller asks `widgets.dnd.current()` (`drop_action()`: tracks, albums or playlists
-  onto a playlist, COPY, or MOVE for a sidebar row's drag, as `actions.can_drop_refs`
+  onto a playlist, COPY, or MOVE for a sidebar row's drag, as `item_actions.can_drop_refs`
   allows; songs, videos and albums onto All Playlists, COPY, a new playlist of them, its
-  dialog opened from an idle after the drop (`actions.drop_new_playlist`); playlists onto a
-  folder or All Playlists, MOVE, as `actions.can_move_refs` allows) and marks
+  dialog opened from an idle after the drop (`item_actions.drop_new_playlist`, from
+  playlist_actions.py); playlists onto a folder or All Playlists, MOVE, as
+  `item_actions.can_move_refs` allows) and marks
   the row itself (`DropFeedback.highlight`; libadwaita's own `:drop(active)` ring is 1px).
   An item's `drag-motion-activate` defaults to TRUE, which switches pages under a drag:
   every item here sets it FALSE. It has no drag source: the controller puts one on the
