@@ -32,6 +32,7 @@ schemas once and for all. invented_playing_state() is what the Player shows whil
 first album plays; popovers() finds the popovers shown under a widget.
 """
 
+import filecmp
 import json
 import os
 import shutil
@@ -174,14 +175,16 @@ def album_entries(album):
 
 def demo_art_url(album):
     """An invented artwork URL for a demo album, its cover and thumbnail put where
-    remote.fetch_remote keeps that URL's images (so nothing is ever fetched for it)."""
+    remote.fetch_remote keeps that URL's images (so nothing is ever fetched for it), and
+    copied again when the demo library has drawn the cover anew since."""
     from applemusic.backend import config
     from applemusic.remote import remote_art_path
 
     url = DEMO_ART_URL.replace('ALBUM', album.id)
     for size, source in ((config.COVER_SIZE, album.art), (config.THUMB_SIZE, album.thumb)):
         path = remote_art_path(url, size)
-        if source and path and os.path.exists(source) and not os.path.exists(path):
+        if (source and path and os.path.exists(source)
+                and not (os.path.exists(path) and filecmp.cmp(source, path, shallow=False))):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             shutil.copyfile(source, path)
     return url
