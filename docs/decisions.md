@@ -1,8 +1,8 @@
 # Decisions
 
 The design decisions this app rests on, with the reasons and what was given up. When one
-changes, change it here, with the date. The plan they came from is in
-`docs/history/build-plan.md`.
+changes, change it here, with the date. The plan they came from, one phase a session and
+finished on 2026-09-28, is in the repository's history (up to v1.3.1).
 
 ## Product
 
