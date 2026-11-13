@@ -7,7 +7,7 @@ Pure functions turn Apple Music API resources into the Item and Track shapes tha
 describes: normalize_album() and the other normalize_* functions, normalize_item() for any
 resource, _shelf_item() for a shelf's, and group_songs_into_albums_and_artists() for the
 sync. They write data, never words: counts are numbers (trackCount, durationMs,
-albumCount), a missing name is '', and the app makes and translates the words (library.py,
+albumCount), a missing name is '', and the app makes and translates the words (library/,
 the pages). The answers made of them are shaped beside this module (search, editorial,
 charts, recommendations, item_pages); the artwork files they name are art_cache.py's. The
 standard library only.
