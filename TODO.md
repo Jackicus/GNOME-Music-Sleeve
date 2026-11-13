@@ -13,9 +13,6 @@ a release is made is in `docs/release.md`, and why the app is built the way it i
       ready (set the `# Maintainer:` contact, `updpkgsums && makepkg --printsrcinfo > .SRCINFO`,
       `makepkg -si` to try it, then push to aur.archlinux.org with the maintainer's account;
       README's install section changes then).
-- [ ] [#320](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/320): the playback
-      position in fractions of a second from the page, so the lyrics' words light on time
-      (the estimate from MusicKit's whole seconds runs about 130 ms behind).
 - [ ] The lyrics cache: since the word timings (#315) a kept song is about five times bigger
       (14 to 41 KB), so the 2,000 songs `LYRICS_KEEP` allows may take about 60 MB. Lower the
       limit or keep the files compressed if that turns out to matter.

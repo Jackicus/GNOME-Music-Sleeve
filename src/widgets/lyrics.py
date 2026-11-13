@@ -48,10 +48,11 @@ more) the row glides to the middle of the view; before the first line it glides 
 top. Not while the list is the user's: scrolled by wheel, touchpad or touch in the last
 USER_SCROLL_PAUSE seconds, or with the focus on a line (a click or Enter on a line seeks
 there and hands the list back). What is current is found at the Player's
-estimated_position() (MusicKit reports whole seconds; the lines start at milliseconds), on
+estimated_position() (the page's time at the last event, run on; the lines start at
+milliseconds), on
 each position event and, while shown and playing, from one GLib timeout armed for the next
 change (lyrics.next_change(): a line's start, a break's, a dot lighting, a piece's), so the
-highlight moves as the line begins rather than up to a second after: the one clock the rows
+highlight moves as the line begins rather than at the next event: the one clock the rows
 step by.
 A duet's margins follow the list's width (its horizontal adjustment's page), set again on
 the rows bound when it changes, from an idle (not inside the list's allocation).
@@ -80,8 +81,8 @@ the tab shown and the music playing, redraws those labels at most every SWEEP_IN
 hidden or the song changes: the next change's timeout starts it again. With animations off
 each piece lights whole as it begins, on that timeout alone. Every other row, and a line
 timed as a whole, is drawn plainly; a row bound is drawn for its new line at once, current
-or not. The lyrics never go back by less than HOLD_BACK (the estimate falls back to the
-last whole second on a pause, and the lit pieces would go out): only a seek further back,
+or not. The lyrics never go back by less than HOLD_BACK (the estimate falls back when a
+stalled stream runs on again, and the lit pieces would go out): only a seek further back,
 or a click on a line, takes them back. Word-timed rows carry `timed`: they become current
 without the box's fade, which would dim their unsung words further for a moment.
 """
@@ -113,8 +114,8 @@ SWEEP_INTERVAL = 16700 - 2000  # µs: the least time between two redraws of a sw
                            # a second, on any monitor; less a margin for the frames' jitter)
 SEEK_SETTLE = 2.0          # seconds after a click on a line during which nothing is held
 HOLD_BACK = 1.5            # seconds: the estimate falling back less than this is the Player's
-                           # whole seconds (a pause, a late report), not a seek: the lyrics
-                           # hold where they were
+                           # own (a stall it ran on through, a late report), not a seek:
+                           # the lyrics hold where they were
 SWEEP_EDGE = 8.0           # px: half the width of the soft edge a sweep fills in with
 # The opacity of the text not yet sung on the current line: libadwaita's --dim-opacity, as
 # the lines that are not current have through .dimmed. In high contrast those lines are at
@@ -390,7 +391,7 @@ class LyricsView(Gtk.Stack):
 
     def _shown_position(self):
         """The position the lyrics show (seconds): the Player's estimate, but never back by
-        less than HOLD_BACK (the estimate falls back to the last whole second on a pause,
+        less than HOLD_BACK (the estimate falls back when a stalled stream runs on again,
         and a little at a late report: the lyrics hold there rather than unlight what was
         sung); a seek further back, or any once a line was clicked, is followed."""
         estimate = self._player.estimated_position()

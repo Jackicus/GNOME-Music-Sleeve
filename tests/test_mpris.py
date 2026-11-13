@@ -571,6 +571,26 @@ class ServiceTest(unittest.TestCase):
                 await self.app.settle()
         asyncio.run(go())
 
+    def test_position_carries_the_fraction(self):
+        """The bridge's position has its fraction (#320): Position is that, to the
+        microsecond, run on between events."""
+        async def go():
+            with patched_clocks() as clock:
+                self.make()
+                self.play(position=10)
+                await self.app.settle()
+                self.connection.signals = []
+                clock.advance(5.42)
+                self.engine.emit('event', 'playbackTimeDidChange',
+                                 {'position': 15.42, 'duration': 214})
+                position = self.connection.get(PLAYER_INTERFACE, 'Position').unpack()
+                self.assertEqual(position, 15_420_000)
+                clock.advance(0.125)
+                position = self.connection.get(PLAYER_INTERFACE, 'Position').unpack()
+                self.assertEqual(position, 15_545_000)
+                self.assertEqual(self.connection.seeked(), [])  # where a client had it
+        asyncio.run(go())
+
     def test_the_previous_items_position_never_reaches_the_bus(self):
         """A skip at 200 s of A (214 s) to B (180 s): MusicKit's stale 200 for B is not
         published as Position, and a client's Seek +10 s lands at 10 s, not past B's end."""

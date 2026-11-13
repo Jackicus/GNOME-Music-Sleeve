@@ -66,7 +66,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `seek(seconds)` | `{ok: true}` |
 | `volume(level)` | `{volume}`: MusicKit's level after the set (0 to 1; the page keeps it) |
 | `shuffle(on\|off\|toggle)`, `repeat(none\|one\|all\|cycle)` | `{shuffle, repeat}` |
-| `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume, capabilities}`; `state` is MusicKit's `PlaybackStates` name; `capabilities` is `{canSeek, canPause, canSkipToNextItem, canSkipToPreviousItem, canSetShuffleMode, canSetRepeatMode}`, `mk.capabilities`' (each true when MusicKit has none, or not that one; all false on a live station: below) |
+| `nowPlaying()` | `{state, track, position, duration, shuffle, repeat, volume, capabilities}`; `state` is MusicKit's `PlaybackStates` name; `position` is seconds with their fraction ("The position", below); `capabilities` is `{canSeek, canPause, canSkipToNextItem, canSkipToPreviousItem, canSetShuffleMode, canSetRepeatMode}`, `mk.capabilities`' (each true when MusicKit has none, or not that one; all false on a live station: below) |
 | `queue()` | `{index, items: [Track], editable, canAutoplay, autoplay, edit}`: `editable` and `canAutoplay` are `mk.capabilities`' `canEditPlaybackQueue` and `canAutoplay` (true when MusicKit has none), `autoplay` is `mk.autoplayEnabled`; a Track autoplay added carries `autoplay: true` (its queue item's `isAutoplay`); `edit` is the number of the last of the app's removes and moves the bridge has applied (0 since the page loaded: "Moving queue entries") |
 | `queueRemove(index, id, edit)` | `{ok: true}` once the queue's entry at `index`, when it is still `id` and not the item playing, is out of the queue (`queue.spliceQueueItems(index, 1)`, else the deprecated `queue.remove(index)`), the snapshots after it naming `edit` (the Player's number for it, or null); or `{error, code}`: `NOT_EDITABLE` (a station's queue), `CURRENT`, `STALE` (another entry is there now) |
 | `queueMove(from, to, id, edit)` | `{ok: true}` once the queue's entry at `from`, when it is still `id` and after the item playing, is at `to` (its index once moved), within its section of Up Next (before or from the first entry autoplay added after the item): `spliceQueueItems(from, 1)`, then `spliceQueueItems(to, 0, taken)`, the queue item given back as it came (so it keeps its `isAutoplay`), only the second's `queueItemsDidChange` posted, naming `edit`. When MusicKit does not put it at `to` (it throws, or its filter drops the item) it goes back to `from` if it can, the queue as it is is posted and the answer is `STALE`. Or `{error, code}`: `NOT_EDITABLE` (a station's queue, or no `spliceQueueItems`), `CURRENT`, `STALE` (another entry is there, an entry played, or no such place), `SECTION` (`to` in the other section) |
@@ -657,6 +657,42 @@ The demo's shows carry invented 3:1 banners on disk (`art`, no `url`), but the l
 Not checked live yet: the keys' sizes and shapes (whether `sr` answers other sizes than
 the source's), and which genres and editors carry them.
 
+## The position
+
+MusicKit's `currentPlaybackTime` is whole seconds, and rounded, not floored: second *n* shows
+from *n* - 0.5 (seen live 2026-11-13, MusicKit `2646.4.0`). The page computes it as
+
+```
+currentPlaybackTime = Math.round(player._currentTime)
+player._currentTime = element.currentTime - (buffer.currentTimestampOffset ?? 0)
+```
+
+where `player` is `mk._mediaItemPlayback._currentPlayer`. The bridge's `position`
+(`playbackPosition()`) is that `_currentTime`, read when MusicKit's own event fires or
+`nowPlaying()` is asked: no timer, no extra traffic. It is taken only while it is a finite
+number within a second of `currentPlaybackTime`; otherwise the position is MusicKit's whole
+second, as it was before (and the Player's estimate then runs up to half a second ahead).
+The names are MusicKit's private ones: if a later MusicKit renames them, positions go back to
+whole seconds and nothing else breaks.
+
+Why not a media element's `currentTime`:
+
+- The page has several. Songs play in `<audio id="apple-music-player">` on `<body>`; a live
+  station in a second `<audio>` with the same id (an HLS player's), the first still there,
+  paused at 0; a music video in a `<video>` that is not in the document; and the landing
+  page keeps a dozen muted `<video>`s of moving artwork, some playing.
+- When one song runs into the next without a gap the element is not reset: its time runs on
+  past the first song's length, and the buffer's `currentTimestampOffset` becomes that length.
+  A skip is a new load, with both back at 0.
+
+What the time does: a seek jumps to the target, and a `playbackTimeDidChange` follows within
+about 30 ms; a pause holds it, after one last event; a buffering stall stops it where it is
+(two more events repeat the value, then none, and MusicKit's state stays `playing`) until
+data arrives; on a live station it is a place in the stream's window (below); with nothing
+loaded the player is a stub without `_currentTime`, and the position is 0. At a gapless
+change the first `playbackTimeDidChange` of the new item (a fraction of a second in) comes a
+moment before its `nowPlayingItemDidChange`.
+
 ## Events
 
 The client dispatches each bridge event as `am:<name>`; the Engine re-emits it as
@@ -665,10 +701,10 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 | Event | Data |
 |---|---|
 | `authorizationStatusDidChange` | `{authorized, status}` |
-| `playbackStateDidChange` | `{state, position, duration, capabilities}`; a play walks `playing`, `waiting`, `loading`, `playing` |
+| `playbackStateDidChange` | `{state, position, duration, capabilities}`, the position as `playbackTimeDidChange`'s; a play walks `playing`, `waiting`, `loading`, `playing` |
 | `nowPlayingItemDidChange` | `{track: Track or null, index, capabilities}` |
 | `capabilitiesChanged` | `{capabilities}`, as `nowPlaying()` gives them: what MusicKit allows changed |
-| `playbackTimeDidChange` | `{position, duration}` in seconds, about four times a second while playing |
+| `playbackTimeDidChange` | `{position, duration}` in seconds, the position with its fraction ("The position", below); the media element's `timeupdate`, every 266 ms or so while playing, once after a seek and once at a pause |
 | `playbackDurationDidChange` | `{duration}` |
 | `queueItemsDidChange` | `{index, items: [Track], editable, canAutoplay, autoplay, edit}`, as `queue()` answers (index -1 before playback starts); not posted for the queue between a move's two splices |
 | `queuePositionDidChange` | `{index, oldIndex}` |

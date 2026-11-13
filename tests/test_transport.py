@@ -567,6 +567,51 @@ class SeekLiveTest(unittest.TestCase):
         self.assertEqual((elapsed.visible, remaining.visible), (True, True))
 
 
+class SeekStepTest(unittest.TestCase):
+    """The position arrives with its fraction about four times a second (#320): the slider
+    and its times still step by the second, and a slider the user moved is set again."""
+
+    def setUp(self):
+        from applemusic.widgets.transport import SeekControl
+
+        class Adjustment(Widget):
+            def __init__(self):
+                super().__init__()
+                self.values = []
+
+            def set_value(self, value):
+                self.values.append(value)
+
+        stack = Widget()
+        self.adjustment = Adjustment()
+        self.elapsed = Widget()
+        self.seek = SeekControl(Widget(stack), self.adjustment, self.elapsed, Widget(),
+                                Widget(stack))
+        self.player, self.engine, app = make_player()
+        self.seek.attach(self.player, app)
+        self.engine.event('nowPlayingItemDidChange', {'track': TRACK, 'index': 2})
+        self.player._track_since = float('-inf')  # long ago: its positions are its own
+        self.adjustment.values.clear()
+
+    def time(self, position):
+        self.engine.event('playbackTimeDidChange', {'position': position, 'duration': 214})
+
+    def test_the_slider_steps_by_the_second(self):
+        for position in (61.52, 61.79, 62.05, 62.32, 62.58, 62.85):
+            self.time(position)
+        self.assertEqual(self.adjustment.values, [61.52, 62.58])
+        self.assertEqual(self.elapsed.label, '1:03')
+        self.time(100.004)  # a seek
+        self.assertEqual(self.adjustment.values[-1], 100.004)
+
+    def test_a_slider_the_user_moved_is_set_again(self):
+        self.time(61.52)
+        self.seek._on_change_value(None, None, 150.0)  # dragged: the default handler moves it
+        self.seek.cancel()                             # and let go of (no seek sent)
+        self.time(61.79)
+        self.assertEqual(self.adjustment.values, [61.52, 61.79])
+
+
 class PlayButtonTest(unittest.TestCase):
     def test_the_icons_are_the_bundled_ones(self):
         """Play and Pause draw the app's own icons: an icon theme's 24 px

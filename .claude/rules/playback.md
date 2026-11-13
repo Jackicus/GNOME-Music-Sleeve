@@ -48,8 +48,11 @@ paths:
     for `TRACK_HOLD` seconds a position further than `SEEK_JUMP` past where the item can be is
     dropped (`_plausible`); the state is still taken. The item's times change with the track
     under one `freeze_notify`, so a `notify::track` handler reads 0 and Apple's length.
-  - The position is stamped only when it changes (MusicKit reports whole seconds), and
-    `estimated_position()` runs on a second at most. The lyrics view follows the estimate.
+  - The position is the page's own time, seconds with their fraction, as the bridge reads
+    it at each of MusicKit's events (about four a second while playing: engine README,
+    "The position"); it is stamped when it changes and `estimated_position()` runs on a
+    second at most. The lyrics view follows the estimate; `SeekControl` shows a new
+    position only when its second changes, so the slider costs a frame a second, not four.
   - A state or track event that arrives while `refresh()` awaits its answer outranks the
     answer, which then sets only the modes and the volume; the engine's `bridgeReset` event
     resets the Player as the engine going down does, then reads `now_playing()` again.
@@ -243,7 +246,7 @@ paths:
   (`lyrics.sung()`) through an alpha mask in their own snapshot (`piece_segments()`, by
   Pango's UTF-8 byte indices: `lyrics.byte_spans()`), never through Pango attributes, which
   would lay the row and the list out at every word. The lyrics hold rather than go back by
-  less than `HOLD_BACK` (a pause's whole second).
+  less than `HOLD_BACK` (the estimate after a stall).
 - The full-screen player (`widgets/fullscreen_player.py`, shown by `fullscreen.FullscreenHost`,
   `win.fullscreen-player`, F11) shares the transport pieces too, and borrows the sheet's one
   LyricsView: `lend_lyrics()`/`return_lyrics()` move it between the sheet's `lyrics_slot`

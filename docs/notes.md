@@ -406,6 +406,32 @@ generator, so these absolute figures are not comparable to the millisecond with 
   frame at its smaller size, though its list is allocated more often (135 times against
   81). The same session's three sheet runs after the no-pane ones gave 1.16-1.20 ms and
   7.2-7.4 %.
+- The playback position's fraction (#320, 2026-11-13). Against the real engine (headless
+  Chrome, MusicKit `2646.4.0`, muted), the real `Player` over the real `Engine`:
+  `estimated_position()` less the page's own time (`_currentTime`, read over CDP between two
+  readings of the estimate, about 20 samples a second for 60 s of one song from 30 s in;
+  samples whose read took over 10 ms dropped, median read 0.6 ms). Another agent was using
+  the machine both times (load average 4.3 and 4.6, 93-94 % idle).
+
+  | | samples | mean | median | 5th to 95th percentile | range |
+  |---|---|---|---|---|---|
+  | before: MusicKit's whole seconds | 1,154 | +376 ms | +374 ms | +259 to +494 ms | +240 to +496 ms |
+  | after: the player's fractional time | 1,177 | -1 ms | 0 ms | -1 to 0 ms | -5 to +3 ms |
+
+  Before, the estimate ran *ahead*, not behind as the 2026-10-19 note above has it: that
+  simulation fed floored seconds, and MusicKit rounds (second *n* shows from *n* - 0.5, and is
+  stamped at the first event after, up to 266 ms on). After a seek (150 samples over 8 s) it
+  was -6 to +1 ms; paused, exact. `scripts/lyrics_test.py` simulates both the same way (the
+  syllable fixture, 36 s, headless, the same loaded machine): `--whole-seconds` +367 ms (+222
+  to +493), fractions 0 ms; frames, work a frame and CPU the same (1,891 / 1,956 frames, 1.15
+  / 1.11 ms, 7.2 / 7.1 % of a core), and `--mini-player none` still paints one frame a second
+  (36 in 36 s both ways): the position is notified four times a second now, and the seek
+  slider is set only when its second changes. What is left, seen live: at a gapless change
+  the estimate is the old item's for up to a report (about 0.25 s), and 0.4 s behind for one
+  more report after `nowPlayingItemDidChange` puts the new item at 0 (the item's first
+  position comes before that event); and through a buffering stall, which MusicKit still
+  calls `playing`, it runs up to a second ahead, as before. The event rate is MusicKit's
+  own, unchanged: one `playbackTimeDidChange` every 266 ms (median).
 - Hidden root pages keep their list and grid widgets (the window keeps each fixed
   destination's root page once visited, and the last eight playlist and folder pages).
   Letting the six hidden views' item widgets go while they are hidden, and rebuilding them on a
