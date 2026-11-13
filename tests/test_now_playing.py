@@ -136,7 +136,7 @@ class TabActionsTest(unittest.TestCase):
         self.sheet.show_tab('queue')  # its own switcher
         pump(50)
         self.assertEqual(self.pressed(), (False, True))
-        self.sheet.on_close_clicked(None)
+        self.sheet.close_button.emit('clicked')
         pump(50)
         self.assertEqual(self.pressed(), (False, False))
 

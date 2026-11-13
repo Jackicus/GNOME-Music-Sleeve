@@ -243,6 +243,10 @@ parser.add_argument('--filter', metavar='TEXT',
                     help='the page shown filtered by TEXT, its filter bar shown')
 parser.add_argument('--context-menu', metavar='KIND', nargs='?', const=True,
                     help="pop up the context menu of the page's first tile or row (of KIND)")
+parser.add_argument('--item-menu', metavar='WHERE', nargs='?', const='artwork',
+                    choices=['artwork', 'lyrics'],
+                    help="with --now-playing or --fullscreen-player, right-click the "
+                         "artwork (or the lyrics) for the item playing's menu")
 parser.add_argument('--submenu', metavar='NAME',
                     help='with --context-menu, show the submenu labelled NAME')
 parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
@@ -293,6 +297,8 @@ if args.search:
     args.page = 'search'
 if (args.search_kind or args.see_all) and not (args.search and args.search_in == 'music'):
     parser.error('--search-kind and --see-all need --search TERM --search-in music')
+if args.item_menu and not (args.now_playing or args.fullscreen_player):
+    parser.error('--item-menu needs --now-playing or --fullscreen-player')
 if args.submenu and not (args.context_menu or args.sidebar_menu):
     parser.error('--submenu needs --context-menu or --sidebar-menu')
 if (args.now_playing or args.playing or args.restored or args.fullscreen_player
@@ -325,7 +331,7 @@ width, height = (int(n) for n in (args.size or '1100x760').split('x'))
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light,
                        size=(1100, 760) if args.mini_player else (width, height))
 
-from gi.repository import Adw, GLib, Graphene, Gsk, Gtk  # noqa: E402  (after make_app)
+from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402  (after make_app)
 
 if args.rtl:
     Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)  # before the window is made
@@ -632,6 +638,32 @@ def open_context_menu(window):
         sys.exit('screenshot: the first item has no menu')
     if args.submenu:
         popover.set_property('visible-submenu', args.submenu)
+
+
+def open_item_menu(window):
+    """--item-menu: a right click over the Now Playing sheet's or the full-screen player's
+    artwork (a third of the way into it) or lyrics (their middle), as the pointer's would
+    reach the area's own gesture (context_menu.attach_playing)."""
+    view = window.fullscreen_host.view if args.fullscreen_player else window.now_playing
+    if args.item_menu == 'lyrics':
+        area = view.lyrics_slot
+        x, y = area.get_width() * 0.4, area.get_height() * 0.4
+    else:
+        area = view.item_box
+        point = Graphene.Point()
+        point.x, point.y = view.cover.get_width() / 3, view.cover.get_height() / 3
+        ok, point = view.cover.compute_point(area, point)
+        if not ok:
+            sys.exit('screenshot: the artwork is not laid out')
+        x, y = point.x, point.y
+    model = area.observe_controllers()
+    click = next((controller for controller in
+                  (model.get_item(position) for position in range(model.get_n_items()))
+                  if isinstance(controller, Gtk.GestureClick)
+                  and controller.get_button() == Gdk.BUTTON_SECONDARY), None)
+    if click is None or not area.get_mapped():
+        sys.exit('screenshot: nothing there takes a right click')
+    click.emit('pressed', 1, x, y)
 
 
 def focus_first(window):
@@ -997,6 +1029,11 @@ def _shoot():
         filtered = True
         filter_page(window)
         GLib.timeout_add(1200, shoot)  # filtered, laid out, the artwork decoded
+        return GLib.SOURCE_REMOVE
+    if args.item_menu and not menu_opened:
+        menu_opened = True
+        open_item_menu(window)
+        GLib.timeout_add(800, shoot)  # the popover shown and placed
         return GLib.SOURCE_REMOVE
     if args.context_menu and not menu_opened:
         menu_opened = True

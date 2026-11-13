@@ -1697,6 +1697,7 @@ async def walkthrough(window):
     check('Escape closes the sheet', not window.bottom_sheet.get_open())
     await now_playing_tabs(window)
     await fullscreen_player(window)
+    await item_menu(window)
     await mini_player(window)
     print('-- back')
     await key(window, '<alt>Left', 0.8)
@@ -2701,6 +2702,83 @@ async def fullscreen_player(window):
           and window.get_focus() is sheet.fullscreen_button, describe(window.get_focus()))
     await key(window, 'Escape', 0.8)
     await until(lambda: not window.bottom_sheet.get_open())
+
+
+def menu_item_target(menu, action):
+    """The target of a Gio.MenuModel's item of `action` (its sections searched), or None."""
+    for position in range(menu.get_n_items()):
+        found = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_ACTION)
+        if found is not None and found.unpack() == action:
+            return menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_TARGET)
+        section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+        target = menu_item_target(section, action) if section is not None else None
+        if target is not None:
+            return target
+    return None
+
+
+async def item_menu(window):
+    """The item playing's menu in Now Playing and the full-screen player: Menu anywhere in
+    them opens it beside the focus (the menu More Options shows: no Play), Escape closes it
+    with the focus back; Go to Album chosen from it closes Now Playing on the album's page,
+    and Go to Artist from the full-screen player leaves full screen first."""
+    print("-- the item playing's menu in Now Playing and full screen")
+    host = window.fullscreen_host
+    sheet = window.now_playing
+    resting = window.navigation_view.get_visible_page()
+
+    async def menu_key(where):
+        await key(window, 'Menu', 0.6)
+        shown = [each for each in harness.popovers(where) if isinstance(each, Gtk.PopoverMenu)]
+        return shown[0] if shown else None
+
+    async def choose(popover, action):
+        """Choose the menu's item of `action`, as a click on it does: the menu closes,
+        then the action runs."""
+        target = menu_item_target(popover.get_menu_model(), action)
+        popover.popdown()
+        await asyncio.sleep(0.1)
+        window.activate_action(action, target)
+
+    await key(window, '<primary><shift>n', 0.8)
+    await until(lambda: window.bottom_sheet.get_open() and window.get_focus() is not None
+                and inside(window.get_focus(), sheet))
+    focus = window.get_focus()
+    popover = await menu_key(sheet)
+    labels = menu_labels(popover.get_menu_model()) if popover is not None else []
+    check("Menu in Now Playing opens the item playing's menu beside the focus, no Play",
+          popover is not None and inside(popover, focus) and '_Go to Album' in labels
+          and '_Play' not in labels, labels)
+    await key(window, 'Escape', 0.6)
+    await until(lambda: window.get_focus() is focus)
+    check('Escape closes it, the focus back, Now Playing still open',
+          popover is not None and not popover.get_visible() and window.get_focus() is focus
+          and window.bottom_sheet.get_open(), describe(window.get_focus()))
+    popover = await menu_key(sheet)
+    if popover is not None:
+        await choose(popover, 'win.item-go-to-album')
+    await until(lambda: getattr(window.shown_item(), 'kind', None) == 'album')
+    shown = window.shown_item()
+    check("its Go to Album closes Now Playing on the album's page",
+          not window.bottom_sheet.get_open() and shown is not None and shown.kind == 'album',
+          getattr(shown, 'kind', None))
+    await key(window, 'F11', 0.8)
+    await until(lambda: host.shown and window.get_focus() is host.view.play_button)
+    popover = await menu_key(host.view)
+    check('Menu in the full-screen player opens it too',
+          popover is not None and inside(popover, host.view))
+    if popover is not None:
+        await choose(popover, 'win.item-go-to-artist')
+    await until(lambda: getattr(window.shown_item(), 'kind', None) == 'artist'
+                and not window.is_fullscreen())   # the compositor's answer comes later
+    shown = window.shown_item()
+    check("its Go to Artist leaves full screen first, on the artist's page",
+          not host.shown and not window.is_fullscreen() and not window.bottom_sheet.get_open()
+          and shown is not None and shown.kind == 'artist',
+          (host.shown, window.is_fullscreen(), window.bottom_sheet.get_open(),
+           getattr(shown, 'kind', None)))
+    window.navigation_view.pop_to_page(resting)
+    await asyncio.sleep(0.6)
 
 
 async def mini_player(window):
