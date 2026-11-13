@@ -39,7 +39,7 @@ checkdepends=(
 )
 optdepends=('google-chrome: the playback engine (its Widevine plays the protected streams)')
 source=("$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.xz")
-sha256sums=('SKIP')
+sha256sums=('00309dd7aaba73ba2201efee0c47a1c0d118aa294ef7122b40c3e2fa699c42bb')
 
 build() {
   arch-meson "$pkgname-$pkgver" build
