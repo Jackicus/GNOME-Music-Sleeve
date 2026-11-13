@@ -196,8 +196,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   favourites, open it on music.apple.com, and, for a song, **Go to Album** and **Go to
   Artist**; an artist's menu has **Favourite** too. **Suggest Less** (for a song, an album, a playlist, a station or a music video)
   tells Apple Music to recommend less like it; **Undo Suggest Less** takes that back. A
-  favourite offers no Suggest Less, and **Favourite** replaces a Suggest Less. The song playing has the same menu: right-click the player bar, or use **More
-  Options** in Now Playing; Up Next's songs have theirs too. A radio show or a category
+  favourite offers no Suggest Less, and **Favourite** replaces a Suggest Less. The song playing has the same menu: right-click the player bar, or, in Now Playing
+  and the full-screen player, right-click (or press and hold) the artwork, the titles or
+  the lyrics, or use **More Options**; Up Next's songs have theirs too. A radio show or a category
   (Search's, New's) has only **Open in Browser** and **Copy Link**: it is a page to open,
   with nothing of its own to play or favourite.
 - **View Credits** in a song's menu (a row's, the player bar's, Now Playing's **More

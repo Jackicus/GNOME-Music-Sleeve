@@ -86,7 +86,12 @@ list and the script together.
    before, most recent first, in place of Up Next (Autoplay and Clear go): Tab reaches them,
    Enter plays one again, their menus have no Remove, and Space on the toggle goes back.
    Then the close button and the header bar's buttons, More Options among them (the item
-   playing's menu). Escape closes a menu, then the sheet, and the focus goes back to where
+   playing's menu). Menu or Shift+F10 opens that menu from anywhere in Now Playing, beside
+   the focus, as the player bar's keys do from anywhere in the bar (a right click or a long
+   press over the artwork, the titles or the lyrics opens it at the pointer): on an Up Next
+   or History entry they open the entry's own menu instead, and on the plain lyrics text
+   its Copy menu. Its Go to Album and Go to Artist close Now Playing on that page.
+   Escape closes a menu, then the sheet, and the focus goes back to where
    it was. Ctrl+Shift+U opens Now Playing on Up Next and Ctrl+Shift+L on
    Lyrics (the bar's toggle for the tab shown reads as pressed); the other key switches the
    tab, the same key again closes the sheet. Space on the bar's Up Next button (wide windows:
@@ -137,7 +142,9 @@ list and the script together.
     of it (the rest of the window is not shown); on a line, Space plays or pauses and Enter
     seeks to it; Escape (once a menu or a toast has had it) leaves, the window back to its
     size and the focus back where it was. Now Playing's Fullscreen button shows it too, and F11
-    leaves it, back on that button. The script walks this after step 5.
+    leaves it, back on that button. Menu or Shift+F10 anywhere in it opens the item
+    playing's menu, as in Now Playing; its Go to Album and Go to Artist leave full screen
+    first, then show the page with Now Playing closed. The script walks this after step 5.
 11. On All Playlists the header bar has New Playlist and New Folder, each named. A playlist's
     or a folder's tile (Ctrl+2, then the arrows) opens its menu with Menu or Shift+F10: Move
     to Folder lists Top Level when it is in a folder, the folders it can go into by name, in
