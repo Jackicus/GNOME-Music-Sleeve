@@ -21,6 +21,6 @@ pkgbase = music-sleeve
 	depends = python-gobject
 	optdepends = google-chrome: the playback engine (its Widevine plays the protected streams)
 	source = https://github.com/Jackicus/GNOME-Music-Sleeve/releases/download/v1.3.1/music-sleeve-1.3.1.tar.xz
-	sha256sums = SKIP
+	sha256sums = 6826942b679125bf3eaafd1211f245288fa194e1747b1566578a61577af721c9
 
 pkgname = music-sleeve
