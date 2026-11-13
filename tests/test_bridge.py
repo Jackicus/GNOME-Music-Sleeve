@@ -25,7 +25,7 @@ import unittest
 
 from tests import ROOT
 
-from applemusic.engine import lyrics_answer
+from applemusic.engine.playback import lyrics_answer
 from applemusic.lyrics import FORMAT
 
 HARNESS = pathlib.Path(__file__).with_name('bridge_harness.js')

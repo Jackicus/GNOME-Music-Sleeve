@@ -110,7 +110,6 @@ install_data(
   'credits.py',
   'discord.py',
   'discography.py',
-  'engine.py',
   'errors.py',
   'explore.py',
   'fullscreen.py',
@@ -257,6 +256,18 @@ install_data(
   'backend/search.py',
   'backend/store.py',
   install_dir: moduledir / 'backend',
+)
+
+# The engine package.
+install_data(
+  'engine/__init__.py',
+  'engine/browse.py',
+  'engine/catalog.py',
+  'engine/core.py',
+  'engine/edits.py',
+  'engine/playback.py',
+  'engine/reads.py',
+  install_dir: moduledir / 'engine',
 )
 
 # Byte-compile the modules once they are installed (after every install_data above): they live

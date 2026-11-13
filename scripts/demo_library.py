@@ -2804,7 +2804,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
 def build_search_catalog(out_dir, artists, albums, playlists, videos, stations, draw_cover,
                          thumb_for, cover_size, generated):
     """Write demo-search.json (cache_files.demo_search_path()): the invented catalog the demo
-    engine searches (Engine.search, engine.demo_search()), {shelves: [{key, items}]} by search
+    engine searches (Engine.search, catalog.demo_search()), {shelves: [{key, items}]} by search
     kind: the hand-written artists, their albums and songs, the playlists, music videos and
     stations, the Radio page's shows (radio.json, written first: their pages are there) and
     invented curators drawn here, each Apple-like one with its page (categories/<id>.json:

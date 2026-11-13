@@ -50,7 +50,8 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk  # noqa: E402
 from .backend import cache_files, config  # noqa: E402
 from .backend.errors import EngineError  # noqa: E402
 from .background import BackgroundPlayback  # noqa: E402
-from .engine import Engine, quality_bitrate  # noqa: E402
+from .engine import Engine  # noqa: E402
+from .engine.playback import quality_bitrate  # noqa: E402
 from .discord import Presence  # noqa: E402
 from .errors import error_message  # noqa: E402
 from .library import Library  # noqa: E402

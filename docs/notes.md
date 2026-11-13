@@ -680,7 +680,7 @@ libadwaita's breakpoints and the fragmentation still settling.
   the pipe also makes Chrome quit, as Puppeteer relies on, is not confirmed on Chrome 154; the
   engine sends `Browser.close` and signals anyway.
 - A cancelled `Gio.Subprocess.wait_async()` raised `GLib.Error` (cancelled), not
-  `CancelledError`, hence `engine._process_exit()`.
+  `CancelledError`, hence `engine.core._process_exit()`.
 - Chrome rewrites its `/proc/<pid>/cmdline` into one space-joined string, its helpers too (with
   `--type=`), so splitting it on NULs never finds `--user-data-dir=<profile>` as an argument,
   and a prefix match takes `…/chrome-devel` for `…/chrome`. `<profile>/SingletonLock` is a

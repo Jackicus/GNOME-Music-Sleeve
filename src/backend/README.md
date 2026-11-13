@@ -1,7 +1,7 @@
 # The backend
 
 Everything that reaches Chrome, MusicKit or Apple's API, below the app's `Engine`
-(`src/engine.py`). The standard library and asyncio only: nothing here imports gi
+(`src/engine/`). The standard library and asyncio only: nothing here imports gi
 (`tests/test_backend.py` checks), and importing the package imports none of its modules. The
 app reaches Chrome only through the Engine; other modules may import the pure parts (every
 module here but `chrome`, `client` and `cdp`).
