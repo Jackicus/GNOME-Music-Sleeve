@@ -22,7 +22,7 @@
                           [--more-options] [--main-menu] [--new-menu]
                           [--sidebar-menu KEY [--submenu NAME]]
                           [--drop-target KEY] [--drop-line N] [--scroll PX] [--select N]
-                          [--sort KEY[:descending]]
+                          [--sort KEY[:descending]] [--frame]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
 through scripts/headless.sh, so the window opens on a private display and never on
@@ -287,6 +287,9 @@ parser.add_argument('--pick', metavar='N', type=int,
                     help='with --dialog add-songs, its first N songs picked')
 parser.add_argument('--focus', action='store_true',
                     help="give the keyboard focus to the page's first tile or row")
+parser.add_argument('--frame', action='store_true',
+                    help="the window's shadow and rounded corners too, on a transparent "
+                         "background, as a window screenshot shows them (the metainfo's)")
 parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[],
                     help='set a setting first (VALUE in GVariant text: true, 3, "text"), in '
                          'the memory backend only; repeatable')
@@ -327,7 +330,7 @@ width, height = (int(n) for n in (args.size or '1100x760').split('x'))
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light,
                        size=(1100, 760) if args.mini_player else (width, height))
 
-from gi.repository import Adw, GLib, Graphene, Gtk  # noqa: E402  (after make_app)
+from gi.repository import Adw, GLib, Graphene, Gsk, Gtk  # noqa: E402  (after make_app)
 
 if args.rtl:
     Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)  # before the window is made
@@ -911,6 +914,17 @@ def draw_popovers(window, snapshot):
         snapshot.restore()
 
 
+def unclipped(node):
+    """The window's render node without the clip to its own size around it, so its shadow,
+    which the window draws outside that size, shows (a popover drawn over it keeps its own)."""
+    if isinstance(node, Gsk.ClipNode):
+        return node.get_child()
+    if isinstance(node, Gsk.ContainerNode) and node.get_n_children():
+        children = [node.get_child(index) for index in range(node.get_n_children())]
+        return Gsk.ContainerNode.new([unclipped(children[0])] + children[1:])
+    return node
+
+
 def scroll_page(window):
     """Scroll the visible page's first vertically scrolling scrolled window that is shown by
     args.scroll (not one in a stack's hidden child: an empty state's status page has one)."""
@@ -1122,7 +1136,11 @@ def _shoot():
     snapshot = Gtk.Snapshot()
     paintable.snapshot(snapshot, window.get_width(), window.get_height())
     draw_popovers(window, snapshot)
-    texture = window.get_renderer().render_texture(snapshot.to_node(), None)
+    node = snapshot.to_node()
+    if args.frame:
+        node = unclipped(node)
+    texture = window.get_renderer().render_texture(node, node.get_bounds() if args.frame
+                                                   else None)
     texture.save_to_png(args.out)
     print(args.out)
     app.quit()

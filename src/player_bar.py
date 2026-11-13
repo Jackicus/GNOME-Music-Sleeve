@@ -177,6 +177,9 @@ class PlayerBar(Adw.Bin):
         self._strings = {
             'now-playing': _('Now Playing'),
             'not-playing': _('Not Playing'),
+            # Translators: the player bar's description for a screen reader: the song's
+            # title, then its artist and album ("Song, Artist — Album").
+            'item': _('{title}, {subtitle}'),
         }
         # The item playing's menu ends with Mini Player here (context_extra).
         self._extra = Gio.Menu()
@@ -271,8 +274,11 @@ class PlayerBar(Adw.Bin):
         self._show_playing_controls()
         button = self._bar_button()
         if button is not None:
-            description = (', '.join(part for part in (track.title, track_subtitle(track))
-                                     if part) if playing else self._strings['not-playing'])
+            description = self._strings['not-playing']
+            if playing:
+                title, subtitle = track.title, track_subtitle(track)
+                description = (self._strings['item'].format(title=title, subtitle=subtitle)
+                               if title and subtitle else title or subtitle)
             button.update_property([Gtk.AccessibleProperty.DESCRIPTION], [description])
         if not playing:
             self._announced = None

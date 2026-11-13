@@ -103,6 +103,8 @@ class PreferencesDialog(Adw.PreferencesDialog):
             settings.bind(key, getattr(self, child), prop, Gio.SettingsBindFlags.DEFAULT)
         settings.bind('browser-command', self.browser_row, 'text', Gio.SettingsBindFlags.GET)
         # Start or Stop, as the engine's state says.
+        # Translators: the Engine row's one button, starting or stopping the playback
+        # engine: give _Start and _Stop the same mnemonic letter if you can.
         start, stop = _('_Start'), _('_Stop')  # one button, one mnemonic: Alt+S
         self._label_binding = engine.bind_property(
             'state', self.engine_button, 'label', GObject.BindingFlags.SYNC_CREATE,
@@ -210,6 +212,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
         """The cache's size, added up in a thread, as the Cache row's subtitle."""
         size = await asyncio.to_thread(cache_size, config.cache_dir())
         if not self._closed and not self._clearing:
+            # Translators: the Cache row's subtitle, in place of its size, when there is none.
             self.cache_row.set_subtitle(GLib.format_size(size) if size else _('Empty'))
 
     def _on_clear_clicked(self, _button):

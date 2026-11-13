@@ -372,12 +372,40 @@ def _catalog_artist_id(artist_id):
     return artist_id
 
 
+class _Unkept:
+    """A kept answer's fetch's raw answer, made while one of its secondary reads failed and
+    was taken as none (Replay's years, a page's More By, Recently Played past its first
+    page): _kept_answer shapes and answers it but keeps nothing, so Apple is asked again at
+    the next visit and an older, complete answer kept there stays for the stale fallback."""
+
+    __slots__ = ('raw',)
+
+    def __init__(self, raw):
+        self.raw = raw
+
+
 def _shape_and_keep(shaper, raw, path, cache_dir, generation, basis=None):
     """In a thread: `shaper(raw, cache_dir)`'s answer, kept at `path` (stamped `cached`, and
-    `basis` when there is one) unless the cache was cleared since `generation`."""
-    answer = shaper(raw, cache_dir)
+    `basis` when there is one) unless the cache was cleared since `generation`, or `raw` is
+    an _Unkept (stamped alike, kept nowhere). A shaper that raises (an answer of a type it
+    does not expect, a list where a dict should be) is EngineError('api'), logged, and
+    nothing is kept: only EngineError leaves the Engine."""
+    keep = not isinstance(raw, _Unkept)
+    if not keep:
+        raw = raw.raw
+    try:
+        answer = shaper(raw, cache_dir)
+    except Exception as error:
+        what = os.path.basename(path)
+        log.warning('could not read the answer for %s', what, exc_info=True)
+        raise EngineError('api', f'an answer for {what} that could not be read: '
+                                 f'{type(error).__name__}') from error
     if basis is not None:
         answer = dict(answer, basis=basis)
+    if not keep:
+        log.info('not keeping the answer for %s: one of its reads failed',
+                 os.path.basename(path))
+        return normalize.stamp_answer(answer)
     return normalize.write_answer(path, answer, cache_dir, generation)
 
 
@@ -2289,7 +2317,8 @@ class Engine(GObject.Object):
         normalize.ANSWER_MAX_AGE (no engine needed) unless `refresh`, else `await
         fetch(client)`'s raw answer, shaped by `shaper(raw, cache_dir)` in a thread and kept
         there, stamped `cached`. When Apple cannot be asked (the engine down or signed out,
-        the page or the network failing), an older answer kept there is answered instead,
+        the page or the network failing) or its answer cannot be shaped (EngineError('api'),
+        _shape_and_keep), an older answer kept there is answered instead,
         marked `stale: True`; with none, or on a refresh, the error. With a `basis` (what the
         answer was asked about, as a string), the answer is kept with it, and one kept with
         another is not fresh, whatever its age: Apple is asked again (and the old one is
@@ -2313,6 +2342,8 @@ class Engine(GObject.Object):
         try:
             client = await self._require_signed_in('browse')
             raw = await fetch(client)
+            return await asyncio.to_thread(_shape_and_keep, shaper, raw, path,
+                                           str(self.cache_dir), generation, basis)
         except EngineError as error:
             stale = None
             if not refresh and error.code != 'usage':
@@ -2327,8 +2358,6 @@ class Engine(GObject.Object):
                 stale['stale'] = True  # young, but kept by a version that shaped it otherwise
             log.info('answering a kept answer no longer fresh: %s', error)
             return stale
-        return await asyncio.to_thread(_shape_and_keep, shaper, raw, path,
-                                       str(self.cache_dir), generation, basis)
 
     async def landing(self, refresh=False):
         """The search page's Browse Categories: {categories: [{id, kind: 'category', title,
@@ -2539,11 +2568,12 @@ class Engine(GObject.Object):
         On, You Might Also Like), titled as Apple titles them (More By untitled: the page
         names it). Two reads: the catalog album with its views (api.ALBUM_ENDPOINT), then a
         page of its first artist's albums (api.MORE_BY_VIEW; More By is left out when that
-        read fails). A library album (an `l.` id) is its catalog album, found through
-        `song_id`, one of its songs' catalog ids: one read more, the first time. From
-        <cache>/albums/<id>.json for a day, else fetched and kept, with the views it asked
-        for as its `basis`: one kept with other views (an older app's) is asked again. An
-        album the catalog lacks is Apple's 404 (EngineError.status)."""
+        read fails, and the answer is not kept). A library album (an `l.` id) is its
+        catalog album, found through `song_id`, one of its songs' catalog ids: one read
+        more, the first time. From <cache>/albums/<id>.json for a day, else fetched and
+        kept, with the views it asked for as its `basis`: one kept with other views (an
+        older app's) is asked again. An album the catalog lacks is Apple's 404
+        (EngineError.status)."""
         album_id = str(album_id or '')
         song_id = str(song_id or '')
         if not album_id or (api.is_library_id(album_id) and not song_id):
@@ -2576,6 +2606,7 @@ class Engine(GObject.Object):
                     if error.code == 'engine-down':
                         raise
                     log.info('the albums of artist %s: %s', artist_id, error)
+                    return _Unkept({'album': album, 'moreBy': None})
             return {'album': album, 'moreBy': more_by}
         return await self._kept_answer(
             normalize.album_cache_path(str(self.cache_dir), album_id), refresh, fetch,
@@ -2603,10 +2634,10 @@ class Engine(GObject.Object):
         views alone (api.PLAYLIST_PLAIN_PARAMS) when Apple answers it with a 400, then, for
         an Apple curator's, a page of the curator's playlists, which More By shows (Apple's
         view of it is empty: api.CURATOR_PLAYLISTS_ENDPOINT; More By is left out when that
-        read fails). From <cache>/playlists/<id>.json for a day, else fetched and kept, with
-        the views it asked for as its `basis`. A playlist the catalog lacks is Apple's 404
-        (EngineError.status); a library playlist's id is `usage` (its catalog id is asked
-        by)."""
+        read fails, and the answer is not kept). From <cache>/playlists/<id>.json for a
+        day, else fetched and kept, with the views it asked for as its `basis`. A playlist
+        the catalog lacks is Apple's 404 (EngineError.status); a library playlist's id is
+        `usage` (its catalog id is asked by)."""
         playlist_id = str(playlist_id or '')
         if not playlist_id or api.is_library_id(playlist_id):
             raise EngineError('usage', 'playlist_page needs a catalog playlist id')
@@ -2636,6 +2667,7 @@ class Engine(GObject.Object):
                     if error.code == 'engine-down':
                         raise
                     log.info('the playlists of curator %s: %s', curator_id, error)
+                    return _Unkept({'playlist': playlist, 'curatorPlaylists': None})
             return {'playlist': playlist, 'curatorPlaylists': curator_playlists}
         return await self._kept_answer(
             normalize.playlist_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
@@ -2810,10 +2842,11 @@ class Engine(GObject.Object):
         normalize.replay_song_ids, api.replay_songs_params, one read), beside the years Apple
         has a Replay of (api.REPLAY_YEARS_ENDPOINT: the year menu's choice). Apple refusing
         the summary (a 400 or a 404: no listening history for the year) is a summary of
-        nothing, a 404 for the songs none of them, and the years failing are none; anything
-        else is the command's. From <cache>/replay.json (a past year's replay/<year>.json)
-        for a day, else fetched and kept, with normalize.REPLAY_SHAPE as its basis, so one
-        kept in an older shape is asked again."""
+        nothing, a 404 for the songs none of them, and the years failing are none (that
+        answer shown, not kept); anything else is the command's. From <cache>/replay.json
+        (a past year's replay/<year>.json) for a day, else fetched and kept, with
+        normalize.REPLAY_SHAPE as its basis, so one kept in an older shape is asked
+        again."""
         year = str(year or '')
         if year and not api.is_replay_year(year):
             raise EngineError('usage', 'replay needs a year')
@@ -2846,7 +2879,8 @@ class Engine(GObject.Object):
                 if error.code == 'engine-down':
                     raise
                 log.info('replay: no years to choose from: %s', error)
-                years = None
+                return _Unkept({'summary': summary, 'songs': songs, 'years': None,
+                                'year': year})
             return {'summary': summary, 'songs': songs, 'years': years, 'year': year}
         return await self._kept_answer(normalize.replay_cache_path(str(self.cache_dir), year),
                                        refresh, fetch, normalize.replay_page,
@@ -2867,7 +2901,7 @@ class Engine(GObject.Object):
         """Home's Recently Played: {items: [Item]} (normalize.recently_played), the albums,
         playlists and stations played last, newest first, from api.RECENT_PLAYED_ENDPOINT,
         api.RECENT_PLAYED_PAGE a read by offset, up to api.RECENT_PLAYED_LIMIT. A later page
-        that fails keeps the ones in hand; the first must answer. From
+        that fails answers the ones in hand, not kept; the first must answer. From
         <cache>/recent-played.json for a day, else fetched and kept: Home shows the kept one
         at once and asks with `refresh` once it is a minute old (src/home.py)."""
         async def fetch(client):
@@ -2882,7 +2916,7 @@ class Engine(GObject.Object):
                     if not resources or error.code == 'engine-down':
                         raise
                     log.info('recently played, past %d: %s', len(resources), error)
-                    break
+                    return _Unkept(resources[:api.RECENT_PLAYED_LIMIT])
                 data = api.page_data(answer)
                 resources += data
                 if len(data) < page or not answer.get('next'):

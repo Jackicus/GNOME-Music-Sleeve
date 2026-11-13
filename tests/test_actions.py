@@ -7,6 +7,7 @@ drop onto a sidebar playlist are checked without Apple. Gio and GObject only, no
 the actions' coroutines run under asyncio."""
 
 import asyncio
+import locale
 import sys
 import types
 import unittest
@@ -1391,6 +1392,19 @@ class DropTargetsTest(unittest.TestCase):
         self.assertEqual(queue_message('', True), 'Playing later')
         self.assertEqual(queue_message('Shoreline', True, 2), '2 items will play later')
         self.assertEqual(queue_message('Shoreline', False, 4), '4 items will play next')
+
+    def test_counts_are_written_as_the_locale_writes_numbers(self):
+        numeric = locale.setlocale(locale.LC_NUMERIC)
+        self.addCleanup(locale.setlocale, locale.LC_NUMERIC, numeric)
+        try:
+            locale.setlocale(locale.LC_NUMERIC, 'en_GB.UTF-8')
+        except locale.Error:
+            self.skipTest('en_GB.UTF-8 is not installed here')
+        self.assertEqual(queue_message('', True, 1200), '1,200 items will play later')
+        self.assertEqual(actions_module.added_message(4000, 'Road Trip'),
+                         'Added 4,000 songs to “Road Trip”')
+        self.assertEqual(actions_module.removed_message(2500, ''),
+                         'Removed 2,500 songs from the playlist')
 
     def test_new_playlist_tracks(self):
         self.assertEqual(new_playlist_tracks(ItemRefs.for_objects([LIBRARY_TRACK, CATALOG_SONG,

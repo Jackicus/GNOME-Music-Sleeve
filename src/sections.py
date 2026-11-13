@@ -50,6 +50,8 @@ def sidebar_sections():
         Section('browse', None, (
             Destination('search', _('Search'), 'system-search-symbolic'),
             Destination(HOME, _('Home'), 'go-home-symbolic'),
+            # Translators: the sidebar's page of new releases and Apple's picks, as Apple
+            # Music names it.
             Destination('new', _('New'), 'view-grid-symbolic'),
             Destination('radio', _('Radio'), 'broadcast-symbolic'),
         )),

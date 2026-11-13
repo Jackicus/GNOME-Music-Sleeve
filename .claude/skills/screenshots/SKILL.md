@@ -63,19 +63,24 @@ What to shoot: $ARGUMENTS
    warning in the script's output is expected.
 4. Shots of work in progress stay in build/. Never commit or share a shot taken without
    `--demo`.
-5. Retaking the metainfo screenshots (`data/screenshots/`, 1100x760 at scale 1), each as
-   `<name>-dark.png` and, with `--light`, `<name>-light.png`, all with
-   `--signed-in 'Alex Rivera'` (invented):
-   - `home`: `--page home --playing`;
-   - `albums`: `--page albums --playing`;
-   - `album`: `--page albums --open album:first --playing` (the album playing);
-   - `now-playing`: `--page albums --now-playing syllable --position 58.4` (the invented
-     duet: a line lit part-way, each singer on their side, background vocals).
-   Run each as `GSETTINGS_BACKEND=memory scripts/headless.sh …`: the private session's
-   Settings portal then answers GNOME's defaults (the blue accent, a close button alone)
-   rather than the desktop's accent colour and window buttons.
-   Keep the names: installed metainfo files link them by URL. Shrink them losslessly with
-   `oxipng --opt 4 --strip safe data/screenshots/*.png`,
-   look at each one (demo data only), and check that none carries a text chunk:
+5. Retaking the metainfo screenshots (`data/screenshots/`) is one step:
+   `scripts/retake_screenshots.sh` (after `scripts/headless.sh scripts/check.sh` has
+   configured build/; it installs the build itself). It shoots each subject of its `METAINFO`
+   list as `<name>-dark.png` and `<name>-light.png`: the window at its default size
+   (1100x760, scale 1) with `--frame` (its shadow and rounded corners on a transparent
+   background, 1150x810 in all, as a window screenshot is), `--signed-in 'Alex Rivera'`
+   (invented), each run as `GSETTINGS_BACKEND=memory scripts/headless.sh …` so the private
+   session's Settings portal answers GNOME's defaults (the blue accent, a close button
+   alone) rather than the desktop's; then `oxipng --opt 4 --strip safe`. Its `SUBJECTS`
+   table holds each subject's options: `home`, `albums`, `album` (the album playing),
+   `now-playing` (the invented duet: a line lit part-way, each singer on their side,
+   background vocals), and the other candidates, `artist` (Apple's page of the first artist,
+   its banner), `search`, `fullscreen-lyrics` (fullscreen: no shadow, and the same tinted
+   picture in both schemes), `selection` (a playlist, three songs selected) and `narrow`
+   (360x640). `--out DIR` writes elsewhere (candidates go in build/); name subjects, or
+   `all`, to take others than the metainfo's. The app runs as the release profile there, so
+   no .Devel stripes, name or icon. Keep the names: installed metainfo files link them by
+   URL. Look at each one (demo data only), and check that none carries a text chunk:
    `grep -c -a -E 'tEXt|iTXt|zTXt' data/screenshots/*.png` prints 0 for each. Update the
-   captions in the metainfo if what a shot shows changed.
+   captions in the metainfo, and its images' `width` and `height`, if what a shot shows
+   or its size changed.

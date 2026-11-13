@@ -51,9 +51,16 @@ paths:
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;
   `--mini-player` puts it on the Player and shoots the mini player's window (at `--size` when
   given, else at its settings' size; `--restored`, `--live`, `--lost` with it);
-  `--filter TEXT` types into the page's filter bar; `--help` lists the rest. It shoots
+  `--filter TEXT` types into the page's filter bar; `--frame` keeps the window's shadow and
+  rounded corners, on a transparent background (its render node without the clip to the
+  window's size: 25 px of shadow each side at libadwaita 1.10, none when fullscreen);
+  `--help` lists the rest. It shoots
   once no artwork decode has been in flight for a few polls
   (5 s at most), so a new step that shows artwork needs no delay of its own for it.
+- `retake_screenshots.sh [--out DIR] [SUBJECT…|all]` takes the metainfo screenshots in one
+  step (the `screenshots` skill, step 5): its `SUBJECTS` table is each subject's screenshot.py
+  options, `METAINFO` the ones data/screenshots/ holds; it installs the build, shoots each
+  dark and light with `--frame` through headless.sh on the memory backend, and runs oxipng.
 - screenshot.py runs without animations, so a word-timed line's pieces show lit whole, and
   the Player's estimate has run on by a second when it shoots (`--position 16.5` shows
   17.5 s). `lyrics_test.py` plays a lyrics fixture (`--fixture`, the word-timed `syllable`
@@ -102,7 +109,10 @@ paths:
   `APPLE_MUSIC_HOST_SESSION_BUS` and the keyring check the same way: inside headless.sh it
   keeps the profile's sign-in, and without a keyring on Chrome's bus it answers `no-keyring`.
 - `demo_library.py` writes invented data only and, without options, the same library every
-  time: tests and the metainfo screenshots depend on both. Its last write is `.demo-stamp`, a
+  time: tests and the metainfo screenshots depend on both. Its names are checked against real
+  artists, records and songs (none known), its editors' labels are invented (Harbourlight),
+  and its covers are drawn (`draw_cover`: a design by genre, seeded by the words, film
+  grain): no Apple mark and no real artwork, in it or in a screenshot of it. Its last write is `.demo-stamp`, a
   hash of `demo_stamp.SOURCES` (the script, the backend's normalize.py and config.py) and of
   the options it was given; the harness and `demo.sh` write build/demo again whenever
   `demo_stamp.py build/demo` says it is missing or out of date (an older checkout's demo lacks

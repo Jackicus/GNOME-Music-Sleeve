@@ -257,8 +257,13 @@ paths:
   destroys it (`release()`: a dialog over it closed, its view's pieces and handlers detached, so a closed one
   follows nothing and is freed: tests/test_page_lifetime.py). One at a time; its size is
   `mini-player-width` and `-height`, its layout `mini_player.layout_for()` (a small cover
-  beside the titles when low). It has the transport pieces only (no lyrics, Up Next, heart
-  or volume), the playback keys as the window has them, its own toasts while it shows
+  beside the titles when low; `extras`, where Favourite, Shuffle, Repeat and Volume go:
+  around the transport from `INLINE_WIDTH`, else a row under it, or hidden where a low
+  window has no room for the row; one set of buttons, moved by `place_extras()`). Its
+  heart is lazy (the bar's reads answer it), its volume a popover button at every size; a
+  piece that connects to an object its own widget owns lets go of it in `detach()`
+  (`VolumeControl`'s adjustment), or the window is never freed. No lyrics or Up Next yet
+  (#589). The playback and volume keys as the window has them, its own toasts while it shows
   (`get_active_window()` is it; a `win.*` button there runs through `app.window-action`),
   and announces each new item itself (the bar does not
   announce from a hidden window: `transport.announcement()`). What needs the main window

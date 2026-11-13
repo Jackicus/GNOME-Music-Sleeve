@@ -636,6 +636,8 @@ class Window(Adw.ApplicationWindow):
         expired = (signed_in and not app.demo and app.engine.state == 'up'
                    and not app.engine.authorized)
         self.account_stack.set_visible_child_name('account' if signed_in else 'sign-in')
+        # Translators: the account button's label, in place of the account's name when
+        # Apple gave none.
         self.account_label.set_label(name or _('Signed In'))
         self.account_avatar.set_text(name)
         self.account_avatar.set_show_initials(bool(name))

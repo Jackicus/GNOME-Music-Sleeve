@@ -412,7 +412,8 @@ element kinds), shaped by `normalize.radio_shelves()` through New's own
 
 `Engine.recently_played()` asks Apple's documented `GET /v1/me/recent/played`
 (`api.RECENT_PLAYED_ENDPOINT`), `limit=10` (its documented most) by `offset`, up to 30,
-following `next`; a later page that fails keeps the pages read, the first must answer. The
+following `next`; a later page that fails answers the pages read (that answer not kept),
+the first must answer. The
 resources (albums, playlists, stations, the library's or the catalog's, newest first) are
 shaped by `normalize.recently_played()` into `{items: [Item]}`, each once, as a shelf's
 items (no track lists; artwork as a search hit's), and kept in `recent-played.json`. Home
@@ -542,7 +543,7 @@ do not hold):
   a `music-summaries` resource a year, newest first, `{id: 'year-<YYYY>', attributes:
   {period: 'year', year}, relationships: {playlist: {data: [playlist]}}}`, the playlist that
   year's Replay playlist, inline with its attributes (nothing in `included`). Its failing
-  (but for `engine-down`) is no years.
+  (but for `engine-down`) is no years, and that answer is shown but not kept.
 
 `normalize.replay_page()` makes `{year, years, shelves}` of them: `year` the summary's (its
 `attributes.year`, else its id's, else the year asked), `years` every year the listing has,
@@ -806,7 +807,9 @@ titles them. Apple has no `related-albums` view (never in the answer; `/view/rel
 is a 400). The shelf `more-by-artist` is a page of the first artist's `full-albums` view,
 less the album, untitled (the app names it "More By …"); Apple's album has a
 `more-by-artist` view too, which the app does not ask for. `more` when
-`Engine.album_view()` (or `artist_view()` for More By) has more. A library album is asked
+`Engine.album_view()` (or `artist_view()` for More By) has more. The artist's albums
+failing (but for `engine-down`) leaves More By out of an answer that is not kept. A
+library album is asked
 by its own id and one of its songs' catalog ids, through which the engine finds its catalog
 album (`api.SONG_ALBUMS_PARAMS`); the answer is kept under the id it was asked by, with the
 views asked as its `basis`, so one kept with other views is asked again.
@@ -816,8 +819,8 @@ What a catalog playlist's page shows under its tracks (`Engine.playlist_page()`,
 from two reads: `GET /v1/catalog/<sf>/playlists/<id>` with `api.PLAYLIST_PARAMS`
 (`include=curator`, `views=featured-artists,more-by-curator,you-might-also-like`), then,
 for a playlist of an Apple curator's, a page of `api.CURATOR_PLAYLISTS_LIMIT` (10) of the
-curator's playlists, `GET /v1/catalog/<sf>/apple-curators/<id>/playlists` (its failure only
-leaves More By out), kept a day in `playlists/<id>.json` with the views as its `basis`.
+curator's playlists, `GET /v1/catalog/<sf>/apple-curators/<id>/playlists` (its failure leaves
+More By out of an answer not kept), kept a day in `playlists/<id>.json` with the views as its `basis`.
 `curator` is the playlist's `curator` relationship (`normalize.playlist_curator()`): an
 `apple-curators` is its category tile, titled with its whole name (its page the category
 page, "Curators and radio shows" above; with its id alone, named by the playlist's

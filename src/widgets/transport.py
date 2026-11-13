@@ -502,14 +502,26 @@ class VolumeControl(Follower):
         self._scale = None  # the slider in the button's popover
         self._strings = {}
         button.connect('value-changed', self._on_changed)
-        adjustment.connect('value-changed', lambda *_: self._describe())
+        self._described = adjustment.connect('value-changed', lambda *_: self._describe())
+
+    def detach(self):
+        """Let go of the Player, and of the adjustment: the button owns it, so its handler
+        on this control would keep the button, and the window it is in, from being freed."""
+        super().detach()
+        if self._described:
+            self.adjustment.disconnect(self._described)
+            self._described = 0
 
     def attach(self, player, app):
         self._player = player
         self._app = app
-        # Translators: the volume button's name, and its level as a screen reader hears it:
-        # {percent} is a whole number ("70%").
-        self._strings = {'volume': _('Volume'), 'percent': _('{percent}%')}
+        self._strings = {
+            # Translators: the volume button's name, as a screen reader hears it.
+            'volume': _('Volume'),
+            # Translators: the volume's level as a screen reader hears it: {percent} is a
+            # whole number ("70%").
+            'percent': _('{percent}%'),
+        }
         self._label()
         self.follow(player, 'notify::volume', lambda *_: self.update())
         self.update()
@@ -680,6 +692,8 @@ class HeartControl(Follower):
         finally:
             self._syncing = False
         self.button.set_icon_name('heart-filled-symbolic' if loved else 'heart-outline-symbolic')
+        # Translators: the heart button's tooltip, what a click does: "Favourite" marks the
+        # song as a favourite (a verb, as in the menus); it is the button's name too.
         self.button.set_tooltip_text(_('Remove from Favourites') if loved else _('Favourite'))
 
     def _on_toggled(self, button):

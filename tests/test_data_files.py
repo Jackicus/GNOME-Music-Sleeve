@@ -5,6 +5,7 @@
 appstreamcli check of the built ones (data/meson.build's tests): the keys GNOME reads, the
 development build's name, and the help link."""
 
+import importlib.util
 import json
 import unittest
 
@@ -14,6 +15,7 @@ DATA = ROOT / 'data'
 DESKTOP_FILE = DATA / 'io.github.jackicus.MusicSleeve.desktop.in'
 METAINFO = DATA / 'io.github.jackicus.MusicSleeve.metainfo.xml.in'
 MANIFEST = ROOT / 'build-aux' / 'flatpak' / 'io.github.jackicus.MusicSleeve.Devel.json'
+NAME_SUFFIX = ROOT / 'build-aux' / 'meson' / 'name-suffix.py'
 
 
 def desktop_entries():
@@ -33,19 +35,41 @@ class DesktopFileTest(unittest.TestCase):
                       METAINFO.read_text(encoding='utf-8'))
 
 
-class DevelopmentNameTest(unittest.TestCase):
-    """The development build is "Music Sleeve (Development)": the suffix is data/meson.build's
-    NAME_SUFFIX, in the desktop file and the metainfo, and nowhere else, or it would double."""
+def name_suffix_module():
+    spec = importlib.util.spec_from_file_location('name_suffix', NAME_SUFFIX)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    def test_the_name_takes_the_suffix(self):
-        self.assertEqual(desktop_entries()['Name'], 'Music Sleeve@NAME_SUFFIX@')
-        self.assertIn('<name>Music Sleeve@NAME_SUFFIX@</name>',
-                      METAINFO.read_text(encoding='utf-8'))
+
+class DevelopmentNameTest(unittest.TestCase):
+    """The development build is "Music Sleeve (Development)": data/meson.build's name_suffix,
+    put after each name by build-aux/meson/name-suffix.py once the translations are merged,
+    so the source's names, which are the template's msgids, are the name alone."""
+
+    def test_the_source_names_are_the_name_alone(self):
+        self.assertEqual(desktop_entries()['Name'], 'Music Sleeve')
+        self.assertIn('  <name>Music Sleeve</name>\n', METAINFO.read_text(encoding='utf-8'))
 
     def test_meson_sets_it_for_the_development_profile(self):
         meson = (DATA / 'meson.build').read_text(encoding='utf-8')
         self.assertIn("get_option('profile') == 'development' ? ' (Development)' : ''", meson)
-        self.assertIn("'NAME_SUFFIX': name_suffix", meson)
+        self.assertIn("'name-suffix.py'", meson)
+
+    def test_every_translated_name_takes_the_suffix(self):
+        add_suffix = name_suffix_module().add_suffix
+        desktop = 'Name=Music Sleeve\nName[de]=Musikhülle\nComment=Play\nNameless=x\n'
+        self.assertEqual(add_suffix(desktop, ' (Development)'),
+                         'Name=Music Sleeve (Development)\n'
+                         'Name[de]=Musikhülle (Development)\nComment=Play\nNameless=x\n')
+        metainfo = ('<?xml version="1.0"?>\n<component>\n  <name>Music Sleeve</name>\n'
+                    '  <name xml:lang="de">Musikhülle</name>\n'
+                    '  <developer id="x">\n    <name>Someone</name>\n  </developer>\n'
+                    '</component>\n')
+        self.assertEqual(add_suffix(metainfo, ' (Development)'),
+                         metainfo.replace('Sleeve<', 'Sleeve (Development)<')
+                         .replace('hülle<', 'hülle (Development)<'))
+        self.assertEqual(add_suffix(metainfo, ''), metainfo)
 
     def test_the_flatpak_manifest_adds_none(self):
         manifest = json.loads(MANIFEST.read_text(encoding='utf-8'))

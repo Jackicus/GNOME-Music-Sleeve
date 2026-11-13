@@ -63,6 +63,8 @@ def selection_words():
     """("Selected", "Not Selected"): a row's description in the mode, looked up once (rows
     are bound by the thousand)."""
     if not _words:
+        # Translators: a song row's description in the selection mode: whether it is
+        # one of the songs selected.
         _words['selected'] = _('Selected')
         _words['unselected'] = _('Not Selected')
     return _words['selected'], _words['unselected']
@@ -315,6 +317,8 @@ class SelectionMode(GObject.Object):
         self._update_actions()
         if active:
             self._announce(count_title(selection.count) if selection.count
+                           # Translators: said to a screen reader as the selection
+                           # mode starts with nothing selected yet.
                            else _('Selection mode'))
 
     def _announce(self, text):

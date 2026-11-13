@@ -15,6 +15,7 @@ out, so no sections means Apple has no credits for the song.
 """
 
 from gettext import gettext as _
+from gettext import pgettext as C_
 
 
 def kind_headings():
@@ -35,9 +36,9 @@ def heading(kind, title):
 
 def roles_text(roles):
     """A person's roles in a song's credits as one line ("Vocals, Guitar"); '' for none."""
-    # Translators: between a person's roles in a song's credits ("Vocals, Guitar").
     roles = roles if isinstance(roles, (list, tuple)) else ()
-    return _(', ').join(str(role) for role in roles if role)
+    # Translators: between a person's roles in a song's credits ("Vocals, Guitar").
+    return C_('credit roles', ', ').join(str(role) for role in roles if role)
 
 
 def sections(answer):

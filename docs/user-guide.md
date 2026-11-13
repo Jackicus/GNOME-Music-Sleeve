@@ -271,9 +271,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   closes on its own when nothing plays any more.
 - **Mini Player** (in the main menu, in the player bar's menu: right-click the bar, or
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>) swaps the window for a small one with the
-  song playing: its artwork, title and artist, the position slider, and Previous, Play and
-  Next. Make it as small or as large as you like: the artwork follows, and in a low window
-  it sits beside the title. **Return to Main Window** (the button at its top left),
+  song playing: its artwork, title and artist, the position slider, Previous, Play and
+  Next, and **Favourite**, **Shuffle**, **Repeat** and **Volume**. Make it as small or as
+  large as you like: the artwork follows, and in a low window it sits beside the title;
+  those four sit under the transport, around it in a wide window, and a window both low
+  and narrow keeps the transport alone (<kbd>Ctrl</kbd>+<kbd>↑</kbd> and
+  <kbd>Ctrl</kbd>+<kbd>↓</kbd> still change the volume). **Return to Main Window** (the
+  button at its top left),
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> again or closing it brings the main window
   back as it was; it remembers its size for next time. GNOME does not let an app keep its
   own window above the others, so the mini player does not stay on top by itself: GNOME's
