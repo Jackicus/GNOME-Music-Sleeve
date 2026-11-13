@@ -1510,6 +1510,19 @@ class SelectionTest(PageTestCase):
         self.assertEqual([song.id for song in mode.selection.ordered(self.songs())], [third.id])
         self.assertEqual(first.id, self.songs()[1].id)
 
+    async def test_the_bar_fits_a_narrow_window_in_a_longer_language(self):
+        # #643: the bar asks for its buttons' width even while not revealed; its text
+        # buttons shrink (labels ellipsized), so long translations keep it within 360 px.
+        from gi.repository import Gtk
+
+        page = await self.show(isFavourites=True)  # the bar with the most buttons
+        mode = page.selection_mode
+        for button in (mode._play_next, mode._play_later, mode._add, mode._remove_playlist,
+                       mode._remove_favourites, mode._remove_library):
+            button.set_label('Ŀőñğéŗ Ŵőŗđš Ŧĥàñ Éñğłíšĥ Ĥàš ~~~~~~~~')
+        minimum, _natural, _baseline, _ = mode.bar.measure(Gtk.Orientation.HORIZONTAL, -1)
+        self.assertLess(minimum, 360)
+
     async def test_a_plain_click_still_plays(self):
         page = await self.show()
         with mock.patch('applemusic.widgets.dnd.modifiers', return_value=0):

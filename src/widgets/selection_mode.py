@@ -172,6 +172,13 @@ class SelectionMode(GObject.Object):
                                     visible=False)
         self._more.update_property([Gtk.AccessibleProperty.LABEL], [_('More')])
         self._more.set_create_popup_func(weak_method(self._on_more_popup))
+        # The text buttons may shrink, their labels ellipsized: the bar asks for its
+        # buttons' whole width even while it is not revealed, and with a language whose
+        # words run longer (40 % more, as the en_XA pseudo-locale has them) it made Songs,
+        # a playlist and an album wider than a 360 px window (#643).
+        for button in (self._play_next, self._play_later, self._add, self._remove_playlist,
+                       self._remove_favourites, self._remove_library):
+            button.set_can_shrink(True)
         for button in (self._play_next, self._play_later, self._add):
             self.bar.pack_start(button)
         for button in (self._more, self._remove_library, self._remove_playlist,
