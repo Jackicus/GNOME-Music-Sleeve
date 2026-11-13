@@ -11,7 +11,8 @@ library, as screenshot.py --demo does (scripts/harness.py: memory settings, anim
 no engine), and walks the
 keyboard walkthrough in docs/accessibility.md key by key, printing PASS or FAIL for each step;
 the exit status is 1 when a step fails. Use --size 360x640 for the narrow layout, and
---step radio (or add-to-playlist, dialog-focus) to walk that step alone (to repeat it).
+--step radio (or add-to-playlist, dialog-focus, mini-player) to walk that step alone (to
+repeat it).
 
 Under scripts/headless.sh the keys are real: scripts/remote_keys.py opens a session on the
 headless mutter's org.gnome.Mutter.RemoteDesktop and injects them as a keyboard would, so the
@@ -55,7 +56,8 @@ parser.add_argument('--names', action='store_true',
 parser.add_argument('--emulate-keys', action='store_true',
                     help="dispatch each press through GTK's handlers instead of sending a real "
                          "key through the compositor's RemoteDesktop interface")
-parser.add_argument('--step', choices=['radio', 'add-to-playlist', 'dialog-focus'],
+parser.add_argument('--step', choices=['radio', 'add-to-playlist', 'dialog-focus',
+                                       'mini-player'],
                     help='walk that step alone, from the window as it opens')
 parser.add_argument('--dump', action='store_true', help=argparse.SUPPRESS)  # the lister
 args = parser.parse_args()
@@ -2858,8 +2860,8 @@ async def mini_player(window):
     through its controls (Favourite, Shuffle, Repeat and Volume among them) and never out of
     it; Space plays or pauses, Ctrl+Right skips, Ctrl+Up turns the volume up; Ctrl+Shift+M
     back to the window, the focus as it was; in again, and Ctrl+W (its close) back too; its
-    panes (mini_player_panes()); and at its smallest size, where the four extras are hidden,
-    Tab goes through the rest and a pane still opens."""
+    panes (mini_player_panes()); and at its smallest size Tab still goes through all seven
+    buttons, and a pane opens with the window grown by no more than it lacks."""
     print('-- mini player')
     host = app.mini_player
     resting = window.get_focus()
@@ -2891,11 +2893,11 @@ async def mini_player(window):
           and view.queue_button.get_tooltip_text() == 'Up Next (Shift+Ctrl+U)',
           (view.lyrics_button.get_tooltip_text(), view.queue_button.get_tooltip_text()))
     extras = (view.heart_button, view.shuffle_button, view.repeat_button, view.volume_button)
-    check('and through Favourite, Shuffle, Repeat and Volume, in their row',
-          view.extras == 'row' and all(any(focus is button or focus.is_ancestor(button)
-                                           for focus in seen if focus is not None)
-                                       for button in extras),
-          (view.extras, sorted(describe(widget) for widget in seen)))
+    check('and through Favourite, Shuffle, Repeat and Volume, in the same row',
+          all(button.get_parent() is view.transport_box for button in extras)
+          and all(any(focus is button or focus.is_ancestor(button)
+                      for focus in seen if focus is not None) for button in extras),
+          sorted(describe(widget) for widget in seen))
     levels, said = [], []
 
     def set_volume(level):  # the demo has no engine: MusicKit's answer, at once
@@ -2949,11 +2951,12 @@ async def mini_player(window):
     if keyboard is not None:
         await until(window.is_active, 3.0)
     await mini_player_panes(window)
-    # At its smallest: the extras hidden, everything else still reached.
+    # At its smallest: the same seven buttons, and a pane grows the window by what it lacks.
+    from applemusic import mini_player as mini_rules
     size = {name: app.settings.get_int(name)
             for name in ('mini-player-width', 'mini-player-height')}
-    app.settings.set_int('mini-player-width', 280)
-    app.settings.set_int('mini-player-height', 240)
+    app.settings.set_int('mini-player-width', mini_rules.MIN_WIDTH)
+    app.settings.set_int('mini-player-height', mini_rules.MIN_HEIGHT)
     await key(window, '<primary><shift>m', 0.8)
     await until(lambda: host.shown and host.window.get_focus() is not None)
     mini = host.window
@@ -2962,23 +2965,33 @@ async def mini_player(window):
         if keyboard is not None:
             await until(mini.is_active, 3.0)
         seen = set()
-        for _ in range(8):
+        for _ in range(12):
             await key(mini, 'Tab', 0.05)
             seen.add(mini.get_focus())
-        check('At 280 by 240 the extras are hidden, and Tab goes through the rest',
-              view.extras == 'none' and not view.heart_button.get_mapped()
-              and seen == {view.main_window_button, view.lyrics_button, view.queue_button,
-                           view.seek_scale, view.previous_button, view.play_button,
-                           view.next_button},
-              (mini.get_width(), mini.get_height(), view.extras,
+        buttons = (view.heart_button, view.shuffle_button, view.previous_button,
+                   view.play_button, view.next_button, view.repeat_button,
+                   view.volume_button)
+        check('At its smallest (360 by 220) Tab goes through all seven buttons, in one row',
+              (mini.get_width(), mini.get_height()) == (mini_rules.MIN_WIDTH,
+                                                        mini_rules.MIN_HEIGHT)
+              and all(any(focus is button or focus.is_ancestor(button)
+                          for focus in seen if focus is not None) for button in buttons)
+              and len({round(button.compute_bounds(view)[1].get_y()
+                             + button.compute_bounds(view)[1].get_height() / 2)
+                       for button in buttons}) == 1,
+              (mini.get_width(), mini.get_height(),
                sorted(describe(widget) for widget in seen)))
+        need = mini.header_height() + mini_rules.SHORT_HEIGHT + mini_rules.PANE_OPEN
         await key(mini, '<primary><shift>u', 0.8)
-        check('and Ctrl+Shift+U opens Up Next under it, the window grown for it',
-              view.pane == 'queue' and view.extras == 'none'
-              and mini.get_default_size()[1] == 240 + app.settings.get_int(
-                  'mini-player-pane-height'),
-              (view.pane, view.extras, mini.get_default_size()))
+        check('and Ctrl+Shift+U opens Up Next under it, the window grown by what it lacked',
+              view.pane == 'queue'
+              and mini.get_default_size() == (mini_rules.MIN_WIDTH, need),
+              (view.pane, mini.get_default_size(), need))
         await key(mini, '<primary><shift>u', 0.8)
+        check('and again closes it, the window as small as it was',
+              view.pane == '' and mini.get_default_size() == (mini_rules.MIN_WIDTH,
+                                                              mini_rules.MIN_HEIGHT),
+              (view.pane, mini.get_default_size()))
         await key(mini, '<primary><shift>m', 0.8)
         await until(lambda: not host.shown and window.get_visible())
     for name, value in size.items():
@@ -2988,14 +3001,16 @@ async def mini_player(window):
 
 
 async def mini_player_panes(window):
-    """The mini player's panes: Ctrl+Shift+U opens Up Next under the controls, the window
-    grown, the list the Now Playing sheet's own, lent; its entries move, and say so, and
+    """The mini player's panes: Ctrl+Shift+U opens Up Next under the controls, inside the
+    window as it is, the list the Now Playing sheet's own, lent; F8 takes the divider
+    between them, which the keyboard moves; its entries move, and say so, and
     their menus open there as in the sheet (up_next_move(): Alt+Down, Alt+Up, Alt+End, Play
     Next), Delete removes one (up_next_remove()); Ctrl+Shift+L swaps it for the lyrics, the
-    sheet's own view, active there, and again closes the pane, the window as it was; with a
+    sheet's own view, active there, and again closes the pane, the window never resized; with a
     pane open Ctrl+Shift+M brings the window back, both views in the sheet again, the lyrics
     active there once the sheet shows them."""
     print('-- mini player: the panes')
+    from applemusic import mini_player as mini_rules
     host = app.mini_player
     sheet = window.now_playing
     lyrics_view, queue_view = sheet.lyrics_view, sheet.queue_view
@@ -3012,19 +3027,42 @@ async def mini_player_panes(window):
     if keyboard is not None:
         await until(mini.is_active, 3.0)
     check('no pane until asked for, the toggles not pressed',
-          view.pane == '' and not view.pane_slot.get_visible()
+          view.pane == '' and not view.pane_box.get_visible()
           and not view.lyrics_button.get_active() and not view.queue_button.get_active())
     width, base = mini.get_default_size()
     pane_height = app.settings.get_int('mini-player-pane-height')
     await key(mini, '<primary><shift>u', 0.8)
     await until(lambda: queue_view.list_view.get_mapped())
-    check("Ctrl+Shift+U opens Up Next under the controls: the sheet's own list, lent, the "
-          'window taller by the pane, the toggle pressed, the focus where it was',
+    paned = view.paned
+    check("Ctrl+Shift+U opens Up Next under the controls: the sheet's own list, lent, "
+          'inside the window as it is (the pane its height from the bottom), the toggle '
+          'pressed, the focus where it was',
           view.pane == 'queue' and queue_view.get_parent() is view.pane_slot
           and queue_view.list_view.get_mapped() and view.queue_button.get_active()
-          and mini.get_default_size() == (width, base + pane_height)
+          and mini.get_default_size() == (width, base)
+          and paned.get_height() - paned.get_position() == pane_height
           and mini.get_focus() is view.play_button,
-          (view.pane, mini.get_default_size(), describe(mini.get_focus())))
+          (view.pane, mini.get_default_size(), paned.get_height(), paned.get_position(),
+           describe(mini.get_focus())))
+    # The divider by the keyboard: F8 takes it, Page Up moves it, Enter keeps its place.
+    place = paned.get_position()
+    await key(mini, 'F8', 0.2)
+    await key(mini, 'Page_Down', 0.2)
+    moved = paned.get_position()
+    await key(mini, 'Return', 0.3)
+    check('F8 takes the divider, Page Down gives the controls more of the window, Enter '
+          'keeps it there and the focus goes back where it was',
+          moved > place and paned.get_position() == moved
+          and mini.get_focus() is view.play_button,
+          (place, moved, paned.get_position(), describe(mini.get_focus())))
+    await key(mini, 'F8', 0.2)
+    await key(mini, 'Home', 0.2)
+    least = paned.get_position()
+    await key(mini, 'Escape', 0.3)
+    check("Home takes it to the controls' least height and no further, Escape puts it back",
+          least == mini_rules.SHORT_HEIGHT and paned.get_position() == moved,
+          (least, paned.get_position()))
+    pane_height = paned.get_height() - moved
     # Tab from the last control into the pane: History, Autoplay, Clear, then the entries.
     view.volume_button.grab_focus()
     tabbed = []
@@ -3048,8 +3086,10 @@ async def mini_player_panes(window):
           view.pane == 'lyrics' and queue_view.get_parent() is sheet.queue_slot
           and lyrics_view.get_parent() is view.pane_slot and lyrics_view._active
           and view.lyrics_button.get_active() and not view.queue_button.get_active()
-          and mini.get_default_size() == (width, base + pane_height),
-          (view.pane, describe(lyrics_view.get_parent()), mini.get_default_size()))
+          and mini.get_default_size() == (width, base)
+          and paned.get_height() - paned.get_position() == pane_height,
+          (view.pane, describe(lyrics_view.get_parent()), mini.get_default_size(),
+           paned.get_height() - paned.get_position(), pane_height))
     await key(mini, '<primary><shift>l', 0.8)
     check('Ctrl+Shift+L again closes it: the view back in the sheet and inactive, the window '
           'as it was, the focus still in the window',
@@ -3074,12 +3114,15 @@ async def mini_player_panes(window):
           window.bottom_sheet.get_open() and lyrics_view._active)
     await key(window, '<primary><shift>l', 0.8)
     await until(lambda: not window.bottom_sheet.get_open())
-    check('the pane open is remembered, its height too',
+    check("the pane open is remembered, the divider's place and the window's height too",
           app.settings.get_string('mini-player-pane') == 'lyrics'
-          and app.settings.get_int('mini-player-height') == base,
+          and app.settings.get_int('mini-player-height') == base
+          and app.settings.get_int('mini-player-pane-height') == pane_height,
           (app.settings.get_string('mini-player-pane'),
-           app.settings.get_int('mini-player-height')))
+           app.settings.get_int('mini-player-height'),
+           app.settings.get_int('mini-player-pane-height'), pane_height))
     app.settings.reset('mini-player-pane')
+    app.settings.reset('mini-player-pane-height')
     if keyboard is not None:
         await until(window.is_active, 3.0)
 
@@ -3290,6 +3333,10 @@ async def run():
             await add_to_playlist_alone(window)
         elif args.step == 'dialog-focus':
             await dialog_focus(window)
+        elif args.step == 'mini-player':
+            app.player.apply(harness.invented_playing_state(app, lyrics=True))
+            await asyncio.sleep(0.5)
+            await mini_player(window)
         else:
             await walkthrough(window)
         if args.names and not args.step:

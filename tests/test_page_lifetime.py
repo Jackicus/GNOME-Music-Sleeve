@@ -1674,7 +1674,8 @@ class MiniPlayerLifetimeTest(WidgetTestCase):
                 view.seek_scale.weak_ref(), view.cover.weak_ref(),
                 view.heart_button.weak_ref(), view.shuffle_button.weak_ref(),
                 view.repeat_button.weak_ref(), view.volume_button.weak_ref(),
-                view.extras_box.weak_ref())
+                view.transport_box.weak_ref(), view.body.weak_ref(),
+                view.paned.weak_ref())
         del view
         window.release()
         del window

@@ -21,11 +21,18 @@ closed, its state saved) and is presented again as it leaves, as it was. Closing
 player is leaving it: the main window comes back (the issue's choice, docs/decisions.md),
 whatever background playback says, since a close there only puts the music back in its
 window. The mini player's size is the mini-player-width and mini-player-height settings,
-written as it leaves.
+written as it leaves; it is never smaller than MIN_WIDTH by MIN_HEIGHT, the size its seven
+buttons and its short layout take.
 
 Lyrics and Up Next are a pane under its controls, one at a time (Panes): off until asked
-for, the window growing by the pane's height (mini-player-pane-height) as one opens and
-back as it closes, so mini-player-height stays the height without one; the pane open is
+for, and opened inside the window. The controls and the pane are the two halves of a
+divider the user drags (the window's Gtk.Paned): the pane takes its height
+(mini-player-pane-height) from the bottom of the window and the controls lay themselves out
+in what is left, down to the short layout (SHORT_HEIGHT), so a window with the room is not
+resized. One too low for the short layout and a pane worth reading (PANE_OPEN) grows by
+what is missing (grow_for_pane()) and shrinks by the same as the pane closes: a window
+cannot say where it is on the screen, and one that grows may leave it. mini-player-height
+stays the height the user gave the window, without what it grew by; the pane open is
 remembered (mini-player-pane) and opened again the next time. What a pane shows is not the
 mini player's: the app has one LyricsView and one QueueView, the Now Playing sheet's, which
 follow the Player for the app's life, and the sheet lends them (lend_lyrics(), lend_queue())
@@ -40,90 +47,94 @@ ordinary window: it does not promise to stay on top.
 
 from collections import namedtuple
 
-# The layout's measures, in px of the content under the header bar.
+# The layout's measures, in px of the controls: the content under the header bar, over the
+# pane when one shows.
 MARGIN = 18            # the sides and the bottom
 TOP_MARGIN = 6         # under the header bar
-# The height the titles, the seek row and the transport take under the cover, with their
-# spacing and the bottom margin.
+# The height the titles, the seek row and the buttons take under the cover, with their
+# spacing and the bottom margin, as the widgets measure with the app's stylesheet.
 BELOW_ART = 170
 MIN_ART = 128          # smaller than this over the titles: the short layout
 MAX_ART = 640          # the cover file's size (backend config.COVER_SIZE)
-SMALL_ART = 56         # the short layout's cover, beside the titles
-# The extras (Favourite, Shuffle, Repeat, Volume), as the widgets measure with the app's
-# stylesheet: the height a row of them takes under the transport, with its spacing (34 and
-# 12); the height the short layout takes without it, margins and all (169); and the width
-# from which the seven buttons fit in one row (336 and the side margins).
-EXTRAS_ROW = 46
+# The short layout's cover, beside the titles: SMALL_ART where the controls have no more
+# than their least height, larger with the room over that, up to SIDE_ART and a third of
+# the width.
+SMALL_ART = 56
+SIDE_ART = 120
+# The height the short layout takes, margins and all: the least the controls are given.
 SHORT_HEIGHT = 170
-INLINE_WIDTH = 372
+# The mini player's smallest size, its content's (the view measures it as its least). The
+# width is the row of seven buttons (Favourite, Shuffle, Previous, Play, Next, Repeat,
+# Volume: 324 px as they measure) and the side margins, so the row is whole at every
+# size; the height the header bar and the short layout.
+MIN_WIDTH = 360
+MIN_HEIGHT = 220
 
-Layout = namedtuple('Layout', 'short art_size extras')
+Layout = namedtuple('Layout', 'short art_size')
 
 
 def layout_for(width, height):
-    """The mini player's Layout for content `width` x `height` px. `extras`, where
-    Favourite, Shuffle, Repeat and Volume go: 'inline', around Previous, Play and Next, from
-    INLINE_WIDTH; in a narrower window a 'row' of their own under the transport when the
-    height has room for it under the short layout, else 'none' (hidden: a window both low
-    and narrow keeps the transport). `art_size`, the cover's edge over the titles, as large
-    as the width and the room over the controls leave (a multiple of 8, at most the cover
-    file's); or, when that is less than MIN_ART, `short`: a SMALL_ART cover beside the
-    titles. The controls outrank the cover: a row that fits is shown, over a smaller
-    cover."""
-    if width >= INLINE_WIDTH:
-        extras = 'inline'
-    elif height >= SHORT_HEIGHT + EXTRAS_ROW:
-        extras = 'row'
-    else:
-        extras = 'none'
-    room = height - TOP_MARGIN - BELOW_ART - (EXTRAS_ROW if extras == 'row' else 0)
+    """The Layout of the mini player's controls in `width` x `height` px. `art_size`, the
+    cover's edge over the titles, as large as the width and the room over the controls
+    leave (a multiple of 4, at most the cover file's); or, when that is less than MIN_ART,
+    `short`: the cover beside the titles, SMALL_ART and what the height has over
+    SHORT_HEIGHT, up to SIDE_ART. The buttons are one row in both."""
+    room = height - TOP_MARGIN - BELOW_ART
     across = width - 2 * MARGIN
-    size = int(min(room, across, MAX_ART)) // 8 * 8
-    if size < MIN_ART:
-        return Layout(True, SMALL_ART, extras)
-    return Layout(False, size, extras)
+    size = int(min(room, across, MAX_ART)) // 4 * 4
+    if size >= MIN_ART:
+        return Layout(False, size)
+    side = int(min(SMALL_ART + height - SHORT_HEIGHT, SIDE_ART, across / 3)) // 4 * 4
+    return Layout(True, max(side, SMALL_ART))
 
 
-# The panes: their names (the sheet's tabs'), and the least height one is given.
+# The panes: their names (the sheet's tabs'); the least height the divider leaves one; and
+# the least one is opened with, which a window too low for it grows to give. A pane's
+# height counts the divider over it.
 PANES = ('lyrics', 'queue')
-PANE_MIN = 160
+PANE_MIN = 140
+PANE_OPEN = 220
 
 
-def split(height, base, pane_min=PANE_MIN):
-    """(body, pane): how a window `height` px high with a pane open divides, `base` its
-    height without one. The body keeps `base` and the pane has the rest, what the window
-    grew by and whatever the user has dragged it by since; a window too low for that gives
-    the pane `pane_min` and the body what is left. Also what is remembered of a window
-    resized with a pane open: its height without the pane, and the pane's."""
-    pane = height - base
-    if pane < pane_min:
-        pane = min(pane_min, max(height, 0))
-        return max(height - pane, 0), pane
-    return base, pane
+def grow_for_pane(height, header):
+    """By how many px a window `height` px high, its header bar `header`, has to grow to
+    open a pane: what its short layout and a pane of PANE_OPEN lack, 0 when they fit."""
+    return max(header + SHORT_HEIGHT + PANE_OPEN - height, 0)
+
+
+def divide(height, pane):
+    """(controls, pane): how `height` px under the header bar divide for a pane wished
+    `pane` px high. The pane has its wish, no less than PANE_MIN, as far as the controls
+    keep SHORT_HEIGHT; the controls the rest."""
+    pane = max(pane, PANE_MIN)
+    controls = max(height - pane, SHORT_HEIGHT)
+    return controls, max(height - controls, 0)
 
 
 class Panes:
     """The mini player's pane: which shows (`shown`: '', 'lyrics' or 'queue'), the lending
     and the window's size. No GTK: `window` has get_default_size(), set_default_size(),
-    fixed_size() (maximized, tiled or full screen: it cannot grow), show_pane(name, widget,
-    base) and hide_pane(); `sheet` (the Now Playing sheet, or None: nothing to show) lends
-    the views; `settings` holds mini-player-pane and mini-player-pane-height. `base` is the
-    window's height without a pane.
+    fixed_size() (maximized, tiled or full screen: it cannot grow), header_height(),
+    show_pane(name, widget, height) (the pane in the window, `height` px wished for it),
+    hide_pane() and pane_height() (the height the pane was left, when the user changed it:
+    the divider dragged, the window resized; else None); `sheet` (the Now Playing sheet, or
+    None: nothing to show) lends the views; `settings` holds mini-player-pane and
+    mini-player-pane-height.
 
-    Opening one: the view lent (inactive: the sheet is covered), put in the window, the
-    window grown, then the view made active. Closing, or swapping for the other: inactive
-    first, out of the window, back in the sheet; then the window shrunk, or the other taken
-    with no resize. A window that cannot grow keeps its size, and the pane has what split()
-    gives it."""
+    Opening one: the view lent (inactive: the sheet is covered), the window grown if it
+    lacks the room (`grown`, the px it grew by), the view put in it, then made active.
+    Closing, or swapping for the other: inactive first, out of the window, back in the
+    sheet; then the window shrunk by what it grew, or the other taken with no resize and
+    the divider where it was. A window that cannot grow keeps its size, and the pane has
+    what divide() gives it."""
 
-    def __init__(self, window, sheet, settings, base):
+    def __init__(self, window, sheet, settings):
         self._window = window
         self._sheet = sheet
         self._settings = settings
-        self.base = base
         self.shown = ''
         self._widget = None
-        self.grown = False     # whether the window's size counts the pane
+        self.grown = 0         # the px the window grew by for the pane
 
     def toggle(self, name):
         """The pane `name`, or closed when it shows already."""
@@ -132,16 +143,17 @@ class Panes:
         else:
             self.show(name)
 
-    def show(self, name, grown=False):
+    def show(self, name, grown=None):
         """Show the pane `name` (in place of the other, when that shows). `grown`: the
-        window was made at its size with the pane already. False when there is nothing to
-        lend."""
+        window was made `grown` px taller for the pane already. False when there is
+        nothing to lend."""
         if name == self.shown:
             return True
         if name not in PANES or self._sheet is None:
             return False
         swapping = bool(self.shown)
         if swapping:
+            self._keep_height()
             self._give_back()
         widget = (self._sheet.lend_lyrics() if name == 'lyrics'
                   else self._sheet.lend_queue())
@@ -151,44 +163,50 @@ class Panes:
             return False
         self._widget = widget
         self.shown = name
-        if grown:
-            self.grown = True
-        elif not swapping:
-            self._grow()
-        self._window.show_pane(name, widget, self.base)
+        if not swapping:
+            self.grown = self._grow() if grown is None else grown
+        self._window.show_pane(name, widget,
+                               self._settings.get_int('mini-player-pane-height'))
         widget.set_active(True)
         self._settings.set_string('mini-player-pane', name)
         return True
 
     def close(self):
-        """Close the pane: its view given back, its height kept, the window shrunk."""
+        """Close the pane: its view given back, its height kept, the window shrunk by what
+        it grew."""
         if not self.shown:
             return
+        self._keep_height()
         self._give_back()
         self._closed()
         self._settings.set_string('mini-player-pane', '')
 
     def give_back(self):
         """The mini player goes: the view back in the sheet, the pane's height kept, the
-        pane still the one remembered. (width, height) of the window without the pane, or
-        None when no pane showed."""
+        pane still the one remembered. (width, height) of the window without what it grew
+        by for the pane, or None when no pane showed."""
         if not self.shown:
             return None
+        self._keep_height()
         self._give_back()
-        size = self._keep_sizes()
         self.shown = ''
         self._window.hide_pane()
-        return size
+        width, height = self._window.get_default_size()
+        grown, self.grown = self.grown, 0
+        return width, self._without(height, grown)
 
     def _grow(self):
         width, height = self._window.get_default_size()
-        pane = max(self._settings.get_int('mini-player-pane-height'), PANE_MIN)
         if self._window.fixed_size() or width <= 0 or height <= 0:
-            self.grown = False
-            return
-        self.base = height     # as the user last left it, without a pane
-        self.grown = True
-        self._window.set_default_size(width, height + pane)
+            return 0
+        grown = grow_for_pane(height, self._window.header_height())
+        if grown:
+            self._window.set_default_size(width, height + grown)
+        return grown
+
+    @staticmethod
+    def _without(height, grown):
+        return max(height - grown, MIN_HEIGHT) if grown and height > 0 else height
 
     def _give_back(self):
         widget, self._widget = self._widget, None
@@ -201,24 +219,20 @@ class Panes:
         else:
             self._sheet.return_queue(widget)
 
-    def _keep_sizes(self):
-        """The window's size read as the pane goes: (width, its height without the pane),
-        the pane's height written. A window that never grew for the pane (maximized or
-        tiled as it opened) says nothing about either height."""
-        width, height = self._window.get_default_size()
-        if not self.grown or width <= 0 or height <= 0:
-            return width, self.base
-        self.base, pane = split(height, self.base)
-        self._settings.set_int('mini-player-pane-height', pane)
-        return width, self.base
+    def _keep_height(self):
+        """The pane's height written, when the user left it another than it opened with."""
+        height = self._window.pane_height()
+        if height:
+            self._settings.set_int('mini-player-pane-height', max(height, PANE_MIN))
 
     def _closed(self):
-        width, base = self._keep_sizes()
         self.shown = ''
         self._window.hide_pane()
-        if self.grown:
-            self.grown = False
-            self._window.set_default_size(width, base)
+        grown, self.grown = self.grown, 0
+        if grown:
+            width, height = self._window.get_default_size()
+            if width > 0 and height > 0:
+                self._window.set_default_size(width, self._without(height, grown))
 
 
 def _make_window(app):
@@ -233,8 +247,8 @@ class MiniPlayerHost:
     """See the module. `app` has `settings` and `main_window()` (the main window, hidden or
     not, whose `now_playing` is the sheet that lends the panes their views);
     `make_window(app)` makes the window (widgets/mini_player.MiniPlayer, following the
-    app's Player), which has `can_show(pane)`, `set_lender(sheet, main, base)` (its `panes`
-    made, a Panes) and `release()` (its pieces detached, then destroyed)."""
+    app's Player), which has `can_show(pane)`, `header_height()`, `set_lender(sheet, main)`
+    (its `panes` made, a Panes) and `release()` (its pieces detached, then destroyed)."""
 
     def __init__(self, app, make_window=None):
         self._app = app
@@ -266,23 +280,23 @@ class MiniPlayerHost:
         window = self._make_window(self._app)
         main = self._app.main_window()
         sheet = self._sheet(main)
-        width = settings.get_int('mini-player-width')
-        base = settings.get_int('mini-player-height')
+        width = max(settings.get_int('mini-player-width'), MIN_WIDTH)
+        height = max(settings.get_int('mini-player-height'), MIN_HEIGHT)
         pane = settings.get_string('mini-player-pane')
         if pane not in PANES or sheet is None or not window.can_show(pane):
             pane = ''
-        # With a pane to open, the window is made at its grown size: no second resize.
-        grown = base + max(settings.get_int('mini-player-pane-height'), PANE_MIN)
-        window.set_default_size(width, grown if pane else base)
+        # With a pane to open, the window is made with the room for it: no second resize.
+        grown = grow_for_pane(height, window.header_height()) if pane else 0
+        window.set_default_size(width, height + grown)
         self.window = window
         window.present()
         if main is not None:
             main.put_away()    # out of the full-screen player first: the lyrics are back
         if sheet is not None:
             sheet.set_covered(True)
-        window.set_lender(sheet, main, base)
-        if pane and not window.panes.show(pane, grown=True):
-            window.set_default_size(width, base)
+        window.set_lender(sheet, main)
+        if pane and not window.panes.show(pane, grown=grown) and grown:
+            window.set_default_size(width, height)
 
     def leave(self):
         """The main window presented again, the mini player closed (its size kept): a view

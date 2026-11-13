@@ -10,34 +10,35 @@ follows nothing). What it shows is the pieces of widgets/transport.py, as the pl
 the Now Playing sheet and the full-screen player have them: the artwork (RemoteCover), the
 title and the artist (TrackTitles, with their full text as tooltips), the seek row
 (SeekControl: LIVE in its place for a live radio station), Previous, Play (Stop for a live
-station) and Next (app.previous, app.play-pause, app.next), the extras: Favourite
-(HeartControl, lazy: it shows the answers to the bar's reads of each item's rating, and
-reads only as it is made), Shuffle and Repeat (ModeControl) and Volume (VolumeControl, a
-button with its slider in a popover at every size), and Return to Main Window
-(app.mini-player) in a flat header bar; under it all the artwork's tint
-(widgets/backdrop.py, as the sheet's). With no pane open nothing in it steps or redraws
-while a song plays but the seek row, once a second.
+station) and Next (app.previous, app.play-pause, app.next) with Favourite (HeartControl,
+lazy: it shows the answers to the bar's reads of each item's rating, and reads only as it
+is made) and Shuffle before them and Repeat (ModeControl) and Volume (VolumeControl, a
+button with its slider in a popover at every size) after, one row of seven at every size
+(mini_player.MIN_WIDTH is the width it takes); and Return to Main Window (app.mini-player)
+in a flat header bar; under it all the artwork's tint (widgets/backdrop.py, as the sheet's).
+With no pane open nothing in it steps or redraws while a song plays but the seek row, once
+a second.
 
 The header bar's end has two toggles, Lyrics and Up Next: the window's own win.show-lyrics
 and win.show-queue, as the main window's are named (stateful: pressed while its pane shows;
 enabled as now_playing.can_show_tab() says, Lyrics off for a song without lyrics), on the
 same keys, Ctrl+Shift+L and Ctrl+Shift+U (keyboard.tab_action). Each opens the pane under
-the controls, one at a time, the window growing for it and shrinking back
-(mini_player.Panes). The pane holds the Now Playing sheet's own LyricsView or QueueView,
-lent while it shows (`pane_slot`): never a second one, which would follow the Player for
-good. Up Next's edits and its entries' menus are the main window's item actions, which
-the mini player's window does not have: the pane slot carries the main window as its `win`
-action group (Alt+Up, Delete, a drop and the menus' items find win.item-* there), and the
-window answers `borrowed_item_actions` for context_menu.popup().
+the controls, one at a time (mini_player.Panes). The controls (`body`) and the pane
+(`pane_slot`) are the two children of a vertical Gtk.Paned, `paned`: its handle is the
+divider between them, dragged with the pointer or moved with the keyboard (F8, then the
+arrows), and neither side goes under its least height (mini_player.SHORT_HEIGHT, PANE_MIN).
+A pane opens inside the window, taking its height from the bottom (mini_player.divide());
+only a window with no room for it grows. The pane holds the Now Playing sheet's own
+LyricsView or QueueView, lent while it shows: never a second one, which would follow the
+Player for good. Up Next's edits and its entries' menus are the main window's item actions,
+which the mini player's window does not have: the pane slot carries the main window as its
+`win` action group (Alt+Up, Delete, a drop and the menus' items find win.item-* there), and
+the window answers `borrowed_item_actions` for context_menu.popup().
 
-Its layout follows its size (mini_player.layout_for(), applied as the view is allocated: it
-measures and allocates its child itself, so its Adw.Bin layout manager is dropped): the
-cover as large as the window lets it be over the titles, or, in a low window, small beside
-them; the extras around Previous, Play and Next in a wide window, else in a row of their
-own under them, or hidden where the window is too low for the row. They are one set of
-buttons, moved between the two boxes (place_extras()), never two: each follows the Player.
-With a pane open the controls are laid out for the height the window has without it
-(mini_player.split()), and the pane has the rest.
+The controls' layout follows the room they have (mini_player.layout_for(), applied as
+`body`, an AppleMusicMiniPlayerBody, is allocated: it measures and allocates its child
+itself): the cover as large as that lets it be over the titles, or, where it is low, small
+beside them. So it follows the window with no pane open, and the divider with one.
 
 For the keyboard: the focus starts on Play; the playback keys (Space, Ctrl+Left,
 Ctrl+Right: shortcuts.PLAYBACK) are the window's own as in the main window
@@ -63,9 +64,34 @@ from .transport import (Follower, HeartControl, ModeControl, PlayButton, RemoteC
                         SeekControl, TrackTitles, VolumeControl, announcement, volume_text)
 from .util import connect_weak, has_ancestor
 
-# The window's smallest size: the short layout's controls, and a title's room.
-MIN_WIDTH = 280
-MIN_HEIGHT = 240
+
+
+class MiniPlayerBody(Adw.Bin):
+    """The mini player's controls, laid out for the size they are given: no less high than
+    the short layout, whatever the layout shown measures (the view's arrange() picks the
+    one for the allocation, so the last one's minimum is not this one's)."""
+
+    __gtype_name__ = 'AppleMusicMiniPlayerBody'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.set_layout_manager(None)  # do_measure and do_size_allocate below
+
+    def do_measure(self, orientation, for_size):
+        child = self.get_child()
+        natural = child.measure(orientation, for_size)[1] if child is not None else 0
+        if orientation == Gtk.Orientation.VERTICAL:
+            least = mini_player.SHORT_HEIGHT
+            return least, max(natural, least), -1, -1
+        return 0, natural, -1, -1
+
+    def do_size_allocate(self, width, height, baseline):
+        view = self.get_ancestor(MiniPlayerView)
+        if view is not None:
+            view.arrange(width, height)
+        child = self.get_child()
+        if child is not None:
+            child.allocate(width, height, baseline, None)
 
 
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/mini_player.ui')
@@ -80,6 +106,9 @@ class MiniPlayerView(Adw.Bin):
     header_bar = Gtk.Template.Child()
     lyrics_button = Gtk.Template.Child()
     queue_button = Gtk.Template.Child()
+    paned = Gtk.Template.Child()
+    body = Gtk.Template.Child()
+    pane_box = Gtk.Template.Child()
     pane_slot = Gtk.Template.Child()
     main_window_button = Gtk.Template.Child()
     toast_overlay = Gtk.Template.Child()
@@ -99,7 +128,6 @@ class MiniPlayerView(Adw.Bin):
     play_button = Gtk.Template.Child()
     next_button = Gtk.Template.Child()
     transport_box = Gtk.Template.Child()
-    extras_box = Gtk.Template.Child()
     heart_button = Gtk.Template.Child()
     shuffle_button = Gtk.Template.Child()
     repeat_button = Gtk.Template.Child()
@@ -111,8 +139,6 @@ class MiniPlayerView(Adw.Bin):
         self.set_layout_manager(None)  # do_measure and do_size_allocate below
         self.overlay.set_measure_overlay(self.toolbar, True)
         self.shown_layout = None       # the mini_player.Layout applied
-        self.extras = 'row'            # where the extras are: 'row' (the template's),
-                                       # 'inline' or 'none'
         self._player = None
         self._app = None
         self._announced = None         # the id of the item last announced
@@ -132,7 +158,10 @@ class MiniPlayerView(Adw.Bin):
         self._heart = HeartControl(self.heart_button, lazy=True)
         self._volume = VolumeControl(self.volume_button, self.volume_adjustment)
         self.pane = ''                 # the pane shown: '', 'lyrics' or 'queue'
-        self._pane_base = None         # the window's height without it, while one shows
+        self._pane_wish = None         # the height asked for it, until it is laid out
+        self._pane_given = None        # the height it was laid out with as it opened
+        # The pane's least height, the paned's own 1 px of handle counted.
+        self.pane_box.set_size_request(-1, mini_player.PANE_MIN - 1)
         tabs = shortcuts.NOW_PLAYING_TABS
         for button, accel in ((self.main_window_button, shortcuts.ACCELS['app.mini-player'][0]),
                               (self.lyrics_button, tabs['show-lyrics'][0]),
@@ -222,49 +251,77 @@ class MiniPlayerView(Adw.Bin):
     # -- layout -----------------------------------------------------------------------------
 
     def do_measure(self, orientation, for_size):
-        """The child's natural size, but no minimum: the layout for the size given
-        (do_size_allocate) makes the content fit, down to the window's own minimum, and the
-        minimum measured here would be the last layout's."""
+        """The child's size, and the mini player's least: mini_player.MIN_WIDTH across,
+        the width the row of buttons is made for, whatever the child measures (a pane's
+        view may ask for less or more); MIN_HEIGHT down, or what the header bar, the short
+        layout and a pane open need. The least is the content's, so the window's is this
+        and whatever border its decoration adds (X11 without a compositor: 5 px a side)."""
         child = self.get_child()
         if child is None:
             return 0, 0, -1, -1
-        _minimum, natural, _baseline, _natural_baseline = child.measure(orientation, for_size)
-        return 0, natural, -1, -1
+        minimum, natural, _baseline, _natural_baseline = child.measure(orientation, for_size)
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            minimum = mini_player.MIN_WIDTH
+        else:
+            minimum = max(minimum, mini_player.MIN_HEIGHT)
+        return minimum, max(natural, minimum), -1, -1
 
     def do_size_allocate(self, width, height, baseline):
-        # The header bar's height as it measures: the toolbar view's top-bar-height is the
-        # last allocation's, 0 at the first, when the layout would be given the header's
-        # room too.
-        header = self.header_bar.measure(Gtk.Orientation.VERTICAL, -1)[0]
-        body = height
-        if self._pane_base is not None:
-            # The controls as the window without the pane has them; the pane the rest.
-            body, _pane = mini_player.split(height, self._pane_base)
-        layout = mini_player.layout_for(width, body - header)
-        if layout != self.shown_layout:
-            self.apply_layout(layout)
+        if self._pane_wish is not None:
+            # A pane just shown: the divider where the pane has the height wished for it,
+            # in the height the window has now (grown, when it had to).
+            controls, _pane = mini_player.divide(height - self.header_height(),
+                                                 self._pane_wish)
+            self.paned.set_position(controls)
         child = self.get_child()
         if child is not None:
             child.allocate(width, height, baseline, None)
+        if self._pane_wish is not None:
+            self._pane_wish = None
+            self._pane_given = self._pane_now()
 
-    def show_pane(self, name, widget, base):
+    def header_height(self):
+        """The header bar's height as it measures (the toolbar view's top-bar-height is
+        the last allocation's, 0 before the first)."""
+        return self.header_bar.measure(Gtk.Orientation.VERTICAL, -1)[0]
+
+    def arrange(self, width, height):
+        """The controls given `width` x `height` px (the body's allocation): the layout
+        for it."""
+        layout = mini_player.layout_for(width, height)
+        if layout != self.shown_layout:
+            self.apply_layout(layout)
+
+    def show_pane(self, name, widget, height):
         """The pane `name` ('lyrics' or 'queue') showing `widget` (the sheet's view, lent)
-        under the controls, which keep the layout of a window `base` px high."""
+        under the divider, `height` px of the window wished for it (mini_player.divide()
+        says what it gets, as the view is next allocated)."""
         self.pane = name
-        self._pane_base = base
+        self._pane_wish = height
+        self._pane_given = None
         self.pane_slot.set_child(widget)
-        self.pane_slot.set_visible(True)
-        self.content_box.set_vexpand(False)
+        self.pane_box.set_visible(True)
         self.queue_resize()
 
     def hide_pane(self):
         """The pane closed, its widget out of it (the caller gives it back)."""
         self.pane = ''
-        self._pane_base = None
+        self._pane_wish = None
+        self._pane_given = None
         self.pane_slot.set_child(None)
-        self.pane_slot.set_visible(False)
-        self.content_box.set_vexpand(True)
+        self.pane_box.set_visible(False)
         self.queue_resize()
+
+    def _pane_now(self):
+        return self.paned.get_height() - self.paned.get_position()
+
+    def pane_height(self):
+        """The pane's height, the divider counted, when the user has changed it since it
+        opened (the divider dragged, the window resized); else None."""
+        if not self.pane or self._pane_wish is not None:
+            return None
+        height = self._pane_now()
+        return height if height > 0 and height != self._pane_given else None
 
     def apply_layout(self, layout):
         """The cover and the titles as `layout` (a mini_player.Layout) has them."""
@@ -276,40 +333,14 @@ class MiniPlayerView(Adw.Bin):
         for label in (self.title_label, self.subtitle_label):
             label.set_xalign(0 if short else 0.5)
             label.set_justify(Gtk.Justification.LEFT if short else Gtk.Justification.CENTER)
-        self.cover.remove_css_class('small' if not short else 'large')
-        self.cover.add_css_class('small' if short else 'large')
-        self.cover.set_property('size', layout.art_size)
-        self.place_extras(layout.extras)
-
-    def place_extras(self, extras):
-        """Favourite, Shuffle, Repeat and Volume where `extras` (a Layout's) has them:
-        'inline', Favourite and Shuffle before Previous and Repeat and Volume after Next;
-        'row', in their own row under the transport; 'none', hidden. The focus stays on one
-        of them that is moved."""
-        if extras == self.extras:
-            return
-        buttons = (self.heart_button, self.shuffle_button, self.repeat_button,
-                   self.volume_button)
-        if (extras == 'inline') != (self.extras == 'inline'):
-            root = self.get_root()
-            focus = root.get_focus() if root is not None else None
-            held = next((button for button in buttons
-                         if focus is not None and (focus is button
-                                                   or focus.is_ancestor(button))), None)
-            for button in buttons:
-                button.get_parent().remove(button)
-            if extras == 'inline':
-                self.transport_box.prepend(self.shuffle_button)
-                self.transport_box.prepend(self.heart_button)
-                self.transport_box.append(self.repeat_button)
-                self.transport_box.append(self.volume_button)
+        # Rounded by its size: `large` over the titles, `small` at its least beside them.
+        for name, wanted in (('large', not short),
+                             ('small', layout.art_size <= mini_player.SMALL_ART)):
+            if wanted:
+                self.cover.add_css_class(name)
             else:
-                for button in buttons:
-                    self.extras_box.append(button)
-            if held is not None:
-                held.grab_focus()
-        self.extras = extras
-        self.extras_box.set_visible(extras == 'row')
+                self.cover.remove_css_class(name)
+        self.cover.set_property('size', layout.art_size)
 
 
 class MiniPlayer(Adw.ApplicationWindow):
@@ -318,8 +349,8 @@ class MiniPlayer(Adw.ApplicationWindow):
     __gtype_name__ = 'AppleMusicMiniPlayer'
 
     def __init__(self, **kwargs):
-        super().__init__(title=_('Mini Player'), width_request=MIN_WIDTH,
-                         height_request=MIN_HEIGHT, **kwargs)
+        # Its least size is its view's (MiniPlayerView.do_measure).
+        super().__init__(title=_('Mini Player'), **kwargs)
         self.view = MiniPlayerView()
         self.set_content(self.view)
         self._app = None
@@ -356,14 +387,13 @@ class MiniPlayer(Adw.ApplicationWindow):
         return player is not None and can_show_tab(pane, '', player.track, player.lyrics,
                                                    player.lyrics_loading)
 
-    def set_lender(self, sheet, main, base):
+    def set_lender(self, sheet, main):
         """The Now Playing sheet that lends the panes their views (None: no panes) and its
-        window, whose item actions Up Next's edits and menus run; `base` the height of this
-        window without a pane."""
+        window, whose item actions Up Next's edits and menus run."""
         settings = self._app.settings if self._app is not None else None
         if sheet is None or settings is None:
             return
-        self.panes = mini_player.Panes(self, sheet, settings, base)
+        self.panes = mini_player.Panes(self, sheet, settings)
         self.borrowed_item_actions = getattr(main, 'item_actions', None)
         if isinstance(main, Gio.ActionGroup):
             self.view.pane_slot.insert_action_group('win', main)
@@ -377,11 +407,17 @@ class MiniPlayer(Adw.ApplicationWindow):
         state = surface.get_state() if surface is not None else 0
         return bool(state & Gdk.ToplevelState.TILED)
 
-    def show_pane(self, name, widget, base):
-        """mini_player.Panes': the pane in the view, and the window no lower than a pane
-        needs."""
-        self.set_size_request(MIN_WIDTH, MIN_HEIGHT + mini_player.PANE_MIN)
-        self.view.show_pane(name, widget, base)
+    def header_height(self):
+        """mini_player.Panes': the header bar's height."""
+        return self.view.header_height()
+
+    def pane_height(self):
+        """mini_player.Panes': the pane's height when the user changed it, else None."""
+        return self.view.pane_height()
+
+    def show_pane(self, name, widget, height):
+        """mini_player.Panes': the pane in the view, `height` px wished for it."""
+        self.view.show_pane(name, widget, height)
         self.update_panes()
 
     def hide_pane(self):
@@ -395,7 +431,6 @@ class MiniPlayer(Adw.ApplicationWindow):
         held = focus is not None and (focus is view.pane_slot
                                       or focus.is_ancestor(view.pane_slot))
         view.hide_pane()
-        self.set_size_request(MIN_WIDTH, MIN_HEIGHT)
         if held:
             button.grab_focus()
         self.update_panes()

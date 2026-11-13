@@ -275,20 +275,34 @@ paths:
   goes (Return to Main Window, the key again, its close) presents the main window and
   destroys it (`release()`: a dialog over it closed, its view's pieces and handlers detached, so a closed one
   follows nothing and is freed: tests/test_page_lifetime.py). One at a time; its size is
-  `mini-player-width` and `-height`, its layout `mini_player.layout_for()` (a small cover
-  beside the titles when low; `extras`, where Favourite, Shuffle, Repeat and Volume go:
-  around the transport from `INLINE_WIDTH`, else a row under it, or hidden where a low
-  window has no room for the row; one set of buttons, moved by `place_extras()`). Its
+  `mini-player-width` and `-height`, never under `MIN_WIDTH` by `MIN_HEIGHT`. Its seven
+  buttons (Favourite, Shuffle, Previous, Play, Next, Repeat, Volume) are one row in one
+  box at every size, never moved or hidden: `MIN_WIDTH` is the width the row measures with
+  the margins (a test measures it, so a button added raises it). The controls' layout is
+  `mini_player.layout_for()` of the room they have (`body`, an `AppleMusicMiniPlayerBody`,
+  applies it as it is allocated): the cover over the titles as large as it fits, or
+  beside them where that is low, growing from `SMALL_ART` to `SIDE_ART` with the room. Its
   heart is lazy (the bar's reads answer it), its volume a popover button at every size; a
   piece that connects to an object its own widget owns lets go of it in `detach()`
   (`VolumeControl`'s adjustment), or the window is never freed. Lyrics and Up Next are a
   pane under the controls, one at a time (`mini_player.Panes`, no GTK: tested with
   stand-ins): the header bar's two toggles are the mini player's own `win.show-lyrics` and
-  `win.show-queue` (the sheet's names, keys and `can_show_tab()`), the window grows by
-  `mini-player-pane-height` as one opens and shrinks back (`mini-player-height` stays the
-  height without one; `split()` says how a window with a pane divides and what a resize
-  with one open leaves each; a maximized or tiled window keeps its size), and
-  `mini-player-pane` remembers which. The pane holds the sheet's own LyricsView or
+  `win.show-queue` (the sheet's names, keys and `can_show_tab()`). A pane opens inside
+  the window, never by making it taller when it has the room (a Wayland window cannot
+  place itself, and one that grows from a corner leaves the screen): the controls and
+  the pane are the two children of a vertical `Gtk.Paned` whose handle is the divider
+  the user drags (F8 and the arrows, Page Up and Down, Home and End by the keyboard),
+  neither child shrinking under its least (`SHORT_HEIGHT`, `PANE_MIN`); the pane takes
+  `mini-player-pane-height` from the bottom (`divide()`, applied at the first allocation
+  after it shows) and the controls lay out in the rest. Only a window too low for the
+  short layout and a pane of `PANE_OPEN` grows, by what it lacks (`grow_for_pane()`,
+  `Panes.grown`), and shrinks by that as the pane closes; `mini-player-height` is the
+  window's height less what it grew by, the pane's height is written only when the user
+  changed it (`pane_height()`: the divider dragged, the window resized), a swap keeps the
+  divider, a maximized or tiled window keeps its size, and `mini-player-pane` remembers
+  which. The divider's grip is a widget at the top of the pane (`.mini-divider`), under
+  the paned's own 1 px handle, which takes the pointer over it and lights it by sibling
+  selectors (style.css). The pane holds the sheet's own LyricsView or
   QueueView (`lend_lyrics()`, `lend_queue()` out of `lyrics_slot` and `queue_slot`; one
   borrower at a time, so no full screen while one is out: `holds_lyrics()`), never a
   second: both follow the Player for good with no detach. The host covers the sheet as it
@@ -307,7 +321,7 @@ paths:
   asks `app.main_window()`, and the Shell's search results `app.show_main_window()`, which
   leaves the mini player. Nothing keeps it on top (Wayland has no way to ask).
   tests/test_mini_player.py; `scripts/screenshot.py --demo --mini-player [--mini-pane
-  lyrics|queue]` shows it, `scripts/lyrics_test.py --mini-player [none|lyrics|queue]`
+  lyrics|queue]` shows it, `scripts/a11y_check.py --step mini-player` walks its keys, `scripts/lyrics_test.py --mini-player [none|lyrics|queue]`
   counts what it costs while a song plays (none: a frame a second, the seek row's).
 - MPRIS: the app owns `org.mpris.MediaPlayer2.<app id>`; Chrome's own player is disabled by its
   launch flags. The object is registered with

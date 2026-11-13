@@ -770,6 +770,47 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
   margin: 0 6px 6px;
 }
 
+/* The divider between the mini player's controls and its pane: no line, a grip as a bottom
+   sheet's drag handle has, drawn at the top of the pane (.mini-divider). The paned's own
+   handle, 1 px over it, reaches down over the grip's strip (and GTK takes the pointer 6 px
+   either side of it); hovered or pressed it lights the grip, and so does the paned while
+   it holds the keyboard focus for its handle (F8), in place of an outline around both
+   halves. */
+.mini-player paned.vertical:focus {
+  outline: none;
+}
+
+.mini-player paned.vertical > separator {
+  min-height: 1px;
+  margin: 0 0 -12px;
+  padding: 0 0 12px;
+  box-shadow: none;
+}
+
+.mini-player .mini-divider {
+  min-width: 40px;
+  min-height: 4px;
+  margin: 7px;
+  border-radius: 99px;
+  background-color: color-mix(in srgb, currentColor 25%, transparent);
+  transition: background-color 150ms ease-out;
+}
+
+.mini-player paned.vertical > separator:hover + box > .mini-divider {
+  background-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
+.mini-player paned.vertical > separator:active + box > .mini-divider,
+.mini-player paned.vertical:focus > separator + box > .mini-divider {
+  background-color: var(--accent-bg-color);
+}
+
+@media (prefers-contrast: more) {
+  .mini-player .mini-divider {
+    background-color: color-mix(in srgb, currentColor 60%, transparent);
+  }
+}
+
 /* The full-screen player (widgets/fullscreen_player.blp): libadwaita's osd (white text,
    controls for an on-screen display) over the view's own backdrop rather than the osd's
    panel colour; the transport larger than the sheet's; the dimmed text at 70%, which the

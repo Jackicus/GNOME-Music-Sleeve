@@ -105,8 +105,10 @@ that size. --idle shoots it with the controls and the cursor hidden. With --demo
 --lost as they say) and switches to the mini player (app.mini-player, Ctrl+Shift+M's): the
 shot is the mini player's window, at --size when given, else at its default size (the
 mini-player-width and mini-player-height settings). --mini-pane lyrics or queue opens that
-pane under its controls (the mini-player-pane setting, set before it is entered): the
-window is then taller than --size by the pane (mini-player-pane-height). With --demo only.
+pane under its controls (the mini-player-pane setting, set before it is entered), inside
+the window: the pane takes mini-player-pane-height from its bottom, and only a window too
+low for a pane is taller than --size (--setting mini-player-pane-height=N for another
+height). With --demo only.
 --search TERM shows the Search page in Your Library mode with TERM typed (the
 results of the offline filter; the engine is never started here). --search-in music
 searches Apple Music instead, as Enter does: with --demo, the demo's invented catalog
