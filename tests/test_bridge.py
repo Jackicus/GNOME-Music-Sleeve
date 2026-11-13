@@ -328,6 +328,54 @@ class BridgeTest(unittest.TestCase):
 
     @scenario("""
         bridge.subscribe();
+        // MusicKit's player as the page has it: its time is the element's less the buffer's
+        // offset, and currentPlaybackTime that time rounded.
+        const element = {currentTime: 61.75};
+        const player = {
+            _buffer: null,
+            get _currentTime() {
+                const offset = this._buffer ? this._buffer.currentTimestampOffset : 0;
+                return element.currentTime - offset;
+            }
+        };
+        mk._mediaItemPlayback = {_currentPlayer: player};
+        mk.currentPlaybackDuration = 215;
+        const positions = {};
+        const read = function (name, whole) {
+            mk.currentPlaybackTime = whole;
+            mk.fire('playbackTimeDidChange', {});
+            positions[name] = posted[posted.length - 1].data.position;
+        };
+        read('fraction', 62);
+        mk.playbackState = 3;
+        mk.fire('playbackStateDidChange', {});
+        positions.state = posted[posted.length - 1].data.position;
+        positions.answer = bridge.nowPlaying().position;
+        // The next item, without a gap: the element runs on, the buffer's offset is the
+        // first item's length.
+        element.currentTime = 215.25;
+        player._buffer = {currentTimestampOffset: 215};
+        read('gapless', 0);
+        // Not the clock MusicKit reports: its whole second.
+        read('another clock', 30);
+        element.currentTime = NaN;
+        read('no number', 30);
+        mk._mediaItemPlayback = {_currentPlayer: {}};          // a player without the time
+        read('no time', 31);
+        mk._mediaItemPlayback = {_currentPlayer: {get _currentTime() { throw new Error('gone'); }}};
+        read('throws', 32);
+        delete mk._mediaItemPlayback;
+        read('no player', 33);
+        return positions;
+    """)
+    def test_the_position_has_its_fraction(self, value):
+        self.assertEqual(value, {
+            'fraction': 61.75, 'state': 61.75, 'answer': 61.75, 'gapless': 0.25,
+            'another clock': 30, 'no number': 30, 'no time': 31, 'throws': 32,
+            'no player': 33})
+
+    @scenario("""
+        bridge.subscribe();
         mk.fire('mediaPlaybackError', {errorCode: 'CONTENT_UNAVAILABLE', name: 'MKError',
                                        message: 'Content unavailable'});
         mk.fire('mediaPlaybackError', {name: 'NotAllowedError', description: 'No gesture'});

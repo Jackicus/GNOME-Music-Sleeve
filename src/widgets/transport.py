@@ -317,6 +317,7 @@ class SeekControl(Follower):
         self._player = None
         self._app = None
         self._syncing = False       # the slider is being set from the Player
+        self._shown = None          # (second, duration) shown from the Player; None: moved since
         self._seek_timeout = 0      # the GLib source waiting for the drag to settle
         self._guard = SeekGuard()
         scale.connect('change-value', self._on_change_value)
@@ -333,6 +334,7 @@ class SeekControl(Follower):
     def _on_track(self):
         self.cancel()
         self._show_live()
+        self._shown = None
         self.update()
 
     def set_times_shown(self, shown):
@@ -362,9 +364,16 @@ class SeekControl(Follower):
         runs out."""
         if self._player is None:
             return
-        if not self._guard.accept(self._player.position, time.monotonic()):
+        position, duration = self._player.position, self._player.duration
+        if not self._guard.accept(position, time.monotonic()):
             return
-        self.show(self._player.position, self._player.duration)
+        # The position comes with its fraction about four times a second: the slider and
+        # its times step by the second, as the times read, and are left alone in between.
+        shown = (int(position + 0.5), duration)
+        if shown == self._shown:
+            return
+        self.show(position, duration)
+        self._shown = shown
 
     def show(self, position, duration):
         self._syncing = True
@@ -397,6 +406,7 @@ class SeekControl(Follower):
         duration = self._player.duration
         value = min(max(value, 0.0), duration if duration else value)
         self._guard.moved(value)
+        self._shown = None
         self._show_times(value, duration)
         if self._seek_timeout:
             GLib.source_remove(self._seek_timeout)

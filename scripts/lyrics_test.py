@@ -7,8 +7,8 @@ it cost: the frames, the work in each, the CPU, the lyrics list's allocations.
 
     scripts/lyrics_test.py [--fixture NAME] [--start SECONDS] [--seconds N] [--size WxH]
                            [--no-animations] [--pronunciations] [--event-period SECONDS]
-                           [--rtl] [--fullscreen-player] [--mini-player [PANE]]
-                           [--shot PNG]
+                           [--whole-seconds] [--rtl] [--fullscreen-player]
+                           [--mini-player [PANE]] [--shot PNG]
 
 Runs the installed build (meson install -C build, or scripts/run.sh, first) on the demo
 library (scripts/harness.py), with animations on unless --no-animations (the word-timed
@@ -21,9 +21,11 @@ scripts/headless.sh like every GUI script:
 The demo's first track plays from --start seconds (12: just before the syllable fixture's
 first line) with the lyrics of --fixture (harness.LYRICS_FIXTURES: `syllable`, the default,
 is word-timed), the sheet open on Lyrics. The Player hears what the engine would send:
-`playbackTimeDidChange` with the position in whole seconds, every --event-period seconds
-(0.25, as MusicKit does) plus a little jitter, from a random phase, so the Player's
-estimate lags as it does live. After --seconds (36: nine lines of the syllable fixture,
+`playbackTimeDidChange` every --event-period seconds (0.266, as MusicKit does: the media
+element's timeupdate) plus a little jitter, from a random phase, with the position as the
+bridge reads it, fraction and all, or with --whole-seconds as MusicKit alone gives it
+(rounded to the second, which was all the bridge sent before: the estimate then runs
+about 0.37 s ahead, as it did live). After --seconds (36: nine lines of the syllable fixture,
 English and Japanese, a duet's sides and background vocals) it reports, from the first
 moment it played:
 
@@ -66,8 +68,10 @@ parser.add_argument('--size', default='1100x760')
 parser.add_argument('--no-animations', action='store_true')
 parser.add_argument('--pronunciations', action='store_true',
                     help='with lyrics-pronunciations on')
-parser.add_argument('--event-period', type=float, default=0.25,
-                    help='seconds between position events (default 0.25)')
+parser.add_argument('--event-period', type=float, default=0.266,
+                    help='seconds between position events (default 0.266)')
+parser.add_argument('--whole-seconds', action='store_true',
+                    help="positions rounded to the second, as MusicKit's own are")
 parser.add_argument('--rtl', action='store_true', help='lay the window out right to left')
 parser.add_argument('--fullscreen-player', action='store_true',
                     help='in the full-screen player rather than the sheet')
@@ -182,8 +186,9 @@ def run(window):
     feeder = [0]
 
     def feed():
+        position = float(round(truth())) if args.whole_seconds else truth()
         player._on_event(None, 'playbackTimeDidChange',
-                         {'position': float(int(truth())), 'duration': duration})
+                         {'position': position, 'duration': duration})
         feeder[0] = GLib.timeout_add(int(args.event_period * 1000 + rng.uniform(0, 40)), feed)
         return GLib.SOURCE_REMOVE
 
@@ -253,7 +258,8 @@ def report(wall, cpu, work, layouts, frames, errors):
           f'lyrics list allocated {allocations[0]} times', flush=True)
     print('  Python: ' + ', '.join(f'{name} {calls}x {1000 * seconds:.1f} ms'
                                    for name, (calls, seconds) in timed.items()), flush=True)
-    print(f'  estimate - true position: mean {1000 * statistics.mean(errors):.0f} ms, '
+    print(f'  estimate - true position ({"whole seconds" if args.whole_seconds else "fractions"}'
+          f'): mean {1000 * statistics.mean(errors):.0f} ms, '
           f'from {1000 * errors[0]:.0f} to {1000 * errors[-1]:.0f} ms', flush=True)
 
 

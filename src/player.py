@@ -892,8 +892,9 @@ class Player(GObject.Object):
             self.lyrics_loading = loading
 
     def _set_position(self, position, duration=None):
-        """The position (stamped only when it changes: MusicKit reports whole seconds
-        four times a second, and the stamp is when the second began) and the duration."""
+        """The position (seconds with their fraction, as the bridge reads them at each of
+        MusicKit's events, about four a second while playing; stamped when it changes, so
+        one reported again, paused or stalled, keeps its stamp) and the duration."""
         position = max(0.0, position)
         if position != self.position:
             self.position_updated_at = time.monotonic()
@@ -995,8 +996,8 @@ class Player(GObject.Object):
 
     def estimated_position(self):
         """The position now: the last one reported plus the time since while playing (a
-        second at most: the reports are whole seconds, so the truth is within the second
-        that began at the stamp, and a stalled stream does not run ahead), never past the
+        second at most: the reports come about four a second, and a stream that stalls,
+        which MusicKit still calls playing, does not run far ahead), never past the
         duration when that is known. What MPRIS answers between events and the lyrics
         follow."""
         position = self.position

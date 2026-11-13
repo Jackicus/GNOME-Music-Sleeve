@@ -552,8 +552,8 @@ changes, change it here, with the date. The plan they came from is in
   monitor (about 5 % of a core more at 60 Hz, docs/notes.md), and nothing while the tab is
   hidden, the music paused or between lines. With animations off (`gtk-enable-animations`,
   as reduced motion) each piece lights whole as it begins, on the existing timeout. The
-  position is the Player's estimate, whole seconds refined, about 130 ms behind on average:
-  not offset here, the same lag the line highlighting has (#304).
+  position is the Player's estimate, since #320 from the page's own fractional time (within
+  a few milliseconds of it live), so nothing is offset here.
 - **A full-screen player, not a full-screen lyrics view** (2026-10-19). Full screen shows
   the song playing as Apple Music's full-screen player does (#308): the artwork large, the
   title and the artist, the seek bar and the transport, and the lyrics beside them, larger,

@@ -685,6 +685,28 @@
         return String(err.errorCode || err.name || '');
     }
 
+    // The item's position in seconds, with its fraction. MusicKit's currentPlaybackTime is
+    // whole seconds: Math.round() of its player's own time, which is the media element's
+    // currentTime less the buffer's timestamp offset (the items before, after a gapless
+    // change: the element's time runs on through it). The page has several media elements
+    // (a song's, a live station's, a video's, its moving artwork's), so the time is read
+    // where MusicKit reads it, from the current player (_currentTime), and taken only while
+    // it is within a second of what MusicKit says: anything else (no player yet, a player
+    // without it, another clock) is MusicKit's whole second.
+    function playbackPosition(mk) {
+        const whole = Number(mk.currentPlaybackTime) || 0;
+        let exact;
+        try {
+            const playback = mk._mediaItemPlayback;
+            const player = playback ? playback._currentPlayer : null;
+            exact = player ? player._currentTime : undefined;
+        } catch {
+            exact = undefined;
+        }
+        if (typeof exact !== 'number' || !isFinite(exact) || exact < 0) return whole;
+        return Math.abs(exact - whole) < 1 ? exact : whole;
+    }
+
     // The bitrate MusicKit streams at, in kbps (mk.bitrate: 256 or 64), or null when it says
     // none.
     function currentBitrate(mk) {
@@ -697,6 +719,8 @@
     // the event object, whose shape has varied between MusicKit versions.
     // The playback state is its PlaybackStates name ('playing', 'paused',
     // 'stopped', 'loading', 'ended', 'seeking', 'waiting', 'stalled'…).
+    // A position is playbackPosition()'s: seconds with their fraction, read as the event
+    // fires (playbackTimeDidChange is the media element's timeupdate, about four a second).
     // A state, an item and capabilitiesChanged carry what MusicKit allows now
     // (playbackCapabilities), which changes with the item.
     const EVENT_DATA = {
@@ -710,7 +734,7 @@
             const state = (e && typeof e.state !== 'undefined') ? e.state : mk.playbackState;
             return {
                 state: playbackStateName(state),
-                position: mk.currentPlaybackTime || 0,
+                position: playbackPosition(mk),
                 duration: mk.currentPlaybackDuration || 0,
                 capabilities: playbackCapabilities(mk)
             };
@@ -729,7 +753,7 @@
         },
         playbackTimeDidChange: function (mk) {
             return {
-                position: mk.currentPlaybackTime || 0,
+                position: playbackPosition(mk),
                 duration: mk.currentPlaybackDuration || 0
             };
         },
@@ -1125,7 +1149,7 @@
             return {
                 state: state,
                 track: track,
-                position: mk.currentPlaybackTime || 0,
+                position: playbackPosition(mk),
                 duration: mk.currentPlaybackDuration || 0,
                 shuffle: shuffleModeToString(mk.shuffleMode),
                 repeat: repeatModeToString(mk.repeatMode),

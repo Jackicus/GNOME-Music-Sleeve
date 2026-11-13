@@ -70,8 +70,9 @@ paths:
 - screenshot.py runs without animations, so a word-timed line's pieces show lit whole, and
   the Player's estimate has run on by a second when it shoots (`--position 16.5` shows
   17.5 s). `lyrics_test.py` plays a lyrics fixture (`--fixture`, the word-timed `syllable`
-  by default) through the open sheet with animations on, feeding the Player whole-second
-  positions about four times a second as MusicKit does, and reports the frames, the work in
+  by default) through the open sheet with animations on, feeding the Player
+  positions about four times a second as the bridge does (`--whole-seconds`: rounded, as
+  MusicKit's own are), and reports the frames, the work in
   each, the CPU, the lyrics list's allocations, the Python time in the stepping and the
   estimate's error; `--shot PNG` saves the window at the end (a sweep mid-piece);
   `--mini-player [none|lyrics|queue]` plays it in the mini player, no pane open or one, the

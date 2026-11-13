@@ -525,9 +525,44 @@ class EventTest(unittest.TestCase):
             clock.advance(0.25)
             self.assertEqual(self.player.estimated_position(), 11.75)
 
+    def test_a_position_keeps_its_fraction(self):
+        """The bridge's positions are seconds with their fraction: kept as they come, each
+        one notified and stamped; one reported again (paused, or a stall) is neither."""
+        with patched_clocks() as clock:
+            self.engine.event('playbackTimeDidChange', {'position': 61.42, 'duration': 214})
+            self.assertEqual(self.player.position, 61.42)
+            clock.advance(0.27)
+            self.engine.event('playbackTimeDidChange', {'position': 61.69, 'duration': 214})
+            self.assertEqual(self.player.position, 61.69)
+            self.assertEqual(self.player.position_updated_at, clock())
+            self.assertEqual(self.notified.count('position'), 2)
+            clock.advance(0.27)
+            self.engine.event('playbackTimeDidChange', {'position': 61.69, 'duration': 214})
+            self.assertEqual(self.notified.count('position'), 2)
+            self.assertEqual(self.player.position_updated_at, clock() - 0.27)
+
+    def test_the_estimate_starts_from_the_fraction(self):
+        """With the page's own time in each report (about four a second) the estimate is the
+        true position between them too, and a pause holds where the music stopped."""
+        with patched_clocks() as clock:
+            self.engine.event('playbackStateDidChange', {'state': 'playing', 'position': 9.83})
+            estimates = []
+            for step in range(20):
+                true = 10.1 + step * 0.266
+                self.engine.event('playbackTimeDidChange', {'position': true, 'duration': 214})
+                self.assertAlmostEqual(self.player.estimated_position(), true)
+                clock.advance(0.133)
+                self.assertAlmostEqual(self.player.estimated_position(), true + 0.133)
+                estimates.append(self.player.estimated_position())
+                clock.advance(0.133)
+            self.assertEqual(estimates, sorted(estimates))
+            self.engine.event('playbackStateDidChange', {'state': 'paused', 'position': 15.42})
+            clock.advance(3)
+            self.assertEqual(self.player.estimated_position(), 15.42)
+
     def test_the_estimate_never_runs_backwards(self):
-        """MusicKit reports whole seconds four times a second: the estimate follows the
-        clock within a quarter second and never decreases."""
+        """Whole seconds four times a second (MusicKit's own, which the bridge falls back
+        to): the estimate follows the clock within a quarter second and never decreases."""
         with patched_clocks() as clock:
             self.engine.event('playbackStateDidChange', {'state': 'playing'})
             estimates = []
