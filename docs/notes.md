@@ -788,6 +788,17 @@ libadwaita's breakpoints and the fragmentation still settling.
   `?ids=` form `{data: []}`; a loved item is `{type: 'ratings', attributes: {value: 1}}`. The
   library's artist ids (`l.art_…`) and loose songs' stand-in albums (`l.alb_…`) are made up by
   the sync, so Apple answers nothing for them: no rating, link or queue entry.
+- What MusicKit posts when the queue changes under the item playing (2026-11-13, issue 577; a
+  queue of five songs and autoplay's ten, the third playing): a shuffle toggle posts
+  `queueItemsDidChange` (its snapshot still at the old index), `queuePositionDidChange`
+  {oldIndex 2, index 0} 2 ms later and `shuffleModeDidChange`, and turning it off the same
+  with {oldIndex 0, index 2}; the position carries on; an Up Next move posts
+  `queueItemsDidChange` alone; a move above the item playing is refused (`queue-changed`).
+  None posts `nowPlayingItemDidChange`, so the Player's track is not set again (its `index`
+  stays the old one while shuffled) and the song notification is not sent. The song playing
+  queued again after itself and played through posts `queuePositionDidChange` {2, 3}, then
+  `nowPlayingItemDidChange` with the same id at index 3, the position at 0: announced, as
+  it should be.
 - The DevTools pipe (2026-09-28): asyncio's pipe transports (`connect_read_pipe`,
   `connect_write_pipe`) work on gi.events' loop. Chrome gets its ends through
   `Gio.SubprocessLauncher.take_fd()`, and `launcher.close()` after the spawn is what closes this
