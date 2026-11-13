@@ -1,38 +1,10 @@
 # TODO
 
-What is left, as of 2026-11-11. Music Sleeve (`io.github.jackicus.MusicSleeve`) is released:
-[v0.9.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v0.9.0), the first
-release, v0.10.0, which adds Discord rich presence, v0.11.0, the GNOME HIG pass, artist pages
-in Apple Music's structure and Go to Album and Go to Artist, v0.12.0, playlist management,
-the library's Artists view and Suggested Songs, v0.13.0, lyrics word by word, translations and
-pronunciations and a full-screen player,
-[v1.0.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.0.0), the first
-release the project stands behind: the v1.0.0 milestone of the parity audit against Apple
-Music's own apps (Charts, Apple's Radio page, an album's release footer and shelves, curators
-and radio shows, Search's See All and Recently Searched, favourites and Date Added, filters,
-Create Station, Suggest Less, Remove from Library, playlist folders and reordering, Add to
-Playlist for albums and playlists, drag and drop, a fuller Up Next with History and Autoplay,
-the last session restored, live radio, any Chromium-based browser with Widevine),
-[v1.0.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.0.1), fixes for what
-the audit found in 1.0.0 (sign-out, the restored session, Up Next's Undo and Autoplay, the
-library's upgrade, You Might Also Like, the focus after a filter),
-[v1.1.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.0): what
-the audit left for the
-[After v1.0.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/5) milestone
-(selection mode, Up Next's reordering, a mini player, Replay, a Genres view and Genre and Year
-columns, View Credits, streaming quality, song-change notifications, New's banners and More to
-Explore, the charts by genre, drags out as links, a playlist's Duplicate, Sort By and Add
-Songs…, pre-release albums, folder moves to the top level and into folders) and a lazy
-Songs store,
-[v1.1.1](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.1.1): a fix for 1.1.0
-aborting once the desktop described its actions (#546), and the first release with an Arch
-package attached, and
-[v1.2.0](https://github.com/Jackicus/GNOME-Music-Sleeve/releases/tag/v1.2.0), the latest: a
-new app icon (#552), Add to Playlist's folders as submenus (#554), shelves without a
-scrollbar (#555), and a + on the sidebar's Playlists heading with one dialog to make and edit
-a playlist (#556). A release is a tag and a GitHub release with the tarball and
-the Arch package (`docs/release.md`); why the app is built the way it
-is, is in `docs/decisions.md`.
+What is left to do, as of 2026-11-13; the smaller fixes are in the
+[open issues](https://github.com/Jackicus/GNOME-Music-Sleeve/issues). What each release brought
+is in its [GitHub release](https://github.com/Jackicus/GNOME-Music-Sleeve/releases) and in git; how
+a release is made is in `docs/release.md`, and why the app is built the way it is in
+`docs/decisions.md`.
 
 ## Open
 
@@ -50,18 +22,19 @@ is, is in `docs/decisions.md`.
 - [ ] Run the Flatpak (the manifest in `build-aux/flatpak/` builds against GNOME 51, but
       the sandboxed app, its host Chrome through `flatpak-spawn`, has never been run). It
       can reach a native or Flatpak Discord's socket; that is untested too.
-- [ ] What the review of everything since v1.0.1 found and left (2026-11-11), each waiting
-      for a decision or a check on the real engine:
+- [ ] Left by the review of everything since v1.0.1 (2026-11-11), each waiting for a decision
+      or a check on the real engine:
       [#573](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/573), a playlist song's
       Delete swallowed while the last removal's sync runs;
-      [#574](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/574), a reload unselecting
-      songs in selection mode;
       [#577](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/577), a notification for
-      the same song at another place in the queue;
-      [#578](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/578), Select All's
-      actions without a bound.
-- [ ] [#583](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/583): reordering by
-      keyboard moves a song one place a key press, where a drag moves it any distance.
+      the same song at another place in the queue.
+- [ ] The second parity audit's findings (2026-11-13, summary in
+      [#637](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/637)): the
+      [After v1.2.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/8) milestone,
+      several of them waiting for a decision (`needs-decision`).
+- [ ] [#590](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/590): resizing the window
+      stutters as the pages rearrange (the Songs table's own breakpoints are
+      [#662](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/662)).
 - [ ] [#580](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/580): the widget tests
       crashed once on CI (a callback on an object already freed), and passed when run again.
       Not reproduced locally in about 50 runs of the whole suite (Wayland and X11, cairo);
@@ -83,8 +56,7 @@ Claude Code sessions (area rules load as files are touched; skills: `fix-bug`, `
 `performance-pass`, `review-pass`, `screenshots`, `live-engine-check`). Run GUI scripts through
 `scripts/headless.sh` so no window opens on the desktop.
 
-`python-cairo` and `oxipng` are installed here, and `scripts/check.sh` runs ruff through `uvx`
-(uv's cached copy) when no `ruff` is on the path (2026-10-08), so it runs the lint and the whole
-suite. Without ruff and python-cairo it used to skip the lint and three demo-library tests
-silently, which once let a line-length error reach CI; if a machine lacks them,
-`sudo pacman -S ruff python-cairo oxipng` (or uv for the lint).
+`ruff`, `python-cairo` and `oxipng` are installed here; `scripts/check.sh` falls back to uv's
+cached ruff (`uvx --offline`) when none is on the path, and without either it skips the lint,
+saying so. The demo library, and the tests that make one, need python-cairo. On a machine
+without them: `sudo pacman -S ruff python-cairo oxipng`.

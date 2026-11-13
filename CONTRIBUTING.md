@@ -12,16 +12,18 @@ the libraries of GNOME 50. Nothing in it is tied to a distribution. Fedora 44, U
 Arch Linux and openSUSE Tumbleweed ship those versions; Debian 13 and Ubuntu 24.04 do not.
 To build and test it you also need Meson 1.2, gettext, `blueprint-compiler` 0.22 (Meson downloads
 its own when the installed one is missing or older), pycairo for the demo library generator,
-`appstream` and `desktop-file-utils` for the data checks, `ruff` for the lint, and `gjs` for
-the tests of `src/backend/bridge.js` (skipped without it).
+`appstream` and `desktop-file-utils` for the data checks, `ruff` for the lint, `gjs` for
+the tests of `src/backend/bridge.js` (skipped without it), and `mutter` for
+`scripts/headless.sh`, which runs anything that opens a window on an invisible display of its
+own.
 
 ```bash
 # Arch Linux
-sudo pacman -S --needed gtk4 libadwaita python-gobject python-cairo meson blueprint-compiler \
-    gettext appstream desktop-file-utils ruff gjs
+sudo pacman -S --needed git gtk4 libadwaita python-gobject python-cairo meson blueprint-compiler \
+    gettext appstream desktop-file-utils ruff gjs mutter
 # Fedora 44 or later
-sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3-gobject-devel \
-    python3-cairo meson gettext appstream desktop-file-utils ruff gjs
+sudo dnf install git gtk4-devel libadwaita-devel glib2-devel python3-gobject python3-gobject-devel \
+    python3-cairo meson blueprint-compiler gettext appstream desktop-file-utils ruff gjs mutter
 ```
 
 Google Chrome (or another Chromium-based browser with Widevine) is only needed to play
@@ -33,7 +35,7 @@ music: the demo library and the tests work without it, and without an Apple Acco
 scripts/demo.sh          # build the development profile into ./build and run it on an
                          # invented library: no Chrome, no Apple Account
 scripts/run.sh           # the same with the real engine (Chrome on the app's own profile)
-scripts/check.sh         # byte-compile, ruff, build, unit tests, desktop/metainfo/schema checks
+scripts/headless.sh scripts/check.sh    # byte-compile, ruff, build, unit tests, data checks
 scripts/headless.sh python3 -m unittest discover -s tests -v    # the unit tests alone
 scripts/headless.sh scripts/screenshot.py --demo build/shot.png --page albums [--light]
 scripts/headless.sh COMMAND   # any of these on an invisible display, off your desktop
@@ -48,7 +50,8 @@ dependencies, no display): a test that imports a module with a widget template h
 marked `@requires_gtk` (`tests/gtk.py`) even when it builds no widget, or it fails there.
 GNOME Builder can also build the
 development profile through the Flatpak manifest in `build-aux/flatpak/`, which runs the
-host's Chrome from the sandbox; that manifest has never been built, so it is untested.
+host's Chrome from the sandbox; it builds against GNOME 51, but the sandboxed app has never
+been run, so it is untested.
 
 ## Conventions
 
@@ -85,8 +88,8 @@ generates the demo library). The same goes for logs pasted into issues.
 3. Fill in the pull request template: link the issues with `Closes #123` so they close on
    merge, and attach screenshots for UI changes.
 4. `main` is protected: nothing is pushed to it directly, and a pull request is merged only
-   once its `check.sh (Arch Linux)` run has passed. No approving review is required; the
-   maintainer merges, and only the maintainer can. Pull requests are squashed, so `main` keeps
+   once CI's `check.sh (Arch Linux)` and `meson dist (Arch Linux, as packaged)` have passed.
+   No approving review is required; the maintainer merges, and only the maintainer can. Pull requests are squashed, so `main` keeps
    a linear history, and the branch is deleted after the merge.
 
 Security problems are reported privately, not as pull requests or issues: see
@@ -148,8 +151,14 @@ scripts/demo.sh` opens the demo itself on your desktop.
 - `en_XA`: every letter accented and every string 40 % longer.
 - `ar_XB`: right to left.
 
-Run them with `MUSIC_SLEEVE_LOCALEDIR=build/locale LANGUAGE=en_XA` (and `--rtl` for
-`ar_XB`) to find text that is clipped or not translated.
+Look at the demo in one to find text that is clipped or not translated (`--rtl` lays the
+window out right to left, which GTK would take from its own Arabic catalogue):
+
+```bash
+scripts/pseudo_locale.py
+MUSIC_SLEEVE_LOCALEDIR=build/locale LANGUAGE=en_XA scripts/headless.sh scripts/screenshot.py build/xa.png --demo --page albums
+MUSIC_SLEEVE_LOCALEDIR=build/locale LANGUAGE=ar_XB scripts/headless.sh scripts/screenshot.py build/xb.png --demo --page albums --rtl
+```
 
 ### Checks
 
