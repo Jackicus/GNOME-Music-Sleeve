@@ -21,7 +21,7 @@ from applemusic import actions as actions_module
 from applemusic import item_menu
 from applemusic import item_targets
 from applemusic import playlist_actions
-from applemusic.actions import ItemActions
+from applemusic.actions import ItemActions, places_after
 from applemusic.backend.errors import EngineError
 from applemusic.item_menu import RATING_ACTIONS
 from applemusic.library import Item, ItemRefs, Ref, Track
@@ -1047,6 +1047,97 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
             ('remove_playlist_entries', 'p.pl5', ('i.m1', 'i.m2', 'i.m1', 'i.m3'), (3,))])
         self.assertEqual(self.app.toasts, ['Removed “Third” from “Mix”'])
         self.assertEqual(self.app.buttons, [('Undo', 'win.item-undo-remove', 'p.pl5')])
+
+    def apple_takes_removals(self):
+        """The engine's stand-in keeps the playlist as Apple would: a removal takes the
+        entries out of what item() answers next, so the refresh after it shows them gone."""
+        engine = self.app.engine
+        engine.items[('playlist', 'p.pl5')] = dict(self.mix.raw)
+
+        async def remove_playlist_entries(playlist_id, shown, positions):
+            engine.calls.append(('remove_playlist_entries', playlist_id, tuple(shown),
+                                 tuple(positions)))
+            if engine.fail is not None:
+                raise engine.fail
+            answer = engine.items[('playlist', playlist_id)]
+            group = answer['groups'][0]
+            entries = [dict(entry, index=index) for index, entry in enumerate(
+                entry for place, entry in enumerate(group['entries'])
+                if place not in positions)]
+            engine.items[('playlist', playlist_id)] = dict(
+                answer, groups=[dict(group, entries=entries)])
+            return [{'id': track_id, 'type': 'library-songs'} for track_id in shown]
+
+        engine.remove_playlist_entries = remove_playlist_entries
+
+    async def test_two_removals_in_quick_succession_both_go_in_order(self):
+        # Delete, Down, Delete before the first has ended (#573): the second waits for the
+        # playlist to show without the first, and takes its song from where it is then.
+        self.apple_takes_removals()
+        tracks = self.mix_tracks()
+        first = self.actions.remove_entries(self.mix, [tracks[1]])
+        second = self.actions.remove_entries(self.mix, [tracks[3]])
+        await self.settle()
+        self.assertEqual(self.calls('remove_playlist_entries'), [
+            ('remove_playlist_entries', 'p.pl5', ('i.m1', 'i.m2', 'i.m1', 'i.m3'), (1,)),
+            ('remove_playlist_entries', 'p.pl5', ('i.m1', 'i.m1', 'i.m3'), (2,))])
+        self.assertEqual((first.result(), second.result()), (True, True))
+        self.assertEqual(self.mix.track_ids(), ['i.m1', 'i.m1'])
+        self.assertEqual(self.app.toasts, ['Removed “Second” from “Mix”',
+                                           'Removed “Third” from “Mix”'])
+        self.assertEqual(self.app.reported, [])
+        self.assertEqual(self.actions._removals, {})
+
+    async def test_a_removal_of_what_the_last_one_took_asks_nothing(self):
+        self.apple_takes_removals()
+        tracks = self.mix_tracks()
+        self.actions.remove_entries(self.mix, [tracks[1], tracks[2]])
+        again = self.actions.remove_entries(self.mix, [tracks[2]])
+        after = self.actions.remove_entries(self.mix, [tracks[3]])
+        await self.settle()
+        self.assertEqual([call[2:] for call in self.calls('remove_playlist_entries')], [
+            (('i.m1', 'i.m2', 'i.m1', 'i.m3'), (1, 2)), (('i.m1', 'i.m3'), (1,))])
+        self.assertEqual((again.result(), after.result()), (False, True))
+
+    async def test_a_removal_ends_once_the_playlist_shows_and_the_pass_follows(self):
+        # The task ends when the playlist was read again, not a playlists pass later: the
+        # next removal is made while that pass runs, and one more pass follows it.
+        self.apple_takes_removals()
+        passes = []
+
+        def start_sync(quick=False, playlists=False, videos=False, tracks_of=()):
+            passes.append(asyncio.get_running_loop().create_future())
+            return passes[-1]
+
+        self.app.start_sync = start_sync
+        task = self.actions.remove_entries(self.mix, self.mix_tracks()[:1])
+        self.assertTrue(await task)
+        await asyncio.sleep(0)
+        self.assertEqual(len(passes), 1)
+        self.assertFalse(passes[0].done())
+        library = self.app.library
+        self.assertEqual(library.tracks_kept, [('hold', 'p.pl5'), ('release', 'p.pl5')])
+        self.assertTrue(await self.actions.remove_entries(self.mix, self.mix_tracks()[:1]))
+        self.assertEqual(len(self.calls('remove_playlist_entries')), 2)
+        # What that removal read is kept through the first pass's reload.
+        self.assertEqual(library.tracks_kept[-1], ('hold', 'p.pl5'))
+        self.assertEqual(len(passes), 1)
+        passes[0].set_result(None)
+        for _turn in range(3):
+            await asyncio.sleep(0)
+        self.assertEqual(len(passes), 2)
+        self.assertEqual(library.tracks_kept[-1], ('release', 'p.pl5'))
+        passes[1].set_result(None)
+        await self.settle()
+        self.assertEqual(len(passes), 2)
+
+    def test_places_after(self):
+        entries = [('a', 0), ('c', 2), ('e', 4)]
+        self.assertEqual(places_after(entries, []), entries)
+        self.assertEqual(places_after(entries, [[1]]), [('a', 0), ('c', 1), ('e', 3)])
+        # Each removal's places are in the list as the one before left it.
+        self.assertEqual(places_after(entries, [[1], [1]]), [('a', 0), ('e', 2)])
+        self.assertEqual(places_after(entries, [[0, 3], [0]]), [('c', 0), ('e', 1)])
 
     async def test_remove_from_playlist_only_from_the_users_and_not_in_the_demo(self):
         self.assertIsNone(self.actions.remove_entries(READ_ONLY, self.mix_tracks()))

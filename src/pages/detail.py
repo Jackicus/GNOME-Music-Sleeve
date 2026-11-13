@@ -279,9 +279,11 @@ class DetailPage(SortFilterPart, CatalogPart, SuggestionsPart, ReorderPart, Adw.
         self._order = OWN_ORDER
         self._ordered_for = None
         self._sorted = []
-        # Delete's removal under way (one at a time: a second would be made on a list Apple
-        # has changed), and where the focus goes once the songs show again: (Item, position).
+        # Delete's last removal while it is under way, the shown places of the rows each
+        # removal under way takes ({task: [position]}), and where the focus goes each time
+        # the songs show again until they have all ended: (Item, position).
         self._removing = None
+        self._going = {}
         self._refocus = None
         # The songs Apple suggests (wants_suggestions): the Item they were asked for, what
         # is shown of them (a Suggestions), the requests under way, and the section that
@@ -1222,8 +1224,11 @@ class DetailPage(SortFilterPart, CatalogPart, SuggestionsPart, ReorderPart, Adw.
 
     def _take_refocus(self, item):
         """The songs show again after Delete's removal: the focus, lost with its row, goes to
-        the row now in its place (the last when it was the last), while it is nowhere else."""
-        refocus, self._refocus = self._refocus, None
+        the row now in its place (the last when it was the last), while it is nowhere else;
+        again at the next showing while more removals are under way."""
+        refocus = self._refocus
+        if not self._going:
+            self._refocus = None
         if refocus is None or refocus[0] is not item or not self._starts:
             return
         app().spawn(self._refocus_at(refocus[1]))

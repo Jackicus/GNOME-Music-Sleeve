@@ -239,6 +239,72 @@ class DeleteTest(PageTestCase):
         await self.turn()
         self.assertIsNone(page._removing)
 
+    def shown_without(self, *ids):
+        """Apple's answer: the playlist read again without the songs `ids`."""
+        entries = [dict(entry) for entry in self.data['groups'][0]['entries']
+                   if entry['id'] not in ids]
+        for place, entry in enumerate(entries):
+            entry['index'] = place
+        self.item.merge({'groups': [dict(self.data['groups'][0], entries=entries)]})
+
+    async def test_a_delete_while_the_last_removal_is_under_way_is_asked_too(self):
+        # Delete, Down, Delete before the first song has gone (#573): both are asked, in
+        # order, and the focus ends on the row in the second's place.
+        page = await self.show()
+        actions = self.window.item_actions
+        tasks = []
+
+        def remove_entries(playlist, tracks):
+            actions.batches.append(('remove-from-playlist', list(tracks), playlist.id))
+            tasks.append(asyncio.get_running_loop().create_future())
+            return tasks[-1]
+
+        actions.remove_entries = remove_entries
+        self.addCleanup(delattr, actions, 'remove_entries')
+        first, second = self.songs()[1], self.songs()[2]
+        await self.focus(page, 1)
+        self.assertTrue(self.delete(page))
+        await self.focus(page, 2)
+        self.assertTrue(self.delete(page))
+        self.assertEqual([batch[1] for batch in actions.batches], [[first], [second]])
+        # Delete again on a row already going asks nothing.
+        self.assertTrue(self.delete(page))
+        self.assertEqual(len(actions.batches), 2)
+        # The first has gone: the focus on the row the second Delete was pressed on, where
+        # it is now, until that one goes too.
+        self.shown_without(first.id)
+        self.assertTrue(await self.until(lambda: self.focused(page) == second.id))
+        tasks[0].set_result(True)
+        await self.turn()
+        self.assertIs(page._removing, tasks[1])
+        self.shown_without(first.id, second.id)
+        self.assertTrue(await self.until(lambda: self.focused(page) == 'l.playlist001.t1.3'))
+        tasks[1].set_result(True)
+        await self.turn()
+        self.assertEqual((page._removing, page._going, page._refocus), (None, {}, None))
+
+    async def test_a_removal_that_failed_leaves_the_rows_going_where_they_are(self):
+        page = await self.show()
+        actions = self.window.item_actions
+        tasks = []
+
+        def remove_entries(playlist, tracks):
+            tasks.append(asyncio.get_running_loop().create_future())
+            return tasks[-1]
+
+        actions.remove_entries = remove_entries
+        self.addCleanup(delattr, actions, 'remove_entries')
+        await self.focus(page, 0)
+        self.assertTrue(self.delete(page))
+        await self.focus(page, 2)
+        self.assertTrue(self.delete(page))
+        tasks[0].set_result(False)  # refused, and reported
+        await self.turn()
+        self.assertEqual(list(page._going.values()), [[page._starts[0] + 2]])
+        tasks[1].set_result(True)
+        await self.turn()
+        self.assertEqual((page._going, page._refocus), ({}, None))
+
     async def test_in_the_selection_mode_delete_removes_the_songs_selected(self):
         page = await self.show()
         await self.focus(page, 0)

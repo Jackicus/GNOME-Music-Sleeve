@@ -13,7 +13,7 @@ from tests import ROOT  # noqa: F401  registers src/ as applemusic
 from applemusic import playlist_order
 from applemusic.backend.errors import EngineError
 from applemusic.library import Item
-from applemusic.playlist_order import PlaylistOrder, positions, sync_tracks
+from applemusic.playlist_order import PlaylistOrder, TracksPass, positions, sync_tracks
 
 
 def playlist(playlist_id='p.1', track_ids='abcde', **attributes):
@@ -48,6 +48,9 @@ class FakeLibrary:
 
     def with_held_order(self, raw):
         return raw
+
+    def release_tracks(self, playlist_id):
+        self.released.append(('tracks', playlist_id))
 
 
 class FakeEngine:
@@ -298,11 +301,48 @@ class HelpersTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(starts, [('p.1',)])
         running.set_result(None)
         app.library_sync.task = None
+        self.assertEqual(app.library.released, [])  # that sync may have read it already
         self.assertTrue(await waiting)
         self.assertEqual(starts, [('p.1',), ('p.1',)])
+        # Its own pass began after every write: the tracks kept in hand are let go.
+        self.assertEqual(app.library.released, [('tracks', 'p.1')])
         # None running and none started (signed out, demo): nothing to wait for.
         app.start_sync = lambda **_kwargs: None
         self.assertFalse(await sync_tracks(app, 'p.1'))
+
+    async def test_the_tracks_pass_is_one_at_a_time_and_one_more_after_a_change(self):
+        app = FakeApp(FakeLibrary())
+        passes = []
+
+        def start_sync(quick=False, playlists=False, videos=False, tracks_of=()):
+            passes.append((tracks_of, asyncio.get_running_loop().create_future()))
+            return passes[-1][1]
+
+        async def turn():
+            for _turn in range(4):
+                await asyncio.sleep(0)
+
+        app.start_sync = start_sync
+        follower = TracksPass(app)
+        follower.after('p.1')
+        self.assertTrue(follower.running('p.1'))
+        await turn()
+        self.assertEqual([ids for ids, _task in passes], [('p.1',)])
+        # Changes while it runs: one more pass after it, however many they were; another
+        # playlist's is its own.
+        follower.after('p.1')
+        follower.after('p.1')
+        follower.after('p.2')
+        await turn()
+        self.assertEqual([ids for ids, _task in passes], [('p.1',), ('p.2',)])
+        passes[0][1].set_result(None)
+        await turn()
+        self.assertEqual([ids for ids, _task in passes], [('p.1',), ('p.2',), ('p.1',)])
+        passes[2][1].set_result(None)
+        passes[1][1].set_result(None)
+        await turn()
+        self.assertEqual(len(passes), 3)
+        self.assertFalse(follower.running('p.1') or follower.running('p.2'))
 
     def test_constants(self):
         self.assertGreater(playlist_order.MOVE_DELAY, 0)

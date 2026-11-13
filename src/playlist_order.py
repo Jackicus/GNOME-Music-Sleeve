@@ -14,6 +14,8 @@ time, put back if Apple refuses.
     await order.flush_all(quitting=True)   # the same for every playlist, as the app quits
     await sync_tracks(app, playlist_id)    # library.json given the playlist's tracks
     await refresh_playlist(app, playlist_id)   # the Item merged with Apple's tracks now
+    TracksPass(app).after(playlist_id)     # sync_tracks() in the background, one pass after
+                                           # the last of a run of changes
 
 A move goes into the library at once (Library.reorder(): the page's rows move, the order is
 held through reloads until Apple's listing shows it). Each playlist has at most one write
@@ -73,26 +75,31 @@ async def refresh_playlist(app, playlist_id):
     Favourite Songs loved into): the engine's full Item merged into the library's (its
     tracks in an order held ahead of Apple's listing, when they are the same tracks:
     Library.with_held_order()), whose groups-changed re-shows an open page. A failure is
-    only logged: the next sync brings the change anyway."""
+    only logged: the next sync brings the change anyway. True once merged."""
     playlist = app.library.by_id('playlist', playlist_id)
     if playlist is None:
-        return
+        return False
     try:
         answer = await app.engine.item('playlist', playlist_id)
     except EngineError as error:
         log.debug('playlist %s not refreshed: %s', playlist_id, error)
-        return
-    if isinstance(answer, dict):
-        playlist.merge(app.library.with_held_order(answer))
+        return False
+    if not isinstance(answer, dict):
+        return False
+    playlist.merge(app.library.with_held_order(answer))
+    return True
 
 
 async def sync_tracks(app, playlist_id):
     """A playlists pass of the sync that reads this playlist's tracks too, so library.json
     has them as Apple does now (after an add, a removal or a new order); after the sync
-    running, if one is. True once one ran."""
+    running, if one is. True once one ran. The pass begins after every write so far, so its
+    file is the newest read: the tracks kept in hand until then (Library.hold_tracks()) are
+    let go as it starts."""
     for _attempt in range(2):
         task = app.start_sync(playlists=True, tracks_of=(playlist_id,))
         if task is not None:
+            app.library.release_tracks(playlist_id)
             await asyncio.wait([task])
             return True
         running = getattr(getattr(app, 'library_sync', None), 'task', None)
@@ -100,6 +107,40 @@ async def sync_tracks(app, playlist_id):
             return False
         await asyncio.wait([running])
     return False
+
+
+class TracksPass:
+    """sync_tracks() in the background after a playlist's tracks changed (a song added or
+    removed), so the write's task ends once the page shows the change and the next write
+    need not wait a pass out: one pass a playlist at a time, and a change made while it
+    runs has one more follow it (that pass read the tracks before the change, or may have).
+    `app` gives spawn(), start_sync(), library_sync and the library."""
+
+    def __init__(self, app):
+        self.app = app
+        self._due = {}  # playlist id -> whether a change came since its pass running began
+
+    def after(self, playlist_id):
+        """The playlist's tracks changed: a pass for it, now or after the one running."""
+        if playlist_id in self._due:
+            self._due[playlist_id] = True
+            return
+        self._due[playlist_id] = False
+        self.app.spawn(self._run(playlist_id))
+
+    def running(self, playlist_id):
+        """Whether a pass for the playlist is under way or due."""
+        return playlist_id in self._due
+
+    async def _run(self, playlist_id):
+        try:
+            while True:
+                self._due[playlist_id] = False
+                await sync_tracks(self.app, playlist_id)
+                if not self._due[playlist_id]:
+                    return
+        finally:
+            del self._due[playlist_id]
 
 
 class _Pending:

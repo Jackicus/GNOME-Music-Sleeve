@@ -14,8 +14,10 @@ ItemActions.move_in_playlist(), which announces where it went. A click without a
 still plays the song: the drag starts only past GTK's drag threshold, and then cancels the
 row's click. Delete on the focused song takes it out of the playlist (remove_focused():
 keyboard.remove_key(), ItemActions.remove_entries()'s one write with Undo; in the selection
-mode, the songs selected), one removal at a time, the focus going to the row in its place
-once the songs show again; an empty playlist of the user's offers Add Songs… in its status.
+mode, the songs selected); a Delete pressed while the last removal is still under way is
+asked too (the item actions make them one after the other), and the focus goes to the row
+in the place of the last song taken once the songs show again; an empty playlist of the
+user's offers Add Songs… in its status.
 """
 
 from gi.repository import Gdk, Graphene, Gtk
@@ -33,7 +35,7 @@ from .detail_sort_filter import OWN_ORDER
 
 class ReorderPart:
     """DetailPage's moves and Delete (a mixin of pages/detail.py's DetailPage). It works on
-    what DetailPage.__init__ makes: its state (_removing, _refocus), the drop target's
+    what DetailPage.__init__ makes: its state (_removing, _going, _refocus), the drop target's
     _drop_feedback, the list (list_view, scrolled_window, hero, _bound, _starts,
     _track_models), selection_mode, filter_bar, _order, _groups and item; the songs show
     again with the focus through DetailPage._take_refocus()."""
@@ -83,17 +85,18 @@ class ReorderPart:
         Undo on its toast) of the focused song or, in the selection mode, of the songs
         selected (the bar's Remove from Playlist); the focus goes to the row in its place
         once the songs show again. False (the key not taken) when the focus is on no song or
-        the playlist is not the user's; True otherwise, while a removal is under way too,
-        when nothing more is asked (one at a time: a second would be made on a list Apple
-        has changed meanwhile)."""
+        the playlist is not the user's; True otherwise. A removal still under way does not
+        hold the next back (the item actions make them in turn, each from the list the
+        last left): only Delete again on a row already going asks nothing."""
         row = _row_of(focus) if focus is not None else None
         track = row.track_row.context_item if row is not None else None
         actions = getattr(self.get_root(), 'item_actions', None)
         if not isinstance(track, Track) or not self.removes_songs() or actions is None:
             return False
-        if self._removing is not None and not self._removing.done():
-            return True
         position = self._shown_position(track)
+        going = [place for places in self._going.values() for place in places]
+        if position is not None and position in going:
+            return True
         if self.selection_mode.active:
             tracks = self.selection_mode.selection.ordered(self._selectable())
             if not tracks:
@@ -105,7 +108,10 @@ class ReorderPart:
         if task is None:
             return True  # the demo library, which says so
         self._removing = task
-        self._refocus = (self.item, position) if position is not None else None
+        self._going[task] = [position] if position is not None else []
+        # Where the row will be once the rows going before it have gone.
+        self._refocus = ((self.item, position - sum(1 for place in going if place < position))
+                         if position is not None else None)
         done = weak_method(self._on_removed)
         task.add_done_callback(lambda finished: done(finished))
         return True
@@ -119,11 +125,18 @@ class ReorderPart:
         return None
 
     def _on_removed(self, task):
-        """Delete's removal ended: when it failed (reported already), the focus stays as it
-        is; either way, no later showing of the songs moves it."""
+        """One of Delete's removals ended, the songs showing without its row (or, when it
+        failed, which was reported, with it still): the rows still going are that row's place
+        further up. After the last of them no later showing of the songs moves the focus."""
+        gone = self._going.pop(task, [])
+        if gone and not task.cancelled() and task.exception() is None and task.result():
+            for places in self._going.values():
+                places[:] = [place - sum(1 for other in gone if other < place)
+                             for place in places]
         if self._removing is task:
             self._removing = None
-        self._refocus = None
+        if not self._going:
+            self._refocus = None
 
     def dragged_index(self):
         """The index of the song the in-app drag in progress carries (dnd.current()) when it
