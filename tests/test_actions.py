@@ -3247,6 +3247,33 @@ class SelectionActionsTest(unittest.IsolatedAsyncioTestCase):
                              [('songs', '0,1'), ('songs', '2,3'), ('song', '4')])
         self.assertEqual(actions_module.queue_commands([]), [])
 
+    async def test_the_first_of_a_bigger_selection_are_queued(self):
+        # A selection's Play Next takes its first PLAY_LIMIT: the toast says of how many
+        # (a total under 1,000: the count's digits are grouped by the locale's rules).
+        self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK], total=500)
+        await self.settle()
+        self.assertEqual(self.app.toasts[-1], 'The first 2 of 500 items will play next')
+        self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK], later=True, total=300)
+        await self.settle()
+        self.assertEqual(self.app.toasts[-1], 'The first 2 of 300 items will play later')
+        self.actions.queue_objects([LIBRARY_TRACK, CATALOG_TRACK], total=2)  # all of them
+        await self.settle()
+        self.assertEqual(self.app.toasts[-1], '2 items will play next')
+
+    async def test_tracks_of_many_songs_lets_frames_in(self):
+        yielded = []
+
+        async def yield_to_frames():
+            yielded.append(True)
+
+        tracks = [Track({'id': f'i.s{n}', 'title': f'Song {n}', 'type': 'library-songs'})
+                  for n in range(50)]
+        with mock.patch.object(actions_module, 'FRAME_BUDGET', -1), \
+                mock.patch.object(actions_module, 'yield_to_frames', yield_to_frames):
+            found = await self.actions.tracks_of(tracks)
+        self.assertEqual(len(found), 50)
+        self.assertEqual(len(yielded), 50)
+
     async def test_play_next_and_later_of_a_selection(self):
         chosen = [LIBRARY_TRACK, CATALOG_TRACK, VIDEO_TRACK, UPLOAD_TRACK]
         self.actions.queue_objects(chosen)

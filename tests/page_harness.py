@@ -284,13 +284,15 @@ def classes():
             self.favourites = []  # (artist Item, favourite, its task) per favourite_artist()
             self.ratings = {}  # what known_rating() answers, by (kind, id)
             self.batches = []  # (what, the objects, …) per selection's action of the bar
+            self.queue_totals = []  # how many were selected, per queue_objects()
             self.removal = None  # the task remove_entries() answers (None: one done, True)
             self.add_songs = []  # the playlist per ask_add_songs()
 
         # A selection's batch actions (widgets/selection_mode.py), recorded.
 
-        def queue_objects(self, objects, later=False):
+        def queue_objects(self, objects, later=False, total=None):
             self.batches.append(('queue', list(objects), later))
+            self.queue_totals.append(total)
 
         def add_items_to_playlist(self, playlist_id, objects):
             self.batches.append(('add', list(objects), playlist_id))

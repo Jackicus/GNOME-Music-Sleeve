@@ -544,6 +544,20 @@ def song_tracks(songs):
     return [song_track(song) for song in songs]
 
 
+async def make_song_tracks(songs, budget=FRAME_BUDGET):
+    """song_track() of each of `songs`, in order, a frame let in (yield_to_frames) every
+    `budget` seconds: a selection of 40,000 songs wraps every album's groups, a quarter of a
+    second at once (docs/notes.md)."""
+    tracks = []
+    paused = time.monotonic()
+    for song in songs:
+        tracks.append(song_track(song))
+        if time.monotonic() - paused > budget:
+            await yield_to_frames()
+            paused = time.monotonic()
+    return tracks
+
+
 def song_key(song):
     """What a list of songs that may hold SongEntries and their Tracks knows a song by: its
     raw dict's identity, the same for an entry and its Track (SongModel.find())."""
