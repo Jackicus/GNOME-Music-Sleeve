@@ -60,8 +60,10 @@ paths:
   (5 s at most), so a new step that shows artwork needs no delay of its own for it.
 - `retake_screenshots.sh [--out DIR] [SUBJECT…|all]` takes the metainfo screenshots in one
   step (the `screenshots` skill, step 5): its `SUBJECTS` table is each subject's screenshot.py
-  options, `METAINFO` the ones data/screenshots/ holds; it installs the build, shoots each
-  dark and light with `--frame` through headless.sh on the memory backend, and runs oxipng.
+  options, `METAINFO` the six data/screenshots/ holds (home, albums, album, now-playing,
+  artist, search; fullscreen-lyrics, selection and narrow by name); it installs the build,
+  shoots each dark and light with `--frame` through headless.sh on the memory backend, and
+  runs oxipng. `harness.demo_art_url()` copies a cover again when the demo has drawn it anew.
 - screenshot.py runs without animations, so a word-timed line's pieces show lit whole, and
   the Player's estimate has run on by a second when it shoots (`--position 16.5` shows
   17.5 s). `lyrics_test.py` plays a lyrics fixture (`--fixture`, the word-timed `syllable`

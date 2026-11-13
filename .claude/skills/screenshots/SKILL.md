@@ -72,10 +72,12 @@ What to shoot: $ARGUMENTS
    (invented), each run as `GSETTINGS_BACKEND=memory scripts/headless.sh …` so the private
    session's Settings portal answers GNOME's defaults (the blue accent, a close button
    alone) rather than the desktop's; then `oxipng --opt 4 --strip safe`. Its `SUBJECTS`
-   table holds each subject's options: `home`, `albums`, `album` (the album playing),
-   `now-playing` (the invented duet: a line lit part-way, each singer on their side,
-   background vocals), and the other candidates, `artist` (Apple's page of the first artist,
-   its banner), `search`, `fullscreen-lyrics` (fullscreen: no shadow, and the same tinted
+   table holds each subject's options. The metainfo's six: `home`, `albums`, `album` (the
+   album playing), `now-playing` (the invented duet, the only word-timed lyrics fixture, at
+   its first, English stanza: a line lit part-way, background vocals, the second singer's
+   lines on their side below), `artist` (Apple's page of the first artist, its banner) and
+   `search` (Apple Music searched for `drift`: every cover in its Songs shelf another); the
+   other candidates, by name: `fullscreen-lyrics` (fullscreen: no shadow, and the same tinted
    picture in both schemes), `selection` (a playlist, three songs selected) and `narrow`
    (360x640). `--out DIR` writes elsewhere (candidates go in build/); name subjects, or
    `all`, to take others than the metainfo's. The app runs as the release profile there, so
