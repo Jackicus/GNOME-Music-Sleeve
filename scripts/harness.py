@@ -9,7 +9,8 @@ run the installed build (meson install -C build, or scripts/run.sh, first) in-pr
 make_app() does what they all need:
 
 - the installed modules on sys.path (build/install/share/music-sleeve) and the translations
-  bound (i18n.setup, as the launcher does);
+  bound (i18n.setup, as the launcher does), or those in MUSIC_SLEEVE_LOCALEDIR (the
+  pseudo-translations scripts/pseudo_locale.py makes);
 - GSettings on the memory backend with the installed schema, so nothing the script sets (window
   size, last-page, signed-in) reaches the desktop's settings; engine-autostart off, so a script
   never starts Chrome, even one run without the demo library;
@@ -104,7 +105,8 @@ def make_app(suffix, demo=True, light=False, animations=False, stock_look=True, 
     sys.path.insert(1, PKGDATADIR)
     from applemusic import i18n
 
-    i18n.setup(LOCALEDIR)
+    # MUSIC_SLEEVE_LOCALEDIR: other catalogues (scripts/pseudo_locale.py's), with LANGUAGE.
+    i18n.setup(os.environ.get('MUSIC_SLEEVE_LOCALEDIR') or LOCALEDIR)
 
     import gi
 

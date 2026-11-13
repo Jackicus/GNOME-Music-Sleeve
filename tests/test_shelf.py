@@ -209,6 +209,41 @@ class ShelfTest(PageTestCase):
         self.assertTrue(shelf.previous_button.get_sensitive())
         self.assertTrue(shelf.next_button.get_sensitive())
 
+    def test_right_to_left_a_row_starts_and_pages_from_the_right(self):
+        # A horizontal list right to left lays its first item at the right: the adjustment's
+        # upper end is the row's start, and the previous arrow (on the right) pages right.
+        from applemusic.widgets.shelf import page_target, paging, row_start
+
+        self.assertEqual(row_start(0, 2000, 800, rtl=False), 0)
+        self.assertEqual(row_start(0, 2000, 800, rtl=True), 1200)
+        self.assertEqual(row_start(0, 500, 800, rtl=True), 0)  # all of it shows
+        self.assertEqual(paging(0, 0, 2000, 800, rtl=False), (False, True))
+        self.assertEqual(paging(1200, 0, 2000, 800, rtl=True), (False, True))
+        self.assertEqual(paging(0, 0, 2000, 800, rtl=True), (True, False))
+        self.assertEqual(page_target(1200, 0, 2000, 800, 1, rtl=True), 400)
+        self.assertEqual(page_target(400, 0, 2000, 800, 1, rtl=True), 0)
+        self.assertEqual(page_target(400, 0, 2000, 800, -1, rtl=True), 1200)
+        self.assertEqual(page_target(0, 0, 2000, 800, 1, rtl=False), 800)
+
+    async def test_a_right_to_left_shelf_starts_at_its_start(self):
+        from gi.repository import Gtk
+
+        # A widget's own direction NONE is the default one, not its parent's (gtk-notes.md).
+        Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)
+        self.addCleanup(Gtk.Widget.set_default_direction, Gtk.TextDirection.LTR)
+        shelf = await self.shown(model('rtl', 40), width=600)
+        adjustment = shelf.scrolled_window.get_hadjustment()
+        self.assertTrue(await self.until_frames(
+            shelf.list_view, lambda: shelf._growing is None))
+        adjustment.set_value(0)  # scrolled to its end, at the left
+        shelf.bind_shelf(model('rtl-again', 40))  # a widget used before, rebound
+        self.assertTrue(await self.until_frames(shelf.list_view, lambda: abs(
+            adjustment.get_value() - adjustment.get_upper() + adjustment.get_page_size()) < 1))
+        self.assertFalse(shelf.previous_button.get_sensitive())
+        self.assertTrue(shelf.next_button.get_sensitive())
+        self.assertEqual(shelf.previous_button.get_tooltip_text(), 'Scroll Right')
+        self.assertEqual(shelf.next_button.get_tooltip_text(), 'Scroll Left')
+
     async def test_a_shelf_rebound_out_of_the_page_shows_its_arrows_once_back(self):
         # Home's first shelf: a ShelfColumn moves a kept widget into place, so it is
         # bound while out of the page, with no width of its own, and its row, as wide as

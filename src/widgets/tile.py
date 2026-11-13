@@ -6,7 +6,7 @@
 from gi.repository import Adw, Gtk
 
 from . import artwork
-from .util import connect_weak
+from .util import connect_weak, mirror_start
 
 # The placeholder's icon and size: a music note until the cover arrives, and a playlist
 # folder's big folder icon, which no cover replaces.
@@ -98,6 +98,7 @@ class Tile(Gtk.Box):
 
     def __init__(self, shape=COVER, year=False, video_size=VIDEO_SIZE, **kwargs):
         super().__init__(**kwargs)
+        mirror_start(self.title_label, self.subtitle_label)
         self._year = year
         self._video_size = video_size
         self._shape = COVER

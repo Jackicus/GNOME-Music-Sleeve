@@ -58,7 +58,8 @@ class PlayerBarTest(unittest.TestCase):
         self.assertTrue(self.bar.seek_box.get_visible())
         self.assertEqual(self.bar.seek_adjustment.get_value(), 83.0)
         self.assertEqual(self.bar.elapsed_label.get_label(), '1:23')
-        self.assertEqual(self.bar.remaining_label.get_label(), '-2:11')
+        # After a left-to-right mark (transport.remaining_text()).
+        self.assertEqual(self.bar.remaining_label.get_label(), '\u200e-2:11')
         self.assertEqual(self.bar.play_button.get_icon_name(), 'transport-play-symbolic')
         self.assertTrue(self.bar.repeat_button.get_active())  # repeat all, as it was
         self.assertFalse(self.bar.shuffle_button.get_active())

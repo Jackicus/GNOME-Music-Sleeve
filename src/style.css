@@ -256,6 +256,11 @@ button.artist-link {
   min-height: 0;
 }
 
+button.artist-link:dir(rtl) {
+  margin-left: 0;
+  margin-right: -2px;
+}
+
 button.artist-link:hover,
 button.artist-link:active {
   background: none;
@@ -418,6 +423,11 @@ gridview.song-shelf > child {
   font-weight: normal;
 }
 
+.suggested-songs button.suggestion:dir(rtl) {
+  margin-left: 0;
+  margin-right: -6px;
+}
+
 /* The shelves under an album's tracks (pages/detail.blp): out of the track list's row inset
    (its 12px margin and 12px padding each side), so their titles and tiles sit on the page's
    24px margin as an artist page's do. */
@@ -469,6 +479,11 @@ button.release-card {
   padding: 6px;
   margin-left: -6px;
   border-radius: 12px;
+}
+
+button.release-card:dir(rtl) {
+  margin-left: 0;
+  margin-right: -6px;
 }
 
 /* Hero cards (widgets/hero_tile.blp): one rounded card, the cover square at the top and the

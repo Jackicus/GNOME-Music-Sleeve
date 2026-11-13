@@ -9,7 +9,7 @@ from ..backend import config
 from ..remote import fetch_cover
 from . import artwork
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
-from .util import connect_weak
+from .util import connect_weak, mirror_start
 
 # The subtitle's opacity on the band (style.css, `.hero-caption > .dimmed`): the band is
 # made dark or light enough for it to read (artwork.band_colour).
@@ -48,6 +48,7 @@ class HeroTile(Gtk.Box):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        mirror_start(self.title_label, self.subtitle_label)
         # A class function, not a bound method: a handler on the card itself holding the card
         # would be a cycle.
         self.connect('notify::scale-factor', HeroTile._on_scale_factor)
