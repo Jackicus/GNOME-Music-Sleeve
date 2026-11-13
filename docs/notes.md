@@ -406,6 +406,11 @@ generator, so these absolute figures are not comparable to the millisecond with 
   frame at its smaller size, though its list is allocated more often (135 times against
   81). The same session's three sheet runs after the no-pane ones gave 1.16-1.20 ms and
   7.2-7.4 %.
+  Again once the panes open inside the window (#705, 2026-11-13, one run a mode, load
+  average about 4, at the new default of 360x548 with or without a pane): no pane 36
+  frames, 0.59 ms a frame (longest 0.94), 0.3 %; Up Next 84 frames, 0.56 ms (1.55), 0.4 %;
+  lyrics 1947 frames, 1.03 ms (3.23), 6.6 %, the list allocated 135 times. Nothing over
+  16.7 ms; the divider and the controls' own layout add nothing while a song plays.
 - The playback position's fraction (#320, 2026-11-13). Against the real engine (headless
   Chrome, MusicKit `2646.4.0`, muted), the real `Player` over the real `Engine`:
   `estimated_position()` less the page's own time (`_currentTime`, read over CDP between two
