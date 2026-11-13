@@ -64,51 +64,51 @@
   <screenshots>
     <screenshot type="default" environment="gnome">
       <caption>Pick up where you left off, from your heavy rotation and recent plays</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-light.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/home-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Browse your albums in a grid, sorted the way you choose</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-light.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/albums-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Play or shuffle an album, or pick a song to start from</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-light.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/album-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Follow the lyrics word by word as they are sung</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-light.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/now-playing-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Explore an artist's latest release, top songs and the albums you have</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/artist-light.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/artist-light.png</image>
     </screenshot>
     <screenshot environment="gnome">
       <caption>Search Apple Music or your library for songs, albums and playlists</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/search-light.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/search-light.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Pick up where you left off, from your heavy rotation and recent plays</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/home-dark.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/home-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Browse your albums in a grid, sorted the way you choose</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/albums-dark.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/albums-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Play or shuffle an album, or pick a song to start from</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/album-dark.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/album-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Follow the lyrics word by word as they are sung</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/now-playing-dark.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/now-playing-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Explore an artist's latest release, top songs and the albums you have</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/artist-dark.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/artist-dark.png</image>
     </screenshot>
     <screenshot environment="gnome:dark">
       <caption>Search Apple Music or your library for songs, albums and playlists</caption>
-      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/main/data/screenshots/search-dark.png</image>
+      <image type="source" width="1150" height="810">https://raw.githubusercontent.com/Jackicus/GNOME-Music-Sleeve/v1.3.1/data/screenshots/search-dark.png</image>
     </screenshot>
   </screenshots>
 
@@ -118,6 +118,21 @@
   </branding>
 
   <releases>
+    <release version="1.3.1" date="2026-11-13">
+      <description>
+        <p>
+          The mini player, tidied: its buttons keep their places, and the lyrics and Up Next
+          open inside its window.
+        </p>
+        <ul>
+          <li>The mini player's buttons are one row at every size; they no longer move or disappear as the window is resized, and its smallest size fits them all</li>
+          <li>Lyrics and Up Next open inside the mini player's window, which keeps its size and its place: they no longer open off the bottom of the screen</li>
+          <li>A grip between the controls and the lyrics or Up Next can be dragged to give either more room, and stays where it is left</li>
+          <li>Only a mini player too small to show the lyrics or Up Next grows for them, by no more than it needs, and shrinks back</li>
+          <li>In a low, wide mini player the artwork beside the title is as large as there is room for</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.0" date="2026-11-13">
       <description>
         <p>

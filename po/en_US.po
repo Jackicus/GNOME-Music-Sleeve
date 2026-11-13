@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: music-sleeve\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-13 18:56+0000\n"
+"POT-Creation-Date: 2026-11-13 21:10+0000\n"
 "PO-Revision-Date: 2026-11-13 12:34+0000\n"
 "Last-Translator: Jack Tully\n"
 "Language-Team: English (United States)\n"
@@ -99,11 +99,47 @@ msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:123
 msgid ""
+"The mini player, tidied: its buttons keep their places, and the lyrics and "
+"Up Next open inside its window."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:128
+msgid ""
+"The mini player's buttons are one row at every size; they no longer move or "
+"disappear as the window is resized, and its smallest size fits them all"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:129
+msgid ""
+"Lyrics and Up Next open inside the mini player's window, which keeps its "
+"size and its place: they no longer open off the bottom of the screen"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:130
+msgid ""
+"A grip between the controls and the lyrics or Up Next can be dragged to give "
+"either more room, and stays where it is left"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:131
+msgid ""
+"Only a mini player too small to show the lyrics or Up Next grows for them, "
+"by no more than it needs, and shrinks back"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:132
+msgid ""
+"In a low, wide mini player the artwork beside the title is as large as there "
+"is room for"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:138
+msgid ""
 "A fuller mini player, the song playing's menu wherever it is shown, and a "
 "narrow window whose sidebar slides over the page."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:128
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:143
 msgid ""
 "The mini player has Favourite, Shuffle, Repeat and the volume, and can show "
 "the lyrics or Up Next in a pane under its controls"
@@ -111,126 +147,126 @@ msgstr ""
 "The mini player has Favorite, Shuffle, Repeat and the volume, and can show "
 "the lyrics or Up Next in a pane under its controls"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:129
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:144
 msgid ""
 "In Now Playing and the full-screen player, a right click or a long press on "
 "the song playing, or the Menu key, opens its menu"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:130
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:145
 msgid ""
 "In a narrow window the sidebar slides over the page, from Show Sidebar, F9 "
 "or a swipe, and the page stays as it was underneath"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:131
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:146
 msgid ""
 "Move to Top and Move to Bottom on a playlist's song and in Up Next, also "
 "with Alt+Home and Alt+End; Play Next on an Up Next entry moves it up rather "
 "than adding it again"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:132
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:147
 msgid ""
 "Lyrics light up word by word in time with the singing, no longer a little "
 "ahead of it"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:133
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:148
 msgid ""
 "A pre-release album in your library can be played on its release day, "
 "without waiting for the next sync"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:134
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:149
 msgid ""
 "An account in use on too many devices is now said plainly, not reported as a "
 "problem with protected content"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:135
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:150
 msgid ""
 "Songs you have selected stay selected when a sync changes their album or "
 "playlist"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:136
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:151
 msgid ""
 "Deleting several songs from a playlist one after another removes each of "
 "them; a second Delete is no longer lost"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:137
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:152
 msgid "In high contrast, the lyric line being sung is marked with a bar"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:138
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:153
 msgid ""
 "The app speaks American English where the system does, and longer languages "
 "and right-to-left layouts fit better"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:139
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:154
 msgid ""
 "Resizing the window is smoother, a grid's highlight fits its tile, and many "
 "smaller fixes to correctness, accessibility and memory use"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:145
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:160
 msgid ""
 "A new icon, an easier way to make playlists, and folders in Add to Playlist."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:149
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:164
 msgid "A new app icon: a double note lit on a dot-matrix panel"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:150
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:165
 msgid "A + on the sidebar's Playlists heading makes a new playlist or folder"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:151
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:166
 msgid ""
 "One dialog makes and edits a playlist: its name, a description over several "
 "lines, its folder, and whether it shows on your profile and in search; "
 "Rename… on a playlist is now Edit Details…"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:152
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:167
 msgid ""
 "Add to Playlist shows each folder as a submenu, nested as in the sidebar"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:153
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:168
 msgid ""
 "The rows of Home, New and an artist's page show no scrollbar, so scrolling "
 "the page no longer catches on them; their arrows page them at any window "
 "width"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:159
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:174
 msgid ""
 "A fix for 1.1.0, which closed a second after it started when opened from the "
 "desktop."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:164
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:179
 msgid ""
 "The app no longer closes at once when GNOME asks it which actions it has"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:165
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:180
 msgid ""
 "An Arch Linux package is attached to each release, to install with pacman"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:171
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:186
 msgid ""
 "Select several songs at once, put Up Next in your own order, a mini player, "
 "your year in Replay and your library's genres."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:176
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:191
 msgid ""
 "Select songs on Songs, an album or a playlist to play them next or later, "
 "add them to a playlist, or remove them from a playlist, your favourites or "
@@ -240,94 +276,94 @@ msgstr ""
 "add them to a playlist, or remove them from a playlist, your favorites or "
 "your library, all at once"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:177
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:192
 msgid ""
 "Reorder Up Next by dragging, with Move Up and Move Down, or with Alt+Up and "
 "Alt+Down"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:178
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:193
 msgid ""
 "A mini player, from the main menu or Ctrl+Shift+M: a small window with the "
 "artwork and the controls in place of the main one"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:179
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:194
 msgid ""
 "Replay: the songs, artists and albums you played most this year, and each "
 "year's Replay playlist"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:180
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:195
 msgid ""
 "A Genres view in the library, if you turn it on, and Genre and Year columns "
 "in the song tables"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:181
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:196
 msgid "View Credits shows who performed, wrote and produced a song"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:182
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:197
 msgid ""
 "Choose the streaming quality, 256 or 64 kbps, and, if you like, a "
 "notification when the song changes while the window is out of sight"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:183
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:198
 msgid ""
 "New opens with the featured banners and ends with More to Explore's "
 "collections and pages; the charts narrow to a genre"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:184
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:199
 msgid ""
 "Your playlists can be duplicated, sorted on their page and filled from Add "
 "Songs…; Songs has Play and Shuffle; a curator's playlist names its curator "
 "as a link and ends with Featured Artists and More By"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:185
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:200
 msgid ""
 "An album not out yet says when it comes, plays the songs already out and can "
 "be pre-added"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:186
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:201
 msgid ""
 "Move a playlist out of its folder to the top level, and a folder into "
 "another folder, from the menu or by dragging"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:187
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:202
 msgid ""
 "Drag a song, an album, a playlist or a station into another app to give it "
 "the link"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:188
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:203
 msgid ""
 "In a narrow window the player bar shows the artwork and the song first, and "
 "a radio show's page wears its banner"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:189
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:204
 msgid "Catalogue playlists show their songs' artwork again"
 msgstr "Catalog playlists show their songs' artwork again"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:190
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:205
 msgid ""
 "The song playing stays in the player bar, paused, if the player stops mid-"
 "song, and large libraries start, scroll and use memory more lightly"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:196
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:211
 msgid ""
 "Fixes: signing out forgets the account, the last session comes back as it "
 "should, and Undo and Autoplay in Up Next work again."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:201
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:216
 msgid ""
 "Signing out forgets what the app held of the account: Home's Recently "
 "Played, ratings and favourites, Recently Searched and Up Next's covers are "
@@ -337,7 +373,7 @@ msgstr ""
 "Played, ratings and favorites, Recently Searched and Up Next's covers are "
 "never shown to the next one"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:202
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:217
 msgid ""
 "The last session, restored at launch: Play, Next or Previous pressed while "
 "the player starts plays what you chose, once; a song that can no longer be "
@@ -345,13 +381,13 @@ msgid ""
 "back as songs you queued; and your Autoplay setting is kept"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:203
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:218
 msgid ""
 "Undo after Clear in Up Next puts the songs back again, and Autoplay carries "
 "on after every queue you play, not only the first"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:204
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:219
 msgid ""
 "A library kept by an older version is synced in full once, so its dates "
 "added and favourites appear"
@@ -359,37 +395,37 @@ msgstr ""
 "A library kept by an older version is synced in full once, so its dates "
 "added and favorites appear"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:205
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:220
 msgid "An album's page shows You Might Also Like"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:206
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:221
 msgid ""
 "Closing a filter with Escape leaves the focus on the item you were on, and "
 "clearing Up Next from the keyboard leaves it on the song playing"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:207
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:222
 msgid "The first shelf on Home shows its paging arrows"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:208
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:223
 msgid "Go to Current Song works in a filtered playlist"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:214
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:229
 msgid ""
 "The first release to stand behind: Apple Music's pages and the ways to look "
 "after your library that its own apps have, as far as the web player allows."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:219
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:234
 msgid ""
 "Charts, with Top Songs, Top Albums, Top Playlists, the Daily Top 100 and "
 "City Charts, and Apple Music's own Radio page"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:220
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:235
 msgid ""
 "An album's page ends with its release date and its other versions, music "
 "videos, more by the artist and what else you might like; a playlist's page "
@@ -397,7 +433,7 @@ msgid ""
 "to your library from the header"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:221
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:236
 msgid ""
 "Artist pages wear the artist's banner, show their latest release beside "
 "their top songs and their radio shows, and an artist can be made a favourite "
@@ -407,13 +443,13 @@ msgstr ""
 "their top songs and their radio shows, and an artist can be made a favorite "
 "with the star"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:222
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:237
 msgid ""
 "Search shows what you searched for recently, filters by kind and lists every "
 "result with See All, radio shows and curators among them"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:223
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:238
 msgid ""
 "Your favourite songs, albums, playlists and music videos show a heart, and "
 "Favourites Only shows them alone; Recently Added holds everything you added, "
@@ -425,13 +461,13 @@ msgstr ""
 "and albums sort by Date Added; Albums, Artists, Songs, Music Videos and a "
 "playlist's songs filter as you type"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:224
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:239
 msgid ""
 "Create Station from a song or an artist, Suggest Less, and Remove from "
 "Library"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:225
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:240
 msgid ""
 "Playlist folders: New Folder and Move to Folder, from a menu or by dragging "
 "in the sidebar; reorder a playlist's songs by dragging or with Alt+Up and "
@@ -439,39 +475,39 @@ msgid ""
 "one in the sidebar; drop songs on the player bar to queue them"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:226
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:241
 msgid ""
 "Up Next shows covers and what played before, removes songs, clears with Undo "
 "and carries on with similar songs through Autoplay; Now Playing is tinted by "
 "the artwork"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:227
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:242
 msgid ""
 "The last song you played is back, paused, when the app starts; live radio "
 "shows LIVE and Stop"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:228
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:243
 msgid ""
 "Lyrics and Up Next buttons on the player bar, and new keys: Ctrl+N for a new "
 "playlist, Ctrl+Up and Ctrl+Down for the volume, Ctrl+L to go to the current "
 "song, F5 to refresh Home"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:229
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:244
 msgid ""
 "Any Chromium-based browser with Widevine can play the music in place of "
 "Google Chrome"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:235
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:250
 msgid ""
 "Lyrics that follow the singers word by word, with translations and "
 "pronunciations, and a full-screen player."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:240
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:255
 msgid ""
 "Show Translations and Show Pronunciations, from a Translation and "
 "Pronunciation button in Now Playing: under each line its translation into "
@@ -479,19 +515,19 @@ msgid ""
 "when the song's lyrics have them"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:241
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:256
 msgid ""
 "In songs timed word by word, the words light as they are sung, in a smooth "
 "sweep, or a word or a syllable at a time with animations off"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:242
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:257
 msgid ""
 "Background vocals show as a smaller line of their own under the line they "
 "echo"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:243
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:258
 msgid ""
 "In a duet each singer's lines sit on their own side, and lines sung together "
 "are centred"
@@ -499,11 +535,11 @@ msgstr ""
 "In a duet each singer's lines sit on their own side, and lines sung together "
 "are centered"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:244
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:259
 msgid "Three dots fill in during a long instrumental break"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:245
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:260
 msgid ""
 "A full-screen player, from the Fullscreen button in Now Playing or F11: the "
 "artwork, the controls and the lyrics over the artwork's own colours, the "
@@ -513,62 +549,62 @@ msgstr ""
 "artwork, the controls and the lyrics over the artwork's own colors, the "
 "controls fading away while the music plays undisturbed"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:246
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:261
 msgid ""
 "The sidebar has a divider above Library and above Playlists, and a folder's "
 "playlists are indented under it"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:252
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:267
 msgid ""
 "Your playlists managed from the app, your library's artists as Apple Music's "
 "library shows them, and songs suggested for the playlists you make."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:257
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:272
 msgid ""
 "New Playlist, Rename, Delete and Remove from Playlist; playlists and folders "
 "listed as Apple Music lists them, folders first, each by title; Add to "
 "Playlist offers each folder as a submenu of what it holds"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:258
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:273
 msgid ""
 "Artists lists the artists in your library beside what you have of each, and "
 "an artist's menu opens their page on Apple Music"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:259
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:274
 msgid ""
 "Suggested Songs under a playlist you can edit: six songs Apple Music "
 "suggests, or twelve, each with a button to add it; Refresh asks for new "
 "ones, and an added song's place is filled at once"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:260
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:275
 msgid ""
 "A suggested song plays in full, or as a 30-second preview that leaves your "
 "queue as it was"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:261
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:276
 msgid "Refreshing the library skips the playlists that have not changed"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:262
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:277
 msgid ""
 "A column of the Songs table dragged wider or narrower follows the pointer "
 "and keeps its width"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:268
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:283
 msgid ""
 "A pass over the whole app against GNOME's Human Interface Guidelines, artist "
 "pages laid out as Apple Music's are, and a way from any song to its album "
 "and its artist."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:274
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:289
 msgid ""
 "An artist's page has what Apple Music's has: the latest release beside the "
 "top songs, essential albums, albums, singles and EPs, music videos, "
@@ -576,69 +612,69 @@ msgid ""
 "first"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:275
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:290
 msgid ""
 "Go to Album and Go to Artist in a song's menu, and in the player bar's and "
 "Now Playing's; the artist and the album in the Songs table are links to "
 "their pages"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:276
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:291
 msgid ""
 "A playlist's songs are a table in a wide window, as the Songs page's are, "
 "with the same links; the Songs filter is a search bar (Ctrl+F); the grid "
 "pages sort ascending or descending"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:277
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:292
 msgid ""
 "Clicking a song plays that song, where a list could start the one after it; "
 "the song playing is marked in its list, and the player bar shows only while "
 "something plays"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:278
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:293
 msgid ""
 "Typing in GNOME's Activities overview finds your artists, albums, playlists "
 "and songs, and opens or plays the one you choose"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:279
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:294
 msgid ""
 "Preferences' rows read as Settings' do, with a Last Refreshed row and its "
 "Refresh button; the sidebar is titled Music Sleeve; the library's pages "
 "offer Sign In while you are signed out"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:280
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:295
 msgid ""
 "Album and playlist pages fit a 360 px window, the player bar's title shows "
 "whole there, and the play button has its own play and pause icons, which no "
 "icon theme can swap"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:281
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:296
 msgid "Discord presence clears five seconds into a pause, as Spotify's does"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:287
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:302
 msgid "What you are listening to can now show on your Discord profile."
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:291
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:306
 msgid ""
 "Discord rich presence, off until you turn it on in Preferences: the song, "
 "its artist, its album and the album's cover, shown as listening to Apple "
 "Music, with the time left counting down"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:292
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:307
 msgid ""
 "The artist shows in the status under your name, and the presence is taken "
 "off when playback ends or the app quits"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:298
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:313
 msgid ""
 "The first release candidate. With Google Chrome and an Apple Music "
 "subscription, it plays your library and Apple Music's catalogue:"
@@ -646,27 +682,27 @@ msgstr ""
 "The first release candidate. With Google Chrome and an Apple Music "
 "subscription, it plays your library and Apple Music's catalog:"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:303
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:318
 msgid ""
 "Your albums, artists, songs, music videos, playlists and playlist folders, "
 "synced from your account and browsable offline"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:304
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:319
 msgid ""
 "Home, New, Radio, Made for You and Search, with a page for every album, "
 "playlist and artist"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:305
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:320
 msgid "A player bar and a Now Playing view with synced lyrics and the queue"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:306
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:321
 msgid "GNOME's media controls and the keyboard's media keys"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:307
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:322
 msgid ""
 "Favourites, Play Next and Play Later, and adding to your library and "
 "playlists from context menus or by dragging songs"
@@ -674,13 +710,13 @@ msgstr ""
 "Favorites, Play Next and Play Later, and adding to your library and "
 "playlists from context menus or by dragging songs"
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:308
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:323
 msgid ""
 "Playback in the background with the window closed, keyboard navigation "
 "throughout, and screen reader labels"
 msgstr ""
 
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:309
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:324
 msgid ""
 "Keys as elsewhere in GNOME: Space presses a focused button and otherwise "
 "plays or pauses, and Ctrl+Shift+N opens Now Playing"
@@ -707,7 +743,9 @@ msgid "Mini player height"
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.gschema.xml:23
-msgid "The height of the mini player without its lyrics or Up Next pane."
+msgid ""
+"The height of the mini player, without what it grew by to make room for its "
+"lyrics or Up Next pane."
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.gschema.xml:32
@@ -726,8 +764,8 @@ msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.gschema.xml:38
 msgid ""
-"The height of the mini player's lyrics or Up Next pane; the mini player's "
-"own height is without it."
+"The height the mini player's lyrics or Up Next pane takes from the bottom of "
+"its window, under the divider."
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.gschema.xml:42
@@ -2309,7 +2347,7 @@ msgstr ""
 
 #: src/window.py:1069 src/player_bar.py:179 src/player_bar.blp:95
 #: src/widgets/now_playing.blp:179 src/widgets/fullscreen_player.blp:145
-#: src/widgets/mini_player.blp:107 src/widgets/transport.py:212
+#: src/widgets/mini_player.blp:115 src/widgets/transport.py:212
 msgid "Not Playing"
 msgstr ""
 
@@ -2576,26 +2614,26 @@ msgstr ""
 #. ("Lyrics"), {keys} its key ("Shift+Ctrl+L").
 #. Translators: a button's tooltip with its shortcut: {tooltip} is what it
 #. does ("Lyrics"), {keys} its key ("Shift+Ctrl+L").
-#: src/player_bar.py:324 src/widgets/mini_player.py:144
+#: src/player_bar.py:324 src/widgets/mini_player.py:173
 #, python-brace-format
 msgid "{tooltip} ({keys})"
 msgstr ""
 
 #: src/player_bar.blp:37 src/shortcuts.py:160 src/widgets/now_playing.blp:298
-#: src/widgets/fullscreen_player.blp:279 src/widgets/mini_player.blp:208
+#: src/widgets/fullscreen_player.blp:279 src/widgets/mini_player.blp:249
 msgid "Previous"
 msgstr ""
 
 #: src/player_bar.blp:49 src/pages/artist.blp:142
 #: src/pages/library_artist.blp:120 src/pages/detail.blp:216
 #: src/pages/songs.blp:129 src/widgets/now_playing.blp:311
-#: src/widgets/fullscreen_player.blp:292 src/widgets/mini_player.blp:221
+#: src/widgets/fullscreen_player.blp:292 src/widgets/mini_player.blp:262
 #: src/widgets/transport.py:248
 msgid "Play"
 msgstr ""
 
 #: src/player_bar.blp:62 src/shortcuts.py:159 src/widgets/now_playing.blp:324
-#: src/widgets/fullscreen_player.blp:305 src/widgets/mini_player.blp:234
+#: src/widgets/fullscreen_player.blp:305 src/widgets/mini_player.blp:275
 msgid "Next"
 msgstr ""
 
@@ -2614,13 +2652,13 @@ msgstr ""
 
 #. Translators: the name of the slider of the time played in the song.
 #: src/player_bar.blp:174 src/widgets/now_playing.blp:244
-#: src/widgets/fullscreen_player.blp:225 src/widgets/mini_player.blp:166
+#: src/widgets/fullscreen_player.blp:225 src/widgets/mini_player.blp:174
 msgid "Position"
 msgstr ""
 
 #. Translators: the badge in place of the position slider while a live radio station plays
 #: src/player_bar.blp:180 src/widgets/now_playing.blp:250
-#: src/widgets/fullscreen_player.blp:231 src/widgets/mini_player.blp:172
+#: src/widgets/fullscreen_player.blp:231 src/widgets/mini_player.blp:180
 msgctxt "live badge"
 msgid "LIVE"
 msgstr ""
@@ -2628,7 +2666,7 @@ msgstr ""
 #: src/player_bar.blp:181 src/player_bar.blp:186
 #: src/widgets/now_playing.blp:251 src/widgets/now_playing.blp:256
 #: src/widgets/fullscreen_player.blp:232 src/widgets/fullscreen_player.blp:237
-#: src/widgets/mini_player.blp:173 src/widgets/mini_player.blp:178
+#: src/widgets/mini_player.blp:181 src/widgets/mini_player.blp:186
 #: src/widgets/transport.py:238
 msgid "Live Radio"
 msgstr ""
@@ -2637,7 +2675,7 @@ msgstr ""
 #: src/pages/artist.blp:153 src/pages/artist.blp:158
 #: src/widgets/now_playing.blp:69 src/widgets/now_playing.blp:74
 #: src/widgets/fullscreen_player.blp:70 src/widgets/fullscreen_player.blp:75
-#: src/widgets/mini_player.blp:255 src/widgets/mini_player.blp:260
+#: src/widgets/mini_player.blp:220 src/widgets/mini_player.blp:225
 #: src/widgets/transport.py:717
 msgid "Favourite"
 msgstr "Favorite"
@@ -2645,19 +2683,19 @@ msgstr "Favorite"
 #: src/player_bar.blp:238 src/pages/library_artist.blp:133
 #: src/pages/detail.blp:229 src/pages/songs.blp:142
 #: src/widgets/now_playing.blp:286 src/widgets/fullscreen_player.blp:267
-#: src/widgets/mini_player.blp:272
+#: src/widgets/mini_player.blp:237
 msgid "Shuffle"
 msgstr ""
 
 #: src/player_bar.blp:249 src/widgets/now_playing.blp:337
-#: src/widgets/fullscreen_player.blp:318 src/widgets/mini_player.blp:284
+#: src/widgets/fullscreen_player.blp:318 src/widgets/mini_player.blp:288
 #: src/widgets/transport.py:486 src/widgets/transport.py:489
 msgid "Repeat"
 msgstr ""
 
 #. Translators: the volume button's name, as a screen reader hears it.
 #: src/player_bar.blp:272 src/widgets/now_playing.blp:98
-#: src/widgets/fullscreen_player.blp:98 src/widgets/mini_player.blp:308
+#: src/widgets/fullscreen_player.blp:98 src/widgets/mini_player.blp:312
 #: src/widgets/transport.py:540
 msgid "Volume"
 msgstr ""
@@ -2665,12 +2703,12 @@ msgstr ""
 #: src/player_bar.blp:286 src/player_bar.blp:291 src/widgets/lyrics.py:173
 #: src/widgets/lyrics.py:191 src/widgets/lyrics.py:225
 #: src/widgets/lyrics.py:355 src/widgets/now_playing.py:134
-#: src/widgets/mini_player.blp:62 src/widgets/mini_player.blp:66
+#: src/widgets/mini_player.blp:63 src/widgets/mini_player.blp:67
 msgid "Lyrics"
 msgstr ""
 
 #: src/player_bar.blp:301 src/player_bar.blp:306 src/widgets/now_playing.py:135
-#: src/widgets/mini_player.blp:51 src/widgets/mini_player.blp:55
+#: src/widgets/mini_player.blp:52 src/widgets/mini_player.blp:56
 #: src/widgets/queue.py:571
 msgid "Up Next"
 msgstr ""
@@ -3646,11 +3684,11 @@ msgstr ""
 msgid "Leave Fullscreen"
 msgstr ""
 
-#: src/widgets/mini_player.blp:42
+#: src/widgets/mini_player.blp:43
 msgid "Return to Main Window"
 msgstr ""
 
-#: src/widgets/mini_player.py:321
+#: src/widgets/mini_player.py:353
 msgid "Mini Player"
 msgstr ""
 
