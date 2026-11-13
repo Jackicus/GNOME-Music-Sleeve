@@ -14,8 +14,8 @@ code they justify: `pages/songs.py` (GTK's sorters and filters over Python objec
 rebuilding), `pages/grid.py` (expression sorters against a custom sorter), the library package
 (`library/objects.py`: `raw_property`'s memory; `records.py`: `TrackRecord`'s; `songs.py`:
 `SongOrder`'s keys; `diff.py`: `apply_diff`; `pacing.py`: `paused_gc`, `yield_to_frames`), and `widgets/artwork.py` (texture sizes, the cache budget). The
-performance pass that produced most of them is written up in `docs/history/build-plan.md`, in
-its "Performance pass" section.
+performance pass that produced most of them was the build plan's (2026-09; the plan is in
+the repository's history, up to v1.3.1).
 
 ## The development machine
 
@@ -98,7 +98,7 @@ warnings a Songs scroll, which main's constant-size SongTitle (b1d6bbc, #565) st
 Python layout manager costs less than the warnings did. The earlier figures, for
 reference: startup's own share 172-220 ms (2026-10-20, issue 476); Favourite Songs' first
 switch 77-91 ms and 226-229 MB after browsing (2026-10-21, issue 527); Albums' scroll 2.3 /
-3.5 / 9.6 ms (docs/history/build-plan.md), Songs' 4.6 ms (longest 12.6) and the long
+3.5 / 9.6 ms (the build plan's performance pass, 2026-09), Songs' 4.6 ms (longest 12.6) and the long
 playlist's 4.3-4.5 (issues 527 and 363); the pages step +2.8 MB under load (issue 541).
 Swap grew from 1.3 to 2.2 GB over the four series from something else on the desktop; the
 memory readings agree with each other across it.

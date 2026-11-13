@@ -1029,7 +1029,7 @@ TRACK_B = dict(TRACK, id='i.demo0002', catalogId='1000000002', title='Pilot Ligh
 B_PATH = '/io/github/jackicus/MusicSleeve/track/3/i_2edemo0002'
 ALL_CANS = ['CanGoNext', 'CanGoPrevious', 'CanPause', 'CanPlay', 'CanSeek']
 
-# The event sequences seen live (docs/history/build-plan.md, phases 9, 12, 13 and 17),
+# The event sequences seen live (as the engine, playback and MPRIS were first built),
 # each a list of steps: (event, data, what holds after it). `advance` moves the patched
 # clock, `grace` lets a null item's grace run out, `play` sends a play request that the
 # engine holds until `answer`. What holds: the Player's `track` (an id or None), `state`,

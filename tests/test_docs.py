@@ -11,7 +11,6 @@
 - no internal review or plan IDs (C123, WP12, P01-2, X6-5, D10) in any of these documents
   (CLAUDE.md, the rules, the skills, docs/, the READMEs), and no phase numbers in the code's
   comments: they mean nothing outside the audit and the build plan that used them.
-  docs/history/ is history and is left alone.
 """
 
 import glob
