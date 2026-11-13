@@ -130,14 +130,18 @@ touches widgets.
 - **Sync** (`sync.py`): fetches the library through the engine, turns Apple's answers into the
   library.json shapes with the backend's pure functions, downloads missing thumbnails, writes
   the file atomically and has the library reload itself in place.
-- **Engine** (`engine.py` over `backend/`): Chrome's lifecycle, the one CDP connection over
+- **Engine** (`engine/` over `backend/`): Chrome's lifecycle, the one CDP connection over
   Chrome's pipe, attached to the music.apple.com page, and every command as a coroutine; a
   command issued while Chrome starts waits for it. It says through `lost(reason)` when it goes
   down on its own. Before spawning Chrome on a profile whose cookies are encrypted with a key
   in the desktop's keyring, it checks that the keyring answers on the session bus Chrome will
   use (the app's, or `APPLE_MUSIC_HOST_SESSION_BUS`) and refuses otherwise, since a Chrome
-  without its key deletes those cookies, the sign-in among them. The backend package is the
-  standard library and asyncio only.
+  without its key deletes those cookies, the sign-in among them. `engine/core.py` is the
+  `Engine` class (its lifecycle, the page's state, sign-in), the one module that imports
+  `backend.chrome` and `backend.client`; the commands are mixins of it, one module per area:
+  `reads.py` (the API reads and the day-long kept answers), `playback.py`, `edits.py` (the
+  account's writes), `catalog.py` and `browse.py`. The backend package is the standard
+  library and asyncio only.
 - **Player** (`player.py`): what is playing, as GObject properties fed by MusicKit's events,
   and the playback commands. The player bar, the Now Playing sheet and MPRIS all follow it.
 - **The last session** (`session.py`): the `SessionKeeper` (`app.session`) writes what the

@@ -1,23 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""Unit tests for src/engine.py: the Engine's lifecycle and commands against a fake Chrome.
-
-The tests run on gi.events' GLib-backed loop, as the app does, and the Engine spawns "Chrome"
-through its own Gio.Subprocess code with the DevTools pipe on descriptors 3 and 4: only the
-binary is fake. It is tests/fake_chrome_relay.py, which relays the pipe to the fake browser the
-test runs on a Unix socket (UnixFakeChrome, test_client's FakeBrowser), so signals, exits and
-the pipe closing are real. chrome.find_chrome is patched to name it, so nothing looks for, or
-runs, a real Chrome. No display: the Engine is a GObject.
-"""
+"""Unit tests for src/engine/core.py: the Engine's lifecycle, its connection, the reads the
+commands rest on (an API read, a full Item), and signing in, against a fake Chrome
+(tests/engine_fixture.py)."""
 
 import asyncio
 import json
 import os
 import pathlib
-import re
 import select
-import shlex
 import shutil
 import signal
 import socket
@@ -26,249 +18,21 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import UTC, datetime
 from unittest import mock
 
 from tests import ROOT, SRC  # noqa: F401  (registers src/ as the applemusic package)
 
-from gi.events import GLibEventLoop
 from gi.repository import Gio, GLib
 
-from applemusic import engine as engine_module
-from applemusic.backend import api, chrome, normalize, store
+from applemusic.backend import chrome, normalize
 from applemusic.backend import client as client_module
 from applemusic.backend.errors import EngineError
 from applemusic.engine import Engine
-from tests.test_client import FakeBrowser, FakePage, context_created, thrown, until, value
-
-FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
-RELAY = pathlib.Path(__file__).parent / 'fake_chrome_relay.py'
-PLAYBACK_METHODS = ('signout', 'play', 'playNext', 'playLater', 'control', 'seek', 'volume',
-                    'shuffle',
-                    'repeat', 'nowPlaying', 'queue', 'queueJump', 'queueRemove', 'queueMove',
-                    'queueClear', 'queueUndoClear', 'autoplay', 'lyrics',
-                    'search', 'suggest', 'searchLanding', 'category', 'playlistSuggestions',
-                    'rating', 'addToLibrary', 'removeFromLibrary', 'libraryHas',
-                    'addToPlaylist', 'createPlaylist',
-                    'updatePlaylist', 'deletePlaylist', 'removeFromPlaylist',
-                    'replacePlaylistTracks', 'updateFolder', 'deleteFolder', 'createFolder',
-                    'moveToFolder', 'preview',
-                    'stopPreview', 'favourite', 'apiFresh')
-
-
-class UnixFakeChrome(FakeBrowser):
-    """FakeBrowser behind a Unix socket, where each fake Chrome the engine starts connects
-    (its first line says its pid and argv, in `chromes`). The latest connection is the one
-    answered; drop() hangs up on it, which ends that Chrome."""
-
-    def __init__(self):
-        super().__init__()
-        self.chromes = []
-        self.server = None
-        self.writer = None
-
-    async def start(self, path):
-        self.server = await asyncio.start_unix_server(self._serve, path, limit=1 << 24)
-
-    async def _serve(self, reader, writer):
-        try:
-            hello = json.loads(await reader.readline())
-        except (ValueError, ConnectionError):
-            writer.close()
-            return
-        self.chromes.append(hello)
-        self.writer = writer
-        buffer = b''
-        try:
-            while chunk := await reader.read(1 << 20):
-                buffer += chunk
-                *messages, buffer = buffer.split(b'\0')
-                for message in messages:
-                    await self.on_message(json.loads(message))
-        except ConnectionError:
-            pass
-        finally:
-            writer.close()
-
-    async def write(self, payload):
-        if self.writer is not None and not self.writer.is_closing():
-            self.writer.write(payload + b'\0')
-            await self.writer.drain()
-
-    async def drop(self):
-        """This Chrome goes: the relay sees the socket close and exits."""
-        if self.writer is not None:
-            self.writer.close()
-
-    async def close(self):
-        if self.writer is not None:
-            self.writer.close()
-        self.server.close()
-        await self.server.wait_closed()
-
-    @property
-    def argv(self):
-        """The latest Chrome's arguments (without the binary)."""
-        return self.chromes[-1]['argv']
-
-
-class EnginePage(FakePage):
-    """The fake page: the bridge's status(), drm(), signin(), api() and apiAll(), and the
-    account name lookup, on top of FakePage's probe/inject/subscribe."""
-
-    def __init__(self):
-        super().__init__()
-        self.authorized = False
-        self.storefront = 'us'
-        self.api_answers = {}   # path, or (path, offset) for a page -> answer dict
-        self.api_calls = []
-        self.api_params = []    # the params of each api() call, in order
-        self.signin_calls = 0
-        self.account = None
-        self.bridge_calls = []  # (method, args) of the playback commands
-        self.bridge_answers = {}  # method -> what it answers (None: {ok: True})
-        self.status_reads = 0   # the bridge's status() calls
-        self.widevine = True    # drm()'s answer; None: it throws
-        self.drm_reads = 0
-        self.bitrate = 256      # mk.bitrate, as status() and bitrate() answer it
-        self.bitrate_calls = []  # what each bitrate() call asked
-
-    def __call__(self, message):
-        expression = message['params']['expression']
-        match = re.match(r'window\.__appleMusicLibrary\.(\w+)\((.*)\)$', expression, re.S)
-        if expression == 'window.__appleMusicLibrary.drm()':
-            self.drm_reads += 1
-            if self.widevine is None:
-                return thrown('TypeError: navigator is undefined')
-            return value({'widevine': True} if self.widevine else {
-                'widevine': False, 'error': 'Unsupported keySystem or supportedConfigurations.'})
-        if match and match.group(1) in PLAYBACK_METHODS:
-            args = json.loads('[' + match.group(2) + ']') if match.group(2) else []
-            self.bridge_calls.append((match.group(1), *args))
-            return value(self.bridge_answers.get(match.group(1), {'ok': True}))
-        if match and match.group(1) == 'bitrate':
-            asked = json.loads(match.group(2))
-            self.bitrate_calls.append(asked)
-            if asked is not None:
-                self.bitrate = 64 if asked == 64 else 256  # bridge.js's PlaybackBitrate
-            return value({'bitrate': self.bitrate})
-        if expression == 'window.__appleMusicLibrary.status()':
-            self.status_reads += 1
-            return value(self.status())
-        if expression == 'window.__appleMusicLibrary.signin()':
-            self.signin_calls += 1
-            return None  # hangs, as mk.authorize() does until the user acts
-        if expression.startswith('window.__appleMusicLibrary.api('):
-            path, params = json.loads(
-                '[' + expression[len('window.__appleMusicLibrary.api('):-1] + ']')
-            self.api_calls.append(path)
-            self.api_params.append(params)
-            answer = self.api_answers.get((path, params.get('offset')))
-            if answer is None:
-                answer = self.api_answers.get(path, {'errors': [{'status': '404', 'title': 'no'}]})
-            return value(answer)
-        if expression.startswith('window.__appleMusicLibrary.apiAll('):
-            paths = json.loads(expression[len('window.__appleMusicLibrary.apiAll('):-1])
-            self.api_calls.extend(paths)
-            return value([self.api_answers.get(path) for path in paths])
-        if expression == 'window.__appleMusicLibrary.accountName()':
-            return value(self.account)
-        return super().__call__(message)
-
-    def status(self):
-        return {'ready': self.ready, 'engine': True, 'authorized': self.authorized,
-                'storefront': self.storefront, 'bitrate': self.bitrate}
-
-
-class TestEngine(Engine):
-    """An Engine that keeps every Chrome it spawned (the Gio.Subprocess and its argv)."""
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.spawned = []   # [(process, argv)]
-
-    def _spawn(self, argv, name=None, environment=None):
-        process, transport = super()._spawn(argv, name, environment)
-        self.spawned.append((process, argv))
-        return process, transport
-
-
-def exited(process):
-    """Whether a Gio.Subprocess has ended (and been reaped)."""
-    return process.get_identifier() is None
-
-
-class EngineFixture(unittest.IsolatedAsyncioTestCase):
-    """The fake Chrome, its page and a TestEngine on them. No tests of its own: the classes
-    below subclass it, and a test here would run once for each of them."""
-
-    loop_factory = GLibEventLoop
-
-    # Seconds before the engine's first retry of a failed API read (doubling after): short,
-    # so a read that fails every attempt takes milliseconds rather than 1.5 s.
-    api_retry_delay = 0.01
-
-    async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        root = pathlib.Path(self.tmp.name)
-        self.profile = root / 'chrome-test'
-        self.cache = root / 'cache'
-        self.log_file = root / 'chrome.log'
-        # The fake google-chrome-stable: the relay, on this Python.
-        self.binary = root / 'google-chrome-stable'
-        python, relay = shlex.quote(sys.executable), shlex.quote(str(RELAY))
-        self.binary.write_text(f'#!/bin/sh\nexec {python} -S {relay} "$@"\n')
-        self.binary.chmod(0o755)
-        self.chrome = UnixFakeChrome()
-        self.page = EnginePage()
-        self.chrome.responders['Runtime.evaluate'] = self.page
-        await self.chrome.start(str(root / 'chrome.sock'))
-        environment = {'APPLE_MUSIC_CACHE': str(self.cache),
-                       'FAKE_CHROME_SOCKET': str(root / 'chrome.sock'),
-                       'FAKE_CHROME_LOG': str(self.log_file), 'FAKE_CHROME_MODE': ''}
-        patcher = mock.patch.dict(os.environ, environment)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        for name in ('APPLE_MUSIC_DEBUG_PORT', 'APPLE_MUSIC_PROFILE',
-                     'APPLE_MUSIC_HOST_SESSION_BUS'):
-            os.environ.pop(name, None)
-        self.browser_commands = []
-        patcher = mock.patch.object(chrome, 'find_chrome', self.find_chrome)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.engine = TestEngine(profile_dir=self.profile)
-        self.engine.stop_grace = 0.5
-        self.engine.close_wait = 0.2
-        self.engine.api_retry_delay = self.api_retry_delay
-        self.states = []
-        self.engine.connect('notify::state', lambda e, _p: self.states.append(e.state))
-
-    async def asyncTearDown(self):
-        await self.engine.stop()
-        for process, _argv in self.engine.spawned:
-            if not exited(process):
-                process.force_exit()
-        await self.chrome.close()
-
-    def find_chrome(self, command=None):
-        self.browser_commands.append(command)
-        return str(self.binary)
-
-    def chrome_mode(self, mode):
-        """How the next fake Chrome behaves: '', 'stubborn' or 'exit:N' (the relay's)."""
-        os.environ['FAKE_CHROME_MODE'] = mode
-
-    def chrome_log(self):
-        """What the fake Chromes did, as (event, pid) pairs."""
-        try:
-            lines = self.log_file.read_text().split()
-        except OSError:
-            return []
-        return [(lines[i], int(lines[i + 1])) for i in range(0, len(lines), 2)]
-
-    async def wait_exited(self, process, timeout=3.0):
-        await until(lambda: exited(process), timeout=timeout)
+from applemusic.engine import catalog as catalog_module
+from applemusic.engine import core as core_module
+from applemusic.engine import reads as reads_module
+from tests.engine_fixture import FIXTURES, EngineFixture, exited
+from tests.test_client import context_created, thrown, until, value
 
 
 class LifecycleTest(EngineFixture):
@@ -318,7 +82,7 @@ class LifecycleTest(EngineFixture):
                          os.environ.get('DBUS_SESSION_BUS_ADDRESS'))
 
     async def test_the_exec_line_leaves_the_profile_s_path_out(self):
-        with self.assertLogs(engine_module.log, 'DEBUG') as logs:
+        with self.assertLogs('applemusic.engine', 'DEBUG') as logs:
             await self.engine.start()
         exec_lines = [line for line in logs.output if ':exec ' in line]
         self.assertEqual(len(exec_lines), 1)
@@ -328,7 +92,7 @@ class LifecycleTest(EngineFixture):
 
     async def test_the_debug_port_is_opt_in_and_warned_about(self):
         os.environ['APPLE_MUSIC_DEBUG_PORT'] = '9300'
-        with self.assertLogs(engine_module.log, 'WARNING') as logs:
+        with self.assertLogs('applemusic.engine', 'WARNING') as logs:
             await self.engine.start()
         argv = self.chrome.argv
         self.assertIn('--remote-debugging-pipe', argv)
@@ -384,7 +148,7 @@ class LifecycleTest(EngineFixture):
         process, _ = self.engine.spawned[0]
         pid = self.engine.pid
         started = time.monotonic()
-        with self.assertLogs(engine_module.log, 'WARNING'):  # ignored SIGTERM; killed
+        with self.assertLogs('applemusic.engine', 'WARNING'):  # ignored SIGTERM; killed
             await self.engine.stop()
         self.assertIn(('term', pid), self.chrome_log())
         self.assertTrue(exited(process))
@@ -410,7 +174,7 @@ class LifecycleTest(EngineFixture):
         await self.engine.start()
         process, _ = self.engine.spawned[0]
         pid = self.engine.pid
-        with self.assertLogs(engine_module.log, 'WARNING'):  # ignored SIGTERM; killed
+        with self.assertLogs('applemusic.engine', 'WARNING'):  # ignored SIGTERM; killed
             await self.engine.stop()
         self.assertTrue(answered.is_set())
         self.assertIn(('term', pid), self.chrome_log())
@@ -424,7 +188,7 @@ class LifecycleTest(EngineFixture):
         await self.engine.start()
         process, _ = self.engine.spawned[0]
         started = time.monotonic()
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             await self.engine.stop(grace=0.1)
         self.assertLess(time.monotonic() - started, 2)
         self.assertEqual(process.get_term_sig(), signal.SIGKILL)
@@ -440,7 +204,7 @@ class LifecycleTest(EngineFixture):
         with self.assertRaises(TimeoutError):
             await asyncio.wait_for(self.engine.stop(), 0.25)  # cancelled inside SIGTERM's grace
         self.assertEqual(self.engine.pid, pid)  # not forgotten
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             self.engine.kill()
         await self.wait_exited(process, timeout=1)
         self.assertIn(('term', pid), self.chrome_log())
@@ -486,7 +250,7 @@ class LifecycleTest(EngineFixture):
 
     async def test_a_failing_start_fails_every_waiter_with_its_code(self):
         self.page.ready = False
-        with mock.patch.object(engine_module, 'BRIDGE_WAIT', 0.15):
+        with mock.patch.object(core_module, 'BRIDGE_WAIT', 0.15):
             results = await asyncio.gather(
                 self.engine.start(), self.engine.start(), self.engine.control('pause'),
                 return_exceptions=True)
@@ -518,7 +282,7 @@ class LifecycleTest(EngineFixture):
         self.engine.connect('lost', lambda e, reason: lost.append(reason))
         await self.engine.start()
         process, _ = self.engine.spawned[0]
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             self.engine.kill()
         self.assertEqual((self.engine.state, self.engine.pid), ('down', None))
         await self.wait_exited(process)
@@ -553,7 +317,7 @@ class LifecycleTest(EngineFixture):
 
     async def test_a_failed_start_cleans_up(self):
         self.page.ready = False
-        with mock.patch.object(engine_module, 'BRIDGE_WAIT', 0.15):
+        with mock.patch.object(core_module, 'BRIDGE_WAIT', 0.15):
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.start()
         self.assertEqual(ctx.exception.code, 'timeout')
@@ -573,7 +337,7 @@ class LifecycleTest(EngineFixture):
     async def test_a_browser_that_cannot_be_started_is_no_browser(self):
         missing = str(self.profile.parent / 'no-such-chrome')
         with mock.patch.object(chrome, 'find_chrome', lambda command: missing), \
-                mock.patch.object(engine_module, 'with_pdeathsig', list):
+                mock.patch.object(core_module, 'with_pdeathsig', list):
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.start()
         self.assertEqual(ctx.exception.code, 'no-browser')
@@ -605,7 +369,7 @@ class LifecycleTest(EngineFixture):
         def broken(*args, **kwargs):
             raise RuntimeError('a bug in the argv')
         with mock.patch.object(chrome, 'chrome_args', broken):
-            with self.assertLogs(engine_module.log, 'ERROR'):
+            with self.assertLogs('applemusic.engine', 'ERROR'):
                 with self.assertRaises(EngineError) as ctx:
                     await self.engine.start()
         self.assertEqual((ctx.exception.code, ctx.exception.message),
@@ -667,7 +431,7 @@ class LifecycleTest(EngineFixture):
         await self.engine.start()
         self.assertEqual(lost, [])  # asked for: not lost
         process, _ = self.engine.spawned[-1]
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             await self.chrome.drop()
             await until(lambda: self.engine.state == 'down', timeout=3)
         await self.wait_exited(process)
@@ -676,7 +440,7 @@ class LifecycleTest(EngineFixture):
 
     async def test_a_crashed_page_takes_the_engine_down(self):
         await self.engine.start()
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             await self.chrome.send_event('Inspector.targetCrashed', {})
             await until(lambda: self.engine.state == 'down', timeout=3)
         await self.wait_exited(self.engine.spawned[0][0])
@@ -727,7 +491,7 @@ class LifecycleTest(EngineFixture):
         await self.engine.start()
         process, _ = self.engine.spawned[0]
         await self.wedge(lambda expression: True)
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.control('pause')
             self.assertEqual(ctx.exception.code, 'timeout')
@@ -738,7 +502,7 @@ class LifecycleTest(EngineFixture):
     async def test_a_slow_api_read_leaves_a_page_that_answers_up(self):
         await self.engine.start()
         await self.wedge(lambda js: js.startswith('window.__appleMusicLibrary.api('))
-        with mock.patch.object(engine_module, 'API_RETRIES', 1):
+        with mock.patch.object(reads_module, 'API_RETRIES', 1):
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.api('/v1/me/library/songs')
         self.assertEqual(ctx.exception.code, 'timeout')
@@ -785,7 +549,7 @@ class LifecycleTest(EngineFixture):
             self.page.api_answers['/v1/busy'] = {'errors': [{'status': status, 'title': 'Busy'}]}
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.api('/v1/busy')
-            self.assertEqual(self.page.api_calls, ['/v1/busy'] * engine_module.API_RETRIES)
+            self.assertEqual(self.page.api_calls, ['/v1/busy'] * reads_module.API_RETRIES)
         self.assertIsNone(ctx.exception.status)
         # A retried read that passes answers.
         self.page.api_calls.clear()
@@ -850,7 +614,7 @@ class LifecycleTest(EngineFixture):
         self.page.api_answers[(path, 4)] = {'data': [{'id': 'd'}], 'meta': {'total': 5}}
         items = await self.engine.api_pages(path, page=2)
         self.assertEqual([item['id'] for item in items], ['a', 'b', 'b', 'c', 'd'])
-        with self.assertLogs(engine_module.log, 'DEBUG') as logs:
+        with self.assertLogs('applemusic.engine', 'DEBUG') as logs:
             items = await self.engine.api_pages(path, page=2, unique=True)
         self.assertEqual([item['id'] for item in items], ['a', 'b', 'c', 'd'])
         self.assertIn('5 items, 4 of them once', logs.output[-1])
@@ -923,7 +687,7 @@ class LifecycleTest(EngineFixture):
     async def test_item_library_ids_go_to_the_library_and_a_miss_is_api(self):
         self.page.authorized = True
         await self.engine.start()
-        with mock.patch.object(engine_module, 'API_RETRIES', 1):
+        with mock.patch.object(reads_module, 'API_RETRIES', 1):
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.item('playlist', 'p.abc')
         self.assertEqual(ctx.exception.code, 'api')
@@ -969,7 +733,7 @@ class LifecycleTest(EngineFixture):
             'data': stubs(3, 4), 'next': f'{base}/albums?offset=4'}
         self.page.api_answers[f'{base}/albums?offset=4'] = {'data': stubs(5)}
         await self.engine.start()
-        with mock.patch.object(engine_module, 'ALBUM_BATCH', 2), \
+        with mock.patch.object(catalog_module, 'ALBUM_BATCH', 2), \
                 mock.patch.object(normalize, 'download_item_art',
                                   lambda item, cache_dir, art_urls, generation: item):
             item = await self.engine.item('artist', '42')
@@ -1037,7 +801,7 @@ class LifecycleTest(EngineFixture):
         def full(*args):
             raise OSError(28, 'No space left on device')
 
-        with mock.patch.object(engine_module, '_shape_item', full):
+        with mock.patch.object(catalog_module, '_shape_item', full):
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.item('album', '1724040700')
         self.assertEqual(ctx.exception.code, 'api')
@@ -1057,7 +821,7 @@ class LifecycleTest(EngineFixture):
 
     async def test_signin_polls_the_status(self):
         await self.engine.start()
-        with mock.patch.object(engine_module, 'SIGNIN_POLL', 0.1):
+        with mock.patch.object(core_module, 'SIGNIN_POLL', 0.1):
             task = asyncio.create_task(self.engine.signin(timeout=5))
             await asyncio.sleep(0.25)
             self.assertFalse(task.done())
@@ -1077,7 +841,7 @@ class LifecycleTest(EngineFixture):
                 return thrown('Error: the page is navigating')
             return page(message)
 
-        with mock.patch.object(engine_module, 'SIGNIN_POLL', 0.1):
+        with mock.patch.object(core_module, 'SIGNIN_POLL', 0.1):
             task = asyncio.create_task(self.engine.signin(timeout=0.5))
             await until(lambda: self.engine.state == 'signing-in')
             self.chrome.responders['Runtime.evaluate'] = navigating
@@ -1091,7 +855,7 @@ class LifecycleTest(EngineFixture):
 
     async def test_signin_times_out(self):
         await self.engine.start()
-        with mock.patch.object(engine_module, 'SIGNIN_POLL', 0.1):
+        with mock.patch.object(core_module, 'SIGNIN_POLL', 0.1):
             with self.assertRaises(EngineError) as ctx:
                 await self.engine.signin(timeout=0.3)
         self.assertEqual(ctx.exception.code, 'timeout')
@@ -1109,7 +873,7 @@ class LifecycleTest(EngineFixture):
 
     async def test_signin_when_the_engine_stops(self):
         await self.engine.start()
-        with mock.patch.object(engine_module, 'SIGNIN_POLL', 0.1):
+        with mock.patch.object(core_module, 'SIGNIN_POLL', 0.1):
             task = asyncio.create_task(self.engine.signin(timeout=5))
             await until(lambda: self.engine.state == 'signing-in')
             await self.engine.stop()
@@ -1125,7 +889,7 @@ class LifecycleTest(EngineFixture):
         self.assertEqual(self.page.signin_calls, 0)
 
     async def test_unauthorize_revokes_the_session_and_never_raises(self):
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             self.assertFalse(await self.engine.unauthorize())  # down: nothing to revoke with
         self.page.authorized = True
         await self.engine.start()
@@ -1133,14 +897,14 @@ class LifecycleTest(EngineFixture):
         self.assertEqual(self.page.bridge_calls, [('signout',)])
         self.assertFalse(self.engine.authorized)
         self.page.bridge_answers['signout'] = {'error': 'Unauthorized'}
-        with self.assertLogs(engine_module.log, 'WARNING') as logs:
+        with self.assertLogs('applemusic.engine', 'WARNING') as logs:
             self.assertFalse(await self.engine.unauthorize())
         self.assertIn('Unauthorized', logs.output[0])
         # A page that does not answer in time: False, after `timeout`.
         page = self.page
         self.chrome.responders['Runtime.evaluate'] = lambda message: (
             None if 'signout' in message['params']['expression'] else page(message))
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             self.assertFalse(await self.engine.unauthorize(timeout=0.2))
         self.assertEqual(self.engine.state, 'up')
 
@@ -1161,2568 +925,12 @@ class LifecycleTest(EngineFixture):
             await asyncio.sleep(0.15)
             self.page.account = 'Jo Bloggs'
 
-        with mock.patch.object(engine_module, 'ACCOUNT_NAME_POLL', 0.05):
+        with mock.patch.object(core_module, 'ACCOUNT_NAME_POLL', 0.05):
             appears = asyncio.create_task(later())
             self.assertEqual(await self.engine.account_name(wait=1), 'Jo Bloggs')
             await appears
             self.page.account = None
             self.assertEqual(await self.engine.account_name(wait=0.1), '')  # gives up
-
-
-class PlaybackTest(EngineFixture):
-    """The playback commands: thin calls into the bridge, their arguments as the bridge takes
-    them, their answers shaped, and the errors when the engine is down or signed out."""
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    async def test_play_sends_kind_id_and_options(self):
-        await self.up()
-        await self.engine.play('album', 'l.alb1')
-        await self.engine.play('playlist', 'p.pl1', start_with=3)
-        await self.engine.play('station', 'ra.1', shuffle=True)
-        await self.engine.play('album', 'l.alb1', shuffle=False)
-        self.assertEqual(self.page.bridge_calls, [
-            ('play', 'album', 'l.alb1', {'startWith': 0, 'shuffle': None}),   # as it is
-            ('play', 'playlist', 'p.pl1', {'startWith': 3, 'shuffle': None}),
-            ('play', 'station', 'ra.1', {'startWith': 0, 'shuffle': True}),
-            ('play', 'album', 'l.alb1', {'startWith': 0, 'shuffle': False}),  # in order
-        ])
-
-    async def test_a_track_row_names_the_item_that_must_play(self):
-        await self.up()
-        self.page.bridge_answers['play'] = {'ok': True, 'moved': {'from': 2, 'to': 3}}
-        with self.assertLogs('applemusic.engine', 'INFO') as logged:
-            await self.engine.play('album', 'l.alb1', start_with=2, start_id='i.song3')
-        self.assertEqual(self.page.bridge_calls[-1], (
-            'play', 'album', 'l.alb1', {'startWith': 2, 'shuffle': None, 'startId': 'i.song3'}))
-        self.assertIn('moved to 3', logged.output[0])
-
-    async def test_a_restored_session_starts_at_its_position_or_waits_paused(self):
-        await self.up()
-        self.page.bridge_answers['play'] = {'ok': True, 'sought': True}
-        with self.assertLogs('applemusic.engine', 'INFO') as logged:
-            await self.engine.play('songs', 'i.a,i.b', start_with=1, shuffle=False,
-                                   start_id='i.b', start_time=83)
-        self.assertIn('sought there', logged.output[0])
-        self.page.bridge_answers['play'] = {'ok': True}
-        await self.engine.play('album', 'l.alb1', start_with=1, start_id='i.b',
-                               start_time=83.5, paused=True)
-        self.assertEqual(self.page.bridge_calls[-2:], [
-            ('play', 'songs', 'i.a,i.b', {'startWith': 1, 'shuffle': False, 'startId': 'i.b',
-                                          'startTime': 83.0}),
-            ('play', 'album', 'l.alb1', {'startWith': 1, 'shuffle': None, 'startId': 'i.b',
-                                         'startTime': 83.5, 'paused': True}),
-        ])
-
-    async def test_a_refused_play_carries_musickits_code(self):
-        await self.up()
-        self.page.bridge_answers['play'] = {'error': 'Content unavailable',
-                                            'code': 'CONTENT_UNAVAILABLE'}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.play('album', '1000000002')
-        error = raised.exception
-        self.assertEqual((error.code, error.musickit_code), ('api', 'CONTENT_UNAVAILABLE'))
-        self.assertIn('Content unavailable', error.message)
-        self.page.bridge_answers['play'] = {'error': 'Something odd', 'code': ''}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.play('album', '1000000002')
-        self.assertIsNone(raised.exception.musickit_code)
-
-    async def test_play_needs_a_signed_in_engine(self):
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.play('album', 'l.alb1')
-        self.assertEqual(raised.exception.code, 'engine-down')
-        await self.up(authorized=False)
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.play('album', 'l.alb1')
-        self.assertEqual(raised.exception.code, 'not-signed-in')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_play_needs_a_target(self):
-        await self.up()
-        for kind, item_id in (('', 'x'), (None, 'x'), ('album', ''), ('album', None)):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.play(kind, item_id)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_a_browser_without_widevine_plays_no_song(self):
-        self.page.widevine = False
-        with self.assertLogs('applemusic.engine', 'WARNING') as logged:
-            await self.up()
-            await until(lambda: not self.engine.widevine)
-        self.assertIn('cannot decrypt Widevine (Unsupported keySystem', logged.output[0])
-        self.assertEqual(self.engine.state, 'up')  # the library, browsing and previews need none
-        for play in (self.engine.play('album', 'l.alb1'), self.engine.queue_jump(2)):
-            with self.assertRaises(EngineError) as raised:
-                await play
-            self.assertEqual(raised.exception.code, 'no-widevine')
-        await self.engine.preview('1724049301', 'https://example.invalid/tin-roof.m4a')
-        self.assertEqual([call[0] for call in self.page.bridge_calls], ['preview'])
-
-    async def test_a_play_waits_for_the_widevine_check(self):
-        self.page.widevine = False
-        with self.assertLogs('applemusic.engine', 'WARNING'):
-            await self.up()
-            # At once, before the check has answered: the play waits for it, then refuses.
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.play('album', 'l.alb1')
-        self.assertEqual(raised.exception.code, 'no-widevine')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_widevine_is_asked_once_per_start(self):
-        self.page.widevine = False
-        with self.assertLogs('applemusic.engine', 'WARNING'):
-            await self.up()
-            await until(lambda: not self.engine.widevine)
-        self.page.widevine = True   # another browser, named in Preferences
-        await self.engine.restart()
-        await self.engine.play('album', 'l.alb1')
-        self.assertTrue(self.engine.widevine)
-        self.assertEqual(self.page.drm_reads, 2)
-        await self.engine.status()
-        self.assertEqual(self.page.drm_reads, 2)
-
-    async def test_a_check_that_cannot_answer_lets_songs_play(self):
-        self.page.widevine = None
-        await self.up()
-        await self.engine.play('album', 'l.alb1')
-        self.assertTrue(self.engine.widevine)
-        self.assertEqual(self.page.drm_reads, 1)
-        self.assertEqual(self.page.bridge_calls[0][0], 'play')
-
-    async def test_play_next_and_later(self):
-        await self.up()
-        await self.engine.play_next('song', 'i.1')
-        await self.engine.play_later('album', 'l.2')
-        self.assertEqual(self.page.bridge_calls,
-                         [('playNext', 'song', 'i.1'), ('playLater', 'album', 'l.2')])
-
-    async def test_control_seek_volume(self):
-        await self.up()
-        for action in engine_module.CONTROL_ACTIONS:
-            await self.engine.control(action)
-        await self.engine.seek(42)
-        await self.engine.seek(-3)
-        self.page.bridge_answers['volume'] = {'volume': 0.5}
-        self.assertEqual(await self.engine.volume(0.5), 0.5)
-        self.page.bridge_answers['volume'] = None  # not a dict: the level asked for
-        self.assertEqual(await self.engine.volume(2), 1.0)
-        self.assertEqual(self.page.bridge_calls, [
-            ('control', 'play'), ('control', 'pause'), ('control', 'toggle'),
-            ('control', 'next'), ('control', 'previous'), ('control', 'stop'),
-            ('seek', 42.0), ('seek', 0.0), ('volume', 0.5), ('volume', 1.0)])
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.control('rewind')
-        self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_shuffle_and_repeat(self):
-        await self.up()
-        self.page.bridge_answers['shuffle'] = {'shuffle': 'on', 'repeat': 'none'}
-        self.page.bridge_answers['repeat'] = {'shuffle': 'on', 'repeat': 'all'}
-        self.assertEqual(await self.engine.shuffle('toggle'), {'shuffle': 'on', 'repeat': 'none'})
-        self.assertEqual(await self.engine.repeat('cycle'), {'shuffle': 'on', 'repeat': 'all'})
-        self.assertEqual(self.page.bridge_calls, [('shuffle', 'toggle'), ('repeat', 'cycle')])
-        for method, mode in (('shuffle', 'maybe'), ('repeat', 'twice')):
-            with self.assertRaises(EngineError) as raised:
-                await getattr(self.engine, method)(mode)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_now_playing_and_queue(self):
-        await self.up()
-        answer = {'state': 'playing', 'track': {'id': 'i.1', 'title': 'Harbour Lights'},
-                  'position': 3, 'duration': 200, 'shuffle': 'off', 'repeat': 'none',
-                  'volume': 1}
-        self.page.bridge_answers['nowPlaying'] = answer
-        self.page.bridge_answers['queue'] = {'index': 1, 'items': [{'id': 'i.0'}, {'id': 'i.1'}]}
-        self.assertEqual(await self.engine.now_playing(), answer)
-        self.assertEqual((await self.engine.queue())['index'], 1)
-        self.assertEqual(self.page.bridge_calls, [('nowPlaying',), ('queue',)])
-        self.page.bridge_answers['nowPlaying'] = None
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.now_playing()
-        self.assertEqual(raised.exception.code, 'api')
-
-    async def test_queue_jump(self):
-        await self.up()
-        await self.engine.queue_jump(3)
-        self.assertEqual(self.page.bridge_calls, [('queueJump', 3)])
-        for index in (-1, 'x', None, 2.5, True):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.queue_jump(index)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_queue_edits(self):
-        await self.up()
-        await self.engine.queue_remove(4, 'i.abc')
-        await self.engine.queue_remove(4, 'i.abc', edit=7)
-        await self.engine.queue_move(4, 2, 'i.abc', edit=8)
-        await self.engine.queue_move(2, 5, 'i.abc', edit=True)  # not a number: none
-        self.page.bridge_answers['queueClear'] = {'ok': True, 'cleared': 3}
-        self.assertEqual(await self.engine.queue_clear(), 3)
-        self.page.bridge_answers['queueUndoClear'] = {'ok': True, 'restored': 3}
-        self.assertEqual(await self.engine.queue_undo_clear(), 3)
-        self.assertEqual(self.page.bridge_calls, [('queueRemove', 4, 'i.abc', None),
-                                                  ('queueRemove', 4, 'i.abc', 7),
-                                                  ('queueMove', 4, 2, 'i.abc', 8),
-                                                  ('queueMove', 2, 5, 'i.abc', None),
-                                                  ('queueClear',), ('queueUndoClear',)])
-        for bad in ((-1, 'i.a'), ('1', 'i.a'), (True, 'i.a'), (2, '')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.queue_remove(*bad)
-            self.assertEqual(raised.exception.code, 'usage')
-        for bad in ((-1, 2, 'i.a'), (2, -1, 'i.a'), (2, '3', 'i.a'), (False, 2, 'i.a'),
-                    (2, 3, '')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.queue_move(*bad)
-            self.assertEqual(raised.exception.code, 'usage')
-        refusals = {'NOT_EDITABLE': 'queue-locked', 'CURRENT': 'queue-changed',
-                    'STALE': 'queue-changed', 'SECTION': 'queue-changed', 'ODD': 'api'}
-        for refusal, code in refusals.items():
-            self.page.bridge_answers['queueRemove'] = {'error': 'no', 'code': refusal}
-            self.page.bridge_answers['queueMove'] = {'error': 'no', 'code': refusal}
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.queue_remove(2, 'i.a')
-            self.assertEqual(raised.exception.code, code, refusal)
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.queue_move(2, 3, 'i.a')
-            self.assertEqual(raised.exception.code, code, refusal)
-        self.page.bridge_answers['queueUndoClear'] = {'error': 'nothing', 'code': 'STALE'}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.queue_undo_clear()
-        self.assertEqual(raised.exception.code, 'queue-changed')
-
-    async def test_autoplay(self):
-        await self.up()
-        self.page.bridge_answers['autoplay'] = {'autoplay': True, 'canAutoplay': False}
-        self.assertEqual(await self.engine.set_autoplay(True),
-                         {'autoplay': True, 'canAutoplay': False})
-        self.page.bridge_answers['autoplay'] = None   # not a dict: what was asked
-        self.assertEqual(await self.engine.set_autoplay(False),
-                         {'autoplay': False, 'canAutoplay': True})
-        await self.engine.set_autoplay(None)
-        self.assertEqual(self.page.bridge_calls, [('autoplay', True), ('autoplay', False),
-                                                  ('autoplay', None)])
-
-    async def test_the_bitrate_is_kept_and_followed(self):
-        self.assertEqual(engine_module.quality_bitrate('high'), 256)
-        self.assertEqual(engine_module.quality_bitrate('standard'), 64)
-        self.assertEqual(engine_module.quality_bitrate('lossless'), 256)
-        await self.up()
-        await until(lambda: not self.engine._tasks)  # what runs beside the start is done
-        self.assertEqual(self.engine.bitrate, 256)  # the start's status read
-        self.assertEqual(self.page.bitrate_calls, [])  # MusicKit has it already
-        self.assertEqual(await self.engine.set_bitrate(64), 64)
-        self.assertEqual((self.page.bitrate_calls, self.engine.bitrate), ([64], 64))
-        self.assertEqual(self.engine.preferred_bitrate, 64)
-        # MusicKit's own choice (a slow connection), as its event says.
-        await self.chrome.send_binding('playbackBitrateDidChange', {'bitrate': 256})
-        await until(lambda: self.engine.bitrate == 256)
-        await self.engine.stop()
-        self.assertEqual(self.engine.bitrate, 0)
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.set_bitrate(256)
-        self.assertEqual(raised.exception.code, 'engine-down')
-        self.assertEqual(self.engine.preferred_bitrate, 256)  # kept for the next start
-
-    async def test_the_preferred_bitrate_is_set_at_each_start_and_page_load(self):
-        self.engine.preferred_bitrate = 64
-        await self.up()
-        await until(lambda: self.engine.bitrate == 64)
-        self.assertEqual(self.page.bitrate_calls, [64])
-        # A new document: MusicKit there starts at its own, and is set again.
-        seen = []
-        self.engine.connect('event', lambda e, name, data: seen.append(name))
-        self.page.bitrate = 256
-        self.page.bridge = None
-        await self.chrome.send_event(*context_created(9))
-        await until(lambda: 'bridgeReset' in seen, timeout=3)
-        await until(lambda: self.page.bitrate_calls == [64, 64])
-        await until(lambda: self.engine.bitrate == 64)
-        # A page that refuses (MusicKit gone) leaves the engine up, the bitrate as it was.
-        self.page.bitrate_calls.clear()
-        self.page.bitrate = 256
-        self.page.bridge = None
-        self.page.ready = False
-        self.engine._client.reinject_timeout = 0.05
-        seen.clear()
-        with self.assertLogs(client_module.log, 'WARNING'):
-            await self.chrome.send_event(*context_created(10))
-            await asyncio.sleep(0.1)
-            self.page.ready = True
-            await until(lambda: 'bridgeReset' in seen, timeout=3)
-        await until(lambda: self.page.bitrate_calls == [64])
-        self.assertEqual(self.engine.state, 'up')
-
-    LANGUAGES = {'lyrics': 'en-GB', 'script': 'en-Latn'}
-
-    async def up_for_lyrics(self):
-        await self.up()
-        self.engine.lyrics_languages = dict(self.LANGUAGES)
-
-    async def test_lyrics_are_fetched_once_and_kept(self):
-        await self.up_for_lyrics()
-        answer = {'synced': True, 'lines': [
-            {'startMs': 1000, 'endMs': 3000.4, 'text': ' Harbour lights ',
-             'pronunciation': ' Minato no akari '},
-            {'startMs': 'x', 'text': ''},
-            {'startMs': 4000, 'endMs': 6000, 'text': 'Out on the water',
-             'pronunciation': 'Out on the water'}]}  # the same as the line: none
-        self.page.bridge_answers['lyrics'] = answer
-        lyrics = await self.engine.lyrics('1000000001')
-        self.assertEqual(lyrics, {'synced': True, 'languages': self.LANGUAGES, 'format': 2,
-                                  'lines': [
-            {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights',
-             'pronunciation': 'Minato no akari'},
-            {'startMs': 4000, 'endMs': 6000, 'text': 'Out on the water'}]})
-        path = self.cache / 'lyrics' / '1000000001.json'
-        self.assertTrue(path.is_file())
-        kept = json.loads(path.read_text(encoding='utf-8'))
-        self.assertIn('cached', kept)  # stamped: lyrics expire
-        self.assertEqual({key: kept[key] for key in ('synced', 'lines', 'languages', 'format')},
-                         lyrics)
-        # Again: from the file, no bridge call, and no engine needed.
-        self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
-        self.assertEqual(await self.engine.lyrics('1000000001'), lyrics)
-        await self.engine.stop()
-        self.assertEqual(await self.engine.lyrics('1000000001'), lyrics)
-        # The bridge is told the language and the script the extras are asked in.
-        self.assertEqual(self.page.bridge_calls, [('lyrics', '1000000001', self.LANGUAGES)])
-
-    async def test_lyrics_kept_in_other_languages_are_asked_again(self):
-        await self.up_for_lyrics()
-        path = self.cache / 'lyrics' / '1000000006.json'
-        older = {'synced': False, 'lines': [{'startMs': 0, 'endMs': 0, 'text': 'Kept'}]}
-        normalize.write_answer(str(path), older, str(self.cache))  # before pronunciations
-        self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': [
-            {'startMs': 0, 'endMs': 0, 'text': '\u6f6e', 'pronunciation': 'Shio',
-             'translation': 'Tide'}]}
-        lyrics = await self.engine.lyrics('1000000006')
-        self.assertEqual((lyrics['lines'][0]['pronunciation'], lyrics['lines'][0]['translation']),
-                         ('Shio', 'Tide'))
-        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['languages'],
-                         self.LANGUAGES)
-        # A Japanese user's pronunciations are another script's: asked again, in theirs.
-        japanese = {'lyrics': 'ja-JP', 'script': 'ja-Kana'}
-        self.engine.lyrics_languages = dict(japanese)
-        self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': [
-            {'startMs': 0, 'endMs': 0, 'text': '\u6f6e', 'pronunciation': '\u3057\u304a'}]}
-        self.assertEqual((await self.engine.lyrics('1000000006'))['languages'], japanese)
-        self.assertEqual(len(self.page.bridge_calls), 2)
-        # With the engine down, the file kept in another script is still the answer.
-        self.engine.lyrics_languages = dict(self.LANGUAGES)
-        await self.engine.stop()
-        kept = await self.engine.lyrics('1000000006')
-        self.assertEqual((kept['languages'], kept['lines'][0]['pronunciation']),
-                         (japanese, '\u3057\u304a'))
-        # And when Apple answers none this time (refused), the kept one.
-        await self.up_for_lyrics()
-        self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
-        self.assertEqual((await self.engine.lyrics('1000000006'))['languages'], japanese)
-        # Never a file at all, and the engine down: the engine's error.
-        await self.engine.stop()
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.lyrics('1000000007')
-        self.assertEqual(raised.exception.code, 'engine-down')
-
-    async def test_lyrics_carry_words_background_vocals_and_singers(self):
-        await self.up_for_lyrics()
-
-        def words(*pieces):
-            return [{'startMs': start, 'endMs': end, 'text': text}
-                    for start, end, text in pieces]
-        self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
-            {'startMs': 1000, 'endMs': 4000, 'text': 'Harbour lights', 'agent': 'v1',
-             'words': words((1000, 1500, 'Har'), (1500, 2000, 'bour '), (2000, 3000, 'lights')),
-             'background': '(lights)', 'backgroundWords': words((3000, 4000, '(lights)'))},
-            {'startMs': 5000, 'endMs': 8000, 'text': '\u6f6e', 'agent': 'v2',
-             'words': words((5000, 6000, 'Tide')),            # not the text: no words
-             'pronunciation': 'Shio', 'pronunciationWords': words((5000, 6000, 'Shio')),
-             'pronunciationBackground': '', 'translation': 'Tide',
-             'translationBackground': '(tide)'}]}
-        lyrics = await self.engine.lyrics('1000000010')
-        self.assertEqual(lyrics['lines'], [
-            {'startMs': 1000, 'endMs': 4000, 'text': 'Harbour lights', 'agent': 'v1',
-             'words': words((1000, 1500, 'Har'), (1500, 2000, 'bour '), (2000, 3000, 'lights')),
-             'background': '(lights)', 'backgroundWords': words((3000, 4000, '(lights)'))},
-            {'startMs': 5000, 'endMs': 8000, 'text': '\u6f6e', 'agent': 'v2',
-             'pronunciation': 'Shio', 'pronunciationWords': words((5000, 6000, 'Shio')),
-             'translation': 'Tide', 'translationBackground': '(tide)'}])
-        kept = json.loads((self.cache / 'lyrics' / '1000000010.json').read_text('utf-8'))
-        self.assertEqual((kept['lines'], kept['format']), (lyrics['lines'], 2))
-        # One singer only: no agents kept.
-        self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
-            {'startMs': 1000, 'text': 'One', 'agent': 'v1'},
-            {'startMs': 2000, 'text': 'Two', 'agent': 'v1'}]}
-        solo = await self.engine.lyrics('1000000011')
-        self.assertEqual([sorted(line) for line in solo['lines']],
-                         [['endMs', 'startMs', 'text']] * 2)
-
-    async def test_lyrics_kept_in_an_older_format_are_asked_again(self):
-        await self.up_for_lyrics()
-        older = {'synced': True, 'languages': self.LANGUAGES, 'lines': [
-            {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights (lights)'}]}
-        path = self.cache / 'lyrics' / '1000000012.json'
-        normalize.write_answer(str(path), older, str(self.cache))  # before the words
-        self.assertEqual(engine_module.lyrics_answer(older)['format'], 1)
-        self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
-            {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights',
-             'background': '(lights)'}]}
-        lyrics = await self.engine.lyrics('1000000012')
-        self.assertEqual((lyrics['format'], lyrics['lines'][0]['background']), (2, '(lights)'))
-        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['format'], 2)
-        self.assertEqual(len(self.page.bridge_calls), 1)
-        # Kept now: not asked again.
-        await self.engine.lyrics('1000000012')
-        self.assertEqual(len(self.page.bridge_calls), 1)
-        # An older file is still the answer while the engine cannot give a new one, and
-        # when Apple answers none.
-        path = self.cache / 'lyrics' / '1000000013.json'
-        normalize.write_answer(str(path), older, str(self.cache))
-        self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
-        kept = await self.engine.lyrics('1000000013')
-        self.assertEqual((kept['format'], kept['lines'][0]['text']),
-                         (1, 'Harbour lights (lights)'))
-        await self.engine.stop()
-        self.assertEqual((await self.engine.lyrics('1000000013'))['format'], 1)
-        # A format that is not a number is the oldest.
-        for odd in ('2', True, None, 2.0):
-            self.assertEqual(engine_module.lyrics_answer(dict(older, format=odd))['format'], 1, odd)
-
-    async def test_lyrics_are_decoded_even_when_kept_before(self):
-        await self.up_for_lyrics()
-        self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
-            {'startMs': 1000, 'endMs': 2000, 'text': 'Rock &amp; Roll &#8217;til dawn',
-             'stanza': True},
-            {'startMs': 2000, 'endMs': 3000, 'text': 'Again', 'stanza': False}]}
-        lyrics = await self.engine.lyrics('1000000004')
-        self.assertEqual(lyrics['lines'], [
-            {'startMs': 1000, 'endMs': 2000, 'text': 'Rock & Roll \u2019til dawn',
-             'stanza': True},
-            {'startMs': 2000, 'endMs': 3000, 'text': 'Again'}])
-        # A file an older version kept with the entities in it reads decoded.
-        path = self.cache / 'lyrics' / '1000000005.json'
-        normalize.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES,
-                                           'format': 2, 'lines': [
-            {'startMs': 0, 'endMs': 0, 'text': 'Salt &amp; &quot;air&quot;',
-             'pronunciation': 'Shio &amp; kaze'}]}, str(self.cache))
-        line = (await self.engine.lyrics('1000000005'))['lines'][0]
-        self.assertEqual((line['text'], line['pronunciation']), ('Salt & "air"', 'Shio & kaze'))
-        self.assertEqual(len(self.page.bridge_calls), 1)
-
-    async def test_lyrics_expire_and_a_hit_marks_them_played(self):
-        await self.up_for_lyrics()
-        answer = {'synced': False, 'lines': [{'startMs': 0, 'endMs': 0, 'text': 'Tide'}]}
-        self.page.bridge_answers['lyrics'] = answer
-        await self.engine.lyrics('1000000003')
-        path = self.cache / 'lyrics' / '1000000003.json'
-        os.utime(path, (1000, 1000))
-        await self.engine.lyrics('1000000003')  # kept: no new call, and marked as played
-        self.assertEqual(len(self.page.bridge_calls), 1)
-        self.assertGreater(path.stat().st_mtime, 1000)
-        # Fetched longer ago than a month: asked again.
-        kept = json.loads(path.read_text())
-        kept['cached'] = '2020-01-01T00:00:00Z'
-        path.write_text(json.dumps(kept))
-        await self.engine.lyrics('1000000003')
-        self.assertEqual(len(self.page.bridge_calls), 2)
-        # A file an older version wrote, without a stamp, is asked again too.
-        path.write_text(json.dumps(answer))
-        await self.engine.lyrics('1000000003')
-        self.assertEqual(len(self.page.bridge_calls), 3)
-
-    async def test_no_lyrics_are_not_kept(self):
-        await self.up_for_lyrics()
-        none = {'synced': False, 'lines': [], 'languages': self.LANGUAGES, 'format': 2}
-        self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
-        self.assertEqual(await self.engine.lyrics('1000000002'), none)
-        self.page.bridge_answers['lyrics'] = None  # not a dict either
-        self.assertEqual(await self.engine.lyrics('1000000002'), none)
-        self.assertFalse((self.cache / 'lyrics').exists())
-        self.assertEqual(len(self.page.bridge_calls), 2)
-        for bad in ('', None, '../x', 'a/b'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.lyrics(bad)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_commands_when_down(self):
-        for coro in (self.engine.control('toggle'), self.engine.seek(1), self.engine.volume(1),
-                     self.engine.shuffle('on'), self.engine.repeat('all'),
-                     self.engine.now_playing(), self.engine.queue(),
-                     self.engine.play_next('song', 'i.1'), self.engine.queue_jump(0),
-                     self.engine.queue_remove(1, 'i.1'), self.engine.queue_move(1, 2, 'i.1'),
-                     self.engine.queue_clear(),
-                     self.engine.queue_undo_clear(), self.engine.set_autoplay(True),
-                     self.engine.lyrics('1000000001'), self.engine.search('x'),
-                     self.engine.suggest('x'), self.engine.landing(), self.engine.category('1'),
-                     self.engine.browse(), self.engine.made_for_you()):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class ArtistTest(EngineFixture):
-    """artist_page, artist_view and catalog_artist: the reads they make, the shaping, the
-    day-long cache, and the demo's own answers."""
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    def fixture(self):
-        with open(FIXTURES / 'catalog_artist.json', encoding='utf-8') as file:
-            return json.load(file)
-
-    async def test_the_page_is_one_read_kept_for_a_day(self):
-        await self.up()
-        path = '/v1/catalog/us/artists/1724049001'
-        self.page.api_answers[path] = self.fixture()
-        answer = await self.engine.artist_page('1724049001')
-        self.assertEqual(self.page.api_calls, [path])
-        params = self.page.api_params[0]
-        self.assertIn('top-songs', params['views'].split(','))
-        self.assertIn('more-to-see', params['views'].split(','))
-        self.assertEqual(params['extend'],
-                         'artistBio,bornOrFormed,editorialArtwork,hero,inFavorites,isGroup,origin')
-        self.assertEqual(answer['artist']['title'], 'Paper Parachutes')
-        self.assertEqual(answer['latest']['item']['title'], 'Ladders of Rain')
-        self.assertIn('cached', answer)
-        self.assertTrue((self.cache / 'artists' / '1724049001.json').is_file())
-        await self.engine.stop()
-        again = await self.engine.artist_page('1724049001')  # from the file, the engine down
-        self.assertEqual(again['shelves'], answer['shelves'])
-        self.assertEqual(len(self.page.api_calls), 1)
-
-    async def test_a_library_id_is_not_a_catalog_artist(self):
-        await self.up()
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.artist_page('l.art_0123456789ab')
-        self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.api_calls, [])
-
-    async def test_a_view_is_read_whole(self):
-        await self.up()
-        path = '/v1/catalog/us/artists/1724049001/view/full-albums'
-        album = self.fixture()['data'][0]['views']['full-albums']['data'][0]
-        self.page.api_answers[path] = {'data': [album], 'next': f'{path}?offset=1'}
-        self.page.api_answers[f'{path}?offset=1'] = {
-            'data': [dict(album, id='1724049111')]}
-        items = await self.engine.artist_view('1724049001', 'full-albums')
-        self.assertEqual(self.page.api_calls, [path, f'{path}?offset=1'])
-        self.assertEqual(self.page.api_params[0], {'limit': 100})
-        self.assertEqual([(item['id'], item['subtitle']) for item in items],
-                         [('1724049100', '2026'), ('1724049111', '2026')])
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.artist_view('1724049001', 'library-albums')
-        self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_a_library_artist_is_found_through_its_songs(self):
-        await self.up()
-        base = '/v1/catalog/us/songs'
-
-        def song(artists):
-            return {'data': [{'id': 's', 'relationships': {'artists': {'data': [
-                {'id': artist_id, 'attributes': {'name': name}} for artist_id, name in artists]}}}]}
-
-        # The first song is gone, the second is a duet: the artist named as the library's.
-        self.page.api_answers[f'{base}/1'] = {'errors': [{'status': '404', 'title': 'no'}]}
-        self.page.api_answers[f'{base}/2'] = song([('7', 'Mara Lind'),
-                                                   ('1724049001', 'Paper  Parachutes')])
-        found = await self.engine.catalog_artist('paper parachutes', ['1', '2', '3'])
-        self.assertEqual(found, '1724049001')
-        self.assertEqual(self.page.api_calls, [f'{base}/1', f'{base}/2'])
-        self.assertEqual(self.page.api_params[1], {'include': 'artists'})
-        # Remembered, a miss too.
-        self.assertEqual(await self.engine.catalog_artist('Paper Parachutes', ['2']),
-                         '1724049001')
-        self.page.api_answers[f'{base}/4'] = song([('8', 'Someone Else')])
-        self.assertIsNone(await self.engine.catalog_artist('Nobody', ['4']))
-        self.assertIsNone(await self.engine.catalog_artist('nobody', ['4']))
-        self.assertEqual(len(self.page.api_calls), 3)
-
-    async def test_related_reads_a_song_with_its_album_and_artists(self):
-        await self.up()
-        path = '/v1/catalog/us/songs/1724049201'
-        self.page.api_answers[path] = {'data': [{'id': '1724049201', 'type': 'songs',
-                                                 'relationships': {
-            'albums': {'data': [{'id': '1724049100', 'type': 'albums', 'attributes': {
-                'name': 'Ladders of Rain', 'artistName': 'Paper Parachutes'}}]},
-            'artists': {'data': [
-                {'id': '1724049001', 'type': 'artists',
-                 'attributes': {'name': 'Paper Parachutes'}},
-                {'id': '1724049002', 'type': 'artists'}]}}}]}  # one Apple did not include
-        found = await self.engine.related('song', '1724049201')
-        self.assertEqual(self.page.api_calls, [path])
-        self.assertEqual(self.page.api_params[0], {'include': 'albums,artists'})
-        self.assertEqual((found['album']['id'], found['album']['title'],
-                          found['album']['subtitle']),
-                         ('1724049100', 'Ladders of Rain', 'Paper Parachutes'))
-        self.assertEqual([(artist['id'], artist['kind'], artist['title'])
-                          for artist in found['artists']],
-                         [('1724049001', 'artist', 'Paper Parachutes')])
-        # Remembered for the session, until the engine stops (another account may follow).
-        self.assertEqual(await self.engine.related('song', '1724049201'), found)
-        self.assertEqual(len(self.page.api_calls), 1)
-        await self.engine.stop()
-        await self.up()
-        await self.engine.related('song', '1724049201')
-        self.assertEqual(self.page.api_calls[-1], path)
-        self.assertEqual(len([call for call in self.page.api_calls if call == path]), 2)
-
-    async def test_related_of_an_album_and_what_it_refuses(self):
-        await self.up()
-        path = '/v1/catalog/us/albums/1724049100'
-        self.page.api_answers[path] = {'data': [{'id': '1724049100', 'type': 'albums',
-                                                 'attributes': {'name': 'Ladders of Rain'},
-                                                 'relationships': {'artists': {'data': [
-            {'id': '1724049001', 'type': 'artists',
-             'attributes': {'name': 'Paper Parachutes'}}]}}}]}
-        found = await self.engine.related('album', '1724049100')
-        self.assertEqual(self.page.api_params[0], {'include': 'artists'})
-        self.assertIsNone(found['album'])
-        self.assertEqual([artist['id'] for artist in found['artists']], ['1724049001'])
-        for kind, item_id in (('song', 'i.abc'), ('playlist', 'pl.1'), ('song', '')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.related(kind, item_id)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(len(self.page.api_calls), 1)
-
-    async def test_related_needs_a_sign_in(self):
-        await self.up(authorized=False)
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.related('song', '1724049201')
-        self.assertEqual(raised.exception.code, 'not-signed-in')
-
-    async def test_the_demo_answers_from_its_own_cache(self):
-        demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049001'))
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({'id': '1724049001', 'shelves': [], 'demo': True,
-                                    'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
-        answer = await demo.artist_page('1724049001')  # old, and still the demo's answer
-        self.assertEqual(answer['id'], '1724049001')
-        self.assertNotIn('stale', answer)
-        # One of Apple's, kept by the app before: not the demo's to show.
-        apple = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049002'))
-        apple.write_text(json.dumps({'id': '1724049002', 'shelves': [],
-                                     'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
-        for coro in (demo.artist_page('1724049002'), demo.artist_page('1724049003'),
-                     demo.browse(), demo.radio(), demo.charts(), demo.replay(),
-                     demo.catalog_artist('Paper Parachutes', ['1']),
-                     demo.related('song', '1724049201')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class FavouriteArtistTest(EngineFixture):
-    """An artist's favourite (their star): the favorites write, not a rating; its read past
-    MusicKit's cache; the artist page's `favourite`, kept and overlaid."""
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    def fixture(self, favourite=None):
-        with open(FIXTURES / 'catalog_artist.json', encoding='utf-8') as file:
-            raw = json.load(file)
-        if favourite is not None:
-            raw['data'][0]['attributes']['inFavorites'] = favourite
-        return raw
-
-    async def test_the_write_is_the_favourites_not_a_rating(self):
-        await self.up()
-        rated = []
-        self.engine.connect('rated', lambda _e, *args: rated.append(args))
-        await self.engine.favourite_artist('1724049001')
-        await self.engine.unfavourite_artist('1724049001')
-        self.assertEqual(self.page.bridge_calls, [
-            ('favourite', 'artists', '1724049001', True),
-            ('favourite', 'artists', '1724049001', False)])
-        self.assertEqual(rated, [('artist', '1724049001', 1), ('artist', '1724049001', 0)])
-        for artist_id in ('l.art_0123456789ab', 'r.1', ''):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.favourite_artist(artist_id)
-            self.assertEqual(raised.exception.code, 'usage')
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.love('artist', '1724049001')  # no rating for an artist
-        self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(len(self.page.bridge_calls), 2)
-
-    async def test_it_needs_a_sign_in(self):
-        await self.up(authorized=False)
-        for coro in (self.engine.favourite_artist('1724049001'),
-                     self.engine.is_favourite_artist('1724049001')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'not-signed-in')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_the_state_is_read_past_musickits_cache(self):
-        await self.up()
-        rated = []
-        self.engine.connect('rated', lambda _e, *args: rated.append(args))
-        self.page.bridge_answers['apiFresh'] = {
-            'data': [{'id': '1724049001', 'type': 'artists', 'attributes': {'inFavorites': True}}]}
-        self.assertTrue(await self.engine.is_favourite_artist('1724049001'))
-        self.assertEqual(self.page.bridge_calls, [
-            ('apiFresh', '/v1/catalog/us/artists/1724049001', {'extend': 'inFavorites'})])
-        # An answer that does not say is no favourite.
-        self.page.bridge_answers['apiFresh'] = {'data': [{'id': '1724049001', 'attributes': {}}]}
-        self.assertFalse(await self.engine.is_favourite_artist('1724049001'))
-        self.assertEqual(rated, [('artist', '1724049001', 1), ('artist', '1724049001', 0)])
-        self.assertEqual(self.page.api_calls, [])  # never music(), which may be cached
-
-    async def test_the_page_says_and_keeps_what_was_written(self):
-        await self.up()
-        rated = []
-        self.engine.connect('rated', lambda _e, *args: rated.append(args))
-        path = '/v1/catalog/us/artists/1724049001'
-        self.page.api_answers[path] = self.fixture(favourite=False)
-        answer = await self.engine.artist_page('1724049001')
-        self.assertIs(answer['favourite'], False)
-        self.assertEqual(rated, [('artist', '1724049001', 0)])
-        kept = self.cache / 'artists' / '1724049001.json'
-        stamp = json.loads(kept.read_text())['cached']
-        await self.engine.favourite_artist('1724049001')
-        # The kept page says so, as old as it was.
-        written = json.loads(kept.read_text())
-        self.assertIs(written['favourite'], True)
-        self.assertEqual(written['cached'], stamp)
-        self.assertIs((await self.engine.artist_page('1724049001'))['favourite'], True)
-        self.assertEqual(self.page.api_calls, [path])  # the page was read once
-        # What this session read overrides a kept answer's (one kept before a change made
-        # elsewhere).
-        self.page.bridge_answers['apiFresh'] = {'data': [{'attributes': {'inFavorites': False}}]}
-        await self.engine.is_favourite_artist('1724049001')
-        self.assertIs((await self.engine.artist_page('1724049001'))['favourite'], False)
-
-    async def test_an_answer_that_does_not_say(self):
-        await self.up()
-        self.page.api_answers['/v1/catalog/us/artists/1724049001'] = self.fixture()
-        rated = []
-        self.engine.connect('rated', lambda _e, *args: rated.append(args))
-        self.assertIsNone((await self.engine.artist_page('1724049001'))['favourite'])
-        self.assertEqual(rated, [])
-
-    async def test_the_demo_remembers_it_for_the_session(self):
-        demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049001'))
-        path.parent.mkdir(parents=True)
-        page = {'id': '1724049001', 'shelves': [], 'favourite': False, 'demo': True,
-                'cached': '2020-01-01T00:00:00Z'}
-        path.write_text(json.dumps(page), encoding='utf-8')
-        rated = []
-        demo.connect('rated', lambda _e, *args: rated.append(args))
-        await demo.favourite_artist('1724049001')
-        self.assertEqual(rated, [('artist', '1724049001', 1)])
-        self.assertIs((await demo.artist_page('1724049001'))['favourite'], True)
-        self.assertEqual(json.loads(path.read_text()), page)  # the invented file untouched
-        with self.assertRaises(EngineError) as raised:
-            await demo.is_favourite_artist('1724049001')
-        self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class AlbumPageTest(EngineFixture):
-    """album_page and album_view: the reads they make (the album with its views, then its
-    artist's albums; a library album's catalog album through one of its songs), the day-long
-    cache, what a failure leaves out, and the demo's own answers."""
-
-    ALBUM = '/v1/catalog/us/albums/1724049100'
-    MORE_BY = '/v1/catalog/us/artists/1724049001/view/full-albums'
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    def answer(self, more_by=True):
-        with open(FIXTURES / 'catalog_album_page.json', encoding='utf-8') as file:
-            raw = json.load(file)
-        self.page.api_answers[self.ALBUM] = raw['album']
-        if more_by:
-            self.page.api_answers[self.MORE_BY] = raw['moreBy']
-
-    async def test_two_reads_kept_for_a_day(self):
-        await self.up()
-        self.answer()
-        answer = await self.engine.album_page('1724049100')
-        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
-        self.assertEqual(self.page.api_params[0]['views'].split(','),
-                         ['other-versions', 'related-videos', 'appears-on', 'you-might-also-like'])
-        self.assertEqual(self.page.api_params[0]['include'], 'artists')
-        self.assertEqual(self.page.api_params[1], {'limit': 30})
-        self.assertEqual(answer['release']['copyright'], '℗ 2026 Invented Records Ltd')
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['other-versions', 'more-by-artist', 'appears-on', 'you-might-also-like'])
-        self.assertIn('cached', answer)
-        self.assertTrue((self.cache / 'albums' / '1724049100.json').is_file())
-        await self.engine.stop()
-        again = await self.engine.album_page('1724049100')  # from the file, the engine down
-        self.assertEqual(again['shelves'], answer['shelves'])
-        self.assertEqual(len(self.page.api_calls), 2)
-
-    async def test_an_answer_kept_with_other_views_is_asked_again(self):
-        # An older app asked for `related-albums`, which Apple has no view of: what it kept
-        # lacks You Might Also Like, so it is not fresh, however young.
-        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
-        path.parent.mkdir(parents=True)
-        old = {'id': '1724049100', 'artistId': '', 'artistName': '', 'release': {},
-               'shelves': [], 'cached': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
-        path.write_text(json.dumps(old), encoding='utf-8')
-        await self.up()
-        self.answer()
-        answer = await self.engine.album_page('1724049100')
-        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
-        self.assertIn('you-might-also-like', [shelf['key'] for shelf in answer['shelves']])
-        self.assertEqual(answer['basis'], ','.join(api.ALBUM_VIEWS))
-        again = await self.engine.album_page('1724049100')  # kept with these views: fresh
-        self.assertEqual(again['shelves'], answer['shelves'])
-        self.assertEqual(len(self.page.api_calls), 2)
-
-    async def test_a_library_album_is_found_through_a_song(self):
-        await self.up()
-        self.answer()
-        song = '/v1/catalog/us/songs/1724049201'
-        self.page.api_answers[song] = {'data': [{'id': '1724049201', 'type': 'songs',
-                                                 'relationships': {'albums': {'data': [
-                                                     {'id': '1724049100', 'type': 'albums'}]}}}]}
-        answer = await self.engine.album_page('l.aW52ZW50ZWQ', song_id='1724049201')
-        self.assertEqual(self.page.api_calls, [song, self.ALBUM, self.MORE_BY])
-        self.assertEqual(self.page.api_params[0], {'include': 'albums'})
-        self.assertEqual(answer['id'], '1724049100')
-        # Kept under the library album's id, which is what the page asks by.
-        self.assertTrue((self.cache / 'albums' / 'l.aW52ZW50ZWQ.json').is_file())
-
-    async def test_a_song_on_no_catalog_album_is_a_404(self):
-        await self.up()
-        self.page.api_answers['/v1/catalog/us/songs/1724049201'] = {'data': [{'id': 's'}]}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.album_page('l.aW52ZW50ZWQ', song_id='1724049201')
-        self.assertEqual((raised.exception.code, raised.exception.status), ('api', 404))
-        self.assertFalse((self.cache / 'albums').exists())
-
-    async def test_more_by_left_out_when_its_read_fails_and_not_kept(self):
-        await self.up()
-        self.answer(more_by=False)  # the artist's view answers 404
-        answer = await self.engine.album_page('1724049100')
-        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
-        self.assertNotIn('more-by-artist', [shelf['key'] for shelf in answer['shelves']])
-        self.assertIn('cached', answer)
-        self.assertFalse((self.cache / 'albums' / '1724049100.json').exists())
-        # The next visit asks again, and a whole answer is kept.
-        self.answer()
-        answer = await self.engine.album_page('1724049100')
-        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY] * 2)
-        self.assertIn('more-by-artist', [shelf['key'] for shelf in answer['shelves']])
-        self.assertTrue((self.cache / 'albums' / '1724049100.json').is_file())
-
-    async def test_an_album_the_catalog_lacks(self):
-        await self.up()
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.album_page('1724049199')
-        self.assertEqual(raised.exception.status, 404)
-        self.assertEqual(self.page.api_calls, ['/v1/catalog/us/albums/1724049199'])
-
-    async def test_what_it_refuses(self):
-        await self.up()
-        for album_id, song_id in (('', None), ('l.aW52ZW50ZWQ', None), (None, '1')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.album_page(album_id, song_id=song_id)
-            self.assertEqual(raised.exception.code, 'usage')
-        for album_id, view in (('1724049100', 'full-albums'), ('l.aW52ZW50ZWQ', 'appears-on'),
-                               ('', 'appears-on')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.album_view(album_id, view)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.api_calls, [])
-
-    async def test_a_view_is_read_whole(self):
-        await self.up()
-        path = f'{self.ALBUM}/view/you-might-also-like'
-        self.answer()
-        views = self.page.api_answers[self.ALBUM]['data'][0]['views']
-        album = views['you-might-also-like']['data'][0]
-        self.page.api_answers[path] = {'data': [album], 'next': f'{path}?offset=1'}
-        self.page.api_answers[f'{path}?offset=1'] = {'data': [dict(album, id='1724049301')]}
-        items = await self.engine.album_view('1724049100', 'you-might-also-like')
-        self.assertEqual(self.page.api_calls, [path, f'{path}?offset=1'])
-        self.assertEqual(self.page.api_params[0], {'limit': 100})
-        self.assertEqual([(item['id'], item['subtitle']) for item in items],
-                         [('1724049300', 'Mara Lind'), ('1724049301', 'Mara Lind')])
-
-    async def test_signed_out(self):
-        await self.up(authorized=False)
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.album_page('1724049100')
-        self.assertEqual(raised.exception.code, 'not-signed-in')
-
-    async def test_the_demo_answers_from_its_own_cache(self):
-        demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({'id': '1724049100', 'shelves': [], 'release': {},
-                                    'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
-                        encoding='utf-8')
-        answer = await demo.album_page('1724049100')
-        self.assertEqual(answer['id'], '1724049100')
-        self.assertNotIn('stale', answer)
-        for coro in (demo.album_page('1724049110'), demo.album_view('1724049100', 'appears-on')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class PlaylistPageTest(EngineFixture):
-    """playlist_page, playlist_view and curator_playlists: the reads they make (the playlist
-    with its curator and views, again with the documented views alone after a 400, then an
-    Apple curator's playlists), the day-long cache, what they refuse, and the demo's own
-    answers."""
-
-    PLAYLIST = '/v1/catalog/us/playlists/pl.aW52ZW50ZWRwbA'
-    CURATOR = '/v1/catalog/us/apple-curators/1724049500/playlists'
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    def answer(self, curator_playlists=True):
-        with open(FIXTURES / 'catalog_playlist_page.json', encoding='utf-8') as file:
-            self.page.api_answers[self.PLAYLIST] = json.load(file)
-        if curator_playlists:
-            with open(FIXTURES / 'curator_playlists.json', encoding='utf-8') as file:
-                self.page.api_answers[self.CURATOR] = json.load(file)
-
-    async def test_two_reads_kept_for_a_day(self):
-        await self.up()
-        self.answer()
-        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.CURATOR])
-        self.assertEqual(self.page.api_params[0]['views'].split(','),
-                         ['featured-artists', 'more-by-curator', 'you-might-also-like'])
-        self.assertEqual(self.page.api_params[0]['include'], 'curator')
-        # More By is the Apple curator's own playlists: Apple's view of it is always empty.
-        self.assertEqual(self.page.api_params[1], {'limit': api.CURATOR_PLAYLISTS_LIMIT})
-        self.assertEqual(answer['curator']['id'], '1724049500')
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['featured-artists', 'more-by-curator', 'you-might-also-like'])
-        self.assertEqual([item['id'] for item in answer['shelves'][1]['items']],
-                         ['pl.aW52ZW50ZWRwMg'])
-        self.assertEqual(answer['basis'], ','.join(api.PLAYLIST_VIEWS))
-        self.assertTrue((self.cache / 'playlists' / 'pl.aW52ZW50ZWRwbA.json').is_file())
-        await self.engine.stop()
-        again = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')  # the file, engine down
-        self.assertEqual(again['shelves'], answer['shelves'])
-        self.assertEqual(len(self.page.api_calls), 2)
-
-    async def test_more_by_left_out_when_its_read_fails_and_not_kept(self):
-        await self.up()
-        path = self.cache / 'playlists' / 'pl.aW52ZW50ZWRwbA.json'
-        self.answer(curator_playlists=False)  # the curator's playlists answer 404
-        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.CURATOR])
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['featured-artists', 'you-might-also-like'])
-        self.assertIn('cached', answer)
-        self.assertFalse(path.exists())
-        # The next visit asks again, and a whole answer is kept.
-        self.answer()
-        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.CURATOR] * 2)
-        self.assertIn('more-by-curator', [shelf['key'] for shelf in answer['shelves']])
-        self.assertTrue(path.is_file())
-
-    async def test_a_partial_answer_leaves_an_older_whole_one_kept(self):
-        await self.up()
-        path = self.cache / 'playlists' / 'pl.aW52ZW50ZWRwbA.json'
-        self.answer()
-        await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        kept = path.read_bytes()
-        del self.page.api_answers[self.CURATOR]
-        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA', refresh=True)
-        self.assertNotIn('more-by-curator', [shelf['key'] for shelf in answer['shelves']])
-        self.assertEqual(path.read_bytes(), kept)
-
-    async def test_no_second_read_without_an_apple_curator(self):
-        await self.up()
-        self.answer()
-        resource = self.page.api_answers[self.PLAYLIST]['data'][0]
-        resource['relationships']['curator']['data'] = [{
-            'id': 'sp.aW52ZW50ZWQ', 'type': 'social-profiles',
-            'attributes': {'name': 'Invented Listener',
-                           'url': 'https://music.apple.com/profile/inventedlistener'}}]
-        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(self.page.api_calls, [self.PLAYLIST])
-        self.assertEqual((answer['curator']['kind'], answer['curator']['url']),
-                         ('link', 'https://music.apple.com/profile/inventedlistener'))
-
-    async def test_a_400_is_asked_again_with_the_documented_views(self):
-        await self.up()
-        with open(FIXTURES / 'catalog_playlist_page.json', encoding='utf-8') as file:
-            raw = json.load(file)
-        answers = [{'errors': [{'status': '400', 'title': 'Invalid Parameter Value'}]}, raw]
-
-        class Answers(dict):
-            def get(self, key, default=None):
-                return answers.pop(0) if key == PlaylistPageTest.PLAYLIST else default
-
-        self.page.api_answers = Answers()
-        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.PLAYLIST, self.CURATOR])
-        self.assertEqual([params['views'] for params in self.page.api_params[:2]],
-                         [','.join(api.PLAYLIST_VIEWS), 'featured-artists,more-by-curator'])
-        self.assertEqual(answer['curator']['id'], '1724049500')
-
-    async def test_a_playlist_the_catalog_lacks(self):
-        await self.up()
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.playlist_page('pl.aW52ZW50ZWQ5')
-        self.assertEqual(raised.exception.status, 404)
-        self.assertEqual(self.page.api_calls, ['/v1/catalog/us/playlists/pl.aW52ZW50ZWQ5'])
-        self.assertFalse((self.cache / 'playlists').exists())
-
-    async def test_what_it_refuses(self):
-        await self.up()
-        for playlist_id in ('', None, 'p.aW52ZW50ZWQ', 'l.pl001'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.playlist_page(playlist_id)
-            self.assertEqual(raised.exception.code, 'usage')
-        for playlist_id, view in (('pl.aW52ZW50ZWRwbA', 'tracks'), ('p.aW52', 'featured-artists'),
-                                  ('', 'featured-artists'),
-                                  # Apple has no view of it to read (a 404): curator_playlists.
-                                  ('pl.aW52ZW50ZWRwbA', 'more-by-curator')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.playlist_view(playlist_id, view)
-            self.assertEqual(raised.exception.code, 'usage')
-        for curator_id in ('', None, '../x', 'a/b'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.curator_playlists(curator_id)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.api_calls, [])
-
-    async def test_a_view_is_read_whole(self):
-        await self.up()
-        path = f'{self.PLAYLIST}/view/featured-artists'
-        self.answer()
-        view = self.page.api_answers[self.PLAYLIST]['data'][0]['views']['featured-artists']
-        first, second = view['data'][:2]
-        self.page.api_answers[path] = {'data': [first], 'next': f'{path}?offset=1'}
-        self.page.api_answers[f'{path}?offset=1'] = {'data': [second]}
-        items = await self.engine.playlist_view('pl.aW52ZW50ZWRwbA', 'featured-artists')
-        self.assertEqual(self.page.api_calls, [path, f'{path}?offset=1'])
-        self.assertEqual(self.page.api_params[0], {'limit': 100})
-        self.assertEqual([item['id'] for item in items], [first['id'], second['id']])
-
-    async def test_a_curators_playlists_are_read_whole(self):
-        await self.up()
-        self.answer()
-        own, other = self.page.api_answers[self.CURATOR]['data'][:2]
-        later = f'{self.CURATOR}?offset=10'
-        self.page.api_answers[self.CURATOR] = {'data': [own, other], 'next': later}
-        self.page.api_answers[later] = {'data': [dict(other, id='pl.aW52ZW50ZWQ4')]}
-        items = await self.engine.curator_playlists('1724049500')
-        self.assertEqual(self.page.api_calls, [self.CURATOR, later])
-        self.assertEqual(self.page.api_params[0], {'limit': api.CURATOR_PLAYLISTS_LIMIT})
-        # Every one of them: the page leaves its own playlist out (detail.playlist_completer).
-        self.assertEqual([item['id'] for item in items],
-                         ['pl.aW52ZW50ZWRwbA', 'pl.aW52ZW50ZWRwMg', 'pl.aW52ZW50ZWQ4'])
-
-    async def test_signed_out(self):
-        await self.up(authorized=False)
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
-        self.assertEqual(raised.exception.code, 'not-signed-in')
-
-    async def test_the_demo_answers_from_its_own_cache(self):
-        demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.playlist_cache_path(str(self.cache), 'pl.demo001'))
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({'id': 'pl.demo001', 'curator': None, 'shelves': [],
-                                    'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
-                        encoding='utf-8')
-        answer = await demo.playlist_page('pl.demo001')
-        self.assertEqual(answer['id'], 'pl.demo001')
-        self.assertNotIn('stale', answer)
-        for coro in (demo.playlist_page('pl.demo002'),
-                     demo.playlist_view('pl.demo001', 'featured-artists'),
-                     demo.curator_playlists('1724049500')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class CreditsTest(EngineFixture):
-    """credits: one read of a catalog song's credits, the shaping, the day-long cache, a 404
-    as none, and the demo's own answers."""
-
-    PATH = '/v1/catalog/us/songs/1724049201/credits'
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    async def test_one_read_kept_for_a_day(self):
-        await self.up()
-        with open(FIXTURES / 'song_credits.json', encoding='utf-8') as file:
-            self.page.api_answers[self.PATH] = json.load(file)
-        answer = await self.engine.credits('1724049201')
-        self.assertEqual(self.page.api_calls, [self.PATH])
-        self.assertEqual([category['kind'] for category in answer['categories']],
-                         ['performer', 'composer-and-lyrics', 'production-and-engineering'])
-        self.assertIn('cached', answer)
-        self.assertTrue((self.cache / 'credits' / '1724049201.json').is_file())
-        await self.engine.stop()
-        again = await self.engine.credits('1724049201')  # from the file, the engine down
-        self.assertEqual(again['categories'], answer['categories'])
-        self.assertEqual(self.page.api_calls, [self.PATH])
-
-    async def test_a_404_is_no_credits(self):
-        await self.up()  # the fake page answers 404 for a path it was given nothing for
-        answer = await self.engine.credits('1724049201')
-        self.assertEqual(answer['categories'], [])
-        self.assertEqual(self.page.api_calls, [self.PATH])
-
-    async def test_another_failure_is_raised(self):
-        await self.up()
-        self.page.api_answers[self.PATH] = {'errors': [{'status': '403', 'title': 'no'}]}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.credits('1724049201')
-        self.assertEqual(raised.exception.status, 403)
-        self.assertFalse((self.cache / 'credits').exists())
-
-    async def test_a_catalog_id_only(self):
-        await self.up()
-        for song_id in ('', None, 'i.aW52ZW50ZWQ'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.credits(song_id)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.api_calls, [])
-
-    async def test_signed_out(self):
-        await self.up(authorized=False)
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.credits('1724049201')
-        self.assertEqual(raised.exception.code, 'not-signed-in')
-
-    async def test_the_demo_answers_from_its_own_cache(self):
-        demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.credits_cache_path(str(self.cache), '1724049201'))
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({'categories': [], 'demo': True,
-                                    'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
-        self.assertEqual((await demo.credits('1724049201'))['categories'], [])
-        with self.assertRaises(EngineError) as raised:
-            await demo.credits('1724049202')
-        self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class SuggestionsTest(EngineFixture):
-    """playlist_suggestions: the bridge's one read, the shaping and the day-long cache."""
-
-    @staticmethod
-    def song(song_id, name):
-        return {'id': song_id, 'type': 'songs', 'attributes': {
-            'name': name, 'artistName': 'Paper Parachutes', 'albumName': 'Ladders of Rain',
-            'durationInMillis': 201000, 'contentRating': 'explicit',
-            'playParams': {'id': song_id, 'kind': 'song'},
-            'artwork': {'url': 'https://example.invalid/{w}x{h}bb.jpg'}}}
-
-    async def test_one_read_kept_for_a_day(self):
-        self.page.authorized = True
-        await self.engine.start()
-        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
-            self.song('1724049301', 'Tin Roof'), self.song('1724049302', 'Low Tide'),
-            self.song('1724049301', 'Tin Roof'), {'id': '9', 'type': 'stations'}]}}
-        answer = await self.engine.playlist_suggestions('p.pl1')
-        self.assertEqual(self.page.bridge_calls, [('playlistSuggestions', 'p.pl1', 16, [], [], [])])
-        self.assertEqual([item['id'] for item in answer['items']], ['1724049301', '1724049302'])
-        song = answer['items'][0]
-        self.assertEqual((song['kind'], song['title'], song['subtitle'], song['album']),
-                         ('song', 'Tin Roof', 'Paper Parachutes', 'Ladders of Rain'))
-        self.assertTrue(song['explicit'])
-        self.assertEqual(song['play'], {'kind': 'song', 'id': '1724049301'})
-        self.assertIn('cached', answer)
-        self.assertTrue((self.cache / 'suggestions' / 'p.pl1.json').is_file())
-        await self.engine.playlist_suggestions('p.pl1')  # from the file
-        self.assertEqual(len(self.page.bridge_calls), 1)
-        await self.engine.playlist_suggestions('p.pl1', refresh=True, limit=10,
-                                               offered=['1724049301', 1724049302],
-                                               selected=['1724049302'],
-                                               previewed=[1724049301])
-        self.assertEqual(self.page.bridge_calls[-1], (
-            'playlistSuggestions', 'p.pl1', 10, ['1724049301', '1724049302'], ['1724049302'],
-            ['1724049301']))
-
-    async def test_asked_again_once_the_playlist_holds_other_songs(self):
-        self.page.authorized = True
-        await self.engine.start()
-        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
-            self.song('1724049301', 'Tin Roof')]}}
-        answer = await self.engine.playlist_suggestions('p.pl1', basis='held-a')
-        self.assertEqual(answer['basis'], 'held-a')
-        await self.engine.playlist_suggestions('p.pl1', basis='held-a')  # from the file
-        self.assertEqual(len(self.page.bridge_calls), 1)
-        # A song added or removed since: another basis, so Apple is asked again, however
-        # young the kept answer, and the new one is kept with it.
-        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
-            self.song('1724049302', 'Low Tide')]}}
-        answer = await self.engine.playlist_suggestions('p.pl1', basis='held-b')
-        self.assertEqual(len(self.page.bridge_calls), 2)
-        self.assertEqual([item['id'] for item in answer['items']], ['1724049302'])
-        kept = json.loads((self.cache / 'suggestions' / 'p.pl1.json').read_text('utf-8'))
-        self.assertEqual(kept['basis'], 'held-b')
-        await self.engine.playlist_suggestions('p.pl1', basis='held-b')
-        self.assertEqual(len(self.page.bridge_calls), 2)
-        # Apple out of reach: the answer for other songs is still better than none.
-        await self.engine.stop()
-        answer = await self.engine.playlist_suggestions('p.pl1', basis='held-c')
-        self.assertTrue(answer['stale'])
-        self.assertEqual([item['id'] for item in answer['items']], ['1724049302'])
-
-    async def test_a_few_more_are_neither_read_from_the_file_nor_kept(self):
-        self.page.authorized = True
-        await self.engine.start()
-        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
-            self.song('1724049301', 'Tin Roof')]}}
-        await self.engine.playlist_suggestions('p.pl1')
-        path = self.cache / 'suggestions' / 'p.pl1.json'
-        kept = path.read_text(encoding='utf-8')
-        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
-            self.song('1724049303', 'Weather Vane')]}}
-        answer = await self.engine.playlist_suggestions('p.pl1', limit=4, more=True,
-                                                        offered=['1724049301'])
-        self.assertEqual([item['id'] for item in answer['items']], ['1724049303'])
-        self.assertEqual(self.page.bridge_calls[-1],
-                         ('playlistSuggestions', 'p.pl1', 4, ['1724049301'], [], []))
-        self.assertEqual(path.read_text(encoding='utf-8'), kept)
-
-    async def test_only_a_library_playlist(self):
-        self.page.authorized = True
-        await self.engine.start()
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.playlist_suggestions('pl.u-catalog')
-        self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_needs_a_sign_in(self):
-        await self.engine.start()
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.playlist_suggestions('p.pl1')
-        self.assertEqual(raised.exception.code, 'not-signed-in')
-
-    async def test_a_song_keeps_its_preview(self):
-        self.page.authorized = True
-        await self.engine.start()
-        song = self.song('1724049301', 'Tin Roof')
-        song['attributes']['previews'] = [{'url': 'https://example.invalid/tin-roof.m4a'}]
-        plain = self.song('1724049302', 'Low Tide')
-        plain['attributes']['previews'] = [{'url': 'http://example.invalid/low-tide.m4a'}]
-        self.page.bridge_answers['playlistSuggestions'] = {'results': {'suggested': [
-            song, plain]}}
-        items = (await self.engine.playlist_suggestions('p.pl1'))['items']
-        self.assertEqual(items[0]['previewUrl'], 'https://example.invalid/tin-roof.m4a')
-        self.assertNotIn('previewUrl', items[1])  # only an https clip
-
-    async def test_the_demo_answers_its_own(self):
-        demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.suggestions_cache_path(str(self.cache), 'l.pl001'))
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({'items': [], 'demo': True,
-                                    'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
-        self.assertEqual((await demo.playlist_suggestions('l.pl001'))['items'], [])
-        with self.assertRaises(EngineError) as raised:
-            await demo.playlist_suggestions('l.pl002')
-        self.assertEqual(raised.exception.code, 'engine-down')
-        with self.assertRaises(EngineError) as raised:
-            await demo.playlist_suggestions('l.pl001', more=True)
-        self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class PreviewTest(EngineFixture):
-    """preview and stop_preview: the bridge's calls, a clip the page refuses, no sign-in."""
-
-    async def test_preview_and_stop(self):
-        await self.engine.start()  # not signed in: a preview is anyone's
-        await self.engine.preview(1724049301, 'https://example.invalid/tin-roof.m4a')
-        self.page.bridge_answers['stopPreview'] = {'stopped': True}
-        self.assertTrue(await self.engine.stop_preview())
-        self.page.bridge_answers['stopPreview'] = {'stopped': False}
-        self.assertFalse(await self.engine.stop_preview())
-        self.assertEqual(self.page.bridge_calls, [
-            ('preview', '1724049301', 'https://example.invalid/tin-roof.m4a'),
-            ('stopPreview',), ('stopPreview',)])
-
-    async def test_a_clip_the_page_cannot_play(self):
-        await self.engine.start()
-        self.page.bridge_answers['preview'] = {'error': 'denied', 'code': 'NotAllowedError'}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.preview('1724049301', 'https://example.invalid/tin-roof.m4a')
-        self.assertEqual((raised.exception.code, raised.exception.musickit_code),
-                         ('api', 'NotAllowedError'))
-        for url in ('', 'http://example.invalid/tin-roof.m4a'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.preview('1724049301', url)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(len(self.page.bridge_calls), 1)
-
-    async def test_down_or_demo(self):
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.preview('1724049301', 'https://example.invalid/tin-roof.m4a')
-        self.assertEqual(raised.exception.code, 'engine-down')
-        with self.assertRaises(EngineError) as raised:
-            await engine_module.Engine(demo=True).stop_preview()
-        self.assertEqual(raised.exception.code, 'engine-down')
-
-
-class LibraryWriteTest(EngineFixture):
-    """love, unlove, rating, add_to_library, add_to_playlist and catalog_url: the bridge
-    calls, with the API's types for library and catalog ids, all needing a signed-in engine.
-    The fake page records the writes; nothing reaches Apple."""
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    async def test_love_and_unlove_rate_by_type(self):
-        await self.up()
-        rated = []
-        self.engine.connect('rated', lambda _e, kind, item_id, value: rated.append(
-            (kind, item_id, value)))
-        await self.engine.love('song', '1000000001')
-        await self.engine.love('song', 'i.song1')
-        await self.engine.unlove('album', 'l.alb1')
-        await self.engine.love('playlist', 'pl.u-1')
-        await self.engine.love('video', '1000000009')
-        await self.engine.unlove('station', 'ra.1')
-        await self.engine.suggest_less('station', 'ra.1')
-        await self.engine.suggest_less('album', 'l.alb1')
-        self.assertEqual(self.page.bridge_calls, [
-            ('rating', 'song', '1000000001', 1),
-            ('rating', 'library-song', 'i.song1', 1),
-            ('rating', 'library-album', 'l.alb1', 0),
-            ('rating', 'playlist', 'pl.u-1', 1),
-            ('rating', 'music-video', '1000000009', 1),
-            ('rating', 'station', 'ra.1', 0),
-            ('rating', 'station', 'ra.1', -1),
-            ('rating', 'library-album', 'l.alb1', -1)])
-        self.assertEqual(rated, [('song', '1000000001', 1), ('song', 'i.song1', 1),
-                                 ('album', 'l.alb1', 0), ('playlist', 'pl.u-1', 1),
-                                 ('video', '1000000009', 1), ('station', 'ra.1', 0),
-                                 ('station', 'ra.1', -1), ('album', 'l.alb1', -1)])
-
-    async def test_rating_reads_the_ids_form(self):
-        await self.up()
-        self.page.api_answers['/v1/me/ratings/songs'] = {
-            'data': [{'id': '1000000001', 'type': 'ratings', 'attributes': {'value': 1}}]}
-        self.page.api_answers['/v1/me/ratings/library-albums'] = {'data': []}
-        self.page.api_answers['/v1/me/ratings/stations'] = {
-            'data': [{'id': 'ra.1', 'type': 'ratings', 'attributes': {'value': -1}}]}
-        rated = []
-        self.engine.connect('rated', lambda _e, *args: rated.append(args))
-        self.assertEqual(await self.engine.rating('song', '1000000001'), 1)
-        self.assertEqual(await self.engine.rating('album', 'l.alb1'), 0)
-        self.assertEqual(await self.engine.rating('station', 'ra.1'), -1)  # Suggest Less
-        self.assertEqual(self.page.api_params[-3:], [{'ids': '1000000001'}, {'ids': 'l.alb1'},
-                                                     {'ids': 'ra.1'}])
-        self.assertEqual(rated, [('song', '1000000001', 1), ('album', 'l.alb1', 0),
-                                 ('station', 'ra.1', -1)])
-
-    async def test_nothing_to_rate(self):
-        await self.up()
-        for kind, item_id in (('artist', '1'), ('folder', 'x'), ('song', ''), (None, '1')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.love(kind, item_id)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_add_to_library_takes_catalog_ids(self):
-        await self.up()
-        await self.engine.add_to_library('album', '1000000002')
-        await self.engine.add_to_library('song', '1000000003')
-        await self.engine.add_to_library('video', '1000000004')
-        self.assertEqual(self.page.bridge_calls, [
-            ('addToLibrary', 'album', '1000000002'), ('addToLibrary', 'song', '1000000003'),
-            ('addToLibrary', 'music-video', '1000000004')])
-        for kind, item_id in (('album', 'l.alb1'), ('song', 'i.1'), ('artist', '5'),
-                              ('station', 'ra.1'), ('song', '')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.add_to_library(kind, item_id)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_remove_from_library_by_the_library_id(self):
-        await self.up()
-        for kind, item_id in (('song', 'i.song1'), ('album', 'l.alb1'), ('video', 'i.vid1'),
-                              ('playlist', 'p.pl2')):
-            self.assertEqual(await self.engine.remove_from_library(kind, item_id), item_id)
-        self.assertEqual(self.page.bridge_calls, [
-            ('removeFromLibrary', 'songs', 'i.song1'), ('removeFromLibrary', 'albums', 'l.alb1'),
-            ('removeFromLibrary', 'music-videos', 'i.vid1'),
-            ('removeFromLibrary', 'playlists', 'p.pl2')])
-        self.assertEqual(self.page.api_calls, [])  # no read before it
-        for kind, item_id in (('artist', 'l.art1'), ('station', 'ra.1'), ('song', ''),
-                              (None, 'i.1')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.remove_from_library(kind, item_id)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_a_catalog_id_is_read_for_its_library_twin_first(self):
-        # Apple answers a DELETE by catalog id with a 500: the library id is asked for.
-        await self.up()
-        self.page.api_answers['/v1/catalog/us'] = {'data': [{
-            'id': '1000000001', 'type': 'songs', 'attributes': {'inLibrary': True},
-            'relationships': {'library': {'data': [{'id': 'i.song1',
-                                                    'type': 'library-songs'}]}}}]}
-        self.assertEqual(await self.engine.remove_from_library('song', '1000000001'),
-                         'i.song1')
-        self.assertEqual(self.page.api_params, [{
-            'ids[songs]': '1000000001', 'relate': 'library', 'fields[songs]': 'inLibrary',
-            'omit[resource]': 'autos'}])
-        self.assertEqual(self.page.bridge_calls, [('removeFromLibrary', 'songs', 'i.song1')])
-        # Not in the library: nothing is sent.
-        self.page.api_answers['/v1/catalog/us'] = {'data': [{
-            'id': '1000000002', 'type': 'songs', 'attributes': {'inLibrary': False},
-            'relationships': {'library': {'data': []}}}]}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.remove_from_library('song', '1000000002')
-        self.assertEqual((raised.exception.code, raised.exception.status), ('api', 404))
-        self.assertEqual(len(self.page.bridge_calls), 1)
-
-    async def test_in_library_reads_through_the_request_builder(self):
-        await self.up()
-        self.assertTrue(await self.engine.in_library('song', 'i.song1'))
-        self.page.bridge_answers['libraryHas'] = {'has': False}
-        self.assertFalse(await self.engine.in_library('album', 'l.alb1'))
-        self.assertEqual(self.page.bridge_calls, [('libraryHas', 'songs', 'i.song1'),
-                                                  ('libraryHas', 'albums', 'l.alb1')])
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.in_library('song', '1000000001')
-        self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_add_to_playlist_types_the_song(self):
-        await self.up()
-        await self.engine.add_to_playlist('p.1', 'i.song1')
-        await self.engine.add_to_playlist('p.1', '1000000001')
-        await self.engine.add_to_playlist('p.1', 'i.video1', kind='video')
-        await self.engine.add_to_playlist('p.1', '1000000009', kind='musicVideo')
-        self.assertEqual(self.page.bridge_calls, [
-            ('addToPlaylist', 'p.1', [{'id': 'i.song1', 'type': 'library-songs'}]),
-            ('addToPlaylist', 'p.1', [{'id': '1000000001', 'type': 'songs'}]),
-            ('addToPlaylist', 'p.1', [{'id': 'i.video1', 'type': 'library-music-videos'}]),
-            ('addToPlaylist', 'p.1', [{'id': '1000000009', 'type': 'music-videos'}])])
-        for playlist_id, song_id, kind in (('pl.u-1', '1', 'song'), ('', '1', 'song'),
-                                           ('p.1', '', 'song'), ('p.1', '1', 'album'),
-                                           ('p.1', '1', 'station'), ('p.1', '1', None)):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.add_to_playlist(playlist_id, song_id, kind)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_many_tracks_are_added_in_batches_in_order(self):
-        # An album's or a playlist's songs: one POST of their list per PLAYLIST_BATCH, in
-        # order, library and catalog ids each typed as its own.
-        await self.up()
-        tracks = [('song', f'i.s{n}') for n in range(5)] + [('video', '1000000009'),
-                                                            ('song', '1000000001')]
-        with mock.patch.object(api, 'PLAYLIST_BATCH', 3):
-            self.assertEqual(await self.engine.add_tracks_to_playlist('p.1', tracks), 7)
-        sent = [call[2] for call in self.page.bridge_calls]
-        self.assertEqual([len(batch) for batch in sent], [3, 3, 1])
-        self.assertEqual([entry['id'] for batch in sent for entry in batch],
-                         [track_id for _kind, track_id in tracks])
-        self.assertEqual(sent[1][2], {'id': '1000000009', 'type': 'music-videos'})
-        self.assertEqual(sent[2][0], {'id': '1000000001', 'type': 'songs'})
-        # Nothing to add, or something that cannot go in: nothing sent.
-        self.page.bridge_calls.clear()
-        for bad in ([], [('song', 'i.s1'), ('album', 'l.1')]):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.add_tracks_to_playlist('p.1', bad)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_a_batch_refused_partway_says_how_many_went_in(self):
-        await self.up()
-        page = self.page
-        posts = []
-
-        def refuse_second(message):
-            if 'addToPlaylist' in message['params']['expression']:
-                posts.append(message)
-                if len(posts) == 2:
-                    return {'result': {'type': 'object'}, 'exceptionDetails': {
-                        'text': 'Uncaught', 'exception': {
-                            'description': 'Error: HTTP 500 Unable to update tracks'}}}
-            return page(message)
-
-        self.chrome.responders['Runtime.evaluate'] = refuse_second
-        tracks = [('song', f'i.s{n}') for n in range(5)]
-        with mock.patch.object(api, 'PLAYLIST_BATCH', 2):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.add_tracks_to_playlist('p.1', tracks)
-        self.assertEqual(raised.exception.code, 'api')
-        self.assertIn('after 2 tracks', raised.exception.message)
-        self.assertEqual(len(posts), 2)  # the third batch is not sent
-
-    async def test_a_refused_write_is_api(self):
-        await self.up()
-
-        def refuse(message):
-            expression = message['params']['expression']
-            if 'addToPlaylist' in expression:
-                return {'result': {'type': 'object'}, 'exceptionDetails': {
-                    'text': 'Uncaught', 'exception': {
-                        'description': 'Error: HTTP 403 Forbidden: Not allowed'}}}
-            return page(message)
-
-        page = self.page
-        self.chrome.responders['Runtime.evaluate'] = refuse
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.add_to_playlist('p.1', 'i.song1')
-        self.assertEqual(raised.exception.code, 'api')
-        self.assertIn('403', raised.exception.message)
-
-    async def test_songs_found_reads_the_library_and_the_catalog_by_id(self):
-        self.page.storefront = 'gb'
-        await self.up()
-        self.page.api_answers['/v1/me/library/songs'] = {'data': [
-            {'id': 'i.song1', 'type': 'library-songs'}]}
-        self.page.api_answers['/v1/catalog/gb/songs'] = {'data': [
-            {'id': '1000000001', 'type': 'songs'}]}
-        found = await self.engine.songs_found(['i.song1', 'i.song2', '1000000001',
-                                               '1000000002', 'i.song1'])
-        self.assertEqual(found, {'i.song1', '1000000001'})
-        reads = dict(zip(self.page.api_calls, self.page.api_params, strict=True))
-        self.assertEqual(reads['/v1/me/library/songs'], {'ids': 'i.song1,i.song2'})
-        self.assertEqual(reads['/v1/catalog/gb/songs'], {'ids': '1000000001,1000000002'})
-
-    async def test_songs_found_none_and_many(self):
-        await self.up()
-        # No answer for the library's read: Apple's 404, none of them is there.
-        self.assertEqual(await self.engine.songs_found(['i.gone1']), set())
-        self.page.api_calls.clear()
-        self.page.api_params.clear()
-        self.page.api_answers['/v1/catalog/us/songs'] = {'data': []}
-        ids = [str(1000000000 + n) for n in range(engine_module.SONG_IDS_PER_READ + 1)]
-        self.assertEqual(await self.engine.songs_found(ids), set())
-        self.assertEqual([len(params['ids'].split(',')) for params in self.page.api_params],
-                         [engine_module.SONG_IDS_PER_READ, 1])
-
-    async def test_catalog_url_of_a_library_album(self):
-        await self.up()
-        self.page.api_answers['/v1/me/library/albums/l.alb1/catalog'] = {'data': [
-            {'id': '1000000002', 'type': 'albums',
-             'attributes': {'url': 'https://music.apple.com/gb/album/x/1000000002'}}]}
-        self.page.api_answers['/v1/me/library/albums/l.alb2/catalog'] = {'data': []}
-        self.assertEqual(await self.engine.catalog_url('album', 'l.alb1'),
-                         'https://music.apple.com/gb/album/x/1000000002')
-        self.assertIsNone(await self.engine.catalog_url('album', 'l.alb2'))
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.catalog_url('album', '1000000002')
-        self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_writes_need_a_signed_in_engine(self):
-        for coro in (self.engine.love('song', '1'), self.engine.rating('song', '1'),
-                     self.engine.add_to_library('song', '1'),
-                     self.engine.remove_from_library('song', 'i.1'),
-                     self.engine.in_library('song', 'i.1'),
-                     self.engine.add_to_playlist('p.1', '1')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'engine-down')
-        await self.up(authorized=False)
-        for coro in (self.engine.unlove('song', '1'), self.engine.rating('song', '1'),
-                     self.engine.add_to_library('album', '1'),
-                     self.engine.remove_from_library('album', 'l.1'),
-                     self.engine.in_library('album', 'l.1'),
-                     self.engine.add_to_playlist('p.1', 'i.1'),
-                     self.engine.catalog_url('album', 'l.1')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'not-signed-in')
-        self.assertEqual(self.page.bridge_calls, [])
-
-
-def listed(*entries):
-    """A listing page of library playlists and folders: (type, id, name) each, name None for
-    one the account deleted (Apple's nameless leftover)."""
-    data = []
-    for kind, item_id, name in entries:
-        attributes = ({'name': name, 'canEdit': True, 'canDelete': True,
-                       'dateAdded': '2026-01-01T00:00:00Z'} if name is not None
-                      else {'canEdit': False, 'canDelete': False,
-                            'lastModifiedDate': '1970-01-01T00:00:00Z'})
-        data.append({'id': item_id, 'type': f'library-{kind}s', 'attributes': attributes})
-    return {'data': data}
-
-
-class PlaylistWriteTest(EngineFixture):
-    """Making, renaming and deleting playlists and folders, and taking one entry out of a
-    playlist: the bridge calls the engine makes, from the playlist's tracks as the fake page
-    lists them."""
-
-    async def up(self):
-        self.page.authorized = True
-        await self.engine.start()
-
-    def tracks(self, playlist_id, *ids):
-        self.page.api_answers[(f'/v1/me/library/playlists/{playlist_id}/tracks', 0)] = {
-            'data': [{'id': song_id, 'type': 'library-songs'} for song_id in ids]}
-
-    async def test_create_edit_and_delete_a_playlist(self):
-        await self.up()
-        self.page.bridge_answers['createPlaylist'] = {'id': 'p.new'}
-        new_id = await self.engine.create_playlist(
-            ' Night Drive ', 'Late', [('song', 'i.song1'), ('song', '1000000001'),
-                                      ('video', 'i.video1')], folder_id='p.fd1')
-        self.assertEqual(new_id, 'p.new')
-        await self.engine.create_playlist('Empty', folder_id='root')
-        await self.engine.edit_playlist('p.new', name='Renamed')
-        await self.engine.edit_playlist('p.new', description='')
-        await self.engine.edit_playlist('p.new')  # nothing to change: nothing sent
-        await self.engine.edit_playlist('p.new', public=True)
-        await self.engine.edit_playlist('p.new', name='Shown', public=False)
-        await self.engine.create_playlist('Public', public=True)
-        await self.engine.delete_playlist('p.new')
-        self.assertEqual(self.page.bridge_calls, [
-            ('createPlaylist', {'name': 'Night Drive', 'description': 'Late'},
-             [{'id': 'i.song1', 'type': 'library-songs'},
-              {'id': '1000000001', 'type': 'songs'},
-              {'id': 'i.video1', 'type': 'library-music-videos'}], 'p.fd1'),
-            ('createPlaylist', {'name': 'Empty'}, [], None),
-            ('updatePlaylist', 'p.new', {'name': 'Renamed'}),
-            ('updatePlaylist', 'p.new', {'description': ''}),
-            ('updatePlaylist', 'p.new', {'isPublic': True}),
-            ('updatePlaylist', 'p.new', {'name': 'Shown', 'isPublic': False}),
-            ('createPlaylist', {'name': 'Public', 'isPublic': True}, [], None),
-            ('deletePlaylist', 'p.new')])
-
-    async def test_a_new_playlist_of_many_songs_gets_the_rest_after(self):
-        await self.up()
-        self.page.bridge_answers['createPlaylist'] = {'id': 'p.new'}
-        tracks = [('song', f'i.s{n}') for n in range(5)]
-        with mock.patch.object(api, 'PLAYLIST_BATCH', 2):
-            self.assertEqual(await self.engine.create_playlist('Long', tracks=tracks), 'p.new')
-        calls = self.page.bridge_calls
-        self.assertEqual([call[0] for call in calls],
-                         ['createPlaylist', 'addToPlaylist', 'addToPlaylist'])
-        self.assertEqual([entry['id'] for entry in calls[0][2]], ['i.s0', 'i.s1'])
-        self.assertEqual(calls[1][1], 'p.new')
-        self.assertEqual([entry['id'] for call in calls[1:] for entry in call[2]],
-                         ['i.s2', 'i.s3', 'i.s4'])
-
-    async def test_what_the_playlist_writes_refuse(self):
-        await self.up()
-        for coro in (self.engine.create_playlist('  '),
-                     self.engine.create_playlist('X', tracks=[('album', 'l.1')]),
-                     self.engine.create_playlist('X', folder_id='1000000001'),
-                     self.engine.edit_playlist('p.1', name=' '),
-                     self.engine.edit_playlist('pl.u-catalog', name='X'),
-                     self.engine.delete_playlist('l.demo'),
-                     self.engine.remove_from_playlist('p.1', ''),
-                     self.engine.rename_folder('root', 'X'),
-                     self.engine.delete_folder('p.playlistsroot')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-        # A new playlist Apple answered without its id is a failure, not a success.
-        self.page.bridge_answers['createPlaylist'] = {'ok': True}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.create_playlist('X')
-        self.assertEqual(raised.exception.code, 'api')
-
-    async def test_a_song_the_playlist_holds_once_goes_as_the_web_player_removes_it(self):
-        await self.up()
-        self.tracks('p.1', 'i.a', 'i.b')
-        self.assertTrue(await self.engine.remove_from_playlist('p.1', 'i.b', 1))
-        self.assertEqual(self.page.bridge_calls,
-                         [('removeFromPlaylist', 'p.1', 'library-songs', 'i.b')])
-
-    async def test_one_entry_of_a_song_the_playlist_holds_twice(self):
-        # Apple's DELETE takes every entry of the id: the list goes back whole without the
-        # one at the index, the other entry kept.
-        await self.up()
-        self.tracks('p.1', 'i.a', 'i.b', 'i.a', 'i.c')
-        await self.engine.remove_from_playlist('p.1', 'i.a', 2)
-        # The list changed since the page showed it: the entry of that id nearest the index.
-        self.tracks('p.2', 'i.x', 'i.a', 'i.b', 'i.a')
-        await self.engine.remove_from_playlist('p.2', 'i.a', 0)
-        entry = {'type': 'library-songs'}
-        self.assertEqual(self.page.bridge_calls, [
-            ('replacePlaylistTracks', 'p.1', [dict(entry, id='i.a'), dict(entry, id='i.b'),
-                                              dict(entry, id='i.c')]),
-            ('replacePlaylistTracks', 'p.2', [dict(entry, id='i.x'), dict(entry, id='i.b'),
-                                              dict(entry, id='i.a')])])
-
-    async def test_a_song_no_longer_in_the_playlist_is_nothing_to_do(self):
-        await self.up()
-        self.tracks('p.1', 'i.a')
-        self.assertFalse(await self.engine.remove_from_playlist('p.1', 'i.z', 0))
-        # An empty playlist: Apple answers 404 for its tracks.
-        self.assertFalse(await self.engine.remove_from_playlist('p.empty', 'i.a', 0))
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_a_reorder_puts_every_entry_back_in_the_new_order(self):
-        # Every entry read goes back by its own id and type, one Apple cannot play (no
-        # playParams) and a catalog song among them; of a song held twice, the entry moved.
-        await self.up()
-        self.page.api_answers[('/v1/me/library/playlists/p.1/tracks', 0)] = {'data': [
-            {'id': 'i.a', 'type': 'library-songs', 'attributes': {'playParams': {}}},
-            {'id': 'i.b', 'type': 'library-songs'},
-            {'id': 'i.a', 'type': 'library-songs'},
-            {'id': '1000000001', 'type': 'songs'},
-            {'id': 'i.v', 'type': 'library-music-videos'}]}
-        await self.engine.reorder_playlist('p.1', ['i.a', 'i.b', 'i.a', '1000000001', 'i.v'],
-                                           [1, 2, 4, 3, 0])
-        self.assertEqual(self.page.bridge_calls, [('replacePlaylistTracks', 'p.1', [
-            {'id': 'i.b', 'type': 'library-songs'}, {'id': 'i.a', 'type': 'library-songs'},
-            {'id': 'i.v', 'type': 'library-music-videos'}, {'id': '1000000001', 'type': 'songs'},
-            {'id': 'i.a', 'type': 'library-songs'}])])
-
-    async def test_a_reorder_over_a_list_apple_no_longer_has_writes_nothing(self):
-        await self.up()
-        self.tracks('p.1', 'i.a', 'i.c', 'i.b')  # reordered on another device
-        self.tracks('p.2', 'i.a', 'i.b', 'i.c')  # a song added there
-        self.page.api_answers[('/v1/me/library/playlists/p.3/tracks', 0)] = {'data': [
-            {'id': 'i.a', 'type': 'library-songs'}, {'id': 'i.b'}]}  # an entry without a type
-        for playlist_id, shown, code in (('p.1', ['i.a', 'i.b', 'i.c'], 'conflict'),
-                                         ('p.2', ['i.a', 'i.b'], 'conflict'),
-                                         ('p.empty', ['i.a', 'i.b'], 'conflict'),
-                                         ('p.3', ['i.a', 'i.b'], 'api')):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.reorder_playlist(playlist_id, shown, [1, 0] + [2] * (
-                    len(shown) - 2))
-            self.assertEqual(raised.exception.code, code, playlist_id)
-        for playlist_id, order in (('pl.u-catalog', [0]), ('p.1', [0, 0, 1]), ('p.1', [0, 1])):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.reorder_playlist(playlist_id, ['i.a', 'i.b', 'i.c'], order)
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_several_entries_go_in_one_write(self):
-        # A selection's Remove from Playlist: the list put back without the entries chosen,
-        # of a song held twice only the one chosen; the list before answered, for Undo.
-        await self.up()
-        self.tracks('p.1', 'i.a', 'i.b', 'i.a', 'i.c')
-        before = await self.engine.remove_playlist_entries('p.1', ['i.a', 'i.b', 'i.a', 'i.c'],
-                                                           [1, 2])
-        entry = {'type': 'library-songs'}
-        self.assertEqual(before, [dict(entry, id=track_id)
-                                  for track_id in ('i.a', 'i.b', 'i.a', 'i.c')])
-        self.assertEqual(self.page.bridge_calls, [
-            ('replacePlaylistTracks', 'p.1', [dict(entry, id='i.a'), dict(entry, id='i.c')])])
-        # Undo: the entries as they were, once Apple lists what was kept.
-        self.page.bridge_calls.clear()
-        self.tracks('p.1', 'i.a', 'i.c')
-        await self.engine.put_back_playlist_entries('p.1', ['i.a', 'i.c'], before)
-        self.assertEqual(self.page.bridge_calls, [('replacePlaylistTracks', 'p.1', before)])
-
-    async def test_every_entry_removed_goes_as_the_web_player_removes_them(self):
-        # Never an empty PUT: each song's DELETE (mode=all), once a song.
-        await self.up()
-        self.tracks('p.1', 'i.a', 'i.b', 'i.a')
-        await self.engine.remove_playlist_entries('p.1', ['i.a', 'i.b', 'i.a'], [0, 1, 2])
-        self.assertEqual(self.page.bridge_calls, [
-            ('removeFromPlaylist', 'p.1', 'library-songs', 'i.a'),
-            ('removeFromPlaylist', 'p.1', 'library-songs', 'i.b')])
-
-    async def test_a_removal_or_its_undo_over_a_changed_list_writes_nothing(self):
-        await self.up()
-        self.tracks('p.1', 'i.a', 'i.c', 'i.b')  # changed on another device
-        for coro in (self.engine.remove_playlist_entries('p.1', ['i.a', 'i.b', 'i.c'], [0]),
-                     self.engine.put_back_playlist_entries('p.1', ['i.a', 'i.b'], [])):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'conflict')
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.remove_playlist_entries('pl.u-catalog', ['i.a'], [0])
-        self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_folder_children_leave_out_what_was_deleted(self):
-        await self.up()
-        self.page.api_answers[('/v1/me/library/playlist-folders/p.playlistsroot/children',
-                               0)] = listed(('playlist-folder', 'p.fd1', 'Evenings'),
-                                            ('playlist', 'p.1', 'Road Trip'),
-                                            ('playlist', 'p.gone', None))
-        self.assertEqual(await self.engine.folder_children(), [
-            {'kind': 'folder', 'id': 'p.fd1', 'name': 'Evenings'},
-            {'kind': 'playlist', 'id': 'p.1', 'name': 'Road Trip'}])
-        self.assertEqual(await self.engine.folder_children('p.none'), [])  # Apple's 404
-
-    async def test_a_folder_is_emptied_before_it_is_deleted(self):
-        await self.up()
-        children = '/v1/me/library/playlist-folders/{}/children'
-        self.page.api_answers[(children.format('p.fd1'), 0)] = listed(
-            ('playlist', 'p.1', 'Road Trip'), ('playlist-folder', 'p.fd2', 'Inner'))
-        self.page.api_answers[(children.format('p.fd2'), 0)] = listed(
-            ('playlist', 'p.2', 'Deep'))
-        await self.engine.rename_folder('p.fd1', ' Late Evenings ')
-        await self.engine.delete_folder('p.fd1')
-        self.assertEqual(self.page.bridge_calls, [
-            ('updateFolder', 'p.fd1', {'name': 'Late Evenings'}),
-            ('deletePlaylist', 'p.1'), ('deletePlaylist', 'p.2'), ('deleteFolder', 'p.fd2'),
-            ('deleteFolder', 'p.fd1')])
-
-    async def test_create_a_folder_and_move_a_playlist_into_it(self):
-        await self.up()
-        self.page.bridge_answers['createFolder'] = {'id': 'p.fdnew'}
-        self.assertEqual(await self.engine.create_folder(' Box ', 'p.fd1'), 'p.fdnew')
-        self.assertEqual(await self.engine.create_folder('Top', 'root'), 'p.fdnew')
-        await self.engine.move_to_folder('playlist', 'p.1', 'p.fdnew')
-        self.assertEqual(self.page.bridge_calls, [
-            ('createFolder', {'name': 'Box'}, 'p.fd1'),
-            ('createFolder', {'name': 'Top'}, None),
-            ('moveToFolder', 'library-playlists', 'p.1', 'p.fdnew')])
-
-    async def test_the_top_level_and_folder_moves(self):
-        await self.up()
-        # The top level is Apple's root folder; a folder moves as a folder.
-        await self.engine.move_to_folder('playlist', 'p.1', 'root')
-        await self.engine.move_to_folder('playlist', 'p.1', None)
-        await self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')
-        await self.engine.move_to_folder('folder', 'p.fd2', 'root')
-        self.assertEqual(self.page.bridge_calls, [
-            ('moveToFolder', 'library-playlists', 'p.1', 'p.playlistsroot'),
-            ('moveToFolder', 'library-playlists', 'p.1', 'p.playlistsroot'),
-            ('moveToFolder', 'library-playlist-folders', 'p.fd2', 'p.fd1'),
-            ('moveToFolder', 'library-playlist-folders', 'p.fd2', 'p.playlistsroot')])
-
-    async def test_a_move_switched_off_is_refused(self):
-        await self.up()
-        with mock.patch.object(api, 'MOVE_TO_TOP_LEVEL', False), \
-                mock.patch.object(api, 'MOVE_FOLDERS', False):
-            for coro in (self.engine.move_to_folder('playlist', 'p.1', 'root'),
-                         self.engine.move_to_folder('playlist', 'p.1', None),
-                         self.engine.move_to_folder('folder', 'p.fd2', 'p.fd1')):
-                with self.assertRaises(EngineError) as raised:
-                    await coro
-                self.assertEqual(raised.exception.code, 'usage')
-            await self.engine.move_to_folder('playlist', 'p.1', 'p.fd1')  # always on
-        self.assertEqual(self.page.bridge_calls,
-                         [('moveToFolder', 'library-playlists', 'p.1', 'p.fd1')])
-
-    async def test_what_the_folder_writes_refuse(self):
-        await self.up()
-        for coro in (self.engine.create_folder('  '),
-                     self.engine.create_folder('X', '1000000001'),
-                     self.engine.move_to_folder('playlist', 'pl.u-catalog', 'p.fd1'),
-                     self.engine.move_to_folder('album', 'l.1', 'p.fd1'),
-                     self.engine.move_to_folder('folder', 'root', 'p.fd1'),
-                     self.engine.move_to_folder('folder', 'p.fd1', 'p.fd1'),
-                     self.engine.move_to_folder('playlist', 'p.1', 'l.notafolder')):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'usage')
-        self.assertEqual(self.page.bridge_calls, [])
-        self.page.bridge_answers['createFolder'] = {'ok': True}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.create_folder('X')
-        self.assertEqual(raised.exception.code, 'api')
-
-
-def curator(curator_id, name, short=None):
-    return {'id': curator_id, 'type': 'apple-curators', 'attributes': {
-        'name': name, 'shortName': short or name,
-        'url': f'https://music.apple.com/gb/curator/x/{curator_id}',
-        'artwork': {'url': 'https://x/{w}x{h}{c}.{f}', 'bgColor': 'dd6848'}}}
-
-
-class SearchTest(EngineFixture):
-    """search, suggest, landing, category, browse and made_for_you: the bridge calls, the
-    shaping, and the day-long caches."""
-
-    async def up(self, authorized=True):
-        self.page.authorized = authorized
-        await self.engine.start()
-
-    def fixture(self, name):
-        with open(FIXTURES / name, encoding='utf-8') as file:
-            return json.load(file)
-
-    async def test_search_needs_a_signed_in_engine(self):
-        await self.up(authorized=False)
-        for coro in (self.engine.search('paper'), self.engine.suggest('pa'),
-                     self.engine.landing(), self.engine.category('1'), self.engine.browse(),
-                     self.engine.made_for_you(), self.engine.radio(), self.engine.charts(),
-                     self.engine.charts(genre='21'), self.engine.genres(),
-                     self.engine.replay(), self.engine.replay(year='2025'),
-                     self.engine.recently_played()):
-            with self.assertRaises(EngineError) as raised:
-                await coro
-            self.assertEqual(raised.exception.code, 'not-signed-in')
-        self.assertEqual(self.page.bridge_calls, [])
-
-    async def test_search_is_shaped_into_shelves(self):
-        await self.up()
-        self.page.bridge_answers['search'] = self.fixture('search_results.json')
-        answer = await self.engine.search('  paper   parachutes ')
-        self.assertEqual(self.page.bridge_calls[-1],
-                         ('search', 'paper parachutes', 20, api.SEARCH_TYPES, 0, True))
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['artists', 'songs', 'albums', 'playlists'])
-        self.assertEqual(answer['shelves'][2]['key'], 'albums')
-        self.assertEqual(answer['shelves'][2]['title'], '')  # the Search page has the words
-        self.assertEqual(set(answer), {'shelves'})
-        album = answer['shelves'][2]['items'][0]
-        self.assertEqual(album['groups'], [])
-        self.assertTrue(album['art'].startswith('https://'))  # not on disk: a catalog URL
-        self.assertIsNone(album['thumb'])
-        # With a limit (per kind).
-        await self.engine.search('paper', limit=5)
-        self.assertEqual(self.page.bridge_calls[-1],
-                         ('search', 'paper', 5, api.SEARCH_TYPES, 0, True))
-
-    async def test_a_search_of_one_kind_pages_on(self):
-        await self.up()
-        self.page.bridge_answers['search'] = {'results': {'apple-curators': {
-            'next': '/v1/catalog/gb/search?offset=50&term=tide&types=apple-curators',
-            'data': [{'id': '900000001', 'type': 'apple-curators', 'attributes': {
-                'name': 'Invented Tide Show', 'kind': 'Show', 'showHostName': 'Ada Merrow',
-                'url': 'https://music.apple.com/gb/curator/x/900000001'}},
-                {'id': '900000002', 'type': 'apple-curators', 'attributes': {
-                    'name': 'Invented Editors', 'kind': 'Curator'}}]}}}
-        answer = await self.engine.search('tide', limit=25, kind='radio-shows', offset=25)
-        self.assertEqual(self.page.bridge_calls[-1],
-                         ('search', 'tide', 25, 'apple-curators', 25, False))
-        self.assertEqual([(shelf['key'], shelf['next']) for shelf in answer['shelves']],
-                         [('radio-shows', 50)])
-        show = answer['shelves'][0]['items'][0]
-        self.assertEqual((show['kind'], show['curatorKind'], show['subtitle'], show['play']),
-                         ('category', 'show', 'Ada Merrow', {}))
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.search('tide', kind='podcasts')
-        self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_the_demo_searches_its_invented_catalog(self):
-        demo = engine_module.Engine(demo=True)
-        with self.assertRaises(EngineError) as raised:  # no catalog written: no search
-            await demo.search('tide')
-        self.assertEqual(raised.exception.code, 'engine-down')
-        songs = [{'id': f'17240{n:05d}', 'kind': 'song', 'title': f'Tide Song {n}',
-                  'subtitle': 'Invented Artist'} for n in range(30)]
-        path = pathlib.Path(normalize.demo_search_path(str(self.cache)))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({'demo': True, 'cached': '2020-01-01T00:00:00Z',
-                                    'shelves': [
-            {'key': 'artists', 'items': [{'id': 'l.art1', 'kind': 'artist',
-                                          'title': 'Invented Artist'}]},
-            {'key': 'songs', 'items': songs}]}), encoding='utf-8')
-        answer = await demo.search('TIDE  song')
-        self.assertEqual([(shelf['key'], len(shelf['items']), shelf['next'])
-                          for shelf in answer['shelves']],
-                         [('top', 1, None), ('songs', 20, 20)])
-        page = await demo.search('tide', limit=25, kind='songs', offset=20)
-        self.assertEqual([(shelf['key'], len(shelf['items']), shelf['next'])
-                          for shelf in page['shelves']], [('songs', 10, None)])
-        self.assertEqual((await demo.search('nothing like it'))['shelves'], [])
-        suggested = await demo.suggest('invented')
-        self.assertEqual((suggested['terms'], [item['id'] for item in suggested['items']]),
-                         ([], ['l.art1', '1724000000']))
-
-    async def test_search_errors(self):
-        await self.up()
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.search('   ')
-        self.assertEqual(raised.exception.code, 'usage')
-        self.page.bridge_answers['search'] = {'errors': [{'status': '400', 'title': 'Bad'}]}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.search('x')
-        self.assertEqual(raised.exception.code, 'api')
-        self.assertIn('400 Bad', raised.exception.message)
-        # An answer that is not one: nothing found.
-        self.page.bridge_answers['search'] = None
-        self.assertEqual(await self.engine.search('x'), {'shelves': []})
-
-    async def test_suggest(self):
-        await self.up()
-        self.page.bridge_answers['suggest'] = {'results': {'suggestions': [
-            {'kind': 'terms', 'searchTerm': 'glow', 'displayTerm': 'glow'},
-            {'kind': 'topResults', 'content': {
-                'id': '900000701', 'type': 'artists',
-                'attributes': {'name': 'Glowline', 'genreNames': ['Pop']}}},
-        ]}}
-        answer = await self.engine.suggest('gl', limit=4)
-        self.assertEqual(self.page.bridge_calls[-1], ('suggest', 'gl', 4))
-        self.assertEqual(answer['terms'], [{'term': 'glow', 'display': 'glow'}])
-        self.assertEqual([(item['kind'], item['title']) for item in answer['items']],
-                         [('artist', 'Glowline')])
-
-    async def test_landing_is_kept_for_a_day(self):
-        await self.up()
-        self.page.bridge_answers['searchLanding'] = {'data': [
-            {'id': 'r1', 'type': 'personal-recommendation',
-             'relationships': {'contents': {'data': [
-                 curator('900000801', 'Apple Music Folk', 'Folk'),
-                 curator('900000802', 'Apple Music Live')]}}}]}
-        answer = await self.engine.landing()
-        self.assertEqual(self.page.bridge_calls, [('searchLanding',)])
-        self.assertEqual([(c['id'], c['kind'], c['title']) for c in answer['categories']],
-                         [('900000801', 'category', 'Folk'),
-                          ('900000802', 'category', 'Apple Music Live')])
-        self.assertIn('cached', answer)
-        path = self.cache / 'landing.json'
-        self.assertTrue(path.is_file())
-        # Kept: answered from the file, even with the engine down.
-        await self.engine.stop()
-        again = await self.engine.landing()
-        self.assertEqual(again['categories'], answer['categories'])
-        self.assertEqual(len(self.page.bridge_calls), 1)
-        # A refresh, or an old stamp, asks Apple again.
-        await self.up()
-        await self.engine.landing(refresh=True)
-        self.assertEqual(len(self.page.bridge_calls), 2)
-        kept = json.loads(path.read_text())
-        kept['cached'] = '2020-01-01T00:00:00Z'
-        path.write_text(json.dumps(kept))
-        await self.engine.landing()
-        self.assertEqual(len(self.page.bridge_calls), 3)
-
-    async def test_category_is_kept_by_id(self):
-        await self.up()
-        self.page.bridge_answers['category'] = {'data': [{
-            'id': '900000801', 'type': 'apple-curators',
-            'attributes': {'name': 'Apple Music Folk', 'shortName': 'Folk'},
-            'relationships': {'grouping': {'data': [
-                self.fixture('editorial_groupings.json')['data'][0]]}}}]}
-        answer = await self.engine.category('900000801')
-        self.assertEqual(self.page.bridge_calls, [('category', '900000801')])
-        self.assertEqual(answer['title'], 'Folk')
-        self.assertEqual([s['key'] for s in answer['shelves']],
-                         ['cat-best-new-songs', 'cat-new-releases', 'cat-stations'])
-        self.assertTrue((self.cache / 'categories' / '900000801.json').is_file())
-        await self.engine.stop()
-        self.assertEqual((await self.engine.category('900000801'))['title'], 'Folk')
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.category('900000802')  # not kept: needs the engine
-        self.assertEqual(raised.exception.code, 'engine-down')
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.category('')
-        self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_browse_is_the_editorial_groupings_kept_for_a_day(self):
-        self.page.storefront = 'gb'
-        await self.up()
-        path = '/v1/editorial/gb/groupings'
-        self.page.api_answers[path] = self.fixture('editorial_groupings.json')
-        answer = await self.engine.browse()
-        self.assertEqual(self.page.api_calls, [path])
-        self.assertEqual(self.page.api_params[-1],
-                         {'name': 'music', 'platform': 'web', 'extend': 'editorialArtwork'})
-        self.assertEqual([s['title'] for s in answer['shelves']],
-                         ['', 'Best New Songs', 'New Releases', 'Stations'])
-        self.assertTrue(answer['shelves'][0]['featured'])
-        self.assertEqual([row['title'] for row in answer['links']], ['More', ''])
-        self.assertTrue((self.cache / 'browse.json').is_file())
-        await self.engine.stop()
-        self.assertEqual(len((await self.engine.browse())['shelves']), 4)
-        await self.up()
-        await self.engine.browse(refresh=True)
-        self.assertEqual(self.page.api_calls, [path, path])
-
-    async def test_an_answer_kept_in_an_older_shape_is_asked_again(self):
-        # New kept that morning by a version whose New had no banners or links: fresh by its
-        # age, but not in the shape this version answers, so Apple is asked again.
-        self.page.storefront = 'gb'
-        path = '/v1/editorial/gb/groupings'
-        self.page.api_answers[path] = self.fixture('editorial_groupings.json')
-        self.cache.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-        older = {'shelves': [{'key': 'old', 'title': 'Invented Old Shelf', 'items': []}],
-                 'cached': stamp}
-        (self.cache / 'browse.json').write_text(json.dumps(older), encoding='utf-8')
-        await self.engine.stop()  # Apple cannot be asked: the older one, stale
-        answer = await self.engine.browse()
-        self.assertEqual((answer['shelves'][0]['key'], answer.get('stale')), ('old', True))
-        await self.up()
-        answer = await self.engine.browse()
-        self.assertEqual(self.page.api_calls, [path])
-        self.assertTrue(answer['shelves'][0]['featured'])
-        self.assertEqual(answer['shape'], normalize.ANSWER_SHAPE)
-        kept = json.loads((self.cache / 'browse.json').read_text(encoding='utf-8'))
-        self.assertEqual(kept['shape'], normalize.ANSWER_SHAPE)
-        await self.engine.browse()
-        self.assertEqual(self.page.api_calls, [path])  # this shape's: kept a day
-
-    async def test_more_to_explores_pages_are_asked_by_id_and_kept_a_day(self):
-        # #370: a room, a grouping (New's shape: `platform` or a 400) and a multiroom.
-        self.page.storefront = 'gb'
-        await self.up()
-        grouping = self.fixture('editorial_groupings.json')
-        room = {'data': [{'id': '900000701', 'type': 'rooms', 'attributes': {
-            'title': 'Invented Room'}, 'relationships': {'contents': {
-                'data': grouping['data'][0]['relationships']['tabs']['data'][0][
-                    'relationships']['children']['data'][2]['relationships']['contents'][
-                    'data']}}}]}
-        multiroom = {'data': [{'id': '900000705', 'type': 'multirooms', 'attributes': {
-            'title': 'Invented Multiroom'}, 'relationships': {'children': {'data': []}}}]}
-        self.page.api_answers['/v1/editorial/gb/rooms/900000701'] = room
-        self.page.api_answers['/v1/editorial/gb/groupings/900000704'] = grouping
-        self.page.api_answers['/v1/editorial/gb/multirooms/900000705'] = multiroom
-        answer = await self.engine.room('900000701')
-        self.assertEqual((answer['title'], [item['id'] for item in answer['items']]),
-                         ('Invented Room', ['900000201', '900000202']))
-        answer = await self.engine.grouping('900000704')
-        self.assertEqual(answer['shelves'][0]['form'], 'banners')
-        self.assertEqual([row['key'] for row in answer['links']], ['grp-links', 'grp-genres'])
-        answer = await self.engine.multiroom('900000705')
-        self.assertEqual(answer['title'], 'Invented Multiroom')
-        self.assertEqual(self.page.api_calls, ['/v1/editorial/gb/rooms/900000701',
-                                               '/v1/editorial/gb/groupings/900000704',
-                                               '/v1/editorial/gb/multirooms/900000705'])
-        self.assertEqual(self.page.api_params, [
-            {}, {'platform': 'web', 'extend': 'editorialArtwork'},
-            {'extend': 'editorialArtwork,uber,lockupStyle'}])
-        for folder, name in (('rooms', '900000701'), ('groupings', '900000704'),
-                             ('multirooms', '900000705')):
-            self.assertTrue((self.cache / folder / f'{name}.json').is_file())
-        await self.engine.stop()
-        self.assertEqual((await self.engine.room('900000701'))['title'], 'Invented Room')
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.room('900000702')  # not kept: needs the engine
-        self.assertEqual(raised.exception.code, 'engine-down')
-        for bad in ('', '../x', 'a/b', None):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.grouping(bad)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_browse_failure_is_api(self):
-        await self.up()
-        with mock.patch.object(engine_module, 'API_RETRIES', 1):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.browse()
-        self.assertEqual(raised.exception.code, 'api')
-        self.assertFalse((self.cache / 'browse.json').exists())
-
-    async def test_the_charts_are_asked_with_their_playlists_and_kept_a_day(self):
-        self.page.storefront = 'gb'
-        await self.up()
-        path = '/v1/catalog/gb/charts'
-        self.page.api_answers[path] = self.fixture('charts.json')
-        answer = await self.engine.charts()
-        self.assertEqual(self.page.api_params, [{
-            'types': 'songs,albums,playlists,music-videos', 'limit': api.CHARTS_LIMIT,
-            'with': 'dailyGlobalTopCharts,cityCharts'}])
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']][:3],
-                         ['charts-songs', 'charts-albums', 'charts-playlists'])
-        await self.engine.charts()
-        self.assertEqual(self.page.api_calls, [path])  # kept
-        self.assertTrue((self.cache / 'charts.json').exists())
-
-    async def test_an_answer_that_cannot_be_shaped_is_an_engine_error_kept_nowhere(self):
-        self.page.storefront = 'gb'
-        await self.up()
-        path = '/v1/catalog/gb/charts'
-        confused = self.fixture('charts.json')
-        confused['results']['albums'][0]['data'][0]['attributes'] = ['junk']
-        self.page.api_answers[path] = confused
-        with self.assertLogs('applemusic.engine', 'WARNING'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.charts()
-        self.assertEqual(raised.exception.code, 'api')
-        self.assertFalse((self.cache / 'charts.json').exists())
-        # An older answer kept there is the answer then, as no longer fresh.
-        normalize.write_answer(str(self.cache / 'charts.json'), {'shelves': []},
-                               str(self.cache))
-        self.expire(self.cache / 'charts.json')
-        with self.assertLogs('applemusic.engine', 'WARNING'):
-            answer = await self.engine.charts()
-        self.assertIs(answer.get('stale'), True)
-
-    async def test_a_genres_charts_are_asked_for_it_and_kept_apart(self):
-        self.page.storefront = 'gb'
-        await self.up()
-        path = '/v1/catalog/gb/charts'
-        self.page.api_answers[path] = self.fixture('charts.json')
-        await self.engine.charts(genre='21')
-        await self.engine.charts(genre='21')
-        self.assertEqual(self.page.api_calls, [path])  # kept
-        # Its rankings alone: the Daily Top 100 and City Charts are no genre's.
-        self.assertEqual(self.page.api_params, [{
-            'types': 'songs,albums,playlists,music-videos', 'limit': api.CHARTS_LIMIT,
-            'genre': '21'}])
-        self.assertTrue((self.cache / 'charts' / '21.json').exists())
-        self.assertFalse((self.cache / 'charts.json').exists())  # every genre's is apart
-        await self.engine.charts()
-        self.assertEqual(self.page.api_calls, [path, path])
-        # Music, every genre's, is the charts of every genre, kept as they are.
-        await self.engine.charts(genre=api.ROOT_GENRE)
-        self.assertEqual(self.page.api_calls, [path, path])  # charts.json's, kept
-        self.assertFalse((self.cache / 'charts' / f'{api.ROOT_GENRE}.json').exists())
-        for bad in ('../x', 'abc', '2 1'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.charts(genre=bad)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_the_genres_are_the_catalogs_kept_a_day(self):
-        self.page.storefront = 'gb'
-        await self.up()
-        path = '/v1/catalog/gb/genres'
-        self.page.api_answers[path] = {'data': [
-            {'id': '9000', 'type': 'genres', 'attributes': {'name': 'Invented Music'}},
-            {'id': '9001', 'type': 'genres', 'attributes': {
-                'name': 'Invented Folk', 'parentId': '9000', 'parentName': 'Invented Music'}}]}
-        answer = await self.engine.genres()
-        self.assertEqual(answer['genres'], [{'id': '9001', 'title': 'Invented Folk'}])
-        self.assertEqual(self.page.api_params, [{}])
-        await self.engine.stop()
-        self.assertEqual((await self.engine.genres())['genres'][0]['id'], '9001')  # kept
-        self.assertEqual(self.page.api_calls, [path])
-        self.assertTrue((self.cache / 'genres.json').exists())
-
-    async def test_charts_refused_with_their_playlists_are_asked_without(self):
-        await self.up()
-        path = '/v1/catalog/us/charts'
-        refused = {'errors': [{'status': '400', 'title': 'Bad Request'}]}
-        answers = iter([refused, self.fixture('charts.json')])
-        page = self.page
-
-        def charts(message):
-            expression = message['params']['expression']
-            if expression.startswith(f'window.__appleMusicLibrary.api("{path}"'):
-                page.api_calls.append(path)
-                return value(next(answers))
-            return page(message)
-
-        self.chrome.responders['Runtime.evaluate'] = charts
-        answer = await self.engine.charts()
-        self.assertEqual(self.page.api_calls, [path, path])
-        self.assertEqual(answer['shelves'][0]['key'], 'charts-songs')
-        # Any other failure is the command's.
-        answers = iter([{'errors': [{'status': '403', 'title': 'Forbidden'}]}])
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.charts(refresh=True)
-        self.assertEqual(raised.exception.status, 403)
-
-    async def test_radio_is_kept_until_its_live_programmes_run_out(self):
-        self.page.storefront = 'gb'
-        await self.up()
-        path = '/v1/editorial/gb/groupings'
-        self.page.api_answers[path] = self.fixture('editorial_radio.json')
-        answer = await self.engine.radio()
-        self.assertEqual(self.page.api_params[-1], {
-            'name': 'radio', 'platform': 'web', 'tabs': 'subscriber',
-            'extend': 'editorialArtwork', 'include[stations]': 'events,radio-show'})
-        self.assertEqual([s['key'] for s in answer['shelves']][:2], ['radio-live', 'radio-hero'])
-        self.assertTrue(answer['shelves'][0]['live'])
-        self.assertIn('expires', answer)  # a few minutes on: the fixture's programmes are over
-        await self.engine.radio()
-        self.assertEqual(self.page.api_calls, [path])  # kept
-        kept_path = self.cache / 'radio.json'
-        kept = json.loads(kept_path.read_text())
-        kept['expires'] = '2020-01-01T00:00:00Z'  # young, but its programmes have ended
-        kept_path.write_text(json.dumps(kept))
-        await self.engine.radio()
-        self.assertEqual(self.page.api_calls, [path, path])  # asked again
-        kept = json.loads(kept_path.read_text())
-        kept['expires'] = '2020-01-01T00:00:00Z'
-        kept_path.write_text(json.dumps(kept))
-        await self.engine.stop()
-        answer = await self.engine.radio()  # Apple cannot be asked: the old one, stale
-        self.assertTrue(answer['stale'])
-        self.assertEqual(answer['shelves'][0]['key'], 'radio-live')
-
-    def expire(self, path):
-        kept = json.loads(path.read_text())
-        kept['cached'] = '2020-01-01T00:00:00Z'
-        path.write_text(json.dumps(kept))
-
-    async def test_an_old_answer_is_answered_when_apple_cannot_be_asked(self):
-        commands = {
-            'landing': (self.engine.landing, self.cache / 'landing.json'),
-            'category': (lambda **kw: self.engine.category('900000801', **kw),
-                         self.cache / 'categories' / '900000801.json'),
-            'browse': (self.engine.browse, self.cache / 'browse.json'),
-            'made_for_you': (self.engine.made_for_you, self.cache / 'made-for-you.json'),
-            'radio': (self.engine.radio, self.cache / 'radio.json'),
-            'charts': (self.engine.charts, self.cache / 'charts.json'),
-            'genre_charts': (lambda **kw: self.engine.charts(genre='21', **kw),
-                             self.cache / 'charts' / '21.json'),
-            'genres': (self.engine.genres, self.cache / 'genres.json'),
-            'recently_played': (self.engine.recently_played, self.cache / 'recent-played.json'),
-        }
-        for name, (_command, path) in commands.items():
-            normalize.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))
-            self.expire(path)
-        # Down: each answers its old answer, marked stale, stamped when it was fetched.
-        for name, (command, _path) in commands.items():
-            answer = await command()
-            self.assertEqual((answer['name'], answer['stale'], answer['cached']),
-                             (name, True, '2020-01-01T00:00:00Z'), name)
-            # A refresh wants Apple's answer, and says why there is none.
-            with self.assertRaises(EngineError) as raised:
-                await command(refresh=True)
-            self.assertEqual(raised.exception.code, 'engine-down')
-        # Signed out: the same.
-        await self.up(authorized=False)
-        for name, (command, _path) in commands.items():
-            self.assertTrue((await command())['stale'], name)
-        await self.engine.stop()
-        # Up and signed in, but Apple fails (offline, say): the same.
-        await self.up()
-        self.page.bridge_answers['searchLanding'] = {'errors': [{'status': '503'}]}
-        self.page.bridge_answers['category'] = {'errors': [{'status': '503'}]}
-        for name, (command, _path) in commands.items():
-            self.assertTrue((await command())['stale'], name)
-        self.assertEqual(len(self.page.bridge_calls), 2)
-        # With nothing kept, the error.
-        for _name, (_command, path) in commands.items():
-            path.unlink()
-        await self.engine.stop()
-        for name, (command, _path) in commands.items():
-            with self.assertRaises(EngineError) as raised:
-                await command()
-            self.assertEqual(raised.exception.code, 'engine-down', name)
-
-    async def test_an_answer_past_its_day_outlives_the_startup_prune(self):
-        # The prune at every startup and sync leaves an answer a day or two old, so a launch
-        # with the engine down still has it to answer, stale; one past the keep age goes.
-        two_days = time.time() - 2 * 24 * 3600
-        path = self.cache / 'radio.json'
-        normalize.write_answer(str(path), {'shelves': [], 'name': 'radio'}, str(self.cache))
-        self.expire(path)
-        os.utime(path, (two_days, two_days))
-        old = self.cache / 'charts.json'
-        normalize.write_answer(str(old), {'shelves': []}, str(self.cache))
-        long_ago = time.time() - normalize.ANSWER_KEEP_AGE - 60
-        os.utime(old, (long_ago, long_ago))
-        gone = normalize.prune_caches(str(self.cache))
-        self.assertEqual(gone['answers'], 1)
-        self.assertFalse(old.exists())
-        answer = await self.engine.radio()
-        self.assertEqual((answer['name'], answer['stale']), ('radio', True))
-
-    async def test_an_old_answer_is_asked_again_when_apple_can_be(self):
-        await self.up()
-        self.page.bridge_answers['searchLanding'] = {'data': []}
-        path = self.cache / 'landing.json'
-        normalize.write_answer(str(path), {'categories': [{'id': 'old'}]}, str(self.cache))
-        self.expire(path)
-        answer = await self.engine.landing()
-        self.assertEqual(self.page.bridge_calls, [('searchLanding',)])
-        self.assertEqual(answer['categories'], [])
-        self.assertNotIn('stale', answer)
-        self.assertNotEqual(answer['cached'], '2020-01-01T00:00:00Z')
-
-    async def test_recently_played_is_read_a_page_at_a_time_and_kept(self):
-        await self.up()
-        path = '/v1/me/recent/played'
-
-        def played(number, kind='albums'):
-            return {'id': f'9000003{number:02d}', 'type': kind,
-                    'attributes': {'name': f'Invented Played {number}',
-                                   'artistName': 'Invented Artist',
-                                   'playParams': {'id': f'9000003{number:02d}',
-                                                  'kind': kind[:-1]}}}
-
-        first = [played(n) for n in range(9)] + [played(9, 'stations')]
-        self.page.api_answers[(path, 0)] = {'data': first, 'next': f'{path}?offset=10'}
-        self.page.api_answers[(path, 10)] = {'data': [played(10), played(0)]}  # once each
-        answer = await self.engine.recently_played()
-        self.assertEqual(self.page.api_calls, [path, path])
-        self.assertEqual(self.page.api_params, [{'limit': 10, 'offset': 0},
-                                                {'limit': 10, 'offset': 10}])
-        self.assertEqual(set(answer), {'items', 'cached', 'shape'})
-        self.assertEqual([item['title'] for item in answer['items']],
-                         [f'Invented Played {n}' for n in range(11)])
-        self.assertEqual(answer['items'][9]['kind'], 'station')
-        self.assertEqual(answer['items'][0]['groups'], [])
-        self.assertTrue((self.cache / 'recent-played.json').is_file())
-        # Kept: answered without the engine, but a refresh needs it.
-        await self.engine.stop()
-        self.assertEqual(len((await self.engine.recently_played())['items']), 11)
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.recently_played(refresh=True)
-        self.assertEqual(raised.exception.code, 'engine-down')
-
-    async def test_recently_played_keeps_the_pages_read_when_a_later_one_fails(self):
-        await self.up()
-        path = '/v1/me/recent/played'
-        self.page.api_answers[(path, 0)] = {
-            'data': [{'id': f'9000004{n:02d}', 'type': 'playlists',
-                      'attributes': {'name': f'Invented Mix {n}'}} for n in range(10)],
-            'next': f'{path}?offset=10'}
-        # The next page is Apple's 404 (the fake page's answer for what it has not got):
-        # the first page's answered, but not kept.
-        answer = await self.engine.recently_played(refresh=True)
-        self.assertEqual(len(answer['items']), 10)
-        self.assertIn('cached', answer)
-        self.assertFalse((self.cache / 'recent-played.json').exists())
-        # The first page failing fails the ask.
-        del self.page.api_answers[(path, 0)]
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.recently_played(refresh=True)
-        self.assertEqual(raised.exception.status, 404)
-
-    async def test_made_for_you_keeps_the_mixes_and_stations(self):
-        await self.up()
-        mixes = [{'id': f'pl.pm-{n}', 'type': 'playlists', 'attributes': {
-            'name': f'Mix {n}', 'playlistType': 'personal-mix',
-            'artwork': {'url': 'https://x/mix/{w}x{h}{c}.{f}', 'bgColor': '223344'},
-            'playParams': {'id': f'pl.pm-{n}', 'kind': 'playlist'}}} for n in (1, 2)]
-        albums = [{'id': '900000201', 'type': 'albums',
-                   'attributes': {'name': 'Lantern Season', 'artistName': 'P', 'trackCount': 3}}]
-        self.page.api_answers['/v1/me/recommendations'] = {'data': [
-            {'id': 'r-mixes', 'type': 'personal-recommendation',
-             'attributes': {'title': {'stringForDisplay': 'Made for You'}},
-             'relationships': {'contents': {'data': mixes}}},
-            {'id': 'r-albums', 'type': 'personal-recommendation',
-             'attributes': {'title': {'stringForDisplay': 'New Releases for You'}},
-             'relationships': {'contents': {'data': albums}}},
-        ]}
-        answer = await self.engine.made_for_you()
-        self.assertEqual(self.page.api_calls, ['/v1/me/recommendations'])
-        self.assertEqual(self.page.api_params[-1], {'limit': 25})
-        self.assertEqual([(s['key'], s['title'], len(s['items'])) for s in answer['shelves']],
-                         [('rec-r-mixes', 'Made for You', 2)])
-        self.assertTrue((self.cache / 'made-for-you.json').is_file())
-        await self.engine.stop()
-        self.assertEqual(len((await self.engine.made_for_you())['shelves']), 1)
-
-    REPLAY_SONGS = '/v1/catalog/us/songs'
-
-    @staticmethod
-    def replay_summary(year):
-        """An invented summary of `year`, in the shape Apple answers it: each view's items
-        period summaries, a top song its id alone, an album the whole resource."""
-        def songs(*ids):
-            return [{'id': f'inv-song-summary-{song_id}', 'type': 'song-period-summaries',
-                     'attributes': {'playCount': 5, 'year': str(year)},
-                     'relationships': {'song': {'data': [
-                         {'id': song_id, 'type': 'songs',
-                          'href': f'/v1/catalog/us/songs/{song_id}'}]}}} for song_id in ids]
-        album = {'id': 'inv-album-summary', 'type': 'album-period-summaries',
-                 'attributes': {'playCount': 9, 'listenTimeInMinutes': 30, 'year': str(year)},
-                 'relationships': {'album': {'data': [{
-                     'id': '900000401', 'type': 'albums',
-                     'attributes': {'name': 'Invented Album', 'artistName': 'Invented'}}]}}}
-        return {'data': [{
-            'id': f'year-{year}', 'type': 'music-summaries',
-            'attributes': {'year': year, 'period': 'year', 'name': 'Invented'},
-            'views': {'top-songs': {'data': songs('900000302', '900000301')},
-                      'top-albums': {'data': [album]}}}]}
-
-    def replay_answers(self):
-        """An invented summary of 2026 and of 2025, the catalog's songs they name and a
-        listing of three years, each with its Replay playlist."""
-        self.page.api_answers[api.REPLAY_ENDPOINT] = self.replay_summary(2026)
-        self.page.api_answers['/v1/me/music-summaries/year-2025'] = self.replay_summary(2025)
-        self.page.api_answers[self.REPLAY_SONGS] = {'data': [
-            {'id': song_id, 'type': 'songs', 'attributes': {
-                'name': f'Invented Song {song_id}', 'artistName': 'Invented Artist',
-                'albumName': 'Invented Album'}} for song_id in ('900000301', '900000302')]}
-        self.page.api_answers[api.REPLAY_YEARS_ENDPOINT] = {'data': [
-            {'id': f'year-{year}', 'type': 'music-summaries',
-             'attributes': {'period': 'year', 'year': year},
-             'relationships': {'playlist': {'data': [{
-                 'id': f'pl.inv{year}', 'type': 'playlists',
-                 'attributes': {'name': f'Invented Replay {year}'}}]}}}
-            for year in (2026, 2025, 2024)]}
-
-    async def test_replay_is_the_summary_its_songs_and_the_years_kept_a_day(self):
-        await self.up()
-        self.replay_answers()
-        answer = await self.engine.replay()
-        self.assertEqual(self.page.api_calls,
-                         [api.REPLAY_ENDPOINT, self.REPLAY_SONGS, api.REPLAY_YEARS_ENDPOINT])
-        self.assertEqual(self.page.api_params, [
-            {'filter[year]': 'latest', 'views': 'top-songs,top-artists,top-albums'},
-            {'ids': '900000302,900000301'},
-            {'period': 'year', 'fields[music-summaries]': 'period,year',
-             'include[music-summaries]': 'playlist'}])
-        self.assertEqual((answer['year'], answer['years']), ('2026', ['2026', '2025', '2024']))
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['replay-songs', 'replay-albums', 'replay-playlists'])
-        self.assertEqual([item['title'] for item in answer['shelves'][0]['items']],
-                         ['Invented Song 900000302', 'Invented Song 900000301'])  # its rank
-        self.assertEqual(answer['basis'], normalize.REPLAY_SHAPE)
-        self.assertTrue((self.cache / 'replay.json').is_file())
-        await self.engine.stop()
-        self.assertEqual((await self.engine.replay())['year'], '2026')  # kept
-        self.assertEqual(len(self.page.api_calls), 3)
-
-    async def test_a_replay_without_its_years_is_shown_not_kept(self):
-        await self.up()
-        self.replay_answers()
-        years = self.page.api_answers.pop(api.REPLAY_YEARS_ENDPOINT)  # a 404, once
-        answer = await self.engine.replay()
-        self.assertEqual((answer['year'], answer['years']), ('2026', []))
-        self.assertEqual(answer['shelves'][0]['key'], 'replay-songs')
-        self.assertIn('cached', answer)
-        self.assertFalse((self.cache / 'replay.json').exists())
-        self.page.api_answers[api.REPLAY_YEARS_ENDPOINT] = years
-        answer = await self.engine.replay()  # asked again
-        self.assertEqual(self.page.api_calls, [api.REPLAY_ENDPOINT, self.REPLAY_SONGS,
-                                               api.REPLAY_YEARS_ENDPOINT] * 2)
-        self.assertEqual(answer['years'], ['2026', '2025', '2024'])
-        self.assertTrue((self.cache / 'replay.json').is_file())
-
-    async def test_a_replay_kept_in_an_older_shape_is_asked_again(self):
-        await self.up()
-        self.replay_answers()
-        path = normalize.replay_cache_path(str(self.cache))
-        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
-                               str(self.cache))
-        answer = await self.engine.replay()
-        self.assertEqual(self.page.api_calls[0], api.REPLAY_ENDPOINT)
-        self.assertEqual(answer['shelves'][0]['key'], 'replay-songs')
-        # Apple out of reach, the older one is still the answer, as no longer fresh.
-        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
-                               str(self.cache))
-        await self.engine.stop()
-        answer = await self.engine.replay()
-        self.assertIs(answer.get('stale'), True)
-
-    async def test_a_past_years_replay_is_asked_by_its_resource_and_kept_apart(self):
-        await self.up()
-        self.replay_answers()
-        answer = await self.engine.replay(year='2025')
-        self.assertEqual(self.page.api_calls[0], '/v1/me/music-summaries/year-2025')
-        self.assertEqual(self.page.api_params[0],
-                         {'views': 'top-songs,top-artists,top-albums'})
-        self.assertEqual(answer['year'], '2025')
-        self.assertEqual(len(answer['shelves'][0]['items']), 2)
-        self.assertTrue((self.cache / 'replay' / '2025.json').is_file())
-        self.assertFalse((self.cache / 'replay.json').exists())
-        for bad in ('../x', '25', 'latest'):
-            with self.assertRaises(EngineError) as raised:
-                await self.engine.replay(year=bad)
-            self.assertEqual(raised.exception.code, 'usage')
-
-    async def test_no_summary_is_an_empty_replay_and_no_years_are_none(self):
-        await self.up()
-        # The fake page answers a 404 for both: no listening history, no listing.
-        answer = await self.engine.replay()
-        self.assertEqual(answer['shelves'], [])
-        self.assertEqual((answer['year'], answer['years']), ('', []))
-        self.assertNotIn(self.REPLAY_SONGS, self.page.api_calls)  # no songs to ask for
-        # A past year Apple has no summary of: its playlist alone.
-        self.replay_answers()
-        self.page.api_answers['/v1/me/music-summaries/year-2024'] = {
-            'errors': [{'status': '404', 'title': 'Not Found'}]}
-        answer = await self.engine.replay(year='2024')
-        self.assertEqual(answer['year'], '2024')
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']], ['replay-playlists'])
-        # Any other failure of the summary is the command's.
-        self.page.api_answers[api.REPLAY_ENDPOINT] = {
-            'errors': [{'status': '403', 'title': 'Forbidden'}]}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.replay(refresh=True)
-        self.assertEqual(raised.exception.status, 403)
-
-    async def test_replays_songs_the_catalog_lacks_are_left_out(self):
-        await self.up()
-        self.replay_answers()
-        # A 404: none of them in the catalog; the albums still show.
-        self.page.api_answers[self.REPLAY_SONGS] = {
-            'errors': [{'status': '404', 'title': 'Not Found'}]}
-        answer = await self.engine.replay(refresh=True)
-        self.assertEqual([shelf['key'] for shelf in answer['shelves']],
-                         ['replay-albums', 'replay-playlists'])
-        # Another failure of the songs read is the command's.
-        self.page.api_answers[self.REPLAY_SONGS] = {
-            'errors': [{'status': '403', 'title': 'Forbidden'}]}
-        with self.assertRaises(EngineError) as raised:
-            await self.engine.replay(refresh=True)
-        self.assertEqual(raised.exception.status, 403)
 
 
 BUS_CONFIG = """<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
@@ -3835,7 +1043,7 @@ class KeyringTest(EngineFixture):
         return raised.exception
 
     async def test_no_secret_service_on_the_bus_refuses_the_start(self):
-        with self.assertLogs(engine_module.log, 'WARNING') as logs:
+        with self.assertLogs('applemusic.engine', 'WARNING') as logs:
             error = await self.refused()
         self.assertIn('no org.freedesktop.secrets', error.message)
         self.assertIn('APPLE_MUSIC_HOST_SESSION_BUS', error.message)
@@ -3860,7 +1068,7 @@ class KeyringTest(EngineFixture):
         # Activatable was what the private session of the incident had: the name in a
         # system service file, and an activation that never came up.
         self.make_activatable('/bin/false')
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             error = await self.refused()
         self.assertIn('org.freedesktop.secrets did not start', error.message)
 
@@ -3868,15 +1076,15 @@ class KeyringTest(EngineFixture):
         async def never(address, cancellable):
             await asyncio.sleep(3600)
 
-        with mock.patch.object(engine_module, 'KEYRING_WAIT', 0.2), \
+        with mock.patch.object(core_module, 'KEYRING_WAIT', 0.2), \
                 mock.patch.object(Engine, '_secret_service', staticmethod(never)), \
-                self.assertLogs(engine_module.log, 'WARNING'):
+                self.assertLogs('applemusic.engine', 'WARNING'):
             error = await self.refused()
         self.assertIn('did not answer within 0.2 s', error.message)
 
     async def test_a_bus_that_cannot_be_reached_refuses_the_start(self):
         os.environ['APPLE_MUSIC_HOST_SESSION_BUS'] = 'unix:path=/nonexistent/host-bus'
-        with self.assertLogs(engine_module.log, 'WARNING'):
+        with self.assertLogs('applemusic.engine', 'WARNING'):
             error = await self.refused()
         self.assertIn('no session bus for Chrome', error.message)
 
@@ -3894,7 +1102,7 @@ class KeyringTest(EngineFixture):
                                                             cancellable)
 
         with mock.patch.object(Gio, 'bus_get', private_bus):
-            with self.assertLogs(engine_module.log, 'WARNING'):
+            with self.assertLogs('applemusic.engine', 'WARNING'):
                 error = await self.refused()
             self.assertIn("on the app's session bus", error.message)
             self.own_the_name()
@@ -3914,30 +1122,30 @@ class PdeathsigTest(unittest.TestCase):
     """Chrome tied to the app's life through setpriv --pdeathsig TERM."""
 
     def which(self, found):
-        return mock.patch.object(engine_module.shutil, 'which',
+        return mock.patch.object(core_module.shutil, 'which',
                                  lambda name: found if name == 'setpriv' else None)
 
     def test_argv_goes_through_setpriv(self):
         with self.which('/usr/bin/setpriv'), \
                 mock.patch.object(chrome, 'in_flatpak', lambda: False):
-            self.assertEqual(engine_module.with_pdeathsig(['chrome', '--x']),
+            self.assertEqual(core_module.with_pdeathsig(['chrome', '--x']),
                              ['/usr/bin/setpriv', '--pdeathsig', 'TERM', '--', 'chrome', '--x'])
 
     def test_not_in_a_flatpak(self):
         with self.which('/usr/bin/setpriv'), \
                 mock.patch.object(chrome, 'in_flatpak', lambda: True):
-            self.assertEqual(engine_module.with_pdeathsig(['flatpak-spawn', '--host']),
+            self.assertEqual(core_module.with_pdeathsig(['flatpak-spawn', '--host']),
                              ['flatpak-spawn', '--host'])
 
     def test_without_setpriv_a_warning_once(self):
-        patcher = mock.patch.object(engine_module, '_setpriv_missing_told', False)
+        patcher = mock.patch.object(core_module, '_setpriv_missing_told', False)
         patcher.start()
         self.addCleanup(patcher.stop)
         with self.which(None), mock.patch.object(chrome, 'in_flatpak', lambda: False):
-            with self.assertLogs(engine_module.log, 'WARNING'):
-                self.assertEqual(engine_module.with_pdeathsig(['chrome']), ['chrome'])
-            with self.assertNoLogs(engine_module.log, 'WARNING'):
-                self.assertEqual(engine_module.with_pdeathsig(['chrome']), ['chrome'])
+            with self.assertLogs('applemusic.engine', 'WARNING'):
+                self.assertEqual(core_module.with_pdeathsig(['chrome']), ['chrome'])
+            with self.assertNoLogs('applemusic.engine', 'WARNING'):
+                self.assertEqual(core_module.with_pdeathsig(['chrome']), ['chrome'])
 
     @unittest.skipUnless(shutil.which('setpriv') and os.path.isdir('/proc'),
                          'needs setpriv (util-linux) and /proc')
@@ -4012,24 +1220,6 @@ class DemoEngineTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(ctx.exception.code, 'engine-down')
         await engine.stop()
         self.assertFalse(pathlib.Path('/nowhere/chrome').exists())
-
-
-class KeptAfterWipeTest(unittest.TestCase):
-    """The engine's writers keep nothing for a cache cleared since their command began."""
-
-    def test_kept_answers_and_lyrics(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        cache = pathlib.Path(tmp.name)
-        generation = store.cache_generation()
-        store.bump_cache_generation()
-        answer = engine_module._shape_and_keep(lambda raw, cache_dir: {'shelves': []}, {},
-                                               str(cache / 'browse.json'), str(cache),
-                                               generation)
-        self.assertEqual(answer['shelves'], [])
-        normalize.write_answer(str(cache / 'lyrics' / '1.json'), {'lines': []}, str(cache),
-                               generation)
-        self.assertEqual(list(cache.iterdir()), [])
 
 
 class RefuseStartsTest(unittest.IsolatedAsyncioTestCase):

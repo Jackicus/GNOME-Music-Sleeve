@@ -43,7 +43,7 @@ Application (main.py)    app.settings, .library, .engine, .player, .mpris, .sess
 │  └─ item_actions       win.item-* actions, context menus (actions.py, widgets/context_menu.py)
 ├─ Library (library.py)  Item/Track GObjects in Gio.ListStores from the cache's library.json;
 │                        sync.py fetches and writes it; reload() keeps objects, notifies changes
-├─ Engine (engine.py)    Chrome (Gio.Subprocess, CDP on its pipe) + CDPClient ─► bridge.js ─►
+├─ Engine (engine/)      Chrome (Gio.Subprocess, CDP on its pipe) + CDPClient ─► bridge.js ─►
 │                        MusicKit; commands are coroutines; MusicKit events re-emitted as `event`
 ├─ Player (player.py)    what is playing, as GObject properties fed by engine events; the bar,
 │                        the sheet and MPRIS follow its notify:: signals; nothing polls MusicKit
@@ -63,7 +63,7 @@ for both builds, the sign-in's keys each build's own (`account_key()`).
 
 ```
 src/main.py, src/window.py      the Application, the Window (player_bar, sidebar_view, fullscreen)
-src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
+src/*.py                        services and logic (engine/, player, mpris, search_provider, discord,
                                 sync, account, cache, background, actions, playlist_order, related,
                                 release, session, discography, suggestions, errors, i18n, lyrics,
                                 remote, recent_searches, radio, home, search_pager, timing,
@@ -118,7 +118,7 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
   logs the exception, returns the task). `GLib.idle_add`/`timeout_add` defer UI work past a
   frame or a layout, not async work. Main-thread work in chunks yields with `await
   yield_to_frames()` (library.py): asyncio runs above GTK's redraw, so `sleep(0)` paints nothing.
-- **Chrome and MusicKit only through `app.engine`**: engine.py is the one module that imports
+- **Chrome and MusicKit only through `app.engine`**: engine/core.py is the one module that imports
   `backend.chrome` and `backend.client`; the rest of the app may import the backend's pure parts
   (`api`, `config`, `errors`, `normalize`, `store`). Playback goes through `app.player`.
 - **Errors**: engine failures are `EngineError(code)`, codes in `src/backend/errors.py`. The

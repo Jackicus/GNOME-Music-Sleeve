@@ -1,10 +1,12 @@
 ---
 paths:
-  - "src/engine.py"
+  - "src/engine/**"
   - "src/backend/**"
   - "src/dialogs/signin.py"
   - "scripts/am.py"
   - "tests/test_engine.py"
+  - "tests/test_engine_*.py"
+  - "tests/engine_fixture.py"
   - "tests/test_client.py"
   - "tests/test_chrome.py"
   - "tests/test_cdp.py"
@@ -18,8 +20,11 @@ paths:
 # Engine and backend
 
 - Layers: `src/backend/` is the standard library and asyncio only, never gi
-  (tests/test_backend.py checks). `src/engine.py` is the app's `Engine` GObject on top: Chrome as
-  a `Gio.Subprocess`, the one `CDPClient`, the commands as coroutines. engine.py's docstring lists
+  (tests/test_backend.py checks). `src/engine/` is the app's `Engine` GObject on top: Chrome as
+  a `Gio.Subprocess`, the one `CDPClient`, the commands as coroutines. `engine/core.py` holds the
+  class, its lifecycle, the page's state and sign-in; the commands are mixins of it by area
+  (`reads.py`: the API reads and `_kept_answer()`; `playback.py`, `edits.py`, `catalog.py`,
+  `browse.py`), which reach that state only through `self`. The package's docstring lists
   the commands; `src/backend/README.md` has the bridge's calls, the events and the library.json
   shapes. Keep the three in step when you add a command.
 - The backend is a fork this app owns, in the app's style like the rest of the code.
@@ -182,7 +187,7 @@ paths:
   reason, and Chrome is never spawned. A profile without the record (never run, or never
   reached the keyring) starts as before. Not in a Flatpak sandbox: Chrome runs on the host
   with the host's session, which the sandbox cannot check, and gets no bus variable. The check
-  is Gio D-Bus, async, in engine.py; the file read and the environment are the backend's.
+  is Gio D-Bus, async, in engine/core.py; the file read and the environment are the backend's.
 - Logs: Chrome's argv is logged through `chrome.describe_argv()`, which leaves the profile's
   path out; never log tokens, API URLs with their queries, or the account name.
 - CDP: `Runtime.addBinding('__amEvent')` is per CDP session, so every connection registers it
@@ -216,8 +221,8 @@ paths:
   playback and events without an account.
 - Processes: `wait_async()` is awaitable, and an `asyncio.wait_for` timeout on it is clean
   (then `force_exit()`), but a cancelled one raises `GLib.Error`, not `CancelledError`: race it
-  through `engine._process_exit()`. Chrome's helpers write to the profile for a moment after the
-  browser exits, so deleting the profile retries. `scripts/am.py` runs this same Engine on
+  through `engine.core._process_exit()`. Chrome's helpers write to the profile for a moment
+  after the browser exits, so deleting the profile retries. `scripts/am.py` runs this same Engine on
   gi.events' loop (`loop_factory=GLibEventLoop`); its modes are in scripts.md.
 - `unauthorize()` (the bridge's `signout()`, MusicKit's `unauthorize()`) revokes the Apple
   session at Apple's end; sign-out calls it before wiping anything. Best effort: it answers
