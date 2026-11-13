@@ -1,6 +1,6 @@
 # TODO
 
-What is left to do, as of 2026-11-13 and v1.3.0; the smaller fixes are in the
+What is left to do, as of 2026-11-13 and v1.3.1; the smaller fixes are in the
 [open issues](https://github.com/Jackicus/GNOME-Music-Sleeve/issues). What each release brought
 is in its [GitHub release](https://github.com/Jackicus/GNOME-Music-Sleeve/releases) and in git; how
 a release is made is in `docs/release.md`, and why the app is built the way it is in
