@@ -7,7 +7,7 @@ their name."""
 from gi.repository import Gtk
 
 from . import artwork
-from .util import connect_weak
+from .util import connect_weak, mirror_start
 
 # The portrait's edge in logical pixels.
 PORTRAIT_SIZE = 32
@@ -40,6 +40,7 @@ class ArtistRow(Gtk.Box):
         self.name = Gtk.Inscription(hexpand=True, xalign=0, valign=Gtk.Align.CENTER,
                                     nat_chars=12,
                                     text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END)
+        mirror_start(self.name)
         self.append(self.portrait)
         self.append(self.name)
         self._slot = artwork.ArtworkSlot(self._set_art, PORTRAIT_SIZE)

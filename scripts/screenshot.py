@@ -174,6 +174,7 @@ import argparse
 import json
 import os
 import sys
+from gettext import gettext as _
 
 import harness
 
@@ -718,7 +719,7 @@ def open_sort_menu(window):
     """--sort-menu: the page's Sort By (or Sort and Filter) menu, popped up."""
     page = window.navigation_view.get_visible_page()
     button = next((found for found in harness_descendants(page, Gtk.MenuButton)
-                   if found.get_tooltip_text() in ('Sort By', 'Sort and Filter')
+                   if found.get_tooltip_text() in (_('Sort By'), _('Sort and Filter'))
                    and found.get_mapped()), None)
     if button is None:
         sys.exit('screenshot: the page shown has no Sort By menu')
@@ -729,7 +730,8 @@ def open_more_options(window):
     """--more-options: the page's More Options menu, popped up."""
     page = window.navigation_view.get_visible_page()
     button = next((found for found in harness_descendants(page, Gtk.MenuButton)
-                   if found.get_tooltip_text() == 'More Options' and found.get_mapped()), None)
+                   if found.get_tooltip_text() == _('More Options')
+                   and found.get_mapped()), None)
     if button is None:
         sys.exit('screenshot: the page shown has no More Options menu')
     button.popup()

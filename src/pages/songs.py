@@ -81,7 +81,7 @@ from ..widgets.song_title import SongTitle
 from ..widgets.track_links import TrackLink
 from ..widgets.track_row import PlayingMark
 from ..widgets.util import (GrowBack, HeaderTitle, MappedHandlers, connect_weak,
-                            focus_position, rows_kept, weak_method)
+                            focus_position, mirror_start, rows_kept, weak_method)
 from . import SignInOffer, app, mark_bound
 
 # The columns' names in the Sort By menu's targets and SongOrder's keys.
@@ -696,6 +696,7 @@ class SongsPage(Adw.NavigationPage):
                                           text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END)
             if numeric:
                 inscription.add_css_class('numeric')
+            mirror_start(inscription)
             cell.set_child(inscription)
 
         if text is None:

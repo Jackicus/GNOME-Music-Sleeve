@@ -12,7 +12,7 @@ from gi.repository import Gio, Graphene, Gtk
 from .. import remote
 from ..backend import config
 from . import artwork
-from .util import connect_weak
+from .util import connect_weak, mirror_start
 
 # The card's width, in logical pixels: two side by side in a window of the default size. In a
 # shelf too narrow for one (a phone's 360), as wide as the shelf less its insets (ROW_INSET a
@@ -197,6 +197,7 @@ class BannerTile(Gtk.Box):
     def _line(self, classes):
         line = Gtk.Inscription(xalign=0, min_lines=1, css_classes=classes,
                                text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END)
+        mirror_start(line)
         self.append(line)
         return line
 

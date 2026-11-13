@@ -13,6 +13,7 @@ from gi.repository import Gtk
 from ..song_columns import year_text
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .track_links import TrackLink
+from .util import mirror_start
 
 # The thumbnail's edge in a playlist's rows (track_row.blp's cover), which the header's first
 # column leaves room for.
@@ -93,8 +94,10 @@ def explicit_badge():
 def artist_line():
     """The dimmed line of the artist under a title: an Inscription, sized by its one line
     rather than its text."""
-    return Gtk.Inscription(xalign=0, text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END,
+    line = Gtk.Inscription(xalign=0, text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END,
                            css_classes=['caption', 'dimmed'])
+    mirror_start(line)
+    return line
 
 
 def playing_description():
@@ -204,6 +207,7 @@ class TrackRow(Gtk.Box):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        mirror_start(self.number_label, self.duration_label)
         # A table's artist and album columns, made here (GtkBuilder runs no Python __init__).
         self.artist_link = TrackLink('artist', hexpand=True, visible=False)
         self.album_link = TrackLink('album', hexpand=True, visible=False)
@@ -384,6 +388,7 @@ class TrackRow(Gtk.Box):
                                           width_request=YEAR_WIDTH, visible=False,
                                           css_classes=['numeric'])
         self.insert_child_after(self.year_label, self.columns)
+        mirror_start(self.genre_label, self.year_label)
 
     def unbind(self):
         self._track = None

@@ -71,6 +71,16 @@ def volume_text(level):
     return _('Volume {percent}%').format(percent=round(level * 100))
 
 
+LRM = '\u200e'  # a left-to-right mark
+
+
+def remaining_text(text):
+    """The time left ("-3:58") as the label shows it: after a left-to-right mark, so a
+    right-to-left window keeps the minus before the digits (it has no direction of its own,
+    and the label's would put it after them)."""
+    return LRM + text
+
+
 class SeekGuard:
     """Which incoming positions the seek slider shows while a seek is about: see the
     module. `target` is the position asked for while a seek waits to be sent or has just
@@ -371,7 +381,7 @@ class SeekControl(Follower):
             self.elapsed_label.set_label(elapsed)
         if self.remaining_label is not None:
             self.remaining_label.set_label(
-                format_time(max(duration - position, 0), remaining=True))
+                remaining_text(format_time(max(duration - position, 0), remaining=True)))
         # Assistive technology reads the slider's value as "1:05 of 3:40", not as seconds;
         # set when the text changes (once a second at most), not at every position event.
         text = self._value_format.format(position=elapsed, duration=format_time(duration))

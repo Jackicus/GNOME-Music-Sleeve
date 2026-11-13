@@ -82,6 +82,12 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
 
 ## Layout and widgets
 
+- Right to left, a horizontal `Gtk.ListView` or `GridView` lays its first item at the right:
+  its adjustment's upper end is the row's start (`shelf.row_start()`), and a value of 0 its
+  end. A new model there is scrolled to its start with `scroll_to(0, …)`, after the layout,
+  not with `set_value()`, since the upper end is not known yet (`PagedRow._to_start()`).
+- A `Gtk.Label` mirrors its `xalign` in a right-to-left widget; a `Gtk.Inscription` does
+  not (GTK 4.24): `widgets.util.mirror_start()` does it as each is made.
 - A Python `do_map` or `do_unmap` that raises leaves GTK a widget in a state it cannot leave:
   an exception before `do_unmap` chains up keeps the widget mapped, and unrealizing it then
   aborts the process (`Gtk:ERROR … gtk_widget_real_unrealize: assertion failed (!priv->mapped)`),

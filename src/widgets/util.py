@@ -442,6 +442,15 @@ class HeaderTitle:
         self._header_bar.set_show_title(True if held else bool(self._shown))
 
 
+def mirror_start(*inscriptions):
+    """Put each Gtk.Inscription's text at its start in a right-to-left window, as a Gtk.Label
+    there puts its own: GTK mirrors a label's `xalign` by the widget's direction, never an
+    inscription's. Called once, as each is made (a second call would mirror it back)."""
+    for inscription in inscriptions:
+        if inscription.get_direction() == Gtk.TextDirection.RTL:
+            inscription.set_xalign(1 - inscription.get_xalign())
+
+
 # The widget tree by class, for the few places that need a widget the toolkit does not hand
 # out (a sidebar's rows, a page's toolbar view, the popover the focus is in).
 
