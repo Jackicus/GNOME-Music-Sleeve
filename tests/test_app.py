@@ -502,6 +502,21 @@ class DemoTest(unittest.TestCase):
         os.environ['APPLE_MUSIC_CACHE'] = self.tmp.name  # a generated library named
         self.assertTrue(app._use_demo())
 
+    def test_a_demo_dir_that_is_not_there_is_no_library(self):
+        # The Flatpak's DEMO_DIR is a path in its build sandbox, gone once installed; a
+        # checkout's build/demo before scripts/demo.sh has written it. Neither is shown as an
+        # empty library (nor gets a settings file made for it).
+        missing = os.path.join(self.tmp.name, 'build', 'demo')
+        app = self.app(demo_dir=missing)
+        with self.assertLogs('applemusic.main', 'ERROR') as logs:
+            self.assertFalse(app._use_demo())
+        self.assertIn(missing, logs.output[0])
+        self.assertFalse(app.demo)
+        self.assertEqual(os.environ['APPLE_MUSIC_CACHE'], '')
+        self.assertFalse(os.path.exists(missing))
+        os.environ['APPLE_MUSIC_CACHE'] = self.tmp.name  # a library named instead
+        self.assertTrue(app._use_demo())
+
     def test_the_demo_has_no_mpris(self):
         app = self.app(demo_dir=self.tmp.name)
         app._use_demo()

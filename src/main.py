@@ -236,7 +236,10 @@ class Application(Adw.Application):
         when there is none to show.
 
         The library is the development launcher's DEMO_DIR (the source tree's build/demo),
-        or the one APPLE_MUSIC_CACHE names (a bigger generated library, say). The demo runs
+        or the one APPLE_MUSIC_CACHE names (a bigger generated library, say). A DEMO_DIR
+        that is not there is no library: build/demo before scripts/demo.sh has written it,
+        or the Flatpak's, a path in the build sandbox that the installed app never sees
+        (there, APPLE_MUSIC_CACHE names one, with the directory exposed). The demo runs
         as an instance of its own rather than raising a running app, and keeps its settings
         in the demo library's directory (settings.ini), apart from the desktop's; settings
         on the memory backend (tests, the developer scripts) are kept as they are.
@@ -245,6 +248,11 @@ class Application(Adw.Application):
             if not self.demo_dir:
                 log.error('--demo needs a demo library: the development build has one, or '
                           'set APPLE_MUSIC_CACHE to a directory scripts/demo_library.py wrote')
+                return False
+            if not os.path.isdir(self.demo_dir):
+                log.error('--demo: no demo library in %s: scripts/demo.sh writes it, or set '
+                          'APPLE_MUSIC_CACHE to a directory scripts/demo_library.py wrote',
+                          self.demo_dir)
                 return False
             os.environ['APPLE_MUSIC_CACHE'] = os.path.abspath(self.demo_dir)
         self.demo = True

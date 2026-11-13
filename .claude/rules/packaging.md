@@ -47,7 +47,7 @@ paths:
   `share/gnome-shell/search-providers`, whose `ObjectPath` is the app ID with dots as
   slashes plus `/SearchProvider`: data/meson.build derives both from `application_id`, so
   the .Devel build has its own). A Flatpak exports both directories itself and rewrites
-  the service's `Exec` (untested here, like the manifest). The desktop file stays
+  the service's `Exec` (checked on the installed .Devel Flatpak, docs/release.md). The desktop file stays
   `DBusActivatable=false`: a bus launch has no fallback to `Exec`, so a prefix whose service
   directory the session bus does not see would make the app's icon do nothing.
 - The minimum versions live in `meson.build` (with the reason next to the GLib one). Raising
@@ -64,8 +64,9 @@ paths:
   Arch's Python rebuilds cover), so each Python minor release needs a pkgrel bump.
 - `build-aux/flatpak/*.Devel.json` is for development only (why in its `x-comment`). It
   builds against GNOME 51 (`flatpak run org.flatpak.Builder`, with `org.gnome.Sdk//51` and
-  `org.gnome.Platform//51`; the SDK's blueprint-compiler builds the `.blp`s), but the
-  sandboxed app has not been run against the host's Chrome. Say so when you change it.
+  `org.gnome.Platform//51`; the SDK's blueprint-compiler builds the `.blp`s) and installs
+  as a user Flatpak, whose demo runs on headless.sh's display (docs/release.md says how), but
+  the sandboxed app has not been run against the host's Chrome. Say so when you change it.
 - If Meson falls back to the blueprint-compiler wrap, that subproject installs a file of its
   own: installs use `--skip-subprojects`.
 - CI (`.github/workflows/ci.yml`) installs its dependencies with pacman in an Arch Linux

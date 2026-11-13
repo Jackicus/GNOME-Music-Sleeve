@@ -25,7 +25,7 @@ host's: find_chrome() asks the host's shell for it and chrome_args() runs it thr
 `flatpak-spawn --host`, forwarding the pipe's descriptors 3 and 4 (the manifest's
 --talk-name=org.freedesktop.Flatpak). flatpak-spawn relays SIGTERM to Chrome, and --watch-bus
 ends Chrome when flatpak-spawn itself goes (a SIGKILL, the sandbox closing). The profile (under
-~/.var/app) is the same path on both sides. Untested: this machine has no Flatpak runtime.
+~/.var/app) is the same path on both sides. Not yet run against a host Chrome (docs/release.md).
 """
 
 import asyncio

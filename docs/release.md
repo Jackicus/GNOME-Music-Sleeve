@@ -140,8 +140,35 @@ binary through `flatpak-spawn --host`, and `chrome_args()` prefixes
 on to the host's Chrome. The pid the engine holds is flatpak-spawn's, which relays SIGTERM to
 Chrome and whose end ends Chrome (`--watch-bus`), so `setpriv` is not used there; the profile's
 `SingletonLock` names a host pid, which the sandbox cannot check, so a Chrome left on the
-profile is not ended at the next start. It targets GNOME 51 (org.gnome.Sdk//51). The
-sandboxed app has not been run yet, so what this section says of it is the design, untested.
+profile is not ended at the next start. It targets GNOME 51 (org.gnome.Sdk//51).
+
+What has been run (2026-11-13), and what has not:
+
+- **Build and install: works.** `flatpak run org.flatpak.Builder --user --install
+  --force-clean --state-dir=STATE BUILDDIR build-aux/flatpak/io.github.jackicus.MusicSleeve.Devel.json`
+  (org.flatpak.Builder is a user Flatpak; a state directory outside the source tree, since
+  the module's source is the whole tree; Builder's sandbox sees the home directory but not
+  /tmp, so a directory there needs `flatpak run --filesystem=DIR org.flatpak.Builder …`).
+  `--install` adds a user remote, `devel-origin`, pointing at the state directory's cache.
+- **Demo mode: works**, on scripts/headless.sh's display. `flatpak run` inside it hands the
+  sandbox the headless mutter's Wayland socket (the one `WAYLAND_DISPLAY` names, as the
+  sandbox's `wayland-0`) and proxies the private session bus, so nothing reaches the desktop.
+  The launcher's `DEMO_DIR` is a path in the build sandbox, so the demo library is named and
+  exposed: `scripts/headless.sh flatpak run --filesystem=$PWD/build/demo
+  --env=APPLE_MUSIC_CACHE=$PWD/build/demo io.github.jackicus.MusicSleeve.Devel --demo`.
+  scripts/screenshot.py runs in the sandbox against its `/app` with `--command=python3`, from
+  a copy of scripts/ beside a `build/install` that is a link to `/app`, given the same
+  `--filesystem` and `APPLE_MUSIC_CACHE`.
+- **Exports: valid.** The desktop file, both icons, the metainfo, the search provider's .ini
+  and the D-Bus service file are in `~/.local/share/flatpak/exports/share`, named by the app
+  ID, the service's and the desktop file's `Exec` rewritten to `flatpak run`; they pass
+  desktop-file-validate and `appstreamcli validate`. The settings schema is not exported (a
+  sandboxed app reads its own, in `/app`, and keeps its settings in a keyfile under
+  `~/.var/app`); it passes `glib-compile-schemas --strict`.
+- **Not run yet**: the engine (the host's Chrome through flatpak-spawn), playback, MPRIS, the
+  Shell's search, notifications, Discord, and which finish-args can go. A host command
+  flatpak-spawn starts has the environment of the flatpak-session-helper on the sandbox's
+  session bus: under scripts/headless.sh that is the private bus, where no keyring answers.
 
 Nothing installed may set `APPLE_MUSIC_DEBUG_PORT`: the launcher, the desktop file, the
 PKGBUILD and the manifest leave the engine on its pipe alone.
