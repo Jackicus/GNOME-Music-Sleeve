@@ -15,8 +15,20 @@ station) and Next (app.previous, app.play-pause, app.next), the extras: Favourit
 reads only as it is made), Shuffle and Repeat (ModeControl) and Volume (VolumeControl, a
 button with its slider in a popover at every size), and Return to Main Window
 (app.mini-player) in a flat header bar; under it all the artwork's tint
-(widgets/backdrop.py, as the sheet's). No lyrics and no Up Next: nothing in it steps or
-redraws while a song plays but the seek row, once a second.
+(widgets/backdrop.py, as the sheet's). With no pane open nothing in it steps or redraws
+while a song plays but the seek row, once a second.
+
+The header bar's end has two toggles, Lyrics and Up Next: the window's own win.show-lyrics
+and win.show-queue, as the main window's are named (stateful: pressed while its pane shows;
+enabled as now_playing.can_show_tab() says, Lyrics off for a song without lyrics), on the
+same keys, Ctrl+Shift+L and Ctrl+Shift+U (keyboard.tab_action). Each opens the pane under
+the controls, one at a time, the window growing for it and shrinking back
+(mini_player.Panes). The pane holds the Now Playing sheet's own LyricsView or QueueView,
+lent while it shows (`pane_slot`): never a second one, which would follow the Player for
+good. Up Next's edits and its entries' menus are the main window's item actions, which
+the mini player's window does not have: the pane slot carries the main window as its `win`
+action group (Alt+Up, Delete, a drop and the menus' items find win.item-* there), and the
+window answers `borrowed_item_actions` for context_menu.popup().
 
 Its layout follows its size (mini_player.layout_for(), applied as the view is allocated: it
 measures and allocates its child itself, so its Adw.Bin layout manager is dropped): the
@@ -24,6 +36,8 @@ cover as large as the window lets it be over the titles, or, in a low window, sm
 them; the extras around Previous, Play and Next in a wide window, else in a row of their
 own under them, or hidden where the window is too low for the row. They are one set of
 buttons, moved between the two boxes (place_extras()), never two: each follows the Player.
+With a pane open the controls are laid out for the height the window has without it
+(mini_player.split()), and the pane has the rest.
 
 For the keyboard: the focus starts on Play; the playback keys (Space, Ctrl+Left,
 Ctrl+Right: shortcuts.PLAYBACK) are the window's own as in the main window
@@ -37,13 +51,14 @@ slider reads "1:05 of 3:40", the volume "70%", and the cover is decorative.
 
 from gettext import gettext as _
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import keyboard, mini_player, shortcuts
 from ..backend import config
 from ..remote import fetch_remote
 from .backdrop import ArtworkBackdrop  # noqa: F401  registers it for the template
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
+from .now_playing import TAB_ACTIONS, can_show_tab
 from .transport import (Follower, HeartControl, ModeControl, PlayButton, RemoteCover,
                         SeekControl, TrackTitles, VolumeControl, announcement, volume_text)
 from .util import connect_weak, has_ancestor
@@ -63,6 +78,9 @@ class MiniPlayerView(Adw.Bin):
     backdrop = Gtk.Template.Child()
     toolbar = Gtk.Template.Child()
     header_bar = Gtk.Template.Child()
+    lyrics_button = Gtk.Template.Child()
+    queue_button = Gtk.Template.Child()
+    pane_slot = Gtk.Template.Child()
     main_window_button = Gtk.Template.Child()
     toast_overlay = Gtk.Template.Child()
     content_box = Gtk.Template.Child()
@@ -113,14 +131,19 @@ class MiniPlayerView(Adw.Bin):
         # rating, and the engine's answer reaches this one too.
         self._heart = HeartControl(self.heart_button, lazy=True)
         self._volume = VolumeControl(self.volume_button, self.volume_adjustment)
-        accel = shortcuts.ACCELS['app.mini-player'][0]
-        ok, key, mods = Gtk.accelerator_parse(accel)
-        if ok:
-            # Translators: a button's tooltip with its shortcut: {tooltip} is what it does
-            # ("Lyrics"), {keys} its key ("Shift+Ctrl+L").
-            self.main_window_button.set_tooltip_text(_('{tooltip} ({keys})').format(
-                tooltip=self.main_window_button.get_tooltip_text(),
-                keys=Gtk.accelerator_get_label(key, mods)))
+        self.pane = ''                 # the pane shown: '', 'lyrics' or 'queue'
+        self._pane_base = None         # the window's height without it, while one shows
+        tabs = shortcuts.NOW_PLAYING_TABS
+        for button, accel in ((self.main_window_button, shortcuts.ACCELS['app.mini-player'][0]),
+                              (self.lyrics_button, tabs['show-lyrics'][0]),
+                              (self.queue_button, tabs['show-queue'][0])):
+            ok, key, mods = Gtk.accelerator_parse(accel)
+            if ok:
+                # Translators: a button's tooltip with its shortcut: {tooltip} is what it
+                # does ("Lyrics"), {keys} its key ("Shift+Ctrl+L").
+                button.set_tooltip_text(_('{tooltip} ({keys})').format(
+                    tooltip=button.get_tooltip_text(),
+                    keys=Gtk.accelerator_get_label(key, mods)))
 
     def set_player(self, player, app):
         """Follow `player`; `app` spawns the commands and the fetches."""
@@ -213,12 +236,35 @@ class MiniPlayerView(Adw.Bin):
         # last allocation's, 0 at the first, when the layout would be given the header's
         # room too.
         header = self.header_bar.measure(Gtk.Orientation.VERTICAL, -1)[0]
-        layout = mini_player.layout_for(width, height - header)
+        body = height
+        if self._pane_base is not None:
+            # The controls as the window without the pane has them; the pane the rest.
+            body, _pane = mini_player.split(height, self._pane_base)
+        layout = mini_player.layout_for(width, body - header)
         if layout != self.shown_layout:
             self.apply_layout(layout)
         child = self.get_child()
         if child is not None:
             child.allocate(width, height, baseline, None)
+
+    def show_pane(self, name, widget, base):
+        """The pane `name` ('lyrics' or 'queue') showing `widget` (the sheet's view, lent)
+        under the controls, which keep the layout of a window `base` px high."""
+        self.pane = name
+        self._pane_base = base
+        self.pane_slot.set_child(widget)
+        self.pane_slot.set_visible(True)
+        self.content_box.set_vexpand(False)
+        self.queue_resize()
+
+    def hide_pane(self):
+        """The pane closed, its widget out of it (the caller gives it back)."""
+        self.pane = ''
+        self._pane_base = None
+        self.pane_slot.set_child(None)
+        self.pane_slot.set_visible(False)
+        self.content_box.set_vexpand(True)
+        self.queue_resize()
 
     def apply_layout(self, layout):
         """The cover and the titles as `layout` (a mini_player.Layout) has them."""
@@ -277,6 +323,17 @@ class MiniPlayer(Adw.ApplicationWindow):
         self.view = MiniPlayerView()
         self.set_content(self.view)
         self._app = None
+        self._player = None
+        self._follows = Follower()     # the window's own handlers on the Player
+        self.panes = None              # mini_player.Panes, once there is a lender
+        self.borrowed_item_actions = None   # the main window's, for the panes' menus
+        self.pane_actions = {}
+        for tab, name in TAB_ACTIONS.items():
+            action = Gio.SimpleAction.new_stateful(name, None, GLib.Variant.new_boolean(False))
+            action.set_enabled(False)
+            connect_weak(action, 'activate', self._on_pane_action, tab)
+            self.add_action(action)
+            self.pane_actions[tab] = action
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         connect_weak(keys, 'key-pressed', self._on_key_pressed)
         self.add_controller(keys)
@@ -285,7 +342,80 @@ class MiniPlayer(Adw.ApplicationWindow):
         """Follow `player` (the app's); `app` runs the commands, and its mini player host
         takes the window's close."""
         self._app = app
+        self._player = player
         self.view.set_player(player, app)
+        for name in ('track', 'lyrics', 'lyrics-loading'):
+            self._follows.follow(player, 'notify::' + name, lambda *_: self.update_panes())
+
+    # -- the panes --------------------------------------------------------------------------
+
+    def can_show(self, pane):
+        """Whether there is something to show in `pane` ('lyrics' or 'queue') now, as the
+        sheet's tabs have it (now_playing.can_show_tab())."""
+        player = self._player
+        return player is not None and can_show_tab(pane, '', player.track, player.lyrics,
+                                                   player.lyrics_loading)
+
+    def set_lender(self, sheet, main, base):
+        """The Now Playing sheet that lends the panes their views (None: no panes) and its
+        window, whose item actions Up Next's edits and menus run; `base` the height of this
+        window without a pane."""
+        settings = self._app.settings if self._app is not None else None
+        if sheet is None or settings is None:
+            return
+        self.panes = mini_player.Panes(self, sheet, settings, base)
+        self.borrowed_item_actions = getattr(main, 'item_actions', None)
+        if isinstance(main, Gio.ActionGroup):
+            self.view.pane_slot.insert_action_group('win', main)
+        self.update_panes()
+
+    def fixed_size(self):
+        """Whether the window cannot grow for a pane: maximized, full screen or tiled."""
+        if self.is_maximized() or self.is_fullscreen():
+            return True
+        surface = self.get_surface()
+        state = surface.get_state() if surface is not None else 0
+        return bool(state & Gdk.ToplevelState.TILED)
+
+    def show_pane(self, name, widget, base):
+        """mini_player.Panes': the pane in the view, and the window no lower than a pane
+        needs."""
+        self.set_size_request(MIN_WIDTH, MIN_HEIGHT + mini_player.PANE_MIN)
+        self.view.show_pane(name, widget, base)
+        self.update_panes()
+
+    def hide_pane(self):
+        """mini_player.Panes': the pane out of the view; the focus that was in it goes to
+        its toggle."""
+        view = self.view
+        if not view.pane:
+            return
+        focus = self.get_focus()
+        button = view.lyrics_button if view.pane == 'lyrics' else view.queue_button
+        held = focus is not None and (focus is view.pane_slot
+                                      or focus.is_ancestor(view.pane_slot))
+        view.hide_pane()
+        self.set_size_request(MIN_WIDTH, MIN_HEIGHT)
+        if held:
+            button.grab_focus()
+        self.update_panes()
+
+    def update_panes(self):
+        """The toggles' state (pressed while its pane shows) and whether they can be used:
+        a pane with something to show, or the one shown, to close it."""
+        shown = self.view.pane
+        player = self._player
+        for tab, action in self.pane_actions.items():
+            state = shown == tab
+            if action.get_state().get_boolean() != state:
+                action.set_state(GLib.Variant.new_boolean(state))
+            action.set_enabled(self.panes is not None and player is not None and can_show_tab(
+                tab, shown, player.track, player.lyrics, player.lyrics_loading))
+
+    def _on_pane_action(self, _action, _parameter, tab):
+        if self.panes is not None:
+            self.panes.toggle(tab)
+            self.update_panes()
 
     def do_map(self):
         Adw.ApplicationWindow.do_map(self)
@@ -297,11 +427,20 @@ class MiniPlayer(Adw.ApplicationWindow):
         self.view.add_toast(toast)
 
     def release(self):
-        """The window goes: its dialogs are closed, the view lets go of the Player, then the
-        window is destroyed."""
+        """The window goes: its dialogs are closed, a view still lent to a pane is given
+        back to the sheet (the host has done it already: never left in a window being
+        destroyed), the view and the window let go of the Player and of the main window's
+        actions, then the window is destroyed."""
         self._close_dialogs()
+        if self.panes is not None:
+            self.panes.give_back()
+            self.panes = None
+        self._follows.detach()
+        self.view.pane_slot.insert_action_group('win', None)
+        self.borrowed_item_actions = None
         self.view.detach()
         self._app = None
+        self._player = None
         self.destroy()
 
     def _close_dialogs(self):
@@ -351,6 +490,13 @@ class MiniPlayer(Adw.ApplicationWindow):
             action = app.lookup_action(name)
             if action is not None and action.get_enabled():
                 app.activate_action(name)
+            return True
+        name = keyboard.tab_action(keyval, mods, type(focus),
+                                   self.get_visible_dialog() is not None,
+                                   has_ancestor(focus, Gtk.Popover),
+                                   lambda name: self.lookup_action(name).get_enabled())
+        if name is not None:
+            self.activate_action('win.' + name, None)
             return True
         step = keyboard.volume_step(keyval, mods, type(focus),
                                     self.get_visible_dialog() is not None,

@@ -132,7 +132,11 @@ def popup(widget, obj, x=None, y=None, queued=None, owner_widget=None):
     coordinates, or at the whole widget; `queued` and the queue entry as the widget with the
     menu (`owner_widget`, else widget) says (`context_queued`, `context_queue_entry`) unless
     given. The popover, or None when obj has no menu."""
-    actions = getattr(widget.get_root(), 'item_actions', None)
+    root = widget.get_root()
+    actions = getattr(root, 'item_actions', None)
+    if actions is None:
+        # The mini player, whose Up Next pane is the main window's own list, lent.
+        actions = getattr(root, 'borrowed_item_actions', None)
     source = owner_widget if owner_widget is not None else widget
     if queued is None:
         queued = bool(getattr(source, 'context_queued', False))

@@ -1502,6 +1502,25 @@ class ItemActions:
                   self._on_undo_unfavourite)
         self.playlist_order = PlaylistOrder(app, refresh=self._refresh_playlist)
 
+    def shown_window(self):
+        """The window, for what shows a page or a dialog in it: the mini player, which
+        takes its place and whose Up Next pane runs these actions, is left first
+        (Application.show_main_window()), so the page or the dialog is seen."""
+        host = getattr(self.app, 'mini_player', None)
+        if host is not None and host.shown:
+            self.app.show_main_window()
+        return self.window
+
+    def announce(self, text):
+        """Tell assistive technology `text` through the window in sight
+        (Application.announce(): the mini player while it shows; GTK drops an announcement
+        from a hidden window), else through the window."""
+        announce = getattr(self.app, 'announce', None)
+        if announce is not None:
+            announce(text)
+        else:
+            self.window.announce(text, Gtk.AccessibleAnnouncementPriority.MEDIUM)
+
     def _add(self, name, parameter_type, handler):
         action = Gio.SimpleAction.new(name, parameter_type)
         action.connect('activate', handler)
@@ -1887,9 +1906,9 @@ class ItemActions:
         Music's (window.open_artist_page), for an artist of the library's too. Then then()."""
         if not related.same_page(self._shown(), item):
             if item.kind == 'artist':
-                self.window.open_artist_page(item)
+                self.shown_window().open_artist_page(item)
             else:
-                self.window.open_item(item)
+                self.shown_window().open_item(item)
         if then is not None:
             then()
 
@@ -1899,7 +1918,7 @@ class ItemActions:
         where Go to Artist goes."""
         found = related.library_artist(self.library, obj)
         if found is not None:
-            self.window.open_item(found)
+            self.shown_window().open_item(found)
             return None
         return self.go_to(obj, 'artist')
 
@@ -2456,7 +2475,7 @@ class ItemActions:
         from .dialogs.playlist import NameDialog
 
         dialog = NameDialog(heading, confirm, name, description, done)
-        dialog.present(self.window)
+        dialog.present(self.shown_window())
         return dialog
 
     def ask_playlist(self, heading, confirm, details, folders, done):
@@ -2466,7 +2485,7 @@ class ItemActions:
         from .dialogs.playlist import PlaylistDialog
 
         dialog = PlaylistDialog(heading, confirm, details, folders, done)
-        dialog.present(self.window)
+        dialog.present(self.shown_window())
         return dialog
 
     def ask_new_playlist(self, name='', folder_id=ROOT_FOLDER, **create):
@@ -2490,7 +2509,7 @@ class ItemActions:
         (dialogs/playlist.py's confirm()): done() when it is confirmed. The dialog."""
         from .dialogs.playlist import confirm as confirm_dialog
 
-        return confirm_dialog(self.window, heading, body, confirm, done)
+        return confirm_dialog(self.shown_window(), heading, body, confirm, done)
 
     def _on_new_playlist(self, _action, parameter):
         """A new playlist, made in the playlist dialog: in the folder the target names, or
@@ -2583,7 +2602,7 @@ class ItemActions:
         playlist_id = playlist.id
         dialog = AddSongsDialog(self.app, self.library, playlist.title or '', lambda objects:
                                 self.add_items_to_playlist(playlist_id, objects))
-        dialog.present(self.window)
+        dialog.present(self.shown_window())
         return dialog
 
     def _on_rename(self, _action, parameter):
@@ -2828,8 +2847,7 @@ class ItemActions:
                 self.app.report(error)
                 return
             if removed:
-                self.window.announce(_('Removed from Up Next'),
-                                     Gtk.AccessibleAnnouncementPriority.MEDIUM)
+                self.announce(_('Removed from Up Next'))
 
         return self.app.spawn(remove())
 
@@ -2848,10 +2866,9 @@ class ItemActions:
                 self.app.report(error)
                 return
             if moved and entry is not None:
-                self.window.announce(queue_move_message(entry.title, entry.index,
-                                                        player.queue_index,
-                                                        player.queue.get_n_items()),
-                                     Gtk.AccessibleAnnouncementPriority.MEDIUM)
+                self.announce(queue_move_message(entry.title, entry.index,
+                                                 player.queue_index,
+                                                 player.queue.get_n_items()))
 
         return self.app.spawn(move())
 
@@ -3043,7 +3060,7 @@ class ItemActions:
             self.app.toast(_('This song has no credits'))
             return None
         dialog = CreditsDialog(self.app, song_id, getattr(obj, 'title', '') or '')
-        dialog.present(self.window)
+        dialog.present(self.shown_window())
         return dialog
 
     # -- links -------------------------------------------------------------------------------

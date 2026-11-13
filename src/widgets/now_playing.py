@@ -19,7 +19,10 @@ and Show Pronunciations (those the lyrics have: the `lyrics-translations` and
 `lyrics-pronunciations` settings' actions), and Fullscreen (win.fullscreen-player: the
 full-screen player, fullscreen.py), which borrows the LyricsView out of the Lyrics tab's
 `lyrics_slot` while it shows (lend_lyrics(), return_lyrics()), the sheet covered meanwhile
-(set_covered(): its views inactive, open or not). The close
+(set_covered(): its views inactive, open or not). The mini player, in the hidden window's
+place, borrows it the same way for its lyrics pane, and the QueueView out of the Up Next
+tab's `queue_slot` for its Up Next pane (lend_queue(), return_queue()): one borrower at a
+time, a view that is out lent to no one else (holds_lyrics()). The close
 button sets the bottom sheet's `open` false; Escape and a swipe down are the bottom sheet's
 own; Go to Album and Go to Artist close the sheet too (window.open_item).
 
@@ -126,8 +129,10 @@ class NowPlayingSheet(Adw.Bin):
         # The Lyrics tab holds the LyricsView in a slot, out of which the full-screen
         # player borrows it while it shows (lend_lyrics()), the tab's page staying.
         self.lyrics_slot = Adw.Bin(child=self.lyrics_view)
+        # And Up Next the QueueView, which the mini player borrows (lend_queue()).
+        self.queue_slot = Adw.Bin(child=self.queue_view)
         self.tab_stack.add_titled(self.lyrics_slot, 'lyrics', _('Lyrics'))
-        self.tab_stack.add_titled(self.queue_view, 'queue', _('Up Next'))
+        self.tab_stack.add_titled(self.queue_slot, 'queue', _('Up Next'))
         # Its children's signals held weakly, so a sheet dropped is freed (connect_weak()).
         connect_weak(self.tab_stack, 'notify::visible-child-name', self._on_tab_changed)
         connect_weak(self.close_button, 'clicked', self._on_close_clicked)
@@ -318,14 +323,22 @@ class NowPlayingSheet(Adw.Bin):
         self.lyrics_button.set_visible(menu is not None)
 
     def set_covered(self, covered):
-        """The full-screen player shows over the window (fullscreen.FullscreenHost): the
-        sheet, open or not, is out of sight, its views inactive."""
+        """The full-screen player shows over the window (fullscreen.FullscreenHost), or the
+        mini player in its place (mini_player.MiniPlayerHost): the sheet, open or not, is
+        out of sight, its views inactive."""
         self._covered = covered
         self._on_open_changed()
 
+    def holds_lyrics(self):
+        """Whether the LyricsView is in its tab, to lend: not while a borrower has it."""
+        return self.lyrics_view.get_parent() is self.lyrics_slot
+
     def lend_lyrics(self):
-        """The LyricsView, out of the Lyrics tab, for the full-screen player (inactive, as
-        the sheet is covered first)."""
+        """The LyricsView, out of the Lyrics tab, for the full-screen player or the mini
+        player (inactive, as the sheet is covered first); None while it is out already:
+        one borrower at a time."""
+        if not self.holds_lyrics():
+            return None
         self.lyrics_slot.set_child(None)
         return self.lyrics_view
 
@@ -334,6 +347,18 @@ class NowPlayingSheet(Adw.Bin):
         open on that tab (set_covered(False)), which centres the current line."""
         self.lyrics_slot.set_child(view)
 
+    def lend_queue(self):
+        """The QueueView, out of the Up Next tab, for the mini player's pane (inactive, as
+        the sheet is covered first); None while it is out already."""
+        if self.queue_view.get_parent() is not self.queue_slot:
+            return None
+        self.queue_slot.set_child(None)
+        return self.queue_view
+
+    def return_queue(self, view):
+        """The QueueView back in its tab, as return_lyrics() the lyrics."""
+        self.queue_slot.set_child(view)
+
     def _on_tab_changed(self, _stack, _pspec):
         self._on_open_changed()
 
@@ -341,9 +366,10 @@ class NowPlayingSheet(Adw.Bin):
         is_open = self._bottom_sheet is not None and self._bottom_sheet.get_open()
         seen = is_open and not self._covered
         shown = self.tab_stack.get_visible_child_name()
-        if self.lyrics_view.get_parent() is self.lyrics_slot:  # else the full screen's
+        if self.lyrics_view.get_parent() is self.lyrics_slot:  # else its borrower's
             self.lyrics_view.set_active(seen and shown == 'lyrics')
-        self.queue_view.set_active(seen and shown == 'queue')
+        if self.queue_view.get_parent() is self.queue_slot:
+            self.queue_view.set_active(seen and shown == 'queue')
         shown_tab = (shown or '') if seen else ''
         if shown_tab != self._shown_tab:
             self._shown_tab = shown_tab

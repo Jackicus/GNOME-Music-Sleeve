@@ -18,11 +18,12 @@ manager's shortcut), and put back as it leaves; GTK keeps the window's default s
 maximized state through it, so the state the window saves while full screen is the normal
 one.
 
-There is one LyricsView, the Now Playing sheet's. Entering covers the sheet (its Lyrics and
-Up Next views go inactive), moves the view out of the sheet's Lyrics tab into the full-screen
-view and makes it active there; leaving does the reverse, the sheet then making it active
-again only if it is open on its Lyrics tab (which centres the current line again). So only one
-place ever paints the lyrics, steps them or sweeps a word.
+There is one LyricsView, the Now Playing sheet's (nothing is entered while the sheet does
+not hold it: the mini player has it, in the hidden window's place). Entering covers the
+sheet (its Lyrics and Up Next views go inactive), moves the view out of the sheet's Lyrics
+tab into the full-screen view and makes it active there; leaving does the reverse, the sheet
+then making it active again only if it is open on its Lyrics tab (which centres the current
+line again). So only one place ever paints the lyrics, steps them or sweeps a word.
 
 The player leaves on its own when nothing plays any more: the Player's item goes (the queue
 ended or was cleared, a stop, a sign-out, the engine gone; only after the Player's grace
@@ -138,7 +139,7 @@ class FullscreenHost:
 
     def enter(self):
         """Show the item playing full screen (nothing without an item)."""
-        if self.shown or self._player.track is None:
+        if self.shown or self._player.track is None or not self._sheet.holds_lyrics():
             return
         view = self._ensure_view()
         focus = self._window.get_focus()

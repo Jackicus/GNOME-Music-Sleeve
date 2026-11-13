@@ -587,8 +587,21 @@ changes, change it here, with the date. The plan they came from is in
   2026-11-13, #589, at the owner's wish: it has Favourite, Shuffle, Repeat and Volume, the
   shared transport pieces, in a row under the transport, around it in a wide window, and
   hidden in one both low and narrow, `layout_for()`'s `extras`; they change only on their
-  own notifications, so the seek row is still all that redraws. Lyrics and Up Next follow
-  as panes, the issue's design note.) It does not stay on
+  own notifications, so the seek row is still all that redraws. And lyrics and Up Next,
+  as Apple's MiniPlayer has a Lyrics and a Playing Next button: two toggles in its header
+  bar, off until asked for, each opening a pane under the controls. One pane at a time, the
+  sheet's two tabs again: both would make a window taller than many screens of one whose
+  point is to be small. The window grows by the pane as it opens and shrinks back as it
+  closes, so its size without one stays its own (`mini-player-height`); a window resized
+  with a pane open has given or taken the pane's height (`mini-player-pane-height`), and
+  the pane open is remembered (`mini-player-pane`). The pane shows the Now Playing sheet's
+  own LyricsView or QueueView, lent as the lyrics are to the full-screen player
+  (`mini_player.Panes`), never a second: each follows the Player for the app's life with
+  nothing to let it go, and a second Up Next would look for every cover twice. Up Next is
+  Apple's "view and edit": its moves, its Remove and its entries' menus run the main
+  window's item actions from there, and what shows a page or a dialog (Go to Album, View
+  Credits) brings the main window back first. With no pane open nothing steps: the
+  hidden window's sheet is covered, its views inactive.) It does not stay on
   top: GNOME on Wayland gives an app no way to ask (the window menu's Always on Top is the
   user's), so it promises nothing of the kind. Toasts go to it while it shows, as the
   window the user sees (`Application.toast()` through `get_active_window()`), and a search

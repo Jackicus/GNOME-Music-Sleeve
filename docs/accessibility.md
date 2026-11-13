@@ -225,9 +225,19 @@ list and the script together.
     the transport, and one both low and narrow hides them. Space on Play or on the slider
     plays or pauses, Ctrl+Right and Ctrl+Left skip, Ctrl+Up and Ctrl+Down step the volume
     (announced, "Volume 70%"), shown or not; each new song is announced ("Now playing …").
+    Its header bar has two toggles after Return to Main Window, "Lyrics" and "Up Next",
+    pressed while their pane shows; Ctrl+Shift+L and Ctrl+Shift+U press them from anywhere
+    in it, as they show the sheet's tabs in the main window. A pane opens under the
+    controls (the window grows for it; the focus stays where it was) and Tab goes on from
+    the last control into it: Up Next's History, Autoplay and Clear and its entries, which
+    Enter plays, Delete removes, Alt+Up, Alt+Down, Alt+Home and Alt+End move (announced)
+    and Menu or Shift+F10 opens the menu of, as in Now Playing; or the lyrics' lines, which
+    Enter seeks to. The other key swaps the pane; the same key closes it, and a focus that
+    was inside it goes to its toggle. Lyrics is unavailable for a song without lyrics.
     Ctrl+Shift+M again, Return to Main Window or Ctrl+W (its close) brings the window back
-    with the focus where it was. The script walks this after step 10, and `--names` looks
-    at it with a song playing.
+    with the focus where it was. The script walks this after step 10 (the panes too, and
+    the smallest size), and `--names` looks at it with a song playing, with each pane
+    open.
 19. With Show Genres on (Preferences › General › Library), Genres is in the sidebar's
     Library section; off, it is not, and Home shows in its place. On Genres, Ctrl+2 puts the
     focus on the first genre, read with its count ("Ambient, 3 albums"), Enter opens its

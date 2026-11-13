@@ -732,6 +732,12 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
   }
 }
 
+/* The mini player's pane (Lyrics or Up Next: the sheet's own view, lent): a little inside
+   the window's edges, as the sheet's tabs are inside its column. */
+.mini-player .mini-pane {
+  margin: 0 6px 6px;
+}
+
 /* The full-screen player (widgets/fullscreen_player.blp): libadwaita's osd (white text,
    controls for an on-screen display) over the view's own backdrop rather than the osd's
    panel colour; the transport larger than the sheet's; the dimmed text at 70%, which the
