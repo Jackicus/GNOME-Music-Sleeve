@@ -1,22 +1,35 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The backend's shaping of the New page and the Radio page (editorial groupings), Made for
-You (recommendations) and the Charts page (the catalog's charts) into shelves, and Home's
-Recently Played, over invented answers."""
+"""The backend's shaping of the New page, a category's page and the Radio page (editorial
+groupings), Home's shelves and Made for You (recommendations) and the Charts page (the
+catalog's charts) into shelves, and Home's Recently Played, over invented answers."""
 
 import json
 import os
 import pathlib
+import shutil
 import tempfile
 import unittest
 from datetime import UTC, datetime
 
 from tests import SRC  # noqa: F401  (registers src/ as the applemusic package)
 
-from applemusic.backend import api, normalize
+from applemusic.backend import (
+    api,
+    art_cache,
+    cache_files,
+    charts,
+    editorial,
+    normalize,
+    recommendations,
+)
 
 FIXTURES = pathlib.Path(__file__).parent / 'fixtures'
+
+# The sizes the recommendation and category tests were written against (the extension's
+# defaults), as test_normalize's.
+UPSTREAM_SIZES = {'cover': 512, 'thumb': 256}
 
 
 def mix(playlist_id, name, playlist_type='personal-mix'):
@@ -56,7 +69,7 @@ class EditorialShelvesTest(unittest.TestCase):
             self.raw = json.load(file)
 
     def test_the_groupings_elements_become_shelves_in_order(self):
-        out = normalize.editorial_shelves(self.raw, self.tmp.name)
+        out = editorial.editorial_shelves(self.raw, self.tmp.name)
         shelves = out['shelves']
         self.assertEqual([(s['key'], s['title'], len(s['items'])) for s in shelves], [
             ('new-banners', '', 2),      # the banners' items, the uploaded video left out
@@ -68,7 +81,7 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertEqual([s.get('featured', False) for s in shelves], [True, False, False, False])
 
     def test_featured_holds_the_banners_items_as_their_kinds(self):
-        featured = normalize.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
+        featured = editorial.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
         kinds = [(item['kind'], item['id'], item['title']) for item in featured['items']]
         self.assertEqual(kinds, [('album', '900000201', 'Lantern Season'),
                                  ('category', '900000301', 'Folk')])
@@ -78,7 +91,7 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertIn('320x320', category['art'])
 
     def test_items_are_shaped_as_search_hits(self):
-        shelves = normalize.editorial_shelves(self.raw, self.tmp.name)['shelves']
+        shelves = editorial.editorial_shelves(self.raw, self.tmp.name)['shelves']
         song = shelves[1]['items'][0]
         self.assertEqual(song['kind'], 'song')
         self.assertEqual(song['play'], {'kind': 'song', 'id': '900000501'})
@@ -94,16 +107,16 @@ class EditorialShelvesTest(unittest.TestCase):
 
     def test_nothing(self):
         nothing = {'shelves': [], 'links': []}
-        self.assertEqual(normalize.editorial_shelves(None, self.tmp.name), nothing)
-        self.assertEqual(normalize.editorial_shelves({'data': ['junk', {}]}, self.tmp.name),
+        self.assertEqual(editorial.editorial_shelves(None, self.tmp.name), nothing)
+        self.assertEqual(editorial.editorial_shelves({'data': ['junk', {}]}, self.tmp.name),
                          nothing)
         answer = {'errors': [{'status': '500'}]}
-        self.assertEqual(normalize.editorial_shelves(answer, self.tmp.name), nothing)
+        self.assertEqual(editorial.editorial_shelves(answer, self.tmp.name), nothing)
 
     def test_the_banners_carry_apples_label_line_and_wide_artwork(self):
         # #370: a 317's label over its content's editorial artwork, a 320's own; the
         # shelf is shown as banners since one has a banner.
-        featured = normalize.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
+        featured = editorial.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
         self.assertEqual(featured['form'], 'banners')
         album_item, curator = featured['items']
         self.assertEqual((album_item['badge'], album_item['tagline']),
@@ -117,7 +130,7 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertEqual((curator['banner']['width'], curator['banner']['height']),
                          (4320, 1080))
         # The other shelves' items have none of it, the same album among them.
-        for shelf in normalize.editorial_shelves(self.raw, self.tmp.name)['shelves'][1:]:
+        for shelf in editorial.editorial_shelves(self.raw, self.tmp.name)['shelves'][1:]:
             for item in shelf['items']:
                 self.assertFalse({'badge', 'banner', 'tagline'} & set(item))
             self.assertNotIn('form', shelf)
@@ -129,16 +142,16 @@ class EditorialShelvesTest(unittest.TestCase):
             banner['attributes'].pop('editorialArtwork', None)
             for content in banner['relationships']['contents']['data']:
                 content['attributes'].pop('editorialArtwork', None)
-        featured = normalize.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
+        featured = editorial.editorial_shelves(self.raw, self.tmp.name)['shelves'][0]
         self.assertNotIn('form', featured)
         self.assertEqual(featured['items'][0]['badge'], 'NEW ALBUM')
         self.assertNotIn('banner', featured['items'][0])
         # A category's page (no banners asked for) keeps none of it either.
-        radio = normalize.radio_shelves(self.raw, self.tmp.name)['shelves'][0]
+        radio = editorial.radio_shelves(self.raw, self.tmp.name)['shelves'][0]
         self.assertNotIn('badge', radio['items'][0])
 
     def test_more_to_explore_and_the_genres_are_links(self):
-        links = normalize.editorial_shelves(self.raw, self.tmp.name)['links']
+        links = editorial.editorial_shelves(self.raw, self.tmp.name)['links']
         self.assertEqual([(row['key'], row['title']) for row in links],
                          [('new-links', 'More'), ('new-genres', '')])
         self.assertEqual([(link['kind'], link['id'], link['title'], link.get('genre'))
@@ -159,7 +172,7 @@ class EditorialShelvesTest(unittest.TestCase):
         store = 'https://itunes.apple.com/WebObjects/MZStore.woa/wa/'
 
         def link(url, **more):
-            return normalize.editorial_link(dict(label='  Invented   Label ', url=url, **more))
+            return editorial.editorial_link(dict(label='  Invented   Label ', url=url, **more))
         self.assertEqual(link(store + 'viewRoom?fcId=1'),
                          {'title': 'Invented Label', 'kind': 'room', 'id': '1', 'url': None})
         self.assertEqual(link('https://music.apple.com/gb/room/6789')['id'], '6789')
@@ -179,8 +192,8 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertIsNone(link(store + 'viewGrouping'))
         for bad in ('ftp://example.com/x', 'http://example.com/x', 'javascript:alert(1)', ''):
             self.assertIsNone(link(bad))
-        self.assertIsNone(normalize.editorial_link({'url': store + 'viewRoom?fcId=1'}))
-        self.assertIsNone(normalize.editorial_link('junk'))
+        self.assertIsNone(editorial.editorial_link({'url': store + 'viewRoom?fcId=1'}))
+        self.assertIsNone(editorial.editorial_link('junk'))
         self.assertEqual(link('https://example.com/elsewhere')['kind'], 'link')
 
     def test_a_room(self):
@@ -190,17 +203,17 @@ class EditorialShelvesTest(unittest.TestCase):
                 album('900000201', 'Lantern Season'), {'id': 'x', 'type': 'uploaded-videos',
                                                        'attributes': {'name': 'Upload'}},
                 'junk']}}}]}
-        out = normalize.editorial_room(raw, self.tmp.name)
+        out = editorial.editorial_room(raw, self.tmp.name)
         self.assertEqual((out['id'], out['title']), ('900000701', 'Invented Room'))
         self.assertEqual([(item['kind'], item['id']) for item in out['items']],
                          [('album', '900000201'), ('station', 'ra.q-1')])
-        self.assertEqual(normalize.editorial_room(None, self.tmp.name),
+        self.assertEqual(editorial.editorial_room(None, self.tmp.name),
                          {'id': '', 'title': '', 'items': []})
 
     def test_a_grouping_is_shaped_as_new(self):
         raw = {'data': [dict(self.raw['data'][0], id='900000704',
                              attributes={'name': 'Invented Grouping'})]}
-        out = normalize.editorial_grouping(raw, self.tmp.name)
+        out = editorial.editorial_grouping(raw, self.tmp.name)
         self.assertEqual((out['id'], out['title']), ('900000704', 'Invented Grouping'))
         self.assertEqual([shelf['key'] for shelf in out['shelves']],
                          ['grp-banners', 'grp-best-new-songs', 'grp-new-releases',
@@ -218,7 +231,7 @@ class EditorialShelvesTest(unittest.TestCase):
         raw = {'data': [{'id': '900000705', 'type': 'multirooms', 'attributes': {
             'title': 'Invented Multiroom', 'uber': {'name': 'Invented Multiroom'}},
             'relationships': {'children': {'data': [header, shelf]}}}]}
-        out = normalize.editorial_multiroom(raw, self.tmp.name)
+        out = editorial.editorial_multiroom(raw, self.tmp.name)
         self.assertEqual((out['id'], out['title']), ('900000705', 'Invented Multiroom'))
         self.assertEqual([(s['key'], s['title'], [i['id'] for i in s['items']])
                           for s in out['shelves']],
@@ -230,7 +243,7 @@ class EditorialShelvesTest(unittest.TestCase):
         raw = {'data': [{'id': '900000301', 'type': 'apple-curators',
                          'attributes': {'name': 'Apple Music Folk', 'shortName': 'Folk'},
                          'relationships': {'grouping': {'data': [grouping]}}}]}
-        out = normalize.category_page(raw, self.tmp.name)
+        out = editorial.category_page(raw, self.tmp.name)
         self.assertEqual(out['title'], 'Folk')
         self.assertEqual([s['key'] for s in out['shelves']],
                          ['cat-best-new-songs', 'cat-new-releases', 'cat-stations'])
@@ -259,7 +272,7 @@ class EditorialShelvesTest(unittest.TestCase):
                                        playlist('pl.900000822', 'Lantern Classics'),
                                        {'id': '900000902', 'type': 'apple-curators',
                                         'attributes': {'name': 'Invented Folk'}}]}}}]}
-        out = normalize.category_page(raw, self.tmp.name)
+        out = editorial.category_page(raw, self.tmp.name)
         self.assertEqual(out['title'], 'The Lantern Hour')
         self.assertEqual([(s['key'], s['title'], [(i['kind'], i['id']) for i in s['items']])
                           for s in out['shelves']], [
@@ -271,7 +284,7 @@ class EditorialShelvesTest(unittest.TestCase):
                          {'kind': 'station', 'id': 'ra.900000811'})
         # Without playlists of its own, the grouping's shelves alone.
         del raw['data'][0]['relationships']['playlists']
-        self.assertEqual([s['key'] for s in normalize.category_page(raw, self.tmp.name)[
+        self.assertEqual([s['key'] for s in editorial.category_page(raw, self.tmp.name)[
             'shelves']], ['cat-episodes'])
 
     def test_a_curator_is_never_a_station(self):
@@ -290,16 +303,16 @@ class EditorialShelvesTest(unittest.TestCase):
         self.assertEqual((nameless['kind'], nameless['play']), ('unknown', {}))
 
     def test_cache_paths(self):
-        self.assertEqual(normalize.browse_cache_path('/c'), os.path.join('/c', 'browse.json'))
-        self.assertEqual(normalize.room_cache_path('/c', '1.2'),
+        self.assertEqual(cache_files.browse_cache_path('/c'), os.path.join('/c', 'browse.json'))
+        self.assertEqual(cache_files.room_cache_path('/c', '1.2'),
                          os.path.join('/c', 'rooms', '1.2.json'))
-        self.assertEqual(normalize.grouping_cache_path('/c', '../x'),
+        self.assertEqual(cache_files.grouping_cache_path('/c', '../x'),
                          os.path.join('/c', 'groupings', '.._x.json'))
-        self.assertEqual(normalize.multiroom_cache_path('/c', '7'),
+        self.assertEqual(cache_files.multiroom_cache_path('/c', '7'),
                          os.path.join('/c', 'multirooms', '7.json'))
         for folder in ('rooms', 'groupings', 'multirooms'):
-            self.assertIn(folder, normalize.ANSWER_FOLDERS)
-        self.assertEqual(normalize.made_for_you_cache_path('/c'),
+            self.assertIn(folder, cache_files.ANSWER_FOLDERS)
+        self.assertEqual(cache_files.made_for_you_cache_path('/c'),
                          os.path.join('/c', 'made-for-you.json'))
 
 
@@ -317,7 +330,7 @@ class RadioShelvesTest(unittest.TestCase):
             'children']['data']
 
     def shelves(self):
-        return normalize.radio_shelves(self.raw, self.tmp.name, now=self.NOW)['shelves']
+        return editorial.radio_shelves(self.raw, self.tmp.name, now=self.NOW)['shelves']
 
     def test_the_live_stations_come_first_and_the_hero_keeps_the_rest(self):
         shelves = self.shelves()
@@ -364,32 +377,32 @@ class RadioShelvesTest(unittest.TestCase):
         self.assertEqual((genre['kind'], genre['subtitle']), ('category', 'Invented Folk'))
 
     def test_the_answer_expires_when_a_live_station_runs_out_of_programmes(self):
-        answer = normalize.radio_shelves(self.raw, self.tmp.name, now=self.NOW)
+        answer = editorial.radio_shelves(self.raw, self.tmp.name, now=self.NOW)
         self.assertEqual(answer['expires'], '2026-10-20T16:00:00Z')  # Harbour Hits' last
         late = datetime(2026, 10, 20, 17, 0, tzinfo=UTC)  # every programme known ended
-        self.assertEqual(normalize.radio_shelves(self.raw, self.tmp.name, now=late)['expires'],
+        self.assertEqual(editorial.radio_shelves(self.raw, self.tmp.name, now=late)['expires'],
                          '2026-10-20T17:05:00Z')
-        self.assertFalse(normalize.answer_expired(answer, now=self.NOW))
-        self.assertTrue(normalize.answer_expired(
+        self.assertFalse(cache_files.answer_expired(answer, now=self.NOW))
+        self.assertTrue(cache_files.answer_expired(
             answer, now=datetime(2026, 10, 20, 16, 0, tzinfo=UTC)))
-        self.assertFalse(normalize.answer_expired({'cached': '2026-10-20T00:00:00Z'}))
-        self.assertFalse(normalize.answer_expired(None))
+        self.assertFalse(cache_files.answer_expired({'cached': '2026-10-20T00:00:00Z'}))
+        self.assertFalse(cache_files.answer_expired(None))
 
     def test_without_programmes_nothing_expires(self):
         for child in self.elements()[1]['relationships']['children']['data']:
             child['relationships']['contents']['data'][0].pop('relationships', None)
-        answer = normalize.radio_shelves(self.raw, self.tmp.name)
+        answer = editorial.radio_shelves(self.raw, self.tmp.name)
         self.assertNotIn('expires', answer)
         self.assertNotIn('events', answer['shelves'][0]['items'][0])
 
     def test_nothing(self):
-        self.assertEqual(normalize.radio_shelves(None, self.tmp.name), {'shelves': []})
-        self.assertEqual(normalize.radio_shelves({'data': ['junk', {}]}, self.tmp.name),
+        self.assertEqual(editorial.radio_shelves(None, self.tmp.name), {'shelves': []})
+        self.assertEqual(editorial.radio_shelves({'data': ['junk', {}]}, self.tmp.name),
                          {'shelves': []})
 
     def test_cache_path(self):
-        self.assertEqual(normalize.radio_cache_path('/c'), os.path.join('/c', 'radio.json'))
-        self.assertIn('radio.json', normalize.KEPT_ANSWERS)
+        self.assertEqual(cache_files.radio_cache_path('/c'), os.path.join('/c', 'radio.json'))
+        self.assertIn('radio.json', cache_files.KEPT_ANSWERS)
 
 
 class MadeForYouShelvesTest(unittest.TestCase):
@@ -412,7 +425,7 @@ class MadeForYouShelvesTest(unittest.TestCase):
                            [mix('pl.df-1', 'Folk Essentials', 'editorial')]),
             recommendation('r-empty', 'Nothing', []),
         ]
-        shelves = normalize.made_for_you_shelves(recs, self.tmp.name)
+        shelves = recommendations.made_for_you_shelves(recs, self.tmp.name)
         self.assertEqual([(s['key'], s['title'], [i['title'] for i in s['items']])
                           for s in shelves], [
             ('rec-r-mixes', 'Made for You', ['Favourites Mix', 'Chill Mix']),
@@ -429,18 +442,18 @@ class MadeForYouShelvesTest(unittest.TestCase):
             recommendation('r-a', 'Mixes', [mix('pl.pm-1', 'Get Up! Mix')]),
             recommendation('r-b', 'Albums', [album('900000201', 'Lantern Season')]),
         ])]
-        shelves = normalize.made_for_you_shelves(recs, self.tmp.name)
+        shelves = recommendations.made_for_you_shelves(recs, self.tmp.name)
         self.assertEqual([s['key'] for s in shelves], ['rec-r-a'])
 
     def test_nothing(self):
-        self.assertEqual(normalize.made_for_you_shelves(None, self.tmp.name), [])
-        self.assertEqual(normalize.made_for_you_shelves(['junk', {}], self.tmp.name), [])
+        self.assertEqual(recommendations.made_for_you_shelves(None, self.tmp.name), [])
+        self.assertEqual(recommendations.made_for_you_shelves(['junk', {}], self.tmp.name), [])
 
     def test_the_recommendations_fixture(self):
         # The invented Home fixture's "Made for You" set has no playlistType: not mixes.
         with open(FIXTURES / 'recommendations.json', encoding='utf-8') as file:
             raw = json.load(file)
-        self.assertEqual(normalize.made_for_you_shelves(raw['data'], self.tmp.name), [])
+        self.assertEqual(recommendations.made_for_you_shelves(raw['data'], self.tmp.name), [])
 
 
 class ChartsShelvesTest(unittest.TestCase):
@@ -451,7 +464,7 @@ class ChartsShelvesTest(unittest.TestCase):
             self.raw = json.load(f)
 
     def shelves(self):
-        return normalize.charts_shelves(self.raw, self.tmp.name)['shelves']
+        return charts.charts_shelves(self.raw, self.tmp.name)['shelves']
 
     def test_the_charts_come_in_the_pages_order_whatever_the_answers(self):
         # Apple's order of `results` (and its meta order, which names only some) aside:
@@ -486,7 +499,7 @@ class ChartsShelvesTest(unittest.TestCase):
         self.assertEqual([item['album'] for item in songs], ['Harbour Lights', ''])
         self.assertTrue(songs[0]['explicit'])
         self.assertEqual(songs[0]['play'], {'kind': 'song', 'id': '1900000201'})
-        size = normalize.ART_SIZES['thumb']
+        size = art_cache.ART_SIZES['thumb']
         self.assertEqual(songs[0]['art'], 'https://is1-ssl.mzstatic.com/image/thumb/Invented/'
                                           f'hl/{size}x{size}bb.jpg')
         self.assertEqual([item['id'] for item in shelves['albums']['items']],
@@ -507,17 +520,17 @@ class ChartsShelvesTest(unittest.TestCase):
     def test_nothing(self):
         for raw in (None, {}, {'results': None}, {'results': {'songs': ['junk', {}]}},
                     {'results': {'songs': [{'data': None}]}}, 'junk'):
-            self.assertEqual(normalize.charts_shelves(raw, self.tmp.name), {'shelves': []})
+            self.assertEqual(charts.charts_shelves(raw, self.tmp.name), {'shelves': []})
 
     def test_cache_path(self):
-        self.assertEqual(normalize.charts_cache_path('/c'), os.path.join('/c', 'charts.json'))
-        self.assertIn('charts.json', normalize.KEPT_ANSWERS)
+        self.assertEqual(cache_files.charts_cache_path('/c'), os.path.join('/c', 'charts.json'))
+        self.assertIn('charts.json', cache_files.KEPT_ANSWERS)
         # A genre's beside it, in a folder of their own, pruned as the other answers are.
-        self.assertEqual(normalize.charts_cache_path('/c', '21'),
+        self.assertEqual(cache_files.charts_cache_path('/c', '21'),
                          os.path.join('/c', 'charts', '21.json'))
-        self.assertIn('charts', normalize.ANSWER_FOLDERS)
-        self.assertEqual(normalize.genres_cache_path('/c'), os.path.join('/c', 'genres.json'))
-        self.assertIn('genres.json', normalize.KEPT_ANSWERS)
+        self.assertIn('charts', cache_files.ANSWER_FOLDERS)
+        self.assertEqual(cache_files.genres_cache_path('/c'), os.path.join('/c', 'genres.json'))
+        self.assertIn('genres.json', cache_files.KEPT_ANSWERS)
 
 
 class CatalogGenresTest(unittest.TestCase):
@@ -540,17 +553,17 @@ class CatalogGenresTest(unittest.TestCase):
                         self.genre('../x', 'Not an Id'),
                         {'id': '9004', 'type': 'songs', 'attributes': {'name': 'A Song'}},
                         'junk']}
-        self.assertEqual(normalize.catalog_genres(raw), {'genres': [
+        self.assertEqual(charts.catalog_genres(raw), {'genres': [
             {'id': '9002', 'title': 'Invented Rock'}, {'id': '9001', 'title': 'Invented Folk'}]})
 
     def test_a_genre_without_a_parent_that_is_nobodys_stays(self):
         raw = {'data': [self.genre('9005', 'Invented Jazz', parent=None)]}
-        self.assertEqual(normalize.catalog_genres(raw)['genres'],
+        self.assertEqual(charts.catalog_genres(raw)['genres'],
                          [{'id': '9005', 'title': 'Invented Jazz'}])
 
     def test_nothing(self):
         for raw in (None, {}, {'data': None}, {'data': 'junk'}, 'junk'):
-            self.assertEqual(normalize.catalog_genres(raw), {'genres': []})
+            self.assertEqual(charts.catalog_genres(raw), {'genres': []})
 
 
 class RecommendationReasonTest(unittest.TestCase):
@@ -560,20 +573,21 @@ class RecommendationReasonTest(unittest.TestCase):
                 recommendation('r-3', 'New Releases', [album('900000201', 'Lantern Season')])]
         recs[0]['attributes']['reason'] = {'stringForDisplay': '  Based on   what you play '}
         recs[1]['attributes']['reason'] = {'stringForDisplay': 'made for you'}  # the title
-        shelves = normalize.recommendation_shelves(recs)
+        shelves = recommendations.recommendation_shelves(recs)
         self.assertEqual([shelf.get('subtitle') for shelf in shelves],
                          ['Based on what you play', None, None])
         # Made for You's shelves carry it too.
-        self.assertEqual(normalize.made_for_you_shelves(recs)[0]['subtitle'],
+        self.assertEqual(recommendations.made_for_you_shelves(recs)[0]['subtitle'],
                          'Based on what you play')
 
     def test_the_reason_alone(self):
-        self.assertEqual(normalize.recommendation_reason(
+        self.assertEqual(recommendations.recommendation_reason(
             {'reason': {'stringForDisplay': 'Because you like folk'}, 'title': 'Folk'}),
             'Because you like folk')
-        self.assertEqual(normalize.recommendation_reason({'reason': 'Bare text'}), 'Bare text')
+        self.assertEqual(recommendations.recommendation_reason({'reason': 'Bare text'}),
+                         'Bare text')
         for attrs in (None, {}, {'reason': None}, {'reason': {'stringForDisplay': 3}}):
-            self.assertEqual(normalize.recommendation_reason(attrs), '')
+            self.assertEqual(recommendations.recommendation_reason(attrs), '')
 
 
 class RecentlyPlayedTest(unittest.TestCase):
@@ -591,7 +605,7 @@ class RecentlyPlayedTest(unittest.TestCase):
         raw = [album('900000201', 'Lantern Season'), station('ra.q-1', 'Quiet Radio'),
                curator, library, album('900000201', 'Lantern Season'), 'junk',
                {'id': 'x', 'type': 'albums', 'attributes': {}}]  # no name: no tile
-        answer = normalize.recently_played(raw, self.tmp.name)
+        answer = recommendations.recently_played(raw, self.tmp.name)
         self.assertEqual(set(answer), {'items'})
         self.assertEqual([(item['kind'], item['id']) for item in answer['items']],
                          [('album', '900000201'), ('station', 'ra.q-1'),
@@ -603,12 +617,147 @@ class RecentlyPlayedTest(unittest.TestCase):
 
     def test_nothing(self):
         for raw in (None, [], {'data': []}, ['junk']):
-            self.assertEqual(normalize.recently_played(raw, self.tmp.name), {'items': []})
+            self.assertEqual(recommendations.recently_played(raw, self.tmp.name), {'items': []})
 
     def test_cache_path(self):
-        self.assertEqual(normalize.recent_played_cache_path('/c'),
+        self.assertEqual(cache_files.recent_played_cache_path('/c'),
                          os.path.join('/c', 'recent-played.json'))
-        self.assertIn('recent-played.json', normalize.KEPT_ANSWERS)
+        self.assertIn('recent-played.json', cache_files.KEPT_ANSWERS)
+
+
+class TestRecommendationShelves(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        art_cache.ART_SIZES.update(UPSTREAM_SIZES)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+        art_cache.ART_SIZES.update(art_cache.DEFAULT_ART_SIZES)
+
+    def test_recommendation_shelves_follow_apples_order_and_titles(self):
+        def album(i):
+            return {'id': f'a{i}', 'type': 'albums',
+                    'attributes': {'name': f'Album {i}', 'artistName': 'X'}}
+        raw = [
+            {'id': 'one', 'attributes': {'title': {'stringForDisplay': 'New Releases for You'}},
+             'relationships': {'contents': {'data': [album(1), album(2)]}}},
+            # A group: its members are shelves of their own, in place of it.
+            {'id': 'grp',
+             'attributes': {'isGroupRecommendation': True, 'title': {'stringForDisplay': 'Genres'}},
+             'relationships': {'recommendations': {'data': [
+                 {'id': 'rock', 'attributes': {'title': {'stringForDisplay': 'Rock'}},
+                  'relationships': {'contents': {'data': [album(3)]}}},
+                 {'id': 'empty', 'attributes': {'title': {'stringForDisplay': 'Nothing'}},
+                  'relationships': {'contents': {'data': []}}},
+             ]}}},
+            {'id': 'st', 'attributes': {'title': {'stringForDisplay': 'Stations for You'}},
+             'relationships': {'contents': {'data': [
+                 {'id': 'ra.1', 'type': 'stations', 'attributes': {'name': 'Alt Station'}}]}}},
+        ]
+        shelves = recommendations.recommendation_shelves(raw)
+        self.assertEqual([s['key'] for s in shelves], ['rec-one', 'rec-rock', 'rec-st'])
+        self.assertEqual([s['title'] for s in shelves],
+                         ['New Releases for You', 'Rock', 'Stations for You'])
+        self.assertEqual([it['title'] for it in shelves[0]['items']], ['Album 1', 'Album 2'])
+        self.assertEqual(shelves[2]['items'][0]['kind'], 'station')
+        self.assertEqual(shelves[0]['items'][0]['groups'], [])
+
+    def test_recommendations_keep_to_what_the_app_can_show(self):
+        curator = {'id': '900000901', 'type': 'apple-curators',
+                   'attributes': {'name': 'Apple Music Folk', 'shortName': 'Folk'}}
+        banner = {'id': 'e.1', 'type': 'editorial-items', 'attributes': {'name': 'A Banner'}}
+        album = {'id': 'a1', 'type': 'albums', 'attributes': {'name': 'Album 1'}}
+        mix = {'id': 'pl.m', 'type': 'playlists',
+               'attributes': {'name': 'Chill Mix', 'playlistType': 'personal-mix'}}
+        raw = [
+            {'id': 'mixed', 'attributes': {'title': {'stringForDisplay': 'For the Weekend'}},
+             'relationships': {'contents': {'data': [curator, banner, album]}}},
+            {'id': 'none', 'attributes': {'title': {'stringForDisplay': 'Browse'}},
+             'relationships': {'contents': {'data': [curator, banner]}}},
+            {'attributes': {}, 'relationships': {'contents': {'data': [mix]}}},
+        ]
+        shelves = recommendations.recommendation_shelves(raw, self.tmp_dir)
+        # Home: the curator and the banner are left out; a shelf with nothing else goes.
+        self.assertEqual([(s['key'], [it['id'] for it in s['items']]) for s in shelves],
+                         [('rec-mixed', ['a1']), ('rec-1', ['pl.m'])])
+        self.assertEqual(shelves[0]['items'][0]['groups'], [])
+        # Made for You takes only the recommendations made entirely of mixes and stations.
+        self.assertEqual([s['key'] for s in
+                          recommendations.made_for_you_shelves(raw, self.tmp_dir)],
+                         ['rec-0'])
+
+
+class TestCategoryPage(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        art_cache.ART_SIZES.update(UPSTREAM_SIZES)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+        art_cache.ART_SIZES.update(art_cache.DEFAULT_ART_SIZES)
+
+    def test_category_page_is_the_groupings_shelves(self):
+        element = lambda eid, name, contents: {  # noqa: E731
+            'id': eid, 'type': 'editorial-elements', 'attributes': {'editorialElementKind': '326',
+                                                                    'name': name},
+            'relationships': {'contents': {'data': contents}}}
+        raw = {'data': [{
+            'id': '900000101', 'type': 'apple-curators',
+            'attributes': {'name': 'Apple Music Rock', 'shortName': 'Rock'},
+            'relationships': {'grouping': {'data': [{
+                'id': 'g', 'type': 'groupings', 'attributes': {'name': 'Rock'},
+                'relationships': {'tabs': {'data': [{
+                    'id': 't', 'type': 'editorial-elements',
+                    'relationships': {'children': {'data': [
+                        element('hero', '', []),
+                        element('songs', 'Best New Songs', [
+                            {'id': 's1', 'type': 'songs',
+                             'attributes': {'name': 'Quiet Engines', 'artistName': 'A',
+                                            'durationInMillis': 1000}},
+                            {'id': 's2', 'type': 'songs'},
+                        ]),
+                        element('albums', 'New Releases', [
+                            {'id': 'a1', 'type': 'albums',
+                             'attributes': {'name': 'Borrowed Lanterns', 'artistName': 'B',
+                                            'artwork': {'url': 'https://x/{w}x{h}{c}.{f}'}}},
+                        ]),
+                        element('empty', 'Nothing Here', []),
+                    ]}}}]}}}]}},
+        }]}
+        out = editorial.category_page(raw, self.tmp_dir)
+        self.assertEqual(out['id'], '900000101')
+        self.assertEqual(out['title'], 'Rock')
+        self.assertEqual([(s['key'], s['title'], len(s['items'])) for s in out['shelves']],
+                         [('cat-songs', 'Best New Songs', 1), ('cat-albums', 'New Releases', 1)])
+        self.assertEqual(out['shelves'][0]['items'][0]['kind'], 'song')
+        album = out['shelves'][1]['items'][0]
+        self.assertEqual(album['groups'], [])
+        self.assertIn('256x256', album['art'])
+        # A genre's: no host, and no banner without the editorial artwork.
+        self.assertEqual((out['host'], out['banner']), ('', None))
+        self.assertEqual(editorial.category_page(None, self.tmp_dir),
+                         {'id': '', 'title': '', 'host': '', 'banner': None, 'shelves': []})
+
+    def test_a_radio_shows_page_has_its_host_and_its_banner(self):
+        art = lambda name, width, height: {  # noqa: E731
+            'url': f'https://x.invalid/{name}/{{w}}x{{h}}bb.jpg', 'width': width,
+            'height': height, 'bgColor': '1a2b3c'}
+        raw = {'data': [{
+            'id': '900000202', 'type': 'apple-curators',
+            'attributes': {'name': 'The Invented Hour', 'kind': 'Show',
+                           'showHostName': ' Ada Vellum ',
+                           'editorialArtwork': {'subscriptionHero': art('hero', 3840, 1080),
+                                                'bannerUber': art('uber', 4320, 1080)}}}]}
+        out = editorial.category_page(raw, self.tmp_dir)
+        self.assertEqual(out['host'], 'Ada Vellum')
+        self.assertEqual(out['banner'], {'url': 'https://x.invalid/uber/{w}x{h}sr.jpg',
+                                         'crop': 'sr', 'width': 4320, 'height': 1080,
+                                         'color': '#1a2b3c'})
+        # The host is a show's alone; a curator of another kind with the keys has the banner.
+        raw['data'][0]['attributes']['kind'] = 'Curator'
+        out = editorial.category_page(raw, self.tmp_dir)
+        self.assertEqual(out['host'], '')
+        self.assertIsNotNone(out['banner'])
 
 
 if __name__ == '__main__':

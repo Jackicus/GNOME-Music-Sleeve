@@ -30,7 +30,7 @@ def stamp(seconds_ago, now=NOW):
 
 
 def played(number, kind='album', **extra):
-    """An invented item of a Recently Played answer, as normalize.recently_played gives it."""
+    """An invented item of a Recently Played answer, as recommendations.recently_played gives it."""
     data = {'id': f'9000005{number:02d}', 'kind': kind, 'title': f'Invented Played {number}',
             'subtitle': 'Invented Artist', 'art': None, 'thumb': None, 'groups': [],
             'play': {'kind': kind, 'id': f'9000005{number:02d}'}}

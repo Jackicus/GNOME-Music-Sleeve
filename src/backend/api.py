@@ -211,7 +211,7 @@ def replay_songs_params(song_ids):
 # An artist's page, as music.apple.com's views-based artist page asks for it: the artist with
 # every view its page shows (each answered with Apple's own title, its first page of
 # resources and a `next` link where there are more), the attributes its About reads, and
-# the two its wide header is made from (editorialArtwork, hero: normalize.artist_banner).
+# the two its wide header is made from (editorialArtwork, hero: banner_art.artist_banner).
 # featured-release, when an artist has one, is shown in latest-release's place;
 # featured-albums is "Essential Albums", more-to-hear the radio episodes about the artist,
 # more-to-see the videos about them (uploaded videos and films). top-songs is 24 long, three
@@ -319,7 +319,7 @@ RELATED_PARAMS = {
 }
 
 # A catalog search (the bridge's search()): every kind at once, with Apple's Top Results, or
-# one kind alone, by its shelf's key (normalize.search_results), a page of up to
+# one kind alone, by its shelf's key (search.search_results), a page of up to
 # SEARCH_PAGE_LIMIT (the most Apple answers a search with) from an offset. Curators come only
 # when asked for: `apple-curators` are Apple's own (its radio shows, genres and editors),
 # `curators` third parties; a radio show is an Apple curator of kind Show.

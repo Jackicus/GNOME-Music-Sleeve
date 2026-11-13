@@ -120,7 +120,7 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
   yield_to_frames()` (library/pacing.py): asyncio outranks GTK's redraw: `sleep(0)` paints nothing.
 - **Chrome and MusicKit only through `app.engine`**: engine.py is the one module that imports
   `backend.chrome` and `backend.client`; the rest of the app may import the backend's pure parts
-  (`api`, `config`, `errors`, `normalize`, `store`). Playback goes through `app.player`.
+  (all of it but `chrome`, `client` and `cdp`). Playback goes through `app.player`.
 - **Errors**: engine failures are `EngineError(code)`, codes in `src/backend/errors.py`. The
   user sees a plain-text toast (`app.report(error)`: `errors.error_message()`'s sentence and
   button for the code, the detail in the log; `app.toast()` makes every toast), no traceback.

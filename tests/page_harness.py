@@ -476,9 +476,9 @@ def artist(albums, artist_id='l.artist001'):
 
 
 def artist_answer(artist_id='42', songs=4, group=False, banner=None, favourite=False):
-    """An invented catalog artist's page, as Engine.artist_page answers (normalize.artist_page):
+    """An invented catalog artist's page, as Engine.artist_page answers (item_pages.artist_page):
     a latest release, `songs` top songs, Essential Albums, Albums (with more to fetch) and
-    Similar Artists; `banner` its banner dict (normalize.artist_banner's), None by default;
+    Similar Artists; `banner` its banner dict (banner_art.artist_banner's), None by default;
     `favourite` whether the account has the artist as one (None: the answer does not say)."""
     def entry(kind, number, **extra):
         data = {'id': f'{kind}{number}', 'kind': kind, 'title': f'Invented {kind} {number}',

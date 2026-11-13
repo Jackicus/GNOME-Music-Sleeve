@@ -51,7 +51,7 @@ listing may give the date of the change before its tracks read shows the change,
 with tracks older than it would keep them for good. A `shelves` pass (sync_library(shelves=True),
 LibrarySync.start(shelves=True)) is Home's Refresh: it reads the Home shelves alone and
 keeps everything else of last time's file; with no file to keep from, LibrarySync runs a
-full sync instead. A recommendation's reason (normalize.recommendation_reason) is its
+full sync instead. A recommendation's reason (recommendations.recommendation_reason) is its
 shelf's `subtitle`. No short pass (quick, playlists, shelves) writes a newer `version` than
 the file it kept the rest from had: only a full pass writes LIBRARY_VERSION, so a file of an
 older version is still due the full sync that brings it up to date (library_ok).
@@ -129,7 +129,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import GdkPixbuf, GLib, GObject  # noqa: E402
 
 from .backend import api, config  # noqa: E402
-from .backend import normalize, store  # noqa: E402
+from .backend import art_cache, cache_files, normalize, recommendations, store  # noqa: E402
 from .backend.errors import EngineError  # noqa: E402
 from .library import EDITABLE, FAVOURITES, PUBLIC, REMOVABLE, ROOT_FOLDER, parse  # noqa: E402
 
@@ -289,8 +289,8 @@ def scale_image(src_path, dest_path, width, height):
 def install_scaler():
     """Hand the backend the scaler, and the artwork sizes the cache was built at (once, at
     startup: a tiny file read)."""
-    normalize.scale_image = scale_image
-    normalize.load_art_sizes(str(config.cache_dir()))
+    art_cache.scale_image = scale_image
+    art_cache.load_art_sizes(str(config.cache_dir()))
 
 
 async def sync_library(engine, library, progress=None, quick=False, playlists=False,
@@ -325,7 +325,7 @@ async def sync_library(engine, library, progress=None, quick=False, playlists=Fa
     # The sizes this sync builds at, before anything names a file (the URLs carry them). The
     # marker, and the wipe of the thumbnails a changed size needs, wait for the artwork step:
     # a sync that fails before it keeps the thumbnails there are.
-    normalize.ART_SIZES.update(normalize.wanted_art_sizes(config.COVER_SIZE, config.THUMB_SIZE))
+    art_cache.ART_SIZES.update(art_cache.wanted_art_sizes(config.COVER_SIZE, config.THUMB_SIZE))
     raw = {}  # Apple's answers, for the build, which lets go of them once they are used
     previous = _Previous(cache_dir)  # last time's file, read (in a thread) when first asked
 
@@ -767,23 +767,23 @@ def _build_and_write(cache_dir, storefront, raw, art_progress, cancelled, genera
     # placeholders for artwork that is about to arrive. A failure is logged, nothing more.
     # The sizes' marker is written now: a changed thumbnail size wipes thumb/ here, not before.
     _stop_if(cancelled, generation, cache_dir)
-    normalize.apply_art_sizes(cache_dir, config.COVER_SIZE, config.THUMB_SIZE, generation)
+    art_cache.apply_art_sizes(cache_dir, config.COVER_SIZE, config.THUMB_SIZE, generation)
     try:
-        counts['art'] = normalize.download_art(thumb_urls(library_data, cache_dir, art_urls),
+        counts['art'] = art_cache.download_art(thumb_urls(library_data, cache_dir, art_urls),
                                                cache_dir,
                                                progress=art_progress, cancelled=cancelled,
                                                generation=generation)
-    except normalize.Cancelled:
+    except art_cache.Cancelled:
         raise  # cancelled, or the cache was cleared: nothing more is written
     except Exception as error:  # the listing matters more than its artwork: it is written
         log.warning('sync: artwork: %s', error, exc_info=True)
         counts['art'] = {'wanted': 0, 'fetched': 0, 'failed': 0}
     _stop_if(cancelled, generation, cache_dir)  # with nothing to fetch, download_art did not ask
-    normalize.save_library(library_data, cache_dir, indent=None,  # compact: a third the size
-                           generation=generation)
+    cache_files.save_library(library_data, cache_dir, indent=None,  # compact: a third the size
+                             generation=generation)
     _stop_if(cancelled, generation, cache_dir)
-    normalize.prune_art(library_data, cache_dir)
-    normalize.prune_caches(cache_dir)
+    cache_files.prune_art(library_data, cache_dir)
+    cache_files.prune_caches(cache_dir)
     log.info('library synced: %s', ', '.join(
         f'{counts[name]} {label}' for name, label in (
             ('albums', 'albums'), ('artists', 'artists'), ('playlists', 'playlists'),
@@ -887,8 +887,8 @@ def _shelves(shelves_raw, cache_dir, art_urls, previous):
         shelves.extend(shelf for shelf in previous.shelves()
                        if str(shelf.get('key', '')).startswith('rec-'))
     else:
-        shelves.extend(normalize.recommendation_shelves(shelves_raw['recommendations'],
-                                                        cache_dir, art_urls))
+        shelves.extend(recommendations.recommendation_shelves(shelves_raw['recommendations'],
+                                                              cache_dir, art_urls))
     for key, _endpoint, _page, _limit in SHELF_DEFS:
         raw_items = shelves_raw['fixed'].get(key)
         if raw_items is None:
@@ -967,7 +967,7 @@ def _stop_if(cancelled, generation, cache_dir):
     if not store.current(generation):
         raise store.CacheGone(cache_dir)
     if cancelled():
-        raise normalize.Cancelled('sync')
+        raise art_cache.Cancelled('sync')
 
 
 def loose_count(raw_songs):
@@ -1013,7 +1013,7 @@ def thumb_urls(library_data, cache_dir, art_urls):
     """{thumbnail path: url} for every thumbnail the library names: what a sync fetches (the
     covers wait for the pages that show them)."""
     thumb_dir = os.path.join(cache_dir, 'thumb')
-    return {path: url for path, url in normalize.collect_art_urls(library_data, art_urls).items()
+    return {path: url for path, url in art_cache.collect_art_urls(library_data, art_urls).items()
             if os.path.dirname(path) == thumb_dir}
 
 

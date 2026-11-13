@@ -603,11 +603,11 @@ def open_item(window):
 def invented_category(item_id):
     """The category Item whose page the demo library invented (categories/<id>.json), named
     as its page is; None without one."""
-    from applemusic.backend import config, normalize
+    from applemusic.backend import cache_files, config
     from applemusic.library import Item
 
     try:
-        with open(normalize.category_cache_path(str(config.cache_dir()), item_id),
+        with open(cache_files.category_cache_path(str(config.cache_dir()), item_id),
                   encoding='utf-8') as file:
             page = json.load(file)
     except (OSError, ValueError):
@@ -618,11 +618,11 @@ def invented_category(item_id):
 def invented_link(kind, item_id):
     """The Item of a More to Explore link to a page the demo library invented (rooms/,
     groupings/ or multirooms/<id>.json), titled as its page is; None without one."""
-    from applemusic.backend import config, normalize
+    from applemusic.backend import cache_files, config
     from applemusic.explore import link_item
 
-    path = {'room': normalize.room_cache_path, 'grouping': normalize.grouping_cache_path,
-            'multiroom': normalize.multiroom_cache_path}[kind]
+    path = {'room': cache_files.room_cache_path, 'grouping': cache_files.grouping_cache_path,
+            'multiroom': cache_files.multiroom_cache_path}[kind]
     try:
         with open(path(str(config.cache_dir()), item_id), encoding='utf-8') as file:
             page = json.load(file)

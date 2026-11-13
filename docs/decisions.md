@@ -483,7 +483,7 @@ changes, change it here, with the date. The plan they came from is in
   (2026-10-20). An artist's More To See (interviews, films: `link` Items marked `video`)
   shows the music videos' frame, without the play symbol, since they open on
   music.apple.com rather than play here (`tile.FRAME`), and so does its See All. A video's
-  thumbnail is asked in a 569x320 box (`normalize.thumb_box()`), not 320x320: Apple's `bb`
+  thumbnail is asked in a 569x320 box (`art_cache.thumb_box()`), not 320x320: Apple's `bb`
   fits a 16:9 image to the box, so the square one gave 320x180, which a 160 px frame at a
   scale of 2 drew 1.8 times enlarged. Its file has a name of its own (`<sha1>-wide.jpg`), so
   the next sync fetches it in place of the square-boxed one rather than keeping that. At a
@@ -1114,7 +1114,7 @@ changes, change it here, with the date. The plan they came from is in
 - **Radio is Apple's radio page, with Recently Played as one shelf** (2026-10-20, #336).
   The page is the editorial grouping behind music.apple.com's own Radio page
   (`groupings?name=radio`, asked as New's is, with the stations' programmes and shows),
-  shaped by New's own grouping parser (`normalize._grouping_shelves`) and kept a day, as
+  shaped by New's own grouping parser (`editorial._grouping_shelves`) and kept a day, as
   New is: the live stations first, as large cards, then Apple's shelves in Apple's order.
   The stations the user played (`library.radio`, which the sync keeps) are one shelf,
   Recently Played, after the live stations, bound to the library's store itself so a sync

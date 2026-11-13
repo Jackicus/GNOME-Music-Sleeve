@@ -28,7 +28,7 @@ arrives: the tiles showing it follow their Item (widgets/tile.py).
 Downloads run in a pool of their own (FETCH_WORKERS threads), not in asyncio's default
 executor, where the artwork is decoded: a page's thumbnails downloading on a slow connection
 never hold up the covers on screen. Whether a file is on disk already is asked there too, off
-the main loop (on_disk()). Only https URLs are fetched, and normalize.cache_artwork writes only
+the main loop (on_disk()). Only https URLs are fetched, and art_cache.cache_artwork writes only
 inside the cache. Concurrent requests for one file share its download. Nothing here needs the
 engine.
 """
@@ -40,7 +40,7 @@ import os
 import re
 from gettext import gettext as _
 
-from .backend import config, normalize, store
+from .backend import art_cache, config, store
 from .library import N_, Item, ShelfModel
 
 log = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ ART_CONCURRENCY = 6
 # re-size one; a template ("{w}x{h}") is filled by the backend first.
 ART_SIZE_RE = re.compile(r'/(\d+)x(\d+)([a-z]{0,3}(?:-\d+)?)(\.[A-Za-z0-9]+)$')
 
-# The headings of a search's shelves, by the key the engine gives each (normalize.search_results).
+# The headings of a search's shelves, by the key the engine gives each (search.search_results).
 SEARCH_TITLES = {
     # Translators: the first shelf of a search's results: Apple's best few hits of any kind.
     'top': N_('Top Results'),
@@ -70,7 +70,7 @@ SEARCH_TITLES = {
 }
 
 # The headings of the Charts page's and the Replay page's shelves when Apple's answer names
-# none, by the chart each is (normalize.charts_shelves' and normalize.replay_page's `chart`).
+# none, by the chart each is (charts.charts_shelves' and charts.replay_page's `chart`).
 CHART_TITLES = {
     'songs': N_('Top Songs'),
     'artists': N_('Top Artists'),
@@ -101,7 +101,7 @@ def sized_url(url, size, height=None):
     if not url:
         return None
     height = height or size
-    url = normalize.template_artwork_url(str(url), size, height)
+    url = art_cache.template_artwork_url(str(url), size, height)
     return ART_SIZE_RE.sub(lambda match: f'/{size}x{height}{match.group(3)}{match.group(4)}',
                            url)
 
@@ -113,14 +113,14 @@ def remote_art_path(url, size=config.COVER_SIZE, height=None):
     url = sized_url(url, size, height)
     if not url:
         return None
-    return os.path.join(str(config.cache_dir()), 'remote-art', normalize.artwork_filename(url))
+    return os.path.join(str(config.cache_dir()), 'remote-art', art_cache.artwork_filename(url))
 
 
 def remote_item(data):
     """An Item dict from the engine's search, category, browse, radio or made-for-you
     answers with its artwork where this app fetches it: when `art` is a catalog URL (the sync
     has not fetched the cover), a copy naming fetch_remote()'s files instead (`thumb` at
-    THUMB_SIZE unless the dict names one, a video's in its 16:9 box, normalize.thumb_box(),
+    THUMB_SIZE unless the dict names one, a video's in its 16:9 box, art_cache.thumb_box(),
     `art` at COVER_SIZE) and the URLs to fetch them by (`thumbUrl`, `artUrl`, for
     fetch_thumb() and fetch_cover()). A dict whose artwork is a file, or that has none, is
     returned as it is."""
@@ -128,7 +128,7 @@ def remote_item(data):
     if not is_url(url):
         return data
     item = dict(data)
-    box = normalize.thumb_box(config.THUMB_SIZE, normalize.wide_art(data))
+    box = art_cache.thumb_box(config.THUMB_SIZE, art_cache.wide_art(data))
     item['thumbUrl'] = sized_url(url, *box)
     item['artUrl'] = sized_url(url, config.COVER_SIZE)
     if not item.get('thumb'):
@@ -195,7 +195,7 @@ async def fetch_remote(url, size=config.COVER_SIZE):
     return path if await _fetch(path, sized_url(url, size)) is not None else None
 
 
-# An artist's banner (normalize.artist_banner): a `vf` cut is asked at BANNER_ASPECT (width
+# An artist's banner (banner_art.artist_banner): a `vf` cut is asked at BANNER_ASPECT (width
 # to height; Apple cuts it to any shape asked), an `sr` one at its source's shape. Its width
 # is asked in steps of BANNER_STEP device pixels, from the first up to the source's width, so
 # a window resized a little asks for nothing new and a wide one never for more than Apple has.
@@ -241,7 +241,7 @@ def banner_path(banner, pixels):
     url = banner_url(banner, pixels)
     if url is None:
         return None
-    return os.path.join(str(config.cache_dir()), 'remote-art', normalize.artwork_filename(url))
+    return os.path.join(str(config.cache_dir()), 'remote-art', art_cache.artwork_filename(url))
 
 
 async def fetch_banner(banner, pixels):
@@ -278,7 +278,7 @@ async def _download(path, url, generation):
     def download():
         if on_disk(path):
             return False
-        cached = normalize.cache_artwork(url, str(config.cache_dir()), dest_path=path,
+        cached = art_cache.cache_artwork(url, str(config.cache_dir()), dest_path=path,
                                          generation=generation)
         return True if cached is not None else None
 
