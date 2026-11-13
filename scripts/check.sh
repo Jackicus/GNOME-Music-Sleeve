@@ -28,6 +28,7 @@ sys.exit(options.get("prefix") != sys.argv[1] or options.get("profile") != "deve
 fi
 # Before the unit tests: the widget tests (tests/gtk.py) load build/src's gresource.
 meson compile -C build
-python3 -m unittest discover -s tests
+# -X faulthandler: a crash in the suite (#580) prints the Python frames, so names its test.
+python3 -X faulthandler -m unittest discover -s tests
 meson test -C build --print-errorlogs --suite music-sleeve --no-suite unit  # the data files
 echo "check: ok"
