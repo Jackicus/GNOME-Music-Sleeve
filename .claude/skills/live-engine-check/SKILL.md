@@ -16,8 +16,9 @@ Ground rules:
 - Chrome must reach the desktop's keyring, or it deletes the profile's cookies and the sign-in
   is gone for good. `scripts/headless.sh` hands the engine the desktop's session bus
   (`APPLE_MUSIC_HOST_SESSION_BUS`) for Chrome, and the engine refuses to start Chrome on a
-  signed-in profile when no `org.freedesktop.secrets` answers there (`no-keyring`: the toast
-  "The keyring is not available…", or am.py's `{"error": "no-keyring"}`). Never work around
+  profile whose Chrome has used the keyring when no `org.freedesktop.secrets` answers there
+  (`no-keyring`: the toast "Unlock the keyring, then start the engine", or am.py's
+  `{"error": "no-keyring"}`). Never work around
   that refusal (a wrapper, a private bus, unsetting the variable); fix the keyring, or stop.
 
 1. Ask which build holds the sign-in if the user has not said. The release build uses the

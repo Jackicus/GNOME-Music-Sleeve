@@ -6,6 +6,7 @@ paths:
   - "src/widgets/**"
   - "src/dialogs/**"
   - "src/player_bar.py"
+  - "src/item_menu.py"
   - "src/main.py"
 ---
 

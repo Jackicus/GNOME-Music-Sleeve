@@ -190,7 +190,7 @@ them before changing either. What matters most:
   (`Application._on_rated`); the file waits for the next sync. `recently_added` is a store
   of the sections' own Items (`apply_diff`, kept through reloads); `added` is a SORT_KEY.
 - The library.json shape lives in `src/backend/README.md` (with this app's additions) and
-  library.py's docstring. A new key or kind touches the sync's writer, `scripts/demo_library.py`,
+  the library package's docstring (src/library/__init__.py). A new key or kind touches the sync's writer, `scripts/demo_library.py`,
   tests/test_demo_schema.py and the README together.
 - The demo library is invented and deterministic: `scripts/demo_library.py` with no options
   always writes the same build/demo. Fixtures in tests/fixtures/ are invented API answers; keep
