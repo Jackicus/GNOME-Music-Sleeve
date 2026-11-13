@@ -99,11 +99,11 @@ Albums and a library artist. The numbers behind these rules are in docs/notes.md
   are a tile, `tile.ART_SIZE` or a video grid's `tile.GRID_VIDEO_SIZE`, plus Adwaita's
   padding, so change them together): more at once, fewer only once the width has settled
   (`grid.FewerColumns`, or at once as the page is unrealized), so a window dragged
-  narrower and wider again does not drop a column of tiles and build it again. It makes them all in the frame its model fills in, so a
-  grid page shows the rows that fit at first (`grid.first_tiles()`, from the window's
-  `content_height()`) and lets the rest in `GROW_TILES` a frame after its first paint
-  (`GridPage._grow`); a filter (whose rows are recycled: `ShownModel.replacing()`) and a
-  focus by position call `_show_all()` first.
+  narrower and wider again does not drop a column of tiles and build it again. It makes
+  them all in the frame its model fills in, so a grid page shows the rows that fit at first
+  (`grid.first_tiles()`, from the window's `content_height()`) and lets the rest in
+  `GROW_TILES` a frame after its first paint (`GridPage._grow`); a filter (whose rows are
+  recycled: `ShownModel.replacing()`) and a focus by position call `_show_all()` first.
 
 ## Sorting and filtering
 
