@@ -1,5 +1,9 @@
 [Desktop Entry]
-Name=Music Sleeve@NAME_SUFFIX@
+# Translators: the app's name, a proper name: keep it as it is, or write it in your
+# language's script.
+Name=Music Sleeve
+# Translators: “Apple Music” names Apple's service, here and in every other string: keep it
+# as it is, untranslated.
 Comment=Play your Apple Music library, playlists and radio
 Exec=music-sleeve
 Icon=@APP_ID@

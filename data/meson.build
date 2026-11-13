@@ -3,31 +3,44 @@
 
 # The development build is "Music Sleeve (Development)" in the desktop file and the metainfo,
 # as GNOME's development builds are, so it is told from a release install beside it. The
-# Flatpak manifest adds no suffix of its own.
+# suffix goes after each name once the translations are merged
+# (build-aux/meson/name-suffix.py), so the template's msgid is the name alone and the merge
+# finds it translated. The Flatpak manifest adds no suffix of its own.
 name_suffix = get_option('profile') == 'development' ? ' (Development)' : ''
-data_configuration = {'APP_ID': application_id, 'NAME_SUFFIX': name_suffix}
+data_configuration = {'APP_ID': application_id}
+python3 = python.find_installation('python3')
+add_name_suffix = [python3, files('..' / 'build-aux' / 'meson' / 'name-suffix.py'),
+                   '@INPUT@', '@OUTPUT@', name_suffix]
 
-desktop_file = i18n.merge_file(
-  input: configure_file(
-    input: base_id + '.desktop.in',
-    output: application_id + '.desktop.in',
-    configuration: data_configuration,
+desktop_file = custom_target(
+  input: i18n.merge_file(
+    input: configure_file(
+      input: base_id + '.desktop.in',
+      output: application_id + '.desktop.in',
+      configuration: data_configuration,
+    ),
+    output: application_id + '.desktop.merged',
+    type: 'desktop',
+    po_dir: '../po',
   ),
   output: application_id + '.desktop',
-  type: 'desktop',
-  po_dir: '../po',
+  command: add_name_suffix,
   install: true,
   install_dir: get_option('datadir') / 'applications',
 )
 
-metainfo_file = i18n.merge_file(
-  input: configure_file(
-    input: base_id + '.metainfo.xml.in',
-    output: application_id + '.metainfo.xml.in',
-    configuration: data_configuration,
+metainfo_file = custom_target(
+  input: i18n.merge_file(
+    input: configure_file(
+      input: base_id + '.metainfo.xml.in',
+      output: application_id + '.metainfo.xml.in',
+      configuration: data_configuration,
+    ),
+    output: application_id + '.metainfo.xml.merged',
+    po_dir: '../po',
   ),
   output: application_id + '.metainfo.xml',
-  po_dir: '../po',
+  command: add_name_suffix,
   install: true,
   install_dir: get_option('datadir') / 'metainfo',
 )

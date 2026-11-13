@@ -23,8 +23,9 @@ paths:
   copied in by src/meson.build, which the About dialog is built from); `po/POTFILES.in`
   (every `.py` and `.blp` with `_()`, `ngettext` or `C_`).
 - `-Dprofile=development` gives the `.Devel` app ID (desktop file, icons, metainfo, MPRIS name),
-  the name with " (Development)" after it (`NAME_SUFFIX` in the desktop file and the metainfo;
-  the Flatpak manifest adds none), the version with the git revision, and a `DEMO_DIR`
+  the name with " (Development)" after it (data/meson.build's `name_suffix`, put after each
+  name, translated ones too, by `build-aux/meson/name-suffix.py` once the translations are
+  merged, so the template's msgid is the name alone; the Flatpak manifest adds none), the version with the git revision, and a `DEMO_DIR`
   pointing at the source tree's build/demo.
   A release build hides `--demo` from `--help`, and there it needs `APPLE_MUSIC_CACHE`.
   Both profiles install the same GSettings schema ID and resource path.
