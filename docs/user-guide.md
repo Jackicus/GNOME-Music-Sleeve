@@ -285,15 +285,19 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 - **Mini Player** (in the main menu, in the player bar's menu: right-click the bar, or
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>) swaps the window for a small one with the
   song playing: its artwork, title and artist, the position slider, Previous, Play and
-  Next, and **Favourite**, **Shuffle**, **Repeat** and **Volume**. Make it as small or as
-  large as you like: the artwork follows, and in a low window it sits beside the title;
-  those four sit under the transport, around it in a wide window, and a window both low
-  and narrow keeps the transport alone (<kbd>Ctrl</kbd>+<kbd>↑</kbd> and
-  <kbd>Ctrl</kbd>+<kbd>↓</kbd> still change the volume). **Lyrics** and **Up Next**, at
+  Next, with **Favourite** and **Shuffle** before them and **Repeat** and **Volume**
+  after, in one row at every size. Make it as small or as large as you like: the artwork
+  follows, and in a low window it sits beside the title
+  (<kbd>Ctrl</kbd>+<kbd>↑</kbd> and <kbd>Ctrl</kbd>+<kbd>↓</kbd> change the volume here
+  too). **Lyrics** and **Up Next**, at
   its top right (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> and
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd>, as in the main window), each open a pane
-  under the controls, one at a time: the window grows to make room and shrinks back when
-  you close it, and what you resize while a pane is open is the pane. Up Next there is
+  under the controls, one at a time. The pane opens inside the window, which keeps its
+  size and its place on the screen: the artwork makes room. Drag the grip between the
+  controls and the pane to give either more of the window (or press <kbd>F8</kbd>, then
+  the arrow keys, <kbd>Page Up</kbd> and <kbd>Page Down</kbd>, and <kbd>Enter</kbd>); it
+  stays where you leave it. Only a window too small to hold a pane grows for it, by as
+  little as it needs, and shrinks back when you close the pane. Up Next there is
   the same list as in Now Playing: play an entry, move it, remove it, or open its menu
   (going to its album or artist brings the main window back). The mini player opens with
   the pane it last had. **Return to Main Window** (the

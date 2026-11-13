@@ -594,7 +594,7 @@ changes, change it here, with the date. The plan they came from is in
   MPRIS's `Fullscreen` stays false: no client uses it (#313).
 - **A mini player in the main window's place** (2026-10-20, #366). As Apple's MiniPlayer on
   macOS and Windows, a small window of its own (`widgets/mini_player.py`, about 320 by 500
-  px, down to 280 by 240) shows the song playing: the artwork, the title and the artist,
+  px, down to 280 by 240; 360 by 548 down to 360 by 220 since 1.3.1) shows the song playing: the artwork, the title and the artist,
   the seek row (LIVE for a live station) and Previous, Play and Next, over the artwork's
   tint as Now Playing has it; Return to Main Window in its header bar. It takes the main
   window's place rather than sitting beside it: the main window hides as it shows and
@@ -628,7 +628,20 @@ changes, change it here, with the date. The plan they came from is in
   Apple's "view and edit": its moves, its Remove and its entries' menus run the main
   window's item actions from there, and what shows a page or a dialog (Go to Album, View
   Credits) brings the main window back first. With no pane open nothing steps: the
-  hidden window's sheet is covered, its views inactive.) It does not stay on
+  hidden window's sheet is covered, its views inactive. Revised the same day, 1.3.1, at
+  the owner's report after using 1.3.0: the buttons no longer move. They are one row
+  of seven at every size (Favourite, Shuffle, Previous, Play, Next, Repeat, Volume), and
+  the window's least width is the width that row takes, 360 px, up from 280; three
+  arrangements chosen by the window's size meant a resize moved four buttons about or
+  took them away, and the default window never showed the one-row form. And a pane no
+  longer makes the window taller as a rule: it opens inside the window, the controls
+  folding to their short layout over it, with a divider between them to drag, bounded
+  by the short layout above and the pane's least height below. A Wayland client cannot
+  place or move its window, and a window that grows keeps its top edge, so the 320 px
+  the pane added went off the screen from the bottom corner, where a mini player is
+  kept. Only a window too low to hold the short layout and a readable pane grows, by
+  what is missing, and shrinks by the same. Apple's MiniPlayer does the same with its
+  lyrics: the artwork gives way, the window stays.) It does not stay on
   top: GNOME on Wayland gives an app no way to ask (the window menu's Always on Top is the
   user's), so it promises nothing of the kind. Toasts go to it while it shows, as the
   window the user sees (`Application.toast()` through `get_active_window()`), and a search

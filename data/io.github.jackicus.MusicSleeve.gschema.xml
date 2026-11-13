@@ -14,13 +14,13 @@
       <summary>Whether the window is maximized</summary>
     </key>
     <key name="mini-player-width" type="i">
-      <default>320</default>
+      <default>360</default>
       <summary>Mini player width</summary>
     </key>
     <key name="mini-player-height" type="i">
-      <default>540</default>
+      <default>548</default>
       <summary>Mini player height</summary>
-      <description>The height of the mini player without its lyrics or Up Next pane.</description>
+      <description>The height of the mini player, without what it grew by to make room for its lyrics or Up Next pane.</description>
     </key>
     <key name="mini-player-pane" type="s">
       <choices>
@@ -35,7 +35,7 @@
     <key name="mini-player-pane-height" type="i">
       <default>320</default>
       <summary>Mini player pane height</summary>
-      <description>The height of the mini player's lyrics or Up Next pane; the mini player's own height is without it.</description>
+      <description>The height the mini player's lyrics or Up Next pane takes from the bottom of its window, under the divider.</description>
     </key>
     <key name="last-page" type="s">
       <default>'home'</default>

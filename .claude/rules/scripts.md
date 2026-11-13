@@ -54,7 +54,8 @@ paths:
   the item (`--idle`: the controls hidden), which the non-resizable window keeps at `--size`;
   `--mini-player` puts it on the Player and shoots the mini player's window (at `--size` when
   given, else at its settings' size; `--restored`, `--live`, `--lost` with it; `--mini-pane
-  lyrics|queue` with its pane open, the window taller than `--size` by the pane);
+  lyrics|queue` with its pane open, inside the window, which is taller than `--size`
+  only where that is too low for a pane);
   `--filter TEXT` types into the page's filter bar; `--frame` keeps the window's shadow and
   rounded corners, on a transparent background (its render node without the clip to the
   window's size: 25 px of shadow each side at libadwaita 1.10, none when fullscreen);
@@ -104,7 +105,7 @@ paths:
   (Radio, New, Charts, Home) is waited for in the window's frames, not seconds
   (`shelves_shown()`: every shelf bound and laid out, then a frame), since the column binds
   a shelf a frame and a loaded machine draws them slowly; `--step radio` walks Radio's steps
-  alone, to repeat them (`add-to-playlist` and `dialog-focus` theirs). `--names` runs a
+  alone, to repeat them (`add-to-playlist`, `dialog-focus` and `mini-player` theirs). `--names` runs a
   private AT-SPI bus (a dbus-daemon and at-spi2-registryd) and stops it however the script
   exits.
 - `am.py` drives the real engine: `status`, `eval`, `now-playing`, `events`. By default each

@@ -154,6 +154,19 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
 - A callback GtkBuilder connected (`clicked => $on_x()`) is not found by
   `handler_block_by_func`: use a flag. `Gtk.SearchEntry.grab_focus()` focuses its inner
   `Gtk.Text`. An `Adw.ToggleGroup`'s `active-name` is the toggle's `name`.
+- A `Gtk.Paned` clamps its position between its children's minimums when neither shrinks
+  (`shrink-*-child: false`) and reports the clamped place, so a wish set too far is read
+  back as what it got; with `resize-start-child: false` a resize is the end child's. Its
+  handle (CSS `separator`) sits between the children in CSS order, so `separator:hover +
+  box > …` styles the end child from the handle's state (while F8 holds the handle the
+  focus is the paned's own, `paned:focus`, and the handle has no state for it);
+  GTK takes the pointer 6 px either side of it. libadwaita 1.10 draws its line as a
+  `box-shadow`, not a background. A child whose layout follows its allocation measures a
+  fixed minimum, never the last layout's (the mini player's `body`).
+- `set_default_size()` on a mapped window resizes it at the next layout, but a second call
+  in the frames just after the map can lose to the compositor's answer to the map (the
+  window keeps the first size, `get_default_size()` the second): seen under the headless
+  mutter in a test. A test that needs several sizes makes a window at each.
 
 ## Menus, drags, clipboard
 
