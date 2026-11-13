@@ -9,7 +9,11 @@ heart and volume follow the Player as the player bar's do (the pieces are shared
 widgets/transport.py); the Lyrics and Up Next tabs are a LyricsView and a QueueView (built
 here: GtkBuilder does not run a Python widget's __init__) in an Adw.ViewStack an inline
 view switcher switches. More Options is the item playing's menu (the window's item actions:
-Go to Album, Go to Artist, Add to Playlist…, without Play), made as it opens. Beside the
+Go to Album, Go to Artist, Add to Playlist…, without Play), made as it opens; a right click
+or a long press over the artwork, the titles or the lyrics opens it at the pointer, and Menu
+or Shift+F10 anywhere in the sheet beside the focus, as on the player bar (its
+`context_item`: widgets/context_menu.py's attach_playing(); Up Next's rows and the
+controls keep their own). Beside the
 volume, while the lyrics have translations or pronunciations, a menu of Show Translations
 and Show Pronunciations (those the lyrics have: the `lyrics-translations` and
 `lyrics-pronunciations` settings' actions), and Fullscreen (win.fullscreen-player: the
@@ -49,12 +53,14 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 from ..actions import now_playing_track
 from ..backend import config
 from ..remote import fetch_remote
+from . import context_menu
 from .backdrop import ArtworkBackdrop  # noqa: F401  registers it for the template
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .lyrics import LyricsView
 from .queue import QueueView
 from .transport import (HeartControl, ModeControl, PlayButton, RemoteCover, SeekControl,
                         TrackTitles, VolumeControl)
+from .util import connect_weak, weak_method
 
 SHEET_NATURAL_HEIGHT = 10000   # as tall as the window allows
 COVER_SIZE = 320
@@ -122,7 +128,9 @@ class NowPlayingSheet(Adw.Bin):
         self.lyrics_slot = Adw.Bin(child=self.lyrics_view)
         self.tab_stack.add_titled(self.lyrics_slot, 'lyrics', _('Lyrics'))
         self.tab_stack.add_titled(self.queue_view, 'queue', _('Up Next'))
-        self.tab_stack.connect('notify::visible-child-name', lambda *_: self._on_open_changed())
+        # Its children's signals held weakly, so a sheet dropped is freed (connect_weak()).
+        connect_weak(self.tab_stack, 'notify::visible-child-name', self._on_tab_changed)
+        connect_weak(self.close_button, 'clicked', self._on_close_clicked)
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
                                    sensitive=(self.seek_box, self.volume_button),
@@ -133,7 +141,12 @@ class NowPlayingSheet(Adw.Bin):
         self._heart = HeartControl(self.heart_button)
         self._volume = VolumeControl(self.volume_button, self.volume_adjustment)
         self._art = RemoteCover(self.cover)
-        self.more_button.set_create_popup_func(self._on_more_popup)
+        self.more_button.set_create_popup_func(weak_method(self._on_more_popup))
+        # The item playing's menu over the artwork, the titles and the lyrics, and on the
+        # menu keys anywhere in the sheet.
+        context_menu.attach_playing(self.item_box, self)
+        context_menu.attach_playing(self.lyrics_slot, self)
+        context_menu.attach_playing_keys(self, self)
         self._apply_layout()
 
     # -- layout ------------------------------------------------------------------------------
@@ -281,6 +294,11 @@ class NowPlayingSheet(Adw.Bin):
         """The item playing as the Track its menu is for, or None (actions)."""
         return now_playing_track(self._player.track if self._player is not None else None)
 
+    @property
+    def context_item(self):
+        """The item playing, as the Track its menu is for, or None (context_menu)."""
+        return self._playing_track()
+
     def _update_more(self):
         """More Options only while an item with a menu plays (not a station's segment)."""
         self.more_button.set_sensitive(self._playing_track() is not None)
@@ -315,6 +333,9 @@ class NowPlayingSheet(Adw.Bin):
         """The LyricsView back in its tab; the sheet makes it active again when it is
         open on that tab (set_covered(False)), which centres the current line."""
         self.lyrics_slot.set_child(view)
+
+    def _on_tab_changed(self, _stack, _pspec):
+        self._on_open_changed()
 
     def _on_open_changed(self):
         is_open = self._bottom_sheet is not None and self._bottom_sheet.get_open()
@@ -352,8 +373,7 @@ class NowPlayingSheet(Adw.Bin):
 
     # -- the user ----------------------------------------------------------------------------
 
-    @Gtk.Template.Callback()
-    def on_close_clicked(self, _button):
+    def _on_close_clicked(self, _button):
         if self._bottom_sheet is not None:
             self._bottom_sheet.set_open(False)
 

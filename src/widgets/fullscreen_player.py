@@ -15,7 +15,9 @@ What it shows: the artwork, the title and the artist (the sheet's TrackTitles), 
 Leave Fullscreen, More Options (the item playing's menu), the heart, the volume and, while
 the lyrics have translations or pronunciations, the Translation and Pronunciation menu
 (now_playing.lyrics_menu()) — the pieces of widgets/transport.py, as the bar's and the
-sheet's are; and the lyrics beside the
+sheet's are; a right click or a long press over the artwork, the titles or the lyrics opens
+the item's menu at the pointer, and Menu or Shift+F10 anywhere beside the focus, as in the
+sheet (widgets/context_menu.py's attach_playing()); and the lyrics beside the
 artwork while the song has some (or they are being read), larger (style.css, for a
 LyricsView inside .fullscreen-player). Without lyrics the artwork and the controls are
 centred on their own. The places follow the view's size (fullscreen.layout_for(), applied
@@ -34,10 +36,11 @@ display, as GNOME Videos' are, dark whatever the colour scheme.
 
 Idle: after fullscreen.IDLE_SECONDS with no pointer motion (at new coordinates: GTK sends
 motion as the cursor or the layout changes) and no key (the window's key handler calls
-wake()), while the music plays, with no popover open, the pointer off the controls and the
-header bar and the keyboard focus not shown on them (fullscreen.should_hide()), the header
-bar slides away (`reveal-top-bars`), the controls fade (`idle`, an opacity transition: they
-keep their room and stay focusable) and the cursor hides. One timeout at a time, only while
+wake()), while the music plays, with no popover open (the item's menu too), the pointer off
+the controls and the header bar and the keyboard focus not shown on them
+(fullscreen.should_hide()), the header bar slides away (`reveal-top-bars`), the controls
+fade (`idle`, an opacity transition: they keep their room and stay focusable) and the
+cursor hides. One timeout at a time, only while
 shown and playing. Escape leaves (win.fullscreen-player), after the focus widget and any
 popover have had it.
 """
@@ -51,12 +54,13 @@ from .. import fullscreen
 from ..actions import now_playing_track
 from ..backend import config
 from ..remote import fetch_remote
-from . import artwork
+from . import artwork, context_menu
 from .backdrop import ArtworkBackdrop  # noqa: F401  registers it for the template
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from .now_playing import lyrics_menu
 from .transport import (HeartControl, ModeControl, PlayButton, SeekControl, TrackTitles,
                         VolumeControl)
+from .util import connect_weak, weak_method
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +120,7 @@ class FullscreenPlayer(Adw.Bin):
         self._idle_source = 0
         self._last_activity = 0.0
         self._pointer = None            # where the pointer last moved to
+        self._context_popover = None    # a weak reference to the item's menu shown last
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
                                    sensitive=(self.seek_box, self.volume_button),
@@ -125,19 +130,23 @@ class FullscreenPlayer(Adw.Bin):
         self._modes = ModeControl(self.shuffle_button, self.repeat_button)
         self._heart = HeartControl(self.heart_button, lazy=True)  # the bar's reads
         self._volume = VolumeControl(self.volume_button, self.volume_adjustment)
-        self.more_button.set_create_popup_func(self._on_more_popup)
+        # Its children's signals held weakly, so a player dropped is freed (connect_weak()).
+        self.more_button.set_create_popup_func(weak_method(self._on_more_popup))
+        context_menu.attach_playing(self.item_box, self)
+        context_menu.attach_playing(self.lyrics_slot, self)
+        context_menu.attach_playing_keys(self, self)
 
         motion = Gtk.EventControllerMotion()
-        motion.connect('motion', self._on_motion)
+        connect_weak(motion, 'motion', self._on_motion)
         self.add_controller(motion)
         self._on_controls = []
         for widget in (self.controls_box, self.header):
             hover = Gtk.EventControllerMotion()
-            hover.connect('leave', lambda *_: self.wake())
+            connect_weak(hover, 'leave', self._on_activity)
             widget.add_controller(hover)
             self._on_controls.append(hover)
         for button in (self.more_button, self.lyrics_button, self.volume_button):
-            button.connect('notify::active', lambda *_: self.wake())
+            connect_weak(button, 'notify::active', self._on_activity)
         # Escape leaves, once the focus widget and any popover have had it.
         shortcuts = Gtk.ShortcutController(propagation_phase=Gtk.PropagationPhase.BUBBLE)
         shortcuts.add_shortcut(Gtk.Shortcut(
@@ -249,6 +258,16 @@ class FullscreenPlayer(Adw.Bin):
     def _playing_track(self):
         return now_playing_track(self._player.track if self._player is not None else None)
 
+    @property
+    def context_item(self):
+        """The item playing, as the Track its menu is for, or None (context_menu)."""
+        return self._playing_track()
+
+    def context_menu_opened(self, popover):
+        """The item's menu shown (context_menu): the controls stay while it is open."""
+        self._context_popover = popover.weak_ref()
+        self.wake()
+
     def _on_more_popup(self, button):
         actions = getattr(self.get_root(), 'item_actions', None)
         track = self._playing_track()
@@ -349,6 +368,9 @@ class FullscreenPlayer(Adw.Bin):
             self.set_idle(False)
         self._arm_idle(fullscreen.IDLE_SECONDS)
 
+    def _on_activity(self, *_args):
+        self.wake()
+
     def _on_motion(self, _controller, x, y):
         pointer = (round(x), round(y))
         if pointer != self._pointer:
@@ -392,8 +414,10 @@ class FullscreenPlayer(Adw.Bin):
         return GLib.SOURCE_REMOVE
 
     def _popover_open(self):
-        return any(button.get_active()
-                   for button in (self.more_button, self.lyrics_button, self.volume_button))
+        popover = self._context_popover() if self._context_popover is not None else None
+        return (popover is not None and popover.get_visible()) or any(
+            button.get_active()
+            for button in (self.more_button, self.lyrics_button, self.volume_button))
 
     def _pointer_on_controls(self):
         return any(hover.contains_pointer() for hover in self._on_controls)

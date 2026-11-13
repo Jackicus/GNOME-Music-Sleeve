@@ -9,12 +9,14 @@ Gtk.ColumnView of tiles or rows, a Gtk.FlowBox or Gtk.ListBox, or a single widge
     context_menu.set_drag_objects(view, objects)   # a drag of obj carries objects(obj), when
                                                    # not None (a selection: several rows)
     context_menu.popup(widget, obj, x, y)  # the menu for obj, at (x, y) in widget
+    context_menu.attach_playing(area, source)   # the item playing's menu over an area
+    context_menu.attach_playing_keys(widget, source)   # and on Menu, Shift+F10 in widget
 
 A widget offering a menu has a `context_item` attribute: the Item or Track it shows, or None
 (an unbound row), and `context_queued` true when that is an entry of the player's queue (the
 player bar's item, Up Next's rows: a menu without Play, actions.build_menu), and
 `context_queue_entry` its (index, id) there when Up Next may take it out (Remove from Up Next;
-None otherwise), and `context_queue_moves` the steps it can take there (Move Up, Move Down),
+None otherwise), and `context_queue_moves` where it can go there (Move Up and the rest),
 and `context_extra` a Gio.MenuModel section of its own the menu ends with (the player bar's
 Mini Player).
 The controllers
@@ -36,6 +38,17 @@ unparented by then. The row or tile whose menu is open is marked `.has-open-popu
 meanwhile, as GTK's own menus mark theirs, so it stays highlighted while the pointer is in
 the menu. The sidebar's playlist
 and folder rows open theirs through popup() too (sidebar_view.py).
+
+The Now Playing sheet and the full-screen player show the item playing over areas of their
+own (the artwork, the titles, the lyrics) rather than in rows: attach_playing() gives such
+an area the item's menu (its `source`'s context_item, the menu their More Options shows) on
+a right click or a long press, at the pointer, but over a control or a selectable label,
+which keep their own (a slider, a button, the unsynced lyrics' Copy). The long press claims
+the touch, so a lyric line pressed long opens the menu and does not also seek; a click
+still seeks. attach_playing_keys() opens it on Menu and Shift+F10 from anywhere in a widget,
+beside the focus, as the player bar's keys do, unless the focus's own list has menus of its
+own (Up Next's rows: their view's shortcut is reached first). Both hold `source` by a
+GObject weak reference, so a sheet or a player dropped is freed with its controllers.
 """
 
 from gettext import ngettext
@@ -124,7 +137,7 @@ def popup(widget, obj, x=None, y=None, queued=None, owner_widget=None):
     if queued is None:
         queued = bool(getattr(source, 'context_queued', False))
     entry = getattr(source, 'context_queue_entry', None)
-    moves = getattr(source, 'context_queue_moves', ())
+    moves = getattr(source, 'context_queue_moves', None)
     menu = (actions.menu_for(obj, queued=queued, queue_entry=entry, queue_moves=moves)
             if actions is not None else None)
     extra = getattr(source, 'context_extra', None)
@@ -243,6 +256,84 @@ def popup_focused(view):
 
 def _on_menu_key(view, _arguments):
     return popup_focused(view)
+
+
+# What keeps its own right click and long press over the item playing: the controls, and a
+# selectable label (its Copy menu).
+OWN_PRESS = (Gtk.Button, Gtk.MenuButton, Gtk.ScaleButton, Gtk.Range, Gtk.Switch,
+             Gtk.CheckButton, Gtk.DropDown, Gtk.Editable)
+
+
+def keeps_own_press(area, widget):
+    """Whether `widget` (picked in `area`) is, or is inside, something under `area` that
+    keeps its own right click and long press (OWN_PRESS, a selectable label)."""
+    while widget is not None and widget is not area:
+        if isinstance(widget, OWN_PRESS) or (isinstance(widget, Gtk.Label)
+                                             and widget.get_selectable()):
+            return True
+        widget = widget.get_parent()
+    return False
+
+
+def _playing_item(source_ref):
+    source = source_ref()
+    return (source, getattr(source, 'context_item', None)) if source is not None else (None, None)
+
+
+def _popup_playing(source, area, obj, x=None, y=None):
+    """The item playing's menu (obj, a queued one: no Play) in a popover parented to
+    `area`, the focus given back as from `source` (context_menu.give_focus_back); `source`
+    told of it (its context_menu_opened(popover), when it has one). The popover, or None."""
+    popover = popup(area, obj, x, y, queued=True, owner_widget=source)
+    opened = getattr(source, 'context_menu_opened', None)
+    if popover is not None and opened is not None:
+        opened(popover)
+    return popover
+
+
+def attach_playing(area, source):
+    """A right click or a long press over `area` opens the menu of the item `source`
+    plays (its context_item; nothing while it is None) at the pointer, but over a control
+    or a selectable label (keeps_own_press()). Both claim the press, before the area's own
+    gestures (a lyric line's seek). `source` is held weakly."""
+    source_ref = source.weak_ref()
+
+    def pressed(gesture, x, y):
+        area = gesture.get_widget()
+        source, obj = _playing_item(source_ref)
+        if obj is None or keeps_own_press(area, area.pick(x, y, Gtk.PickFlags.DEFAULT)):
+            return
+        if _popup_playing(source, area, obj, x, y) is not None:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+
+    click = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY,
+                             propagation_phase=Gtk.PropagationPhase.CAPTURE)
+    click.connect('pressed', lambda gesture, _n_press, x, y: pressed(gesture, x, y))
+    area.add_controller(click)
+    press = Gtk.GestureLongPress(touch_only=True, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+    press.connect('pressed', pressed)
+    area.add_controller(press)
+
+
+def attach_playing_keys(widget, source):
+    """Menu and Shift+F10 with the focus anywhere in `widget` open the menu of the item
+    `source` plays, beside the focused widget, as popup_focused() does the bar's, unless
+    something on the way has its own (Up Next's rows, a selectable label).
+    `source` is held weakly."""
+    source_ref = source.weak_ref()
+
+    def activate(widget, _arguments):
+        source, obj = _playing_item(source_ref)
+        root = widget.get_root()
+        focus = root.get_focus() if root is not None else None
+        if obj is None or focus is None or not (focus is widget or focus.is_ancestor(widget)):
+            return False
+        return _popup_playing(source, focus, obj) is not None
+
+    keys = Gtk.ShortcutController()
+    keys.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string(MENU_KEYS),
+                                       Gtk.CallbackAction.new(activate)))
+    widget.add_controller(keys)
 
 
 def drag_refs(obj):

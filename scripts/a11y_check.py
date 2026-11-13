@@ -622,7 +622,8 @@ def watch(name, calls):
 
 async def moving_songs(window):
     """Step 12: Alt+Down and Alt+Up on a playlist's focused song, announced, the focus
-    staying on it; Move Up and Move Down in its menu."""
+    staying on it, and Alt+End and Alt+Home to the bottom and the top; Move to Top, Move Up,
+    Move Down and Move to Bottom in its menu."""
     playlist = first_playlist()
     window.select_page(f'playlist:{playlist.id}')
     await asyncio.sleep(0.8)
@@ -653,13 +654,28 @@ async def moving_songs(window):
     found = context_menu.find(page.list_view, window.get_focus())
     check('Alt+Up moves it back up', song.index == 1 and found is not None and found[1] is song,
           (song.index, describe(window.get_focus())))
+    count = len(page.item.track_ids())
+    await key(window, '<alt>End', 0.4)
+    found = context_menu.find(page.list_view, window.get_focus())
+    check('Alt+End moves it to the bottom, the focus with it, said',
+          song.index == count - 1 and found is not None and found[1] is song
+          and said[-1:] == [f'“{song.title}” moved to position {count} of {count}'],
+          (song.index, describe(window.get_focus()), said[-1:]))
+    await key(window, '<alt>Home', 0.4)
+    found = context_menu.find(page.list_view, window.get_focus())
+    check('Alt+Home moves it to the top, the focus with it, said',
+          song.index == 0 and found is not None and found[1] is song
+          and said[-1:] == [f'“{song.title}” moved to position 1 of {count}'],
+          (song.index, describe(window.get_focus()), said[-1:]))
+    await key(window, '<alt>Down', 0.4)  # back to its place
     del window.announce
     await key(window, 'Menu', 0.6)
     shown = [each for each in harness.popovers(page.list_view)
              if isinstance(each, Gtk.PopoverMenu)]
     labels = menu_labels(shown[0].get_menu_model()) if shown else []
-    check('Menu on it lists Move Up and Move Down', '_Move Up' in labels
-          and 'Move _Down' in labels, labels)
+    check('Menu on it lists Move to Top, Move Up, Move Down and Move to Bottom',
+          song.index == 1 and {'Move to T_op', '_Move Up', 'Move _Down',
+                               'Mov_e to Bottom'} <= set(labels), labels)
     await key(window, 'Escape', 0.4)
     check('Escape closes it', not any(each.get_visible() for each in shown))
 
@@ -721,9 +737,9 @@ async def view_credits(window, detail):
     shown = [each for each in harness.popovers(detail.list_view)
              if isinstance(each, Gtk.PopoverMenu) and each.get_visible()]
     labels = menu_labels(shown[0].get_menu_model()) if shown else []
-    check('Menu on a track lists View Credits', 'Vi_ew Credits' in labels, labels)
+    check('Menu on a track lists View Credits', 'View _Credits' in labels, labels)
     if keyboard is not None:
-        await key(window, 'e', 1.0)  # its mnemonic
+        await key(window, 'c', 1.0)  # its mnemonic
     else:
         for each in shown:
             each.popdown()
@@ -732,7 +748,7 @@ async def view_credits(window, detail):
     await until(lambda: dialog_shown(window, CreditsDialog) is not None
                 and dialog_shown(window, CreditsDialog).status == 'credits')
     dialog = dialog_shown(window, CreditsDialog)
-    check('E opens the credits', dialog is not None and dialog.status == 'credits',
+    check('C opens the credits', dialog is not None and dialog.status == 'credits',
           dialog.status if dialog is not None else None)
     if dialog is None:
         return
@@ -1697,6 +1713,7 @@ async def walkthrough(window):
     check('Escape closes the sheet', not window.bottom_sheet.get_open())
     await now_playing_tabs(window)
     await fullscreen_player(window)
+    await item_menu(window)
     await mini_player(window)
     print('-- back')
     await key(window, '<alt>Left', 0.8)
@@ -2460,18 +2477,22 @@ async def up_next_remove(window, queue_view):
 
 
 async def up_next_move(window, queue_view):
-    """Up Next's moves: the next entry's menu offers Move Down (not Move Up: it is the first
-    after the one playing), Alt+Down moves it one place with the focus on it and says where
-    it went, Alt+Up moves it back, Alt+Up again moves nothing, nor does Alt+Down on the entry
-    playing (the Player's own move_in_queue(), MusicKit's answer stood in for: the demo has
-    no engine). Starts and leaves the focus on the first row."""
+    """Up Next's moves: the next entry's menu offers Move Down and Move to Bottom (not Move
+    Up, Move to Top or Play Next: it is the first after the one playing), Alt+Down moves it
+    one place with the focus on it and says where it went, Alt+Up moves it back, Alt+Up again
+    moves nothing; Alt+End moves it to its section's bottom, and Play Next in its menu then
+    back to just after the one playing; Alt+Down on the entry playing moves nothing (the
+    Player's own move_in_queue(), MusicKit's answer stood in for: the demo has no engine).
+    Starts and leaves the focus on the first row."""
     player, engine = app.player, app.engine
     await key(window, 'Down')
     await key(window, 'Menu', 0.6)
     shown = harness.popovers(queue_view)
     labels = menu_labels(shown[0].get_menu_model()) if shown else []
-    check("the next entry's menu offers Move Down, not Move Up",
-          'Move _Down' in labels and '_Move Up' not in labels, labels)
+    check("the next entry's menu offers Move Down and Move to Bottom, not Move Up, Move to "
+          "Top or Play Next",
+          {'Move _Down', 'Mov_e to Bottom'} <= set(labels)
+          and not {'_Move Up', 'Move to T_op', 'Play _Next'} & set(labels), labels)
     await key(window, 'Escape', 0.4)
     moves = []
 
@@ -2500,9 +2521,33 @@ async def up_next_move(window, queue_view):
     await key(window, '<alt>Up', 0.4)
     check('Alt+Up on the first entry after the one playing moves nothing', len(moves) == 2,
           moves)
+    bounds = player.move_range(player.queue_index + 1)
+    bottom = bounds[1] if bounds is not None else -1
+    await key(window, '<alt>End', 0.3)
+    await until(lambda: entry is not None and entry.index == bottom
+                and focused_entry(queue_view) is entry)
+    check("Alt+End moves it to its section's bottom, the focus with it, said",
+          entry is not None and entry.index == bottom > player.queue_index + 2
+          and focused_entry(queue_view) is entry and said[-1:] == [
+              f'“{title}” moved to position {bottom - player.queue_index} of {count} '
+              'in Up Next'], (moves, describe(window.get_focus()), said[-1:]))
+    await key(window, 'Menu', 0.6)
+    shown = harness.popovers(queue_view)
+    labels = menu_labels(shown[0].get_menu_model()) if shown else []
+    check('its menu offers Play Next and Move to Top, not Move to Bottom',
+          {'Play _Next', 'Move to T_op', '_Move Up'} <= set(labels)
+          and 'Mov_e to Bottom' not in labels, labels)
+    await key(window, 'n', 0.3)  # Play Next's mnemonic
+    await until(lambda: entry is not None and entry.index == player.queue_index + 1
+                and focused_entry(queue_view) is entry)
+    check('Play Next moves it to just after the one playing, the focus with it, said',
+          entry is not None and entry.index == player.queue_index + 1
+          and focused_entry(queue_view) is entry and len(moves) == 4 and said[-1:] == [
+              f'“{title}” moved to position 1 of {count} in Up Next'],
+          (moves, describe(window.get_focus()), said[-1:]))
     await key(window, 'Up')
     await key(window, '<alt>Down', 0.4)
-    check('Alt+Down on the entry playing moves nothing', len(moves) == 2, moves)
+    check('Alt+Down on the entry playing moves nothing', len(moves) == 4, moves)
     del window.announce
     del engine.queue_move
 
@@ -2703,10 +2748,89 @@ async def fullscreen_player(window):
     await until(lambda: not window.bottom_sheet.get_open())
 
 
+def menu_item_target(menu, action):
+    """The target of a Gio.MenuModel's item of `action` (its sections searched), or None."""
+    for position in range(menu.get_n_items()):
+        found = menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_ACTION)
+        if found is not None and found.unpack() == action:
+            return menu.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_TARGET)
+        section = menu.get_item_link(position, Gio.MENU_LINK_SECTION)
+        target = menu_item_target(section, action) if section is not None else None
+        if target is not None:
+            return target
+    return None
+
+
+async def item_menu(window):
+    """The item playing's menu in Now Playing and the full-screen player: Menu anywhere in
+    them opens it beside the focus (the menu More Options shows: no Play), Escape closes it
+    with the focus back; Go to Album chosen from it closes Now Playing on the album's page,
+    and Go to Artist from the full-screen player leaves full screen first."""
+    print("-- the item playing's menu in Now Playing and full screen")
+    host = window.fullscreen_host
+    sheet = window.now_playing
+    resting = window.navigation_view.get_visible_page()
+
+    async def menu_key(where):
+        await key(window, 'Menu', 0.6)
+        shown = [each for each in harness.popovers(where) if isinstance(each, Gtk.PopoverMenu)]
+        return shown[0] if shown else None
+
+    async def choose(popover, action):
+        """Choose the menu's item of `action`, as a click on it does: the menu closes,
+        then the action runs."""
+        target = menu_item_target(popover.get_menu_model(), action)
+        popover.popdown()
+        await asyncio.sleep(0.1)
+        window.activate_action(action, target)
+
+    await key(window, '<primary><shift>n', 0.8)
+    await until(lambda: window.bottom_sheet.get_open() and window.get_focus() is not None
+                and inside(window.get_focus(), sheet))
+    focus = window.get_focus()
+    popover = await menu_key(sheet)
+    labels = menu_labels(popover.get_menu_model()) if popover is not None else []
+    check("Menu in Now Playing opens the item playing's menu beside the focus, no Play",
+          popover is not None and inside(popover, focus) and '_Go to Album' in labels
+          and '_Play' not in labels, labels)
+    await key(window, 'Escape', 0.6)
+    await until(lambda: window.get_focus() is focus)
+    check('Escape closes it, the focus back, Now Playing still open',
+          popover is not None and not popover.get_visible() and window.get_focus() is focus
+          and window.bottom_sheet.get_open(), describe(window.get_focus()))
+    popover = await menu_key(sheet)
+    if popover is not None:
+        await choose(popover, 'win.item-go-to-album')
+    await until(lambda: getattr(window.shown_item(), 'kind', None) == 'album')
+    shown = window.shown_item()
+    check("its Go to Album closes Now Playing on the album's page",
+          not window.bottom_sheet.get_open() and shown is not None and shown.kind == 'album',
+          getattr(shown, 'kind', None))
+    await key(window, 'F11', 0.8)
+    await until(lambda: host.shown and window.get_focus() is host.view.play_button)
+    popover = await menu_key(host.view)
+    check('Menu in the full-screen player opens it too',
+          popover is not None and inside(popover, host.view))
+    if popover is not None:
+        await choose(popover, 'win.item-go-to-artist')
+    await until(lambda: getattr(window.shown_item(), 'kind', None) == 'artist'
+                and not window.is_fullscreen())   # the compositor's answer comes later
+    shown = window.shown_item()
+    check("its Go to Artist leaves full screen first, on the artist's page",
+          not host.shown and not window.is_fullscreen() and not window.bottom_sheet.get_open()
+          and shown is not None and shown.kind == 'artist',
+          (host.shown, window.is_fullscreen(), window.bottom_sheet.get_open(),
+           getattr(shown, 'kind', None)))
+    window.navigation_view.pop_to_page(resting)
+    await asyncio.sleep(0.6)
+
+
 async def mini_player(window):
     """The mini player: Ctrl+Shift+M in, the window hidden, the focus on its Play; Tab
-    through its controls and never out of it; Space plays or pauses, Ctrl+Right skips; Ctrl+Shift+M
-    back to the window, the focus as it was; in again, and Ctrl+W (its close) back too."""
+    through its controls (Favourite, Shuffle, Repeat and Volume among them) and never out of
+    it; Space plays or pauses, Ctrl+Right skips, Ctrl+Up turns the volume up; Ctrl+Shift+M
+    back to the window, the focus as it was; in again, and Ctrl+W (its close) back too; and
+    at its smallest size, where the four extras are hidden, Tab goes through the rest."""
     print('-- mini player')
     host = app.mini_player
     resting = window.get_focus()
@@ -2723,7 +2847,7 @@ async def mini_player(window):
     if keyboard is not None:
         await until(mini.is_active, 3.0)
     seen, stayed = set(), True
-    for _ in range(6):
+    for _ in range(10):
         await key(mini, 'Tab', 0.05)
         focus = mini.get_focus()
         stayed = stayed and inside(focus, view)
@@ -2732,6 +2856,34 @@ async def mini_player(window):
           stayed and {view.main_window_button, view.seek_scale, view.previous_button,
                       view.play_button, view.next_button} <= seen,
           sorted(describe(widget) for widget in seen))
+    extras = (view.heart_button, view.shuffle_button, view.repeat_button, view.volume_button)
+    check('and through Favourite, Shuffle, Repeat and Volume, in their row',
+          view.extras == 'row' and all(any(focus is button or focus.is_ancestor(button)
+                                           for focus in seen if focus is not None)
+                                       for button in extras),
+          (view.extras, sorted(describe(widget) for widget in seen)))
+    levels, said = [], []
+
+    def set_volume(level):  # the demo has no engine: MusicKit's answer, at once
+        levels.append(level)
+        app.player._set_volume(level)
+        return asyncio.sleep(0)
+
+    app.player.set_volume = set_volume
+    mini.announce = lambda text, _priority: said.append(text)
+    shown = round(view.volume_adjustment.get_value(), 2)
+    view.play_button.grab_focus()
+    await key(mini, '<primary>Up' if shown < 1 else '<primary>Down', 0.3)
+    step = 0.1 if shown < 1 else -0.1
+    check('Ctrl+Up (or Down from full) on Play steps the volume, announced',
+          [round(level, 2) for level in levels] == [round(shown + step, 2)]
+          and said == [f'Volume {round((shown + step) * 100)}%']
+          and mini.get_focus() is view.play_button, (shown, levels, said))
+    view.seek_scale.grab_focus()
+    await key(mini, '<primary>Down', 0.3)
+    check("Ctrl+Down on the position slider is the slider's", len(levels) == 1, levels)
+    del app.player.set_volume
+    del mini.announce
     view.play_button.grab_focus()
     actions = []
     handlers = [(app.lookup_action(name), app.lookup_action(name).connect(
@@ -2760,6 +2912,34 @@ async def mini_player(window):
     await key(host.window or window, '<primary>w', 0.8)
     await until(lambda: not host.shown and window.get_visible())
     check('Ctrl+W closes it: back to the window', not host.shown and window.get_mapped())
+    if keyboard is not None:
+        await until(window.is_active, 3.0)
+    # At its smallest: the extras hidden, everything else still reached.
+    size = {name: app.settings.get_int(name)
+            for name in ('mini-player-width', 'mini-player-height')}
+    app.settings.set_int('mini-player-width', 280)
+    app.settings.set_int('mini-player-height', 240)
+    await key(window, '<primary><shift>m', 0.8)
+    await until(lambda: host.shown and host.window.get_focus() is not None)
+    mini = host.window
+    if mini is not None:
+        view = mini.view
+        if keyboard is not None:
+            await until(mini.is_active, 3.0)
+        seen = set()
+        for _ in range(6):
+            await key(mini, 'Tab', 0.05)
+            seen.add(mini.get_focus())
+        check('At 280 by 240 the extras are hidden, and Tab goes through the rest',
+              view.extras == 'none' and not view.heart_button.get_mapped()
+              and seen == {view.main_window_button, view.seek_scale, view.previous_button,
+                           view.play_button, view.next_button},
+              (mini.get_width(), mini.get_height(), view.extras,
+               sorted(describe(widget) for widget in seen)))
+        await key(mini, '<primary><shift>m', 0.8)
+        await until(lambda: not host.shown and window.get_visible())
+    for name, value in size.items():
+        app.settings.set_int(name, value)
     if keyboard is not None:
         await until(window.is_active, 3.0)
 

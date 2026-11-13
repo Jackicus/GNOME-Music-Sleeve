@@ -583,7 +583,12 @@ changes, change it here, with the date. The plan they came from is in
   remembered (`mini-player-width`, `mini-player-height`); its layout follows it
   (`mini_player.layout_for()`: the cover as large as the window allows, or small beside the
   titles in a low window). No lyrics, no Up Next, no heart or volume: what the issue asks
-  for, and nothing in it redraws while a song plays but the seek row. It does not stay on
+  for, and nothing in it redraws while a song plays but the seek row. (Reversed on
+  2026-11-13, #589, at the owner's wish: it has Favourite, Shuffle, Repeat and Volume, the
+  shared transport pieces, in a row under the transport, around it in a wide window, and
+  hidden in one both low and narrow, `layout_for()`'s `extras`; they change only on their
+  own notifications, so the seek row is still all that redraws. Lyrics and Up Next follow
+  as panes, the issue's design note.) It does not stay on
   top: GNOME on Wayland gives an app no way to ask (the window menu's Always on Top is the
   user's), so it promises nothing of the kind. Toasts go to it while it shows, as the
   window the user sees (`Application.toast()` through `get_active_window()`), and a search
@@ -681,6 +686,21 @@ changes, change it here, with the date. The plan they came from is in
   own (the user's songs and their autoplay come back as one batch), and stay after the
   user's songs when it took none (they are then the queue's autoplay); songs queued
   between Clear and Undo go before autoplay's, where Play Later puts them.
+- **Moves of any distance from the keyboard: Move to Top, Move to Bottom, Play Next**
+  (2026-11-13, #583). A drag moves a song or an Up Next entry any distance; the keys and Move
+  Up and Move Down one place. So a playlist's song and an Up Next entry also have Move to Top
+  and Move to Bottom in their menus, on Alt+Home and Alt+End (no list of GTK's binds them:
+  Home and End, with Ctrl or Shift, are the list's own), announced as the one-place moves
+  are, and an Up Next entry's Play Next moves it to just after the entry playing, where most
+  drags in Up Next take one. MusicKit's queue moves an entry within its section only, so
+  Play Next is that move where the entry's section begins just after the entry playing (all
+  of Playing Next; Autoplay when nothing is queued before it); an Autoplay entry behind the
+  songs queued keeps the Play Next of any song, which queues it again. ARIA's pick-up and
+  put-down model (Space to lift, the arrows, Space to drop) was not taken: it is a new
+  keyboard model, and Space is Play/Pause and, in a selection, select. Every mnemonic letter
+  of a song's menu was taken, so Open in Browser, Copy Link and View Credits moved theirs
+  (Bro_wser, Lin_k, _Credits) for Move to T_op and Mov_e to Bottom; a submenu's level (Add to
+  Playlist's Ne_w Playlist…) is a page of its own, as the popover shows it.
 - **Up Next's order: moves within a section, edits numbered and replayed** (2026-10-20,
   #361). An entry after the one playing moves by a drag (the whole row, as a playlist's
   songs move: no drag handle, which would be one more widget per row to bind; a mouse's

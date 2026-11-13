@@ -23,21 +23,21 @@ a bold title. Activating a row (a double click, or Enter) plays that entry
 the one playing while the queue may be edited: its context_queue_entry); Delete
 (shortcuts.QUEUE_REMOVE) on a focused row does the same, and the focus then goes to the row
 that took its place (or the one before, at the end). An entry after the one playing moves
-within its section (Playing Next, or Autoplay: Player.move_range()): Move Up and Move Down in
-its menu (its context_queue_moves), Alt+Up and Alt+Down on its row (keyboard.move_step(), as
-on a playlist's page; the focus goes with it), or dragged (dnd.attach_source(), MOVE only, a
-mouse's drag: a touchscreen's scrolls) and dropped in its section, where an insertion line
-shows the place (dnd.DropFeedback, the list scrolling near its edges; drop_place()). Each goes
-through win.item-move-in-queue, which announces where it went; the list keeps its scroll (Up
-Next does not go back to the entry playing as it does for other changes) and, when the focus
-was on the entry, moves it with the entry (Player.moving names it as the move starts).
-Above the list, History (a toggle) at
-the start, and at the end Autoplay (a toggle of the `autoplay` setting; insensitive while
-MusicKit allows none, or repeat is on, when it would not start) and Clear (everything after
-the entry playing, with an Undo toast: app.undo-clear-up-next; the focus on it goes to the
-entry playing as it goes insensitive). An empty queue shows a compact
-status page. The list is named "Up Next" for assistive technology, each row by
-labels.track_label, described as playing or as autoplay's.
+within its section (Playing Next, or Autoplay: Player.move_range()): Move to Top, Move Up,
+Move Down and Move to Bottom in its menu (its context_queue_moves), and Play Next there where
+its section begins just after the entry playing; Alt+Up, Alt+Down, Alt+Home and Alt+End on its
+row (keyboard.move_step(), as on a playlist's page; the focus goes with it), or dragged
+(dnd.attach_source(), MOVE only, a mouse's drag: a touchscreen's scrolls) and dropped in its
+section, where an insertion line shows the place (dnd.DropFeedback, the list scrolling near its
+edges; drop_place()). Each goes through win.item-move-in-queue, which announces where it went;
+the list keeps its scroll (Up Next does not go back to the entry playing as it does for other
+changes) and, when the focus was on the entry, moves it with the entry (Player.moving names it
+as the move starts). Above the list, History (a toggle) at the start, and at the end Autoplay (a
+toggle of the `autoplay` setting; insensitive while MusicKit allows none, or repeat is on, when
+it would not start) and Clear (everything after the entry playing, with an Undo toast:
+app.undo-clear-up-next; the focus on it goes to the entry playing as it goes insensitive). An
+empty queue shows a compact status page. The list is named "Up Next" for assistive technology,
+each row by labels.track_label, described as playing or as autoplay's.
 
 History shows, in place of Up Next while its toggle is on, the queue's entries before the one
 playing (MusicKit's queue keeps them), the most recent first: a second Gtk.ListView over a
@@ -63,7 +63,7 @@ from gettext import pgettext as C_
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango
 
 from .. import keyboard, shortcuts
-from ..actions import now_playing_track
+from ..actions import move_places, now_playing_track
 from ..backend import config, normalize, store
 from ..library import ItemRefs, drop_index
 from ..player import NowPlaying, format_time
@@ -459,10 +459,10 @@ class QueueRow(Gtk.Box):
 
     @property
     def context_queue_moves(self):
-        """The steps (-1: Move Up, 1: Move Down) the entry bound can take in its section of
-        Up Next; () when it cannot move (History, the entry playing, a station's queue)."""
+        """Where the entry bound can go in its section of Up Next (QueueView.moves()); {}
+        when it cannot move (History, the entry playing, a station's queue)."""
         if self._entry is None or self.list_item is None or self.history:
-            return ()
+            return {}
         return self.view.moves(self.list_item.get_position(), self._entry)
 
     def bind(self, entry, current, paths):
@@ -676,13 +676,22 @@ class QueueView(Gtk.Stack):
         return index, entry.id
 
     def moves(self, position, entry):
-        """The steps (-1, 1) `entry`, the row at list `position`, can take within its
-        section (Player.can_move), in that order."""
+        """Where `entry`, the row at list `position`, can go within its section
+        (Player.move_range()): {step: the queue index it moves to}, each of the menu's moves
+        (actions.move_places(): keyboard.TOP, -1, 1, keyboard.BOTTOM) that moves it, and
+        'next', Play Next, when its section begins just after the entry playing (None when
+        it is that first entry already: it plays next). {} when it cannot move."""
         if self._player is None:
-            return ()
+            return {}
         index = self.queue_index_at(position)
-        return tuple(step for step in (-1, 1)
-                     if self._player.can_move(index, index + step, entry.id))
+        bounds = self._player.move_range(index)
+        if bounds is None or not self._player.can_edit(index, entry.id):
+            return {}
+        first, last = bounds
+        moves = move_places(index, first, last)
+        if first == self._player.queue_index + 1:
+            moves['next'] = first if index != first else None
+        return moves
 
     def _update_bounds(self):
         """The slice from the entry playing on, and where its sections begin."""
@@ -893,9 +902,10 @@ class QueueView(Gtk.Stack):
         return row.entry if row is not None else None
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
-        """Alt+Up or Alt+Down on a row: its entry one place up or down in its section, the
-        focus going with it. Not taken on an entry that cannot move (the entry playing, a
-        station's queue); taken at either end of its section, where nothing moves."""
+        """Alt+Up or Alt+Down on a row: its entry one place up or down in its section, and
+        Alt+Home or Alt+End to the top or the bottom of it, the focus going with it. Not
+        taken on an entry that cannot move (the entry playing, a station's queue); taken at
+        either end of its section, where nothing moves."""
         mods = state & Gtk.accelerator_get_default_mod_mask()
         root = self.list_view.get_root()
         focus = root.get_focus() if root is not None else None
@@ -907,10 +917,12 @@ class QueueView(Gtk.Stack):
         if row is None or row.entry is None or row.history:
             return False
         index = self.queue_index_at(row.list_item.get_position())
-        if self._player.move_range(index) is None:
+        bounds = self._player.move_range(index)
+        if bounds is None:
             return False
-        if self._player.can_move(index, index + step, row.entry.id):
-            self.move(index, index + step, row.entry.id)
+        to_index = keyboard.move_place(step, index, *bounds)
+        if to_index is not None and self._player.can_move(index, to_index, row.entry.id):
+            self.move(index, to_index, row.entry.id)
         return True
 
     def move(self, index, to_index, entry_id):

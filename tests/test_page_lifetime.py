@@ -5,7 +5,8 @@
 ROOT_LIMIT, at a sign-out), a Shelf removed and a dialog closed are freed, with the rows they
 bound, the context menus and More Options opened on them, a drag begun on them; Up Next's
 rows go as the queue shrinks; a mini player closed is freed, its pieces letting go of the
-Player; the handlers connected weakly still run; and connect_weak() itself.
+Player; a Now Playing sheet and a full-screen player dropped are freed, the item playing's
+menu opened on them; the handlers connected weakly still run; and connect_weak() itself.
 
 A widget that connects its children's signals to its own bound methods (or declares Blueprint
 `=> $handler()` callbacks) is never freed: the cycle runs through C (widgets/util.py). Each
@@ -29,6 +30,7 @@ import gc
 import os
 import tempfile
 import time
+import types
 import unittest
 import weakref
 from datetime import UTC, datetime
@@ -1669,16 +1671,76 @@ class MiniPlayerLifetimeTest(WidgetTestCase):
         await self.turn()
         view = window.view
         refs = (window.weak_ref(), view.weak_ref(), view.play_button.weak_ref(),
-                view.seek_scale.weak_ref(), view.cover.weak_ref())
+                view.seek_scale.weak_ref(), view.cover.weak_ref(),
+                view.heart_button.weak_ref(), view.shuffle_button.weak_ref(),
+                view.repeat_button.weak_ref(), view.volume_button.weak_ref(),
+                view.extras_box.weak_ref())
         del view
         window.release()
         del window
         await self.assert_freed(*refs)
-        # Nothing of it follows the Player any more.
-        for name in ('track', 'state', 'position', 'duration', 'pending', 'can-seek'):
+        # Nothing of it follows the Player any more, nor the engine (the heart's).
+        for name in ('track', 'state', 'position', 'duration', 'pending', 'can-seek',
+                     'shuffle', 'repeat', 'can-shuffle', 'can-repeat', 'volume'):
             self.assertFalse(GObject.signal_has_handler_pending(
                 player, GObject.signal_lookup('notify', Player), GLib.quark_from_string(name),
                 False), name)
+        engine = self.app.engine
+        self.assertFalse(GObject.signal_has_handler_pending(
+            engine, GObject.signal_lookup('rated', type(engine)), 0, False))
+
+
+class NowPlayingLifetimeTest(WidgetTestCase):
+    """The Now Playing sheet and the full-screen player live as long as the window (they
+    follow the app's Player from set_player() on), but the item playing's menu they give
+    their artwork, titles and lyrics, and the menu keys, hold them weakly: one dropped
+    with its menu opened both ways is freed."""
+
+    async def menu_opened_and_dropped(self, view):
+        from gi.repository import Gdk, Gtk
+
+        from applemusic.player import NowPlaying
+
+        # What set_player() keeps, without following it (the app's Player outlives both).
+        view._player = types.SimpleNamespace(track=NowPlaying(_track('l.album004', 1)),
+                                             lyrics=None, lyrics_loading=False, active=False)
+        self.window.root_box.append(view)
+        self.assertTrue(await self.until(view.get_mapped))
+        click = next(controller for controller in _controllers(view.item_box)
+                     if isinstance(controller, Gtk.GestureClick)
+                     and controller.get_button() == Gdk.BUTTON_SECONDARY)
+        click.emit('pressed', 1, 4, 4)
+        popover = _find(view.item_box, Gtk.PopoverMenu)
+        self.assertIsNotNone(popover)
+        popover.popdown()
+        focus = view.more_button   # sensitive while an item with a menu plays
+        focus.set_sensitive(True)
+        self.assertTrue(focus.grab_focus())
+        shortcut = next(controller.get_item(0) for controller in _controllers(view)
+                        if isinstance(controller, Gtk.ShortcutController)
+                        and isinstance(controller.get_item(0).get_action(),
+                                       Gtk.CallbackAction))   # Menu, Shift+F10
+        self.assertTrue(shortcut.get_action().activate(Gtk.ShortcutActionFlags(0), view, None))
+        popover = _find(focus, Gtk.PopoverMenu)
+        self.assertIsNotNone(popover)
+        popover.popdown()
+        del popover, click, shortcut, focus
+        await self.turn()
+        refs = (view.weak_ref(), view.cover.weak_ref())
+        self.window.root_box.remove(view)
+        view._player = None
+        del view
+        await self.assert_freed(*refs)
+
+    async def test_the_sheet_dropped(self):
+        from applemusic.widgets.now_playing import NowPlayingSheet
+
+        await self.menu_opened_and_dropped(NowPlayingSheet())
+
+    async def test_the_full_screen_player_dropped(self):
+        from applemusic.widgets.fullscreen_player import FullscreenPlayer
+
+        await self.menu_opened_and_dropped(FullscreenPlayer())
 
 
 class HandlerTest(WidgetTestCase):

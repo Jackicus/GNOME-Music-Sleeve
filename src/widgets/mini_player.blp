@@ -6,10 +6,12 @@ using Adw 1;
 
 // The mini player's content (widgets/mini_player.py; its window is MiniPlayer): a flat
 // header bar with Return to Main Window, then the artwork, the title and artist, the seek
-// row (LIVE in its place for a live radio station) and Previous, Play and Next. The cover is
-// as large as the window lets it be, or small beside the titles in a low window
-// (mini_player.layout_for(), applied as the view is allocated). Under it all, the artwork's
-// tint, as the Now Playing sheet's (widgets/backdrop.py).
+// row (LIVE in its place for a live radio station), Previous, Play and Next, and the extras:
+// Favourite, Shuffle, Repeat and Volume, in a row of their own (as here) or moved around the
+// transport in a wide window, hidden in one both low and narrow. The cover is as large as the
+// window lets it be, or small beside the titles in a low window (mini_player.layout_for(),
+// applied as the view is allocated). Under it all, the artwork's tint, as the Now Playing
+// sheet's (widgets/backdrop.py).
 template $AppleMusicMiniPlayerView: Adw.Bin {
   styles [
     "mini-player",
@@ -23,7 +25,7 @@ template $AppleMusicMiniPlayerView: Adw.Bin {
     [overlay]
     Adw.ToolbarView toolbar {
       [top]
-      Adw.HeaderBar {
+      Adw.HeaderBar header_bar {
         show-title: false;
 
         styles [
@@ -206,6 +208,78 @@ template $AppleMusicMiniPlayerView: Adw.Bin {
                 "flat",
                 "circular",
                 "skip-button",
+              ]
+            }
+          }
+
+          // The extras, in the order they read: the view moves them into transport_box, two
+          // on each side, where the window is wide enough (MiniPlayerView.apply_layout()).
+          Box extras_box {
+            spacing: 12;
+            halign: center;
+
+            // Whether the item playing is loved (widgets/transport.py's HeartControl).
+            ToggleButton heart_button {
+              icon-name: "heart-outline-symbolic";
+              tooltip-text: _("Favourite");
+              sensitive: false;
+              valign: center;
+
+              accessibility {
+                label: _("Favourite");
+              }
+
+              styles [
+                "flat",
+                "circular",
+                "heart-button",
+              ]
+            }
+
+            ToggleButton shuffle_button {
+              icon-name: "media-playlist-shuffle-symbolic";
+              tooltip-text: _("Shuffle");
+              sensitive: false;
+              valign: center;
+
+              styles [
+                "flat",
+                "circular",
+              ]
+            }
+
+            ToggleButton repeat_button {
+              icon-name: "media-playlist-repeat-symbolic";
+              tooltip-text: _("Repeat");
+              sensitive: false;
+              valign: center;
+
+              styles [
+                "flat",
+                "circular",
+              ]
+            }
+
+            ScaleButton volume_button {
+              icons: [
+                "audio-volume-muted-symbolic",
+                "audio-volume-high-symbolic",
+                "audio-volume-low-symbolic",
+                "audio-volume-medium-symbolic",
+              ];
+              adjustment: Adjustment volume_adjustment {
+                lower: 0;
+                upper: 1;
+                step-increment: 0.05;
+                page-increment: 0.1;
+                value: 1;
+              };
+              tooltip-text: _("Volume");
+              sensitive: false;
+              valign: center;
+
+              styles [
+                "flat",
               ]
             }
           }

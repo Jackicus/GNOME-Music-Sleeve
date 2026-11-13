@@ -5,8 +5,10 @@
 real view and the Now Playing sheet: entering and leaving, the window put back, the one
 LyricsView moved in and back (active in one place at a time, centred again in the sheet), the
 player staying from one song to the next and through a pause and leaving when nothing plays
-any more, idle hiding, and nothing left running or fetched while it is not shown. The
-window's own wiring (F11, the actions, the focus) is scripts/a11y_check.py's."""
+any more, idle hiding, and nothing left running or fetched while it is not shown; the item
+playing's menu by a right click, a long press or the menu keys, in the sheet and the player,
+and Window._close_sheet(), which its Go to Album and Go to Artist run. The window's own
+wiring (F11, the actions, the focus) is scripts/a11y_check.py's."""
 
 import json
 import unittest
@@ -70,8 +72,10 @@ class IdleTest(unittest.TestCase):
         self.assertFalse(should_hide(True, False, False, True, idle))    # keyboard on them
 
 
-@requires_gtk
-class HostTest(unittest.TestCase):
+class HostCase(unittest.TestCase):
+    """The real Now Playing sheet in an Adw.BottomSheet and the host, in a presented
+    window that has the window's win.fullscreen-player."""
+
     def setUp(self):
         from gi.repository import Adw, Gio, Gtk
 
@@ -123,6 +127,9 @@ class HostTest(unittest.TestCase):
         self.player.apply({'state': state, 'track': track, 'position': position,
                            'duration': 214, 'lyrics': answer})
 
+
+@requires_gtk
+class HostTest(HostCase):
     def test_nothing_without_an_item(self):
         self.host.enter()
         self.assertFalse(self.host.shown)
@@ -304,6 +311,207 @@ class HostTest(unittest.TestCase):
         self.player.apply({'lyrics': None})
         self.assertTrue(wait_for(lambda: not view.layout.lyrics))
         self.assertFalse(view.lyrics_slot.get_visible())
+
+
+
+def menu_actions(menu):
+    """The actions of a Gio.MenuModel's items, its sections' and submenus' too."""
+    found = []
+    for position in range(menu.get_n_items()):
+        action = menu.get_item_attribute_value(position, 'action', None)
+        if action is not None:
+            found.append(action.unpack())
+        for link in ('section', 'submenu'):
+            inner = menu.get_item_link(position, link)
+            if inner is not None:
+                found.extend(menu_actions(inner))
+    return found
+
+
+class ItemActions:
+    """The window's item actions as the menus ask them: the menus asked for, recorded."""
+
+    def __init__(self):
+        self.asked = []
+
+    def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
+        from applemusic.actions import build_menu
+
+        self.asked.append((obj.id, queued))
+        return build_menu(obj, queued=queued)
+
+
+@requires_gtk
+class ItemMenuTest(HostCase):
+    """The item playing's menu by a right click or a long press over the artwork, the
+    titles and the lyrics, and by the menu keys, in the sheet and the full-screen player:
+    the menu More Options shows (queued: no Play), and Go to Album or Go to Artist from it
+    uncovering the pages (issue 588)."""
+
+    def setUp(self):
+        super().setUp()
+        self.window.item_actions = self.actions = ItemActions()
+
+    def gesture(self, area, kind):
+        from gi.repository import Gdk, Gtk
+
+        model = area.observe_controllers()
+        return next(controller for controller in
+                    (model.get_item(position) for position in range(model.get_n_items()))
+                    if isinstance(controller, kind) and (
+                        kind is not Gtk.GestureClick
+                        or controller.get_button() == Gdk.BUTTON_SECONDARY))
+
+    def right_click(self, area, x=None, y=None):
+        """A right click at (x, y) in area (its middle): the popover it opened, or None."""
+        from gi.repository import Gtk
+
+        x = area.get_width() / 2 if x is None else x
+        y = area.get_height() / 2 if y is None else y
+        self.gesture(area, Gtk.GestureClick).emit('pressed', 1, x, y)
+        return self.popover(area)
+
+    def popover(self, widget):
+        from gi.repository import Gtk
+
+        child = widget.get_first_child()
+        while child is not None and not (isinstance(child, Gtk.PopoverMenu)
+                                         and child.get_visible()):
+            child = child.get_next_sibling()
+        popover = child
+        if popover is not None:
+            self.addCleanup(popover.popdown)
+        return popover
+
+    def open_sheet(self):
+        self.play()
+        self.bottom_sheet.set_open(True)
+        self.assertTrue(wait_for(lambda: self.sheet.shown_tab == 'lyrics'
+                                 and self.sheet.lyrics_slot.get_height() > 0
+                                 and self.sheet.cover.get_height() > 0))
+
+    def test_a_right_click_over_the_artwork_titles_and_lyrics(self):
+        self.open_sheet()
+        for area in (self.sheet.item_box, self.sheet.lyrics_slot):
+            with self.subTest(area=area.get_name()):
+                popover = self.right_click(area)
+                self.assertIsNotNone(popover)
+                self.assertTrue(wait_for(popover.get_mapped))
+                popover.popdown()
+        # The menu More Options shows: the item playing's, queued (no Play).
+        self.assertEqual(self.actions.asked, [(TRACK['id'], True)] * 2)
+        actions = menu_actions(popover.get_menu_model())
+        self.assertIn('win.item-go-to-album', actions)
+        self.assertIn('win.item-go-to-artist', actions)
+        self.assertNotIn('win.item-play', actions)
+
+    def test_nothing_over_a_control_or_with_nothing_playing(self):
+        from gi.repository import Gtk
+
+        from applemusic.widgets import context_menu
+
+        box = Gtk.Box()
+        button = Gtk.Button(child=Gtk.Label(label='Play'))
+        text = Gtk.Label(label='Words', selectable=True)
+        plain = Gtk.Label(label='Title')
+        for widget in (button, text, plain):
+            box.append(widget)
+        self.assertTrue(context_menu.keeps_own_press(box, button.get_child()))
+        self.assertTrue(context_menu.keeps_own_press(box, text))
+        self.assertFalse(context_menu.keeps_own_press(box, plain))
+        self.assertFalse(context_menu.keeps_own_press(box, box))
+        # Nothing playing: no menu, and the press is not claimed.
+        self.bottom_sheet.set_open(True)
+        self.assertTrue(wait_for(lambda: self.sheet.cover.get_height() > 0))
+        with mock.patch.object(Gtk.Gesture, 'set_state') as set_state:
+            self.assertIsNone(self.right_click(self.sheet.item_box))
+        set_state.assert_not_called()
+        self.assertEqual(self.actions.asked, [])
+
+    def test_a_long_press_on_a_lyric_line_opens_the_menu_and_takes_the_touch(self):
+        from gi.repository import Gdk, Graphene, Gtk
+
+        self.open_sheet()
+        area = self.sheet.lyrics_slot
+        self.assertTrue(wait_for(lambda: self.lyrics.list_view.get_first_child() is not None))
+        row = self.lyrics.list_view.get_first_child()
+        point = Graphene.Point()
+        point.x, point.y = row.get_width() / 2, row.get_height() / 2
+        ok, point = row.compute_point(area, point)
+        self.assertTrue(ok)
+        x, y = point.x, point.y
+        press = self.gesture(area, Gtk.GestureLongPress)
+        self.assertTrue(press.get_touch_only())
+        seeks = []
+        self.lyrics.list_view.connect('activate', lambda *_: seeks.append(True))
+        with mock.patch.object(Gtk.Gesture, 'set_state') as set_state:
+            press.emit('pressed', x, y)
+        # Claimed, the touch is the menu's: GTK cancels the row's click, which would seek.
+        set_state.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+        self.assertIsNotNone(self.popover(area))
+        self.assertEqual(seeks, [])
+        # Only the secondary button opens it: a click (the primary) is the row's, a seek.
+        self.assertEqual(self.gesture(area, Gtk.GestureClick).get_button(),
+                         Gdk.BUTTON_SECONDARY)
+
+    def test_the_menu_keys_anywhere_in_the_sheet(self):
+        from gi.repository import Gtk
+
+        self.open_sheet()
+        self.assertTrue(self.sheet.more_button.grab_focus())   # anywhere: the header bar's
+        focus = self.window.get_focus()   # the menu button's own button
+        model = self.sheet.observe_controllers()
+        shortcut = next(
+            controller.get_item(0) for controller in
+            (model.get_item(position) for position in range(model.get_n_items()))
+            if isinstance(controller, Gtk.ShortcutController))
+        self.assertEqual(shortcut.get_trigger().to_string(), 'Menu|<Shift>F10')
+        self.assertTrue(shortcut.get_action().activate(Gtk.ShortcutActionFlags(0),
+                                                       self.sheet, None))
+        self.assertIsNotNone(self.popover(focus))
+        self.assertEqual(self.actions.asked, [(TRACK['id'], True)])
+
+    def test_in_the_full_screen_player_the_controls_stay_while_it_is_open(self):
+        self.play()
+        self.host.enter()
+        view = self.host.view
+        self.assertTrue(wait_for(lambda: view.cover.get_height() > 0))
+        popover = self.right_click(view.item_box)
+        self.assertIsNotNone(popover)
+        self.assertTrue(wait_for(popover.get_mapped))
+        self.assertEqual(self.actions.asked, [(TRACK['id'], True)])
+        self.assertTrue(view._popover_open())   # fullscreen.should_hide() then says no
+        popover.popdown()
+        self.assertTrue(wait_for(lambda: not view._popover_open()))
+
+    def test_go_to_album_or_artist_uncovers_the_pages(self):
+        """What the menu's Go to Album and Go to Artist run (ItemActions.go_to, then
+        Window.open_item or open_artist_page) uncovers the pages through
+        Window._close_sheet(): from the full-screen player, full screen is left first, the
+        window put back, then the sheet closed."""
+        import types
+
+        from applemusic.window import Window
+
+        self.play()
+        self.bottom_sheet.set_open(True)
+        self.host.enter()
+        self.assertTrue(self.host.shown)
+        order = []
+        self.host.connect_changed(lambda: order.append(('left', self.host.shown)))
+        self.bottom_sheet.connect('notify::open', lambda *_: order.append(
+            ('sheet', self.bottom_sheet.get_open(), self.host.shown)))
+        window = types.SimpleNamespace(fullscreen_host=self.host,
+                                       bottom_sheet=self.bottom_sheet)
+        Window._close_sheet(window)
+        self.assertFalse(self.host.shown)
+        self.assertFalse(self.bottom_sheet.get_open())
+        self.assertEqual(order, [('left', False), ('sheet', False, False)])
+        self.assertTrue(wait_for(lambda: not self.window.is_fullscreen()))
+        # From the sheet alone, it closes.
+        self.bottom_sheet.set_open(True)
+        Window._close_sheet(window)
+        self.assertFalse(self.bottom_sheet.get_open())
 
 
 if __name__ == '__main__':

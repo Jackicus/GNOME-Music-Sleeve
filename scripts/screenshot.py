@@ -14,7 +14,7 @@
                           [--autoplay] [--history] [--album N] [--live]
                           [--search TERM [--search-in music|library] [--search-kind KIND]
                            [--see-all KEY]] [--filter TEXT]
-                          [--context-menu [KIND] [--submenu NAME]]
+                          [--context-menu [KIND] [--submenu NAME] [--menu-of N]]
                           [--preferences [general|engine]]
                           [--dialog about|shortcuts|new-playlist|new-folder|rename|delete|
                                     remove-from-library|credits|add-songs] [--song N]
@@ -22,7 +22,7 @@
                           [--more-options] [--main-menu] [--new-menu]
                           [--sidebar-menu KEY [--submenu NAME]]
                           [--drop-target KEY] [--drop-line N] [--scroll PX] [--select N]
-                          [--sort KEY[:descending]]
+                          [--sort KEY[:descending]] [--frame]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
 through scripts/headless.sh, so the window opens on a private display and never on
@@ -118,7 +118,9 @@ that kind, such as category), as a right click on it would, and
 draws the popover into the shot where the compositor put it. --submenu NAME
 shows its submenu labelled NAME (a GtkPopoverMenu names each submenu by its
 label, mnemonic underscore and all: "Add to Pla_ylist" or "Mov_e to Folder",
-the only two) rather than its top level.
+the only two) rather than its top level. --menu-of N pops up the Nth such widget's
+menu instead of the first's (0 the first: a playlist's second song is 1), and with
+--now-playing queue the menu of the Up Next entry N places after the one playing.
 --preferences opens the Preferences dialog (app.preferences) on its General page, or
 on Engine, and shoots it: inside the window when libadwaita put it there, else its
 own window (a fixed-size window that is neither maximized nor tiled gets one), at
@@ -244,8 +246,15 @@ parser.add_argument('--filter', metavar='TEXT',
                     help='the page shown filtered by TEXT, its filter bar shown')
 parser.add_argument('--context-menu', metavar='KIND', nargs='?', const=True,
                     help="pop up the context menu of the page's first tile or row (of KIND)")
+parser.add_argument('--item-menu', metavar='WHERE', nargs='?', const='artwork',
+                    choices=['artwork', 'lyrics'],
+                    help="with --now-playing or --fullscreen-player, right-click the "
+                         "artwork (or the lyrics) for the item playing's menu")
 parser.add_argument('--submenu', metavar='NAME',
                     help='with --context-menu, show the submenu labelled NAME')
+parser.add_argument('--menu-of', metavar='N', type=int,
+                    help="with --context-menu, the Nth tile's or row's menu (0: the first); "
+                         'with --now-playing queue, the Up Next entry N after the one playing')
 parser.add_argument('--preferences', metavar='PAGE', nargs='?', const='general',
                     choices=['general', 'engine'],
                     help='open Preferences on PAGE and shoot the dialog')
@@ -283,6 +292,9 @@ parser.add_argument('--pick', metavar='N', type=int,
                     help='with --dialog add-songs, its first N songs picked')
 parser.add_argument('--focus', action='store_true',
                     help="give the keyboard focus to the page's first tile or row")
+parser.add_argument('--frame', action='store_true',
+                    help="the window's shadow and rounded corners too, on a transparent "
+                         "background, as a window screenshot shows them (the metainfo's)")
 parser.add_argument('--setting', metavar='KEY=VALUE', action='append', default=[],
                     help='set a setting first (VALUE in GVariant text: true, 3, "text"), in '
                          'the memory backend only; repeatable')
@@ -291,6 +303,8 @@ if args.search:
     args.page = 'search'
 if (args.search_kind or args.see_all) and not (args.search and args.search_in == 'music'):
     parser.error('--search-kind and --see-all need --search TERM --search-in music')
+if args.item_menu and not (args.now_playing or args.fullscreen_player):
+    parser.error('--item-menu needs --now-playing or --fullscreen-player')
 if args.submenu and not (args.context_menu or args.sidebar_menu):
     parser.error('--submenu needs --context-menu or --sidebar-menu')
 if (args.now_playing or args.playing or args.restored or args.fullscreen_player
@@ -323,7 +337,7 @@ width, height = (int(n) for n in (args.size or '1100x760').split('x'))
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light,
                        size=(1100, 760) if args.mini_player else (width, height))
 
-from gi.repository import Adw, GLib, Graphene, Gtk  # noqa: E402  (after make_app)
+from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402  (after make_app)
 
 if args.rtl:
     Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)  # before the window is made
@@ -600,19 +614,34 @@ def invented_link(kind, item_id):
     return link_item({'title': page.get('title') or item_id, 'kind': kind, 'id': item_id})
 
 
-def first_context_widget(widget, kind=None):
+def first_context_widget(widget, kind=None, skip=0):
     """The first mapped widget under `widget` with a context_item (of `kind`, when given),
-    depth first."""
+    depth first, after `skip` others."""
+    found = context_widgets(widget, kind, skip + 1)
+    return found[skip] if len(found) > skip else None
+
+
+def context_widgets(widget, kind, count):
+    """Up to `count` mapped widgets under `widget` with a context_item (of `kind`), in
+    order, depth first."""
     item = getattr(widget, 'context_item', None)
     if item is not None and widget.get_mapped() and kind in (None, getattr(item, 'kind', None)):
-        return widget
+        return [widget]
+    found = []
     child = widget.get_first_child()
-    while child is not None:
+    while child is not None and len(found) < count:
         if child.get_mapped():
-            found = first_context_widget(child, kind)
-            if found is not None:
-                return found
+            found += context_widgets(child, kind, count - len(found))
         child = child.get_next_sibling()
+    return found
+
+
+def queue_row(window, after):
+    """The Up Next row of the entry `after` places after the one playing, or None."""
+    for row in window.now_playing.queue_view._rows:
+        if (not row.history and row.list_item is not None and row.entry is not None
+                and row.list_item.get_position() == after):
+            return row
     return None
 
 
@@ -621,7 +650,11 @@ def open_context_menu(window):
     from applemusic.widgets import context_menu
 
     kind = args.context_menu if isinstance(args.context_menu, str) else None
-    widget = first_context_widget(window.navigation_view.get_visible_page(), kind)
+    if args.now_playing == 'queue':
+        widget = queue_row(window, args.menu_of if args.menu_of is not None else 1)
+    else:
+        widget = first_context_widget(window.navigation_view.get_visible_page(), kind,
+                                      args.menu_of or 0)
     if widget is None:
         sys.exit('screenshot: nothing on the page has a context menu')
     x, y = widget.get_width() * 0.6, widget.get_height() * 0.35
@@ -630,6 +663,32 @@ def open_context_menu(window):
         sys.exit('screenshot: the first item has no menu')
     if args.submenu:
         popover.set_property('visible-submenu', args.submenu)
+
+
+def open_item_menu(window):
+    """--item-menu: a right click over the Now Playing sheet's or the full-screen player's
+    artwork (a third of the way into it) or lyrics (their middle), as the pointer's would
+    reach the area's own gesture (context_menu.attach_playing)."""
+    view = window.fullscreen_host.view if args.fullscreen_player else window.now_playing
+    if args.item_menu == 'lyrics':
+        area = view.lyrics_slot
+        x, y = area.get_width() * 0.4, area.get_height() * 0.4
+    else:
+        area = view.item_box
+        point = Graphene.Point()
+        point.x, point.y = view.cover.get_width() / 3, view.cover.get_height() / 3
+        ok, point = view.cover.compute_point(area, point)
+        if not ok:
+            sys.exit('screenshot: the artwork is not laid out')
+        x, y = point.x, point.y
+    model = area.observe_controllers()
+    click = next((controller for controller in
+                  (model.get_item(position) for position in range(model.get_n_items()))
+                  if isinstance(controller, Gtk.GestureClick)
+                  and controller.get_button() == Gdk.BUTTON_SECONDARY), None)
+    if click is None or not area.get_mapped():
+        sys.exit('screenshot: nothing there takes a right click')
+    click.emit('pressed', 1, x, y)
 
 
 def focus_first(window):
@@ -889,6 +948,17 @@ def draw_popovers(window, snapshot):
         snapshot.restore()
 
 
+def unclipped(node):
+    """The window's render node without the clip to its own size around it, so its shadow,
+    which the window draws outside that size, shows (a popover drawn over it keeps its own)."""
+    if isinstance(node, Gsk.ClipNode):
+        return node.get_child()
+    if isinstance(node, Gsk.ContainerNode) and node.get_n_children():
+        children = [node.get_child(index) for index in range(node.get_n_children())]
+        return Gsk.ContainerNode.new([unclipped(children[0])] + children[1:])
+    return node
+
+
 def scroll_page(window):
     """Scroll the visible page's first vertically scrolling scrolled window that is shown by
     args.scroll (not one in a stack's hidden child: an empty state's status page has one)."""
@@ -986,7 +1056,13 @@ def _shoot():
         filter_page(window)
         GLib.timeout_add(1200, shoot)  # filtered, laid out, the artwork decoded
         return GLib.SOURCE_REMOVE
-    if args.context_menu and not menu_opened:
+    if args.item_menu and not menu_opened:
+        menu_opened = True
+        open_item_menu(window)
+        GLib.timeout_add(800, shoot)  # the popover shown and placed
+        return GLib.SOURCE_REMOVE
+    if args.context_menu and not menu_opened and (not args.scroll or scrolled):
+        # After --scroll, when given: a row scrolled into view (a narrow window's songs).
         menu_opened = True
         open_context_menu(window)
         GLib.timeout_add(800, shoot)  # the popover shown and placed
@@ -1099,7 +1175,11 @@ def _shoot():
     snapshot = Gtk.Snapshot()
     paintable.snapshot(snapshot, window.get_width(), window.get_height())
     draw_popovers(window, snapshot)
-    texture = window.get_renderer().render_texture(snapshot.to_node(), None)
+    node = snapshot.to_node()
+    if args.frame:
+        node = unclipped(node)
+    texture = window.get_renderer().render_texture(node, node.get_bounds() if args.frame
+                                                   else None)
     texture.save_to_png(args.out)
     print(args.out)
     app.quit()

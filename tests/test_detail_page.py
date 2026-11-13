@@ -1137,6 +1137,29 @@ class ReorderTest(PageTestCase):
         page.play_button.grab_focus()
         self.assertFalse(keys.emit('key-pressed', Gdk.KEY_Down, 0, Gdk.ModifierType.ALT_MASK))
 
+    async def test_alt_end_and_alt_home_move_the_focused_song_to_an_end(self):
+        from gi.repository import Gdk
+
+        page = await self.show()
+        self.row(page, 1).get_parent().grab_focus()  # the second song's row
+        self.assertTrue(await self.until(
+            lambda: self.window.get_focus() is not None
+            and self.window.get_focus().is_ancestor(page.list_view)))
+        keys = self.keys(page)
+        self.assertTrue(keys.emit('key-pressed', Gdk.KEY_End, 0, Gdk.ModifierType.ALT_MASK))
+        self.assertEqual(self.ids(), ['0', '2', '3', '1'])
+        self.assertEqual(self.window.item_actions.moved, [('l.playlist001', 1, 3, False)])
+        await self.turn()
+        self.assertEqual(self.focused_track(page), 'l.playlist001.t1.1')  # it went with it
+        # At the bottom: nothing moves, the key is the page's all the same.
+        self.assertTrue(keys.emit('key-pressed', Gdk.KEY_End, 0, Gdk.ModifierType.ALT_MASK))
+        self.assertEqual(len(self.window.item_actions.moved), 1)
+        self.assertTrue(keys.emit('key-pressed', Gdk.KEY_Home, 0, Gdk.ModifierType.ALT_MASK))
+        self.assertEqual(self.ids(), ['1', '0', '2', '3'])
+        self.assertEqual(self.window.item_actions.moved[-1], ('l.playlist001', 3, 0, False))
+        await self.turn()
+        self.assertEqual(self.focused_track(page), 'l.playlist001.t1.1')
+
     def focused_track(self, page):
         from applemusic.pages.detail import _row_of
 

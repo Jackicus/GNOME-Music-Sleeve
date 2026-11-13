@@ -392,6 +392,10 @@ class Adjustment:
 
     def connect(self, _signal, handler):
         self._handlers.append(handler)
+        return len(self._handlers)
+
+    def disconnect(self, handler_id):
+        self._handlers[handler_id - 1] = lambda _adjustment: None
 
     def get_value(self):
         return self.value
@@ -467,6 +471,26 @@ class VolumeStepTest(unittest.TestCase):
             self.assertEqual([call for call in engine.calls if call[0] == 'volume'],
                              [('volume', 0.9), ('volume', 0.8)])
             self.assertEqual(control.step(1), 0.9)
+        asyncio.run(go())
+
+    def test_detached_it_lets_go_of_the_adjustment_too(self):
+        # The button owns the adjustment, so a handler of the control's left on it keeps
+        # the button (and the mini player's window) alive: test_page_lifetime.
+        async def go():
+            player, _engine, app = make_player(state='up')
+            await app.settle()
+            adjustment = Adjustment(player.volume)
+            control = VolumeControl(ScaleButton(adjustment), adjustment)
+            control.attach(player, app)
+            described = []
+            control._describe = lambda: described.append(adjustment.value)
+            adjustment.set_value(0.5)
+            self.assertEqual(described, [0.5])
+            control.detach()
+            adjustment.set_value(0.2)
+            self.assertEqual(described, [0.5])
+            control.detach()  # again: nothing left to let go of
+            await app.settle()
         asyncio.run(go())
 
 
