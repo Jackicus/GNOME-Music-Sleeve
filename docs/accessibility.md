@@ -36,7 +36,7 @@ list and the script together.
    and Return shows the favourite albums alone.
 3. On an album or playlist: Play, Tab to Shuffle and to More Options (the item's menu), Tab to
    the first track (Shift+Tab goes back to More Options), Down, and Enter plays from that
-   track. Menu on a track lists View Credits, whose mnemonic (E) opens the song's credits in
+   track. Menu on a track lists View Credits, whose mnemonic (C) opens the song's credits in
    a dialog: Tab reaches each person, read with their roles, and Escape closes it, the focus
    back on the track. On an album, Tab from the last track goes past the footer into Apple Music's
    shelves of it (Other Versions, More By…), and Shift+Tab from there goes back to the last
@@ -74,12 +74,15 @@ list and the script together.
    switches), on Up Next its History toggle, Autoplay toggle and Clear (Space clears what
    follows the entry playing, with an Undo toast, and the focus moves to the entry playing as
    Clear goes insensitive), and into the list (arrows move, Enter seeks to a line or plays an entry, Menu opens an entry's menu, with
-   Move Up, Move Down and Remove from Up Next after the entry playing, and Escape gives the
+   Move to Top, Move Up, Move Down, Move to Bottom and Remove from Up Next after the entry
+   playing, and Play Next, which moves the entry to just after the one playing, where its
+   section begins there; Escape gives the
    entry the focus back, a Delete before or not; Delete removes the
    focused entry, and the focus moves to the one that took its place; Alt+Down and Alt+Up
-   move the focused entry one place within its section (Playing Next, or Autoplay), the
+   move the focused entry one place within its section (Playing Next, or Autoplay), Alt+Home
+   and Alt+End to the section's top or bottom, the
    focus going with it and its new place said ("moved to position 2 of 9 in Up Next"), and
-   do nothing at either end of the section or on the entry playing). Space on History shows the entries played
+   do nothing at that end of the section or on the entry playing). Space on History shows the entries played
    before, most recent first, in place of Up Next (Autoplay and Clear go): Tab reaches them,
    Enter plays one again, their menus have no Remove, and Space on the toggle goes back.
    Then the close button and the header bar's buttons, More Options among them (the item
@@ -154,9 +157,10 @@ list and the script together.
     Playlists do, and an album's or playlist's Add to Playlist what its tile dropped on a
     sidebar playlist does.
 12. On a playlist of your own, Alt+Down on the focused song moves it one place down and
-    Alt+Up one place up; the focus stays on the song, and the move is announced ("“Song”
-    moved to position 3 of 12"). Menu on a song lists Move Up and Move Down (Move Up not on
-    the first song). Dragging a song within the list does the same by pointer. The demo
+    Alt+Up one place up, Alt+End to the bottom and Alt+Home to the top; the focus stays on
+    the song, and the move is announced ("“Song” moved to position 3 of 12"). Menu on a song
+    lists Move to Top, Move Up, Move Down and Move to Bottom (neither of the first two on the
+    first song). Dragging a song within the list does the same by pointer. The demo
     shows the moves and keeps none.
 13. With an item playing, Ctrl+L (Go to Current Song) opens the album or playlist it plays
     from (else its album) with the focus on its row, scrolled into view; from Now Playing
@@ -215,9 +219,12 @@ list and the script together.
     song picked, in both its lists.
 18. Ctrl+Shift+M (the main menu's Mini Player, the player bar's menu) shows the mini player
     in place of the window, a window of its own named "Mini Player", with the focus on its
-    Play; Tab goes through Return to Main Window, the position slider ("1:05 of 3:40") and
-    Previous, Play and Next, and never out of it; Space on Play or on the slider plays or
-    pauses, Ctrl+Right and Ctrl+Left skip; each new song is announced ("Now playing …").
+    Play; Tab goes through Return to Main Window, the position slider ("1:05 of 3:40"),
+    Previous, Play and Next, then Favourite, Shuffle, Repeat ("Repeat All", "Repeat One" as
+    it is set) and Volume ("70%"), and never out of it; a wide window has those four around
+    the transport, and one both low and narrow hides them. Space on Play or on the slider
+    plays or pauses, Ctrl+Right and Ctrl+Left skip, Ctrl+Up and Ctrl+Down step the volume
+    (announced, "Volume 70%"), shown or not; each new song is announced ("Now playing …").
     Ctrl+Shift+M again, Return to Main Window or Ctrl+W (its close) brings the window back
     with the focus where it was. The script walks this after step 10, and `--names` looks
     at it with a song playing.

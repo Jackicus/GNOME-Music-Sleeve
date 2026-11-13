@@ -10,16 +10,16 @@ TAB_KEYS and MAIN_MENU into the window's F10, widgets/context_menu.py binds CONT
 (as context_menu.MENU_KEYS, which sidebar_view.py binds on the sidebar's rows too),
 and sidebar_view.py binds FOLDER_OPEN and FOLDER_CLOSE on the sidebar (keys for the focused
 row, only with the focus in the sidebar), as widgets/queue.py binds QUEUE_REMOVE on Up Next's
-list; a playlist's page runs MOVE_UP and MOVE_DOWN on its focused song, and Up Next on its
-focused entry (keyboard.move_step(): Alt+Up and Alt+Down, as GNOME Text Editor moves a
-line), and REMOVE_SONG on its focused song too (keyboard.remove_key(): Delete, as Files'
-Delete acts on what is focused), and keyboard.py parses VOLUME_UP and VOLUME_DOWN into its
-VOLUME_KEYS, the window's too, and the selection mode's keys (SELECT_*, LEAVE_SELECTION)
-into its SELECTION_KEYS: a track list's, which the window's key controller gives the page in
-that mode. tests/test_shortcuts.py checks that the dialog lists every one of them. Keys that
-are none of these are listed as they are: Escape
-(the dialogs', the Now Playing sheet's, the full-screen player's), under General with the
-other keys that act on windows.
+list; a playlist's page runs MOVE_UP, MOVE_DOWN, MOVE_TOP and MOVE_BOTTOM on its focused song,
+and Up Next on its focused entry (keyboard.move_step(): Alt+Up and Alt+Down, as GNOME Text
+Editor moves a line, and Alt+Home and Alt+End, which no list of GTK's binds), and REMOVE_SONG on
+its focused song too (keyboard.remove_key(): Delete, as Files' Delete acts on what is focused),
+and keyboard.py parses VOLUME_UP and VOLUME_DOWN into its VOLUME_KEYS, the window's too, and the
+selection mode's keys (SELECT_*, LEAVE_SELECTION) into its SELECTION_KEYS: a track list's, which
+the window's key controller gives the page in that mode. tests/test_shortcuts.py checks that the
+dialog lists every one of them. Keys that are none of these are listed as they are: Escape (the
+dialogs', the Now Playing sheet's, the full-screen player's), under General with the other keys
+that act on windows.
 
 F11 and F5 are the accelerators without a modifier: function keys, which no GTK widget takes
 for its own, set as accelerators by GNOME's own apps: F11 the HIG's Fullscreen key (the
@@ -89,9 +89,11 @@ FOLDER_CLOSE = 'Left'
 # On a focused Up Next row (widgets/queue.py binds it on the list): Remove from Up Next.
 QUEUE_REMOVE = 'Delete'
 # On a focused song of a playlist of the user's, or a focused Up Next entry after the one
-# playing (within its section): move it up or down one place.
+# playing (within its section): move it up or down one place, or to the top or the bottom.
 MOVE_UP = '<alt>Up'
 MOVE_DOWN = '<alt>Down'
+MOVE_TOP = '<alt>Home'
+MOVE_BOTTOM = '<alt>End'
 # On a focused song of a playlist of the user's (keyboard.remove_key, the page's): Remove
 # from Playlist, with Undo on its toast; in the selection mode, the songs selected.
 REMOVE_SONG = 'Delete'
@@ -160,6 +162,8 @@ def sections():
             (_('Remove from Up Next'), QUEUE_REMOVE),
             (_('Move Up in Up Next'), MOVE_UP),
             (_('Move Down in Up Next'), MOVE_DOWN),
+            (_('Move to Top of Up Next'), MOVE_TOP),
+            (_('Move to Bottom of Up Next'), MOVE_BOTTOM),
             (_('Fullscreen Player'), 'win.fullscreen-player'),
             (_('Mini Player or Main Window'), 'app.mini-player'),
         ]),
@@ -167,6 +171,8 @@ def sections():
             (_('New Playlist'), 'win.new-playlist'),
             (_('Move Song Up'), MOVE_UP),
             (_('Move Song Down'), MOVE_DOWN),
+            (_('Move Song to Top'), MOVE_TOP),
+            (_('Move Song to Bottom'), MOVE_BOTTOM),
             (_('Remove from Playlist'), REMOVE_SONG),
         ]),
         (_('Selecting Songs'), [

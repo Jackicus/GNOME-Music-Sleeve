@@ -64,6 +64,8 @@ is, is in `docs/decisions.md`.
       keyboard moves a song one place a key press, where a drag moves it any distance.
 - [ ] [#580](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/580): the widget tests
       crashed once on CI (a callback on an object already freed), and passed when run again.
+      Not reproduced locally in about 50 runs of the whole suite (Wayland and X11, cairo);
+      the suite now runs under `-X faulthandler`, so the next crash names its test.
 - [ ] Report to GTK that a popover menu keeps its model's sections after it is freed (found
       for #541, `docs/notes.md`, Memory; the app shares its Sort By sections instead, but a
       menu built each time it opens still leaves its sections behind).

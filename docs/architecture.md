@@ -58,7 +58,7 @@ touches widgets.
   writes, the window leaves the pages of what was deleted, and the library follows once Apple
   lists the change, through the sync's short playlists pass; a move or a new folder shows at
   once, held in the library's tree (`Library.hold()`) until Apple lists it. A playlist's songs
-  put in a new order (a drag on its page, Move Up and Move Down, Alt+Up and Alt+Down) go
+  put in a new order (a drag on its page, Move Up and the other moves, their Alt keys) go
   through `playlist_order.py`'s `PlaylistOrder` (the item actions' `playlist_order`): shown at
   once and held through syncs (`Library.reorder()`), one write at a time, a burst of keys one
   write, put back if Apple refuses; once Apple shows it, a playlists pass reads that

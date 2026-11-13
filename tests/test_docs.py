@@ -92,7 +92,8 @@ def app_keys():
         found.update(accelerator_names(accelerator) for accelerator in accelerators)
     for accelerator in (shortcuts.MAIN_MENU, *shortcuts.CONTEXT_MENU.split(), shortcuts.CLOSE,
                         shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.MOVE_UP,
-                        shortcuts.MOVE_DOWN, shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN,
+                        shortcuts.MOVE_DOWN, shortcuts.MOVE_TOP, shortcuts.MOVE_BOTTOM,
+                        shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN,
                         shortcuts.SELECT_TOGGLE, shortcuts.SELECT_RANGE, shortcuts.SELECT_ALL,
                         shortcuts.SELECT_NONE, shortcuts.LEAVE_SELECTION):
         found.add(accelerator_names(accelerator))

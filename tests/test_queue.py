@@ -741,7 +741,8 @@ class QueueViewTest(unittest.TestCase):
         self.assertTrue(wait_for(lambda: len(self.rows()) == 6))
         self.focus_row(1)  # Entry 3, the first of Playing Next
         widget = self.bound()[1]
-        self.assertEqual(widget.context_queue_moves, (1,))
+        # Plays next already (no Play Next); down a place, or to the section's bottom.
+        self.assertEqual(widget.context_queue_moves, {1: 4, 'bottom': 5, 'next': None})
         self.assertTrue(self.alt(Gdk.KEY_Down))
         self.assertEqual(moved, [(3, 4, 'i.queue0003')])
         self.assertEqual(self.rows(), ['Entry 2', 'Entry 4', 'Entry 3', 'Entry 5', 'Entry 6',
@@ -751,22 +752,57 @@ class QueueViewTest(unittest.TestCase):
         self.assertTrue(self.alt(Gdk.KEY_Down))
         self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 3'))
         # At the end of Playing Next: taken, nothing moves (Autoplay is another section).
-        self.assertEqual(self.bound()[3].context_queue_moves, (-1,))
+        self.assertEqual(self.bound()[3].context_queue_moves,
+                         {'top': 3, -1: 4, 'next': 3})
         self.assertTrue(self.alt(Gdk.KEY_Down))
         self.assertEqual(len(moved), 2)
         self.assertTrue(self.alt(Gdk.KEY_KP_Up))
         self.assertEqual(moved[-1], (5, 4, 'i.queue0003'))
         self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 3'))
-        # Within Autoplay.
+        # Within Autoplay, whose entries have no Play Next while songs are queued before
+        # them (MusicKit's queue moves an entry within its section only).
         self.focus_row(5)
+        self.assertEqual(self.bound()[5].context_queue_moves, {'top': 6, -1: 6})
         self.assertTrue(self.alt(Gdk.KEY_Up))
         self.assertEqual(moved[-1], (7, 6, 'i.queue0007'))
         self.assertEqual([entry.autoplay for entry in self.player.queue], [False] * 6 + [True] * 2)
         # The entry playing does not move: the key is not taken.
         self.focus_row(0)
-        self.assertEqual(self.bound()[0].context_queue_moves, ())
+        self.assertEqual(self.bound()[0].context_queue_moves, {})
         self.assertFalse(self.alt(Gdk.KEY_Down))
         self.assertEqual(len(moved), 4)
+
+    def test_alt_home_and_end_move_the_focused_entry_to_its_sections_ends(self):
+        from gi.repository import Gdk
+
+        self.player.apply_queue({'index': 2, 'items': entries(10, autoplay=(8, 9))})
+        moved = self.use_moves()
+        self.assertTrue(wait_for(lambda: len(self.rows()) == 8))
+        self.focus_row(3)  # Entry 5, in Playing Next (3 to 7)
+        self.assertTrue(self.alt(Gdk.KEY_End))
+        self.assertEqual(moved, [(5, 7, 'i.queue0005')])
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 5'), self.focused_title())
+        self.assertTrue(self.alt(Gdk.KEY_End))  # at the bottom already: taken, no move
+        self.assertEqual(len(moved), 1)
+        self.assertTrue(self.alt(Gdk.KEY_Home))
+        self.assertEqual(moved[-1], (7, 3, 'i.queue0005'))
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 5'), self.focused_title())
+        self.assertEqual(self.rows()[:3], ['Entry 2', 'Entry 5', 'Entry 3'])
+        self.assertTrue(self.alt(Gdk.KEY_KP_End))
+        self.assertEqual(moved[-1], (3, 7, 'i.queue0005'))
+        # Autoplay's first entry to its section's end, not past it into another.
+        self.focus_row(6)
+        self.assertTrue(self.alt(Gdk.KEY_End))
+        self.assertEqual(moved[-1], (8, 9, 'i.queue0008'))
+        self.assertTrue(wait_for(lambda: self.focused_title() == 'Entry 8'), self.focused_title())
+        self.assertTrue(self.alt(Gdk.KEY_Home))
+        self.assertEqual(moved[-1], (9, 8, 'i.queue0008'))
+        self.assertEqual([entry.autoplay for entry in self.player.queue],
+                         [False] * 8 + [True] * 2)
+        # Nothing queued before Autoplay: its entries have Play Next, a move to its top.
+        self.player.apply_queue({'index': 2, 'items': entries(5, autoplay=(3, 4))})
+        self.assertTrue(wait_for(lambda: self.rows() == ['Entry 2', 'Entry 3', 'Entry 4']))
+        self.assertEqual(self.bound()[2].context_queue_moves, {'top': 3, -1: 3, 'next': 3})
 
     def test_a_move_keeps_the_list_where_it_is(self):
         scrolled = []
@@ -830,7 +866,7 @@ class QueueViewTest(unittest.TestCase):
     def test_a_stations_queue_has_no_moves(self):
         self.player.apply_queue({'index': 2, 'items': entries(5), 'editable': False})
         self.assertTrue(wait_for(lambda: len(self.rows()) == 3))
-        self.assertEqual(self.bound()[1].context_queue_moves, ())
+        self.assertEqual(self.bound()[1].context_queue_moves, {})
         self.assertIsNone(self.view._drag_source(*self.row_point(1, 0.5)))
 
     def test_clear_and_its_undo_toast(self):

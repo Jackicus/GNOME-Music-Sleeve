@@ -192,8 +192,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   filter, for the page's life) orders the view only. A playlist of the user's
   (`DetailPage.can_reorder()`: in Playlist Order, first to last, unfiltered) takes a
   drop of one of its own songs (`dnd.current()`'s origin is the playlist) with an insertion
-  line (`dnd.DropFeedback.insert()` on the row, `drop_place()`), and Alt+Up and Alt+Down on
-  the focused song; both go through `item_actions.move_in_playlist()` (playlist_order.py),
+  line (`dnd.DropFeedback.insert()` on the row, `drop_place()`), and Alt+Up, Alt+Down,
+  Alt+Home and Alt+End on the focused song (`keyboard.move_place()`), as its menu's Move Up,
+  Move Down, Move to Top and Move to Bottom; all go through `item_actions.move_in_playlist()` (playlist_order.py),
   and the focus follows the moved song (`scroll_to(…, FOCUS)`). Under a playlist the user can change
   (`detail.wants_suggestions()`) its last section holds the songs Apple suggests adding
   (`Engine.playlist_suggestions`) in a `widgets.suggested_songs.SuggestedSongs` (Add
@@ -259,7 +260,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   each object's `search_key`, in C through `filter_bar.SearchText`'s `text_filter()` (the
   Songs table in Python); it combines with Favourites Only, says the new count through `announce()`, shows
   No Results Found (`edit-find-symbolic`) when it leaves none, and turns a playlist's
-  reordering off (`can_reorder()`, and Move Up and Move Down in its songs' menus). A grid
+  reordering off (`can_reorder()`, and the moves in its songs' menus). A grid
   takes it with `filter_words` (its label, and its count's words).
 - The Songs table and a detail page's tracks have a selection mode
   (`widgets.selection_mode.SelectionMode`, the page's `selection_mode`; docs/decisions.md):
@@ -352,8 +353,9 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   actions, and Ctrl+Shift+L and Ctrl+Shift+U, Now Playing on a tab), `MAIN_MENU`,
   `CONTEXT_MENU`, the sidebar's `FOLDER_OPEN` and `FOLDER_CLOSE` (sidebar_view.py binds
   them), Up Next's `QUEUE_REMOVE` (widgets/queue.py binds it), a playlist page's and Up
-  Next's `MOVE_UP` and `MOVE_DOWN` (Alt+Up, Alt+Down on the focused song or entry:
-  `keyboard.move_step()`, asked by the page's or the list's own key controller), a playlist
+  Next's `MOVE_UP`, `MOVE_DOWN`, `MOVE_TOP` and `MOVE_BOTTOM` (Alt+Up, Alt+Down, Alt+Home,
+  Alt+End on the focused song or entry: `keyboard.move_step()`, asked by the page's or the
+  list's own key controller), a playlist
   page's `REMOVE_SONG` (Delete: `keyboard.remove_key()`, asked by the page's own key
   controller too), the window's `VOLUME_UP` and `VOLUME_DOWN` (Ctrl+Up, Ctrl+Down:
   `keyboard.volume_step()`, the bar's volume button stepped and announced) and `sections()`

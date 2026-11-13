@@ -1671,16 +1671,23 @@ class MiniPlayerLifetimeTest(WidgetTestCase):
         await self.turn()
         view = window.view
         refs = (window.weak_ref(), view.weak_ref(), view.play_button.weak_ref(),
-                view.seek_scale.weak_ref(), view.cover.weak_ref())
+                view.seek_scale.weak_ref(), view.cover.weak_ref(),
+                view.heart_button.weak_ref(), view.shuffle_button.weak_ref(),
+                view.repeat_button.weak_ref(), view.volume_button.weak_ref(),
+                view.extras_box.weak_ref())
         del view
         window.release()
         del window
         await self.assert_freed(*refs)
-        # Nothing of it follows the Player any more.
-        for name in ('track', 'state', 'position', 'duration', 'pending', 'can-seek'):
+        # Nothing of it follows the Player any more, nor the engine (the heart's).
+        for name in ('track', 'state', 'position', 'duration', 'pending', 'can-seek',
+                     'shuffle', 'repeat', 'can-shuffle', 'can-repeat', 'volume'):
             self.assertFalse(GObject.signal_has_handler_pending(
                 player, GObject.signal_lookup('notify', Player), GLib.quark_from_string(name),
                 False), name)
+        engine = self.app.engine
+        self.assertFalse(GObject.signal_has_handler_pending(
+            engine, GObject.signal_lookup('rated', type(engine)), 0, False))
 
 
 class NowPlayingLifetimeTest(WidgetTestCase):

@@ -198,9 +198,12 @@ paths:
   fetched, never in the demo), only for the rows bound and at most every `ART_DELAY_MS`,
   and again once the cache's generation moves (Clear Cache, sign-out): bind is a
   dictionary lookup. Remove from Up Next is in an entry's menu
-  (`context_queue_entry`) and on Delete (the focus then on the row in its place); Move Up
-  and Move Down too (`context_queue_moves`), on Alt+Up and Alt+Down (`keyboard.move_step()`,
-  the list's capture-phase key controller; the focus goes with the entry) and by a drag
+  (`context_queue_entry`) and on Delete (the focus then on the row in its place); Move to
+  Top, Move Up, Move Down and Move to Bottom too (`context_queue_moves`, `QueueView.moves()`:
+  where each takes it, and Play Next's move to just after the entry playing where its section
+  begins there, `actions.queue_play_next()`), on Alt+Up, Alt+Down, Alt+Home and Alt+End
+  (`keyboard.move_step()`, `move_place()`, the list's capture-phase key controller; the focus
+  goes with the entry) and by a drag
   within the entry's section (`dnd.attach_source()` on the list, MOVE only, a
   `DropFeedback` insertion line kept inside the section: `drop_gap()`, `line_place()`), all
   through `win.item-move-in-queue`, which announces the new place; History
@@ -254,8 +257,13 @@ paths:
   destroys it (`release()`: a dialog over it closed, its view's pieces and handlers detached, so a closed one
   follows nothing and is freed: tests/test_page_lifetime.py). One at a time; its size is
   `mini-player-width` and `-height`, its layout `mini_player.layout_for()` (a small cover
-  beside the titles when low). It has the transport pieces only (no lyrics, Up Next, heart
-  or volume), the playback keys as the window has them, its own toasts while it shows
+  beside the titles when low; `extras`, where Favourite, Shuffle, Repeat and Volume go:
+  around the transport from `INLINE_WIDTH`, else a row under it, or hidden where a low
+  window has no room for the row; one set of buttons, moved by `place_extras()`). Its
+  heart is lazy (the bar's reads answer it), its volume a popover button at every size; a
+  piece that connects to an object its own widget owns lets go of it in `detach()`
+  (`VolumeControl`'s adjustment), or the window is never freed. No lyrics or Up Next yet
+  (#589). The playback and volume keys as the window has them, its own toasts while it shows
   (`get_active_window()` is it; a `win.*` button there runs through `app.window-action`),
   and announces each new item itself (the bar does not
   announce from a hidden window: `transport.announcement()`). What needs the main window

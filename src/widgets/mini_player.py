@@ -10,7 +10,10 @@ follows nothing). What it shows is the pieces of widgets/transport.py, as the pl
 the Now Playing sheet and the full-screen player have them: the artwork (RemoteCover), the
 title and the artist (TrackTitles, with their full text as tooltips), the seek row
 (SeekControl: LIVE in its place for a live radio station), Previous, Play (Stop for a live
-station) and Next (app.previous, app.play-pause, app.next), and Return to Main Window
+station) and Next (app.previous, app.play-pause, app.next), the extras: Favourite
+(HeartControl, lazy: it shows the answers to the bar's reads of each item's rating, and
+reads only as it is made), Shuffle and Repeat (ModeControl) and Volume (VolumeControl, a
+button with its slider in a popover at every size), and Return to Main Window
 (app.mini-player) in a flat header bar; under it all the artwork's tint
 (widgets/backdrop.py, as the sheet's). No lyrics and no Up Next: nothing in it steps or
 redraws while a song plays but the seek row, once a second.
@@ -18,15 +21,18 @@ redraws while a song plays but the seek row, once a second.
 Its layout follows its size (mini_player.layout_for(), applied as the view is allocated: it
 measures and allocates its child itself, so its Adw.Bin layout manager is dropped): the
 cover as large as the window lets it be over the titles, or, in a low window, small beside
-them.
+them; the extras around Previous, Play and Next in a wide window, else in a row of their
+own under them, or hidden where the window is too low for the row. They are one set of
+buttons, moved between the two boxes (place_extras()), never two: each follows the Player.
 
 For the keyboard: the focus starts on Play; the playback keys (Space, Ctrl+Left,
 Ctrl+Right: shortcuts.PLAYBACK) are the window's own as in the main window
-(keyboard.playback_action), and the app's accelerators work here too (Ctrl+Shift+M back to
-the main window, Ctrl+W closes it, which is the same, Ctrl+Q quits). For assistive
-technology: the window is named "Mini Player", each new item is announced ("Now playing …",
-transport.announcement()) through it, the seek slider reads "1:05 of 3:40", and the cover is
-decorative.
+(keyboard.playback_action), and so are the volume's (Ctrl+Up, Ctrl+Down:
+keyboard.volume_step, the level announced, the volume button shown or not); the app's
+accelerators work here too (Ctrl+Shift+M back to the main window, Ctrl+W closes it, which is
+the same, Ctrl+Q quits). For assistive technology: the window is named "Mini Player", each
+new item is announced ("Now playing …", transport.announcement()) through it, the seek
+slider reads "1:05 of 3:40", the volume "70%", and the cover is decorative.
 """
 
 from gettext import gettext as _
@@ -38,8 +44,8 @@ from ..backend import config
 from ..remote import fetch_remote
 from .backdrop import ArtworkBackdrop  # noqa: F401  registers it for the template
 from .cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
-from .transport import (Follower, PlayButton, RemoteCover, SeekControl, TrackTitles,
-                        announcement)
+from .transport import (Follower, HeartControl, ModeControl, PlayButton, RemoteCover,
+                        SeekControl, TrackTitles, VolumeControl, announcement, volume_text)
 from .util import connect_weak, has_ancestor
 
 # The window's smallest size: the short layout's controls, and a title's room.
@@ -56,6 +62,7 @@ class MiniPlayerView(Adw.Bin):
     overlay = Gtk.Template.Child()
     backdrop = Gtk.Template.Child()
     toolbar = Gtk.Template.Child()
+    header_bar = Gtk.Template.Child()
     main_window_button = Gtk.Template.Child()
     toast_overlay = Gtk.Template.Child()
     content_box = Gtk.Template.Child()
@@ -73,12 +80,21 @@ class MiniPlayerView(Adw.Bin):
     previous_button = Gtk.Template.Child()
     play_button = Gtk.Template.Child()
     next_button = Gtk.Template.Child()
+    transport_box = Gtk.Template.Child()
+    extras_box = Gtk.Template.Child()
+    heart_button = Gtk.Template.Child()
+    shuffle_button = Gtk.Template.Child()
+    repeat_button = Gtk.Template.Child()
+    volume_button = Gtk.Template.Child()
+    volume_adjustment = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.set_layout_manager(None)  # do_measure and do_size_allocate below
         self.overlay.set_measure_overlay(self.toolbar, True)
         self.shown_layout = None       # the mini_player.Layout applied
+        self.extras = 'row'            # where the extras are: 'row' (the template's),
+                                       # 'inline' or 'none'
         self._player = None
         self._app = None
         self._announced = None         # the id of the item last announced
@@ -87,10 +103,16 @@ class MiniPlayerView(Adw.Bin):
         self._own = Follower()         # the view's own handlers on the Player
         self._play = PlayButton(self.play_button)
         self._titles = TrackTitles(self.title_label, self.subtitle_label,
-                                   sensitive=(self.seek_box,), tooltips=True)
+                                   sensitive=(self.seek_box, self.volume_button),
+                                   tooltips=True)
         self._seek = SeekControl(self.seek_scale, self.seek_adjustment, self.elapsed_label,
                                  self.remaining_label, self.live_label)
         self._art = RemoteCover(self.cover)
+        self._modes = ModeControl(self.shuffle_button, self.repeat_button)
+        # Lazy: the bar's heart, which lives as long as the main window, reads each item's
+        # rating, and the engine's answer reaches this one too.
+        self._heart = HeartControl(self.heart_button, lazy=True)
+        self._volume = VolumeControl(self.volume_button, self.volume_adjustment)
         accel = shortcuts.ACCELS['app.mini-player'][0]
         ok, key, mods = Gtk.accelerator_parse(accel)
         if ok:
@@ -108,12 +130,17 @@ class MiniPlayerView(Adw.Bin):
         self._titles.attach(player)   # before the announcement, which reads the title
         self._seek.attach(player, app)
         self._art.attach(player, app)
+        self._modes.attach(player, app)
+        self._heart.attach(player, app)
+        self._heart.catch_up()        # the item playing as it is made: read once
+        self._volume.attach(player, app)
         self._own.follow(player, 'notify::track', lambda *_: self._on_track())
         self._on_track()
 
     def detach(self):
         """Let go of the Player: the window is going."""
-        for piece in (self._play, self._titles, self._seek, self._art, self._own):
+        for piece in (self._play, self._titles, self._seek, self._art, self._modes,
+                      self._heart, self._volume, self._own):
             piece.detach()
         if self._backdrop_task is not None and not self._backdrop_task.done():
             self._backdrop_task.cancel()
@@ -127,6 +154,11 @@ class MiniPlayerView(Adw.Bin):
         """The focus on Play (on Return to Main Window with nothing to play)."""
         if not self.play_button.grab_focus():
             self.main_window_button.grab_focus()
+
+    def step_volume(self, step):
+        """A volume key (the window's Ctrl+Up or Ctrl+Down): the volume a step up (1) or down
+        (-1), sent as the volume button's slider sends it. The new level, 0 to 1."""
+        return self._volume.step(step)
 
     # -- the item ---------------------------------------------------------------------------
 
@@ -177,7 +209,10 @@ class MiniPlayerView(Adw.Bin):
         return 0, natural, -1, -1
 
     def do_size_allocate(self, width, height, baseline):
-        header = self.toolbar.get_top_bar_height()
+        # The header bar's height as it measures: the toolbar view's top-bar-height is the
+        # last allocation's, 0 at the first, when the layout would be given the header's
+        # room too.
+        header = self.header_bar.measure(Gtk.Orientation.VERTICAL, -1)[0]
         layout = mini_player.layout_for(width, height - header)
         if layout != self.shown_layout:
             self.apply_layout(layout)
@@ -198,6 +233,37 @@ class MiniPlayerView(Adw.Bin):
         self.cover.remove_css_class('small' if not short else 'large')
         self.cover.add_css_class('small' if short else 'large')
         self.cover.set_property('size', layout.art_size)
+        self.place_extras(layout.extras)
+
+    def place_extras(self, extras):
+        """Favourite, Shuffle, Repeat and Volume where `extras` (a Layout's) has them:
+        'inline', Favourite and Shuffle before Previous and Repeat and Volume after Next;
+        'row', in their own row under the transport; 'none', hidden. The focus stays on one
+        of them that is moved."""
+        if extras == self.extras:
+            return
+        buttons = (self.heart_button, self.shuffle_button, self.repeat_button,
+                   self.volume_button)
+        if (extras == 'inline') != (self.extras == 'inline'):
+            root = self.get_root()
+            focus = root.get_focus() if root is not None else None
+            held = next((button for button in buttons
+                         if focus is not None and (focus is button
+                                                   or focus.is_ancestor(button))), None)
+            for button in buttons:
+                button.get_parent().remove(button)
+            if extras == 'inline':
+                self.transport_box.prepend(self.shuffle_button)
+                self.transport_box.prepend(self.heart_button)
+                self.transport_box.append(self.repeat_button)
+                self.transport_box.append(self.volume_button)
+            else:
+                for button in buttons:
+                    self.extras_box.append(button)
+            if held is not None:
+                held.grab_focus()
+        self.extras = extras
+        self.extras_box.set_visible(extras == 'row')
 
 
 class MiniPlayer(Adw.ApplicationWindow):
@@ -265,7 +331,8 @@ class MiniPlayer(Adw.ApplicationWindow):
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
         """The playback keys, as the main window has them (keyboard.playback_action): left
-        to the focus widget where they are its own, and to a dialog open over the window."""
+        to the focus widget where they are its own, and to a dialog open over the window;
+        then the volume's (keyboard.volume_step), while something plays."""
         app = self.get_application()
         if app is None:
             return False
@@ -280,10 +347,17 @@ class MiniPlayer(Adw.ApplicationWindow):
         name = keyboard.playback_action(keyval, mods, type(focus),
                                         self.get_visible_dialog() is not None,
                                         has_ancestor(focus, Gtk.Popover), enabled)
-        if name is None:
-            return False
-        action = app.lookup_action(name)
-        if action is not None and action.get_enabled():
-            app.activate_action(name)
-        return True
+        if name is not None:
+            action = app.lookup_action(name)
+            if action is not None and action.get_enabled():
+                app.activate_action(name)
+            return True
+        step = keyboard.volume_step(keyval, mods, type(focus),
+                                    self.get_visible_dialog() is not None,
+                                    has_ancestor(focus, Gtk.Popover))
+        if step is not None and app.player.track is not None:
+            self.announce(volume_text(self.view.step_volume(step)),
+                          Gtk.AccessibleAnnouncementPriority.MEDIUM)
+            return True
+        return False
 

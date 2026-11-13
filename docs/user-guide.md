@@ -236,10 +236,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   other players keep their own. While a station plays, its queue is Apple's and cannot be
   changed, and Autoplay does not start while Repeat is on.
 - To change the order of Up Next, drag a song to its new place (a line shows where it will
-  go), or choose **Move Up** or **Move Down** in its menu, or press
-  <kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Alt</kbd>+<kbd>↓</kbd> on the selected song. A song
+  go), or choose **Move Up**, **Move Down**, **Move to Top** or **Move to Bottom** in its
+  menu, or press <kbd>Alt</kbd>+<kbd>↑</kbd>, <kbd>Alt</kbd>+<kbd>↓</kbd>,
+  <kbd>Alt</kbd>+<kbd>Home</kbd> or <kbd>Alt</kbd>+<kbd>End</kbd> on the selected song.
+  **Play Next** in a song's menu moves it to just after the song playing. A song
   moves within its own list: what you queued stays under **Playing Next**, and Autoplay's
-  songs stay under **Autoplay**, so a song of Autoplay's cannot be moved up among yours.
+  songs stay under **Autoplay**, so a song of Autoplay's cannot be moved up among yours
+  (its **Play Next** then queues it again after the song playing, as for any other song).
   On a touchscreen, dragging scrolls the list: press and hold a song and use **Move Up** or
   **Move Down**. The song playing and the History do not move, and nor does a station's
   queue. While **Shuffle** is on you can move songs in the shuffled order, but turning
@@ -269,9 +272,13 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   closes on its own when nothing plays any more.
 - **Mini Player** (in the main menu, in the player bar's menu: right-click the bar, or
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>) swaps the window for a small one with the
-  song playing: its artwork, title and artist, the position slider, and Previous, Play and
-  Next. Make it as small or as large as you like: the artwork follows, and in a low window
-  it sits beside the title. **Return to Main Window** (the button at its top left),
+  song playing: its artwork, title and artist, the position slider, Previous, Play and
+  Next, and **Favourite**, **Shuffle**, **Repeat** and **Volume**. Make it as small or as
+  large as you like: the artwork follows, and in a low window it sits beside the title;
+  those four sit under the transport, around it in a wide window, and a window both low
+  and narrow keeps the transport alone (<kbd>Ctrl</kbd>+<kbd>↑</kbd> and
+  <kbd>Ctrl</kbd>+<kbd>↓</kbd> still change the volume). **Return to Main Window** (the
+  button at its top left),
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> again or closing it brings the main window
   back as it was; it remembers its size for next time. GNOME does not let an app keep its
   own window above the others, so the mini player does not stay on top by itself: GNOME's
@@ -305,8 +312,9 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   seconds to reach the library's listing, as Apple lists it.
 - A playlist of your own can be put in a new order on its page: drag a song up or down the
   list (a line shows where it will go, and the list scrolls when you drag near its top or
-  bottom), or use **Move Up** and **Move Down** in the song's menu, or
-  <kbd>Alt</kbd>+<kbd>↑</kbd> and <kbd>Alt</kbd>+<kbd>↓</kbd> on the focused song. The song
+  bottom), or use **Move Up**, **Move Down**, **Move to Top** and **Move to Bottom** in the
+  song's menu, or <kbd>Alt</kbd>+<kbd>↑</kbd>, <kbd>Alt</kbd>+<kbd>↓</kbd>,
+  <kbd>Alt</kbd>+<kbd>Home</kbd> and <kbd>Alt</kbd>+<kbd>End</kbd> on the focused song. The song
   moves at once and the new order goes to Apple: a drop at once, the keys a moment after the
   last press, so a run of them is one change. The toast that follows has **Undo**. If Apple
   refuses, or the playlist changed on another device in the meantime, the song goes back to

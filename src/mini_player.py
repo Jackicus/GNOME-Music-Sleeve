@@ -37,21 +37,39 @@ BELOW_ART = 170
 MIN_ART = 128          # smaller than this over the titles: the short layout
 MAX_ART = 640          # the cover file's size (backend config.COVER_SIZE)
 SMALL_ART = 56         # the short layout's cover, beside the titles
+# The extras (Favourite, Shuffle, Repeat, Volume), as the widgets measure with the app's
+# stylesheet: the height a row of them takes under the transport, with its spacing (34 and
+# 12); the height the short layout takes without it, margins and all (169); and the width
+# from which the seven buttons fit in one row (336 and the side margins).
+EXTRAS_ROW = 46
+SHORT_HEIGHT = 170
+INLINE_WIDTH = 372
 
-Layout = namedtuple('Layout', 'short art_size')
+Layout = namedtuple('Layout', 'short art_size extras')
 
 
 def layout_for(width, height):
-    """The mini player's Layout for content `width` x `height` px: `art_size`, the cover's
-    edge over the titles, as large as the width and the room over the controls leave (a
-    multiple of 8, at most the cover file's); or, when that is less than MIN_ART, `short`:
-    a SMALL_ART cover beside the titles."""
-    room = height - TOP_MARGIN - BELOW_ART
+    """The mini player's Layout for content `width` x `height` px. `extras`, where
+    Favourite, Shuffle, Repeat and Volume go: 'inline', around Previous, Play and Next, from
+    INLINE_WIDTH; in a narrower window a 'row' of their own under the transport when the
+    height has room for it under the short layout, else 'none' (hidden: a window both low
+    and narrow keeps the transport). `art_size`, the cover's edge over the titles, as large
+    as the width and the room over the controls leave (a multiple of 8, at most the cover
+    file's); or, when that is less than MIN_ART, `short`: a SMALL_ART cover beside the
+    titles. The controls outrank the cover: a row that fits is shown, over a smaller
+    cover."""
+    if width >= INLINE_WIDTH:
+        extras = 'inline'
+    elif height >= SHORT_HEIGHT + EXTRAS_ROW:
+        extras = 'row'
+    else:
+        extras = 'none'
+    room = height - TOP_MARGIN - BELOW_ART - (EXTRAS_ROW if extras == 'row' else 0)
     across = width - 2 * MARGIN
     size = int(min(room, across, MAX_ART)) // 8 * 8
     if size < MIN_ART:
-        return Layout(True, SMALL_ART)
-    return Layout(False, size)
+        return Layout(True, SMALL_ART, extras)
+    return Layout(False, size, extras)
 
 
 def _make_window(app):

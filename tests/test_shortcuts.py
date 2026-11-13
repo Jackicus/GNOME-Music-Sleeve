@@ -30,7 +30,8 @@ class ShortcutsTest(unittest.TestCase):
             self.assertIn(action, keys, action)
         for key in (shortcuts.MAIN_MENU, shortcuts.CONTEXT_MENU, shortcuts.CLOSE,
                     shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.QUEUE_REMOVE,
-                    shortcuts.MOVE_UP, shortcuts.MOVE_DOWN, shortcuts.REMOVE_SONG,
+                    shortcuts.MOVE_UP, shortcuts.MOVE_DOWN, shortcuts.MOVE_TOP,
+                    shortcuts.MOVE_BOTTOM, shortcuts.REMOVE_SONG,
                     shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN, shortcuts.SELECT_TOGGLE,
                     shortcuts.SELECT_RANGE, shortcuts.SELECT_ALL, shortcuts.SELECT_NONE,
                     shortcuts.LEAVE_SELECTION):
@@ -64,8 +65,9 @@ class ShortcutsTest(unittest.TestCase):
                 seen[parsed] = action
         for accel in (shortcuts.MAIN_MENU, *shortcuts.CONTEXT_MENU.split(), shortcuts.CLOSE,
                       shortcuts.FOLDER_OPEN, shortcuts.FOLDER_CLOSE, shortcuts.QUEUE_REMOVE,
-                      shortcuts.MOVE_UP, shortcuts.MOVE_DOWN, shortcuts.REMOVE_SONG,
-                      shortcuts.VOLUME_UP, shortcuts.VOLUME_DOWN):
+                      shortcuts.MOVE_UP, shortcuts.MOVE_DOWN, shortcuts.MOVE_TOP,
+                      shortcuts.MOVE_BOTTOM, shortcuts.REMOVE_SONG, shortcuts.VOLUME_UP,
+                      shortcuts.VOLUME_DOWN):
             self.assertNotIn(Gtk.accelerator_parse(accel)[1:], seen, accel)
 
     def test_the_higs_standard_keys_stay_free(self):
