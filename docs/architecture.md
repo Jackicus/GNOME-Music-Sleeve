@@ -72,7 +72,8 @@ touches widgets.
   (`item_actions.drop()`: an album's or a playlist's through `tracks_of()`), and All
   Playlists makes a new playlist of the songs, music videos and albums dropped on it
   (`item_actions.drop_new_playlist()`, through New Playlist's dialog).
-- **Pages** (`pages/`): one module per destination or pushed page, built when first shown. The
+- **Pages** (`pages/`): one module per destination or pushed page, built when first shown (the
+  album and playlist page's parts are mixins beside it, `src/pages/detail_*.py`). The
   library pages bind the library's stores (Artists is a list beside the library's page of
   the artist chosen, an `AdwNavigationSplitView` of its own that collapses when narrow).
   Albums, Artists, Music Videos, Songs and a playlist's songs filter as the user types

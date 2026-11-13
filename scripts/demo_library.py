@@ -190,7 +190,7 @@ DEMO_LABELS = ['Lowtide Recordings', 'Paper Lantern Records', 'Driftwood Audio',
 DEMO_EDITIONS = ['{title} (Deluxe)', '{title} (Remastered)']
 # The first artist's album to come (Apple's isPrerelease): its songs, two of them out already
 # as singles (the others have no playParams in Apple's answer: `unreleased`), and its date.
-DEMO_UPCOMING = ('Lanterns Over the Reef', '2026-12-04', [
+DEMO_UPCOMING = ('Lanterns Over the Reef', '2030-12-04', [
     ('First Light on the Breakwater', False), ('Harbour Signal', True),
     ('The Drowned Orchard', False), ('Lantern Procession', True), ('Saltglass', False),
     ('Underneath the Pier Lights', False), ('Tidewater Hymn', False),
@@ -958,7 +958,7 @@ def draw_banner(out_path, palette, figures=1, seed=0, size=BANNER_SIZE):
 
 ARTISTS_DATA = [
     {
-        'name': 'The Midnight Archipelago',
+        'name': 'Midnight Archipelago',
         'genre': 'Post-Rock',
         'bio': ('An instrumental post-rock collective exploring expansive dynamic shifts, '
                 'tape-looped guitars, and oceanic textures.'),
@@ -1050,7 +1050,7 @@ ARTISTS_DATA = [
 ]
 
 ALBUMS_DATA = [
-    # 1. The Midnight Archipelago (3 albums)
+    # 1. Midnight Archipelago (3 albums)
     {
         'artist_idx': 0,
         'title': 'Signal from the Shallows',
@@ -1508,7 +1508,7 @@ ALBUMS_DATA = [
     # 10. The Glass Observatory (3 albums)
     {
         'artist_idx': 9,
-        'title': 'Constellations in Amber',
+        'title': 'Constellation Hours',
         'year': 2018,
         'genre': 'Cinematic',
         'summary': ('Orchestral strings and brass motifs evoking brass astrolabes and historic '
@@ -2718,7 +2718,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
         playlists[9],  # Quiet Reflections
         playlists[10],  # Soul & Reverie
         albums[15],  # Stellar Cartography
-        albums[27],  # Constellations in Amber
+        albums[27],  # Constellation Hours
         albums[30],  # Warm Tape Hiss
         albums[38],  # Low Frequency Grooves
     ]

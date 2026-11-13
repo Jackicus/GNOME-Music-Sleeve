@@ -15,6 +15,7 @@ import gi
 from tests import ROOT
 
 from applemusic.backend import config, normalize
+from applemusic.library import release_passed
 
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import GdkPixbuf  # noqa: E402
@@ -391,13 +392,16 @@ class TestDemoLibrarySchema(unittest.TestCase):
         albums = next(shelf for shelf in answer['shelves'] if shelf['key'] == 'full-albums')
         self.assertEqual(albums['items'][0], coming)
         self.assertIs(coming['prerelease'], True)
-        self.assertEqual(coming['releaseDate'], '2026-12-04')
+        self.assertEqual(coming['releaseDate'], '2030-12-04')
+        # Still to come: an album reads as out once its date has passed (#606), so the
+        # demo's date moves on before then.
+        self.assertFalse(release_passed(coming['releaseDate']))
         self.assertEqual(coming['artistName'], artist['title'])
         entries = coming['groups'][0]['entries']
         self.assertEqual(sum(not entry.get('unreleased') for entry in entries), 2)
         self.assertEqual(coming['trackCount'], len(entries))
         real = normalize.normalize_album({'id': '1', 'attributes': {
-            'name': 'A', 'isPrerelease': True, 'releaseDate': '2026-12-04'}})
+            'name': 'A', 'isPrerelease': True, 'releaseDate': '2030-12-04'}})
         self.assertLessEqual(set(real), set(coming))
         with open(os.path.join(self.out_dir, 'albums', f"{coming['id']}.json"),
                   encoding='utf-8') as f:

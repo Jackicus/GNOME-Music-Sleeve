@@ -25,11 +25,11 @@ from tests import ROOT
 
 from applemusic import library as library_module
 from applemusic.library import (PENDING_HOLD, ROOT_FOLDER, SECTIONS, Group, Item, ItemRefs,
-                                Library, PlaylistTree, Ref, SongOrder, Track, TrackRecord,
-                                TreeChange, apply_changes, change_settled, drop_index,
-                                entries_without, fold, folder_entries, folder_of, item_ref,
-                                moved, order_for,
-                                parse, paused_gc, reorder_entries, track_ref)
+                                Library, PlaylistTree, Ref, SongEntry, SongOrder, Track,
+                                TrackRecord, TreeChange, apply_changes, change_settled,
+                                drop_index, entries_without, fold, folder_entries, folder_of,
+                                item_ref, moved, order_for, parse, paused_gc, release_passed,
+                                reorder_entries, track_ref)
 
 
 def load(cache_dir, library=None):
@@ -430,7 +430,7 @@ class TestLaziness(unittest.TestCase):
         # A shelf's album was to come (a day-old answer); the engine's item() answer, whole
         # with its groups, says it is out now: the flag and the date go, notified.
         item = Item({'id': '1724049700', 'kind': 'album', 'title': 'To Come',
-                     'prerelease': True, 'releaseDate': '2026-12-04',
+                     'prerelease': True, 'releaseDate': '2099-12-04',
                      'play': {'kind': 'album', 'id': '1724049700'}})
         self.assertTrue(item.prerelease)
         seen = []
@@ -444,7 +444,7 @@ class TestLaziness(unittest.TestCase):
         self.assertIn('prerelease', seen)
         # One still to come keeps them; its songs not out yet say so.
         answer = album('1724049700', 'To Come', ['1724049701', '1724049702'])
-        answer.update(prerelease=True, releaseDate='2026-12-04')
+        answer.update(prerelease=True, releaseDate='2099-12-04')
         answer['groups'][0]['entries'][1]['unreleased'] = True
         item.merge(answer)
         self.assertTrue(item.prerelease)
@@ -817,6 +817,39 @@ class TestTrack(unittest.TestCase):
         self.assertTrue(Track(raw).unreleased)
         self.assertTrue(Track(TrackRecord(raw)).unreleased)
         self.assertFalse(Track(track('17240499', 'Song', 1)).unreleased)
+
+    def test_release_passed(self):
+        # Whether a release date has come, against an injected day (#606).
+        today = '2026-11-13'
+        for date, out in (('2026-11-12', True), ('2026-11-13', True), ('2026-11-14', False),
+                          (' 2025-01-01 ', True), ('2025', True), ('2026', False),
+                          ('2027', False), ('', False), (None, False), ('soon', False),
+                          ('2026-11', False), (20261112, False)):
+            with self.subTest(date=date):
+                self.assertIs(release_passed(date, today), out)
+        self.assertTrue(release_passed('2001-01-01'))  # against the local date
+        self.assertFalse(release_passed('2999-01-01'))
+
+    def test_a_prerelease_album_out_on_its_date(self):
+        # A pre-release album whose date has passed since the sync: out, its songs too, the
+        # Songs store's Track as well as the album's; the file's flags as they were.
+        data = album('1724049800', 'Came Out', ['1724049801', '1724049802'])
+        data.update(prerelease=True, releaseDate='2001-01-01')
+        data['groups'][0]['entries'][1]['unreleased'] = True
+        item = Item(data)
+        self.assertFalse(item.prerelease)
+        self.assertFalse(item.groups[0].entries.get_item(1).unreleased)
+        self.assertIs(item.raw['prerelease'], True)
+        entry = SongEntry(data['groups'][0]['entries'][1], (None, 0, item.play, None))
+        self.assertTrue(entry.track().unreleased)  # a loose song: no album date to go by
+        stale = SongEntry(dict(data['groups'][0]['entries'][1]), (item, 0, item.play, None))
+        self.assertFalse(stale.track().unreleased)
+        data = album('1724049810', 'To Come', ['1724049811'])
+        data.update(prerelease=True, releaseDate='2999-01-01')
+        data['groups'][0]['entries'][0]['unreleased'] = True
+        item = Item(data)
+        self.assertTrue(item.prerelease)
+        self.assertTrue(item.groups[0].entries.get_item(0).unreleased)
 
 
 class TestWords(unittest.TestCase):

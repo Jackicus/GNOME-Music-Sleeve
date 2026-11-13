@@ -1881,7 +1881,15 @@ def playback_error_text(code):
         return _('This content is restricted')
     if code == 'SUBSCRIPTION_ERROR':
         return _('An Apple Music subscription is needed to play this')
-    if code in ('DEVICE_LIMIT', 'NETWORK_ERROR', 'MEDIA_LICENSE', 'MEDIA_KEY'):
+    if code == 'NETWORK_ERROR':
+        # Translators: a song stopped or did not start because Apple Music's servers could
+        # not be reached.
+        return _('Apple Music could not be reached; check the internet connection')
+    if code == 'DEVICE_LIMIT':
+        # Translators: Apple refused to play because of the account's limit on devices
+        # (MusicKit's DEVICE_LIMIT: too many playing at once, or associated with it).
+        return _('Too many devices are using this Apple Music account')
+    if code in ('MEDIA_LICENSE', 'MEDIA_KEY'):
         return _('The engine could not play protected content')
     return _('This could not be played')
 

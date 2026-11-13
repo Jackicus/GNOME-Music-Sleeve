@@ -612,7 +612,8 @@ changes, change it here, with the date. The plan they came from is in
   2026-11-13, #589, at the owner's wish: it has Favourite, Shuffle, Repeat and Volume, the
   shared transport pieces, in a row under the transport, around it in a wide window, and
   hidden in one both low and narrow, `layout_for()`'s `extras`; they change only on their
-  own notifications, so the seek row is still all that redraws. And lyrics and Up Next,
+  own notifications, so the seek row is still all that redraws; the default height went
+  from 500 to 540 px with the row, so the default cover stays 272 px. And lyrics and Up Next,
   as Apple's MiniPlayer has a Lyrics and a Playing Next button: two toggles in its header
   bar, off until asked for, each opening a pane under the controls. One pane at a time, the
   sheet's two tabs again: both would make a window taller than many screens of one whose

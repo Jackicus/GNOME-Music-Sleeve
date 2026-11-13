@@ -788,6 +788,21 @@ class EdgeFadesTest(unittest.TestCase):
 
 
 @requires_gtk
+class UnsungOpacityTest(unittest.TestCase):
+    """The opacity of a current line's words not yet sung, in each style (#607): the dimmed
+    lines' (libadwaita's 0.55) without high contrast; with it, under the 0.9 libadwaita's
+    high contrast gives the lines not current, so the sweep still shows."""
+
+    def test_each_style(self):
+        from applemusic.widgets.lyrics import unsung_opacity
+
+        self.assertEqual(unsung_opacity(False), 0.55)
+        self.assertEqual(unsung_opacity(True), 0.7)
+        self.assertLess(unsung_opacity(True), 0.9)
+        self.assertGreater(unsung_opacity(True), unsung_opacity(False))
+
+
+@requires_gtk
 class PieceGeometryTest(unittest.TestCase):
     """Where a LyricLabel's pieces are drawn (piece_segments): by Pango's byte indices, so
     multi-byte text maps right; one segment for each line a piece is on; right to left from

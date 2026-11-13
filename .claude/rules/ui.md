@@ -189,7 +189,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - A playlist's page is a table from 720sp (`DetailPage.table`, set by detail.blp's
   breakpoint): TrackRow's table rows under a `TrackTableHeader` (the tracks' section header);
   an album's tracks stay a numbered list. A playlist's Sort By (at the header bar's end, as
-  Songs' is: `detail.PLAYLIST_SORTS` through `playlist_sorter()`, a `Gtk.SortListModel` before the
+  Songs' is: `detail_sort_filter.PLAYLIST_SORTS` through `playlist_sorter()`, a `Gtk.SortListModel` before the
   filter, for the page's life) orders the view only. A playlist of the user's
   (`DetailPage.can_reorder()`: in Playlist Order, first to last, unfiltered) takes a
   drop of one of its own songs (`dnd.current()`'s origin is the playlist) with an insertion
@@ -197,7 +197,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   Alt+Home and Alt+End on the focused song (`keyboard.move_place()`), as its menu's Move Up,
   Move Down, Move to Top and Move to Bottom; all go through `item_actions.move_in_playlist()` (playlist_order.py),
   and the focus follows the moved song (`scroll_to(…, FOCUS)`). Under a playlist the user can change
-  (`detail.wants_suggestions()`) its last section holds the songs Apple suggests adding
+  (`detail_suggestions.wants_suggestions()`) its last section holds the songs Apple suggests adding
   (`Engine.playlist_suggestions`) in a `widgets.suggested_songs.SuggestedSongs` (Add
   buttons, Refresh, a song plays alone), less the songs it holds: six, or twelve with
   `more-suggestions`, in a grid whose columns divide the count (`suggestions.columns_for`),
@@ -262,7 +262,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   the library's `favourites-changed`. Albums, Music Videos and Songs have Favourites Only
   in their Sort and Filter menu (`grid.favourites_only()`, the favourites-only setting);
   a sort the data may lack (a video's Date Added) is a grid's `data_sorts`.
-- Albums, Artists, Music Videos, Songs and a playlist's songs (`detail.filters_songs()`)
+- Albums, Artists, Music Videos, Songs and a playlist's songs (`detail_sort_filter.filters_songs()`)
   filter through one `widgets.filter_bar.FilterBar`: a `Gtk.SearchBar` added under the
   page's header bar in code (`add_top_bar`), its toggle `button` packed in the header bar,
   `set_available(has_items, capture)` (the button, and typing on `capture` starting it),
@@ -316,7 +316,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   are disabled), shown only where the table has room: Songs above its `medium_breakpoint`
   (760sp) and narrow one, a playlist in its table (TrackRow's `genre_label` among the equal
   columns, `year_label` beside the time, `TrackTableHeader.set_columns()`). Their sorts are
-  `SongOrder`'s `genre` and `year` and `detail.PLAYLIST_SORTS`'.
+  `SongOrder`'s `genre` and `year` and `detail_sort_filter.PLAYLIST_SORTS`'.
 
 ## HIG, style and icons
 

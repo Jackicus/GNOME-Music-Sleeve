@@ -5,11 +5,11 @@ recommendations, in GTK 4 and libadwaita.
 
 Not affiliated with Apple. Apple Music is a trademark of Apple Inc.
 
-![Home: heavy rotation and recently played music, a song playing below](data/screenshots/home-light.png)
+![Home: heavy rotation and recently played music, a song playing in the bar below](data/screenshots/home-light.png)
 
 <p align="center">
-  <img src="data/screenshots/album-dark.png" width="49%" alt="An album's page, in the dark style">
-  <img src="data/screenshots/now-playing-light.png" width="49%" alt="Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they are sung">
+  <img src="data/screenshots/artist-dark.png" width="49%" alt="An artist's page, in the dark style: their latest release, top songs and the albums in your library">
+  <img src="data/screenshots/now-playing-light.png" width="49%" alt="Now Playing, tinted by the artwork, the lyrics lit word by word as they are sung">
 </p>
 
 The screenshots show an invented demo library.

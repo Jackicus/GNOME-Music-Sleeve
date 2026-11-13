@@ -68,28 +68,33 @@ msgid "Not affiliated with Apple. Apple Music is a trademark of Apple Inc."
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:66
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:82
-msgid ""
-"Home: your heavy rotation and what you played recently, a song playing below"
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:90
+msgid "Pick up where you left off, from your heavy rotation and recent plays"
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:70
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:86
-msgid ""
-"Your albums in a grid, sorted the way you choose, a heart on your favourites"
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:94
+msgid "Browse your albums in a grid, sorted the way you choose"
 msgstr ""
-"Your albums in a grid, sorted the way you choose, a heart on your favorites"
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:74
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:90
-msgid "An album's page, with its first song playing"
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:98
+msgid "Play or shuffle an album, or pick a song to start from"
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:78
-#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:94
-msgid ""
-"Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they "
-"are sung"
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:102
+msgid "Follow the lyrics word by word as they are sung"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:82
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:106
+msgid "Explore an artist's latest release, top songs and the albums you have"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:86
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:110
+msgid "Search Apple Music or your library for songs, albums and playlists"
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:107

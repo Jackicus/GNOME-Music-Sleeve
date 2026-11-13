@@ -81,7 +81,7 @@ VIDEO_TRACK = Track({'id': 'i.vid1', 'catalogId': '1000000011', 'title': 'Harbou
 # The library's artist of LIBRARY_ALBUM, as the library makes artists up from albums.
 # A pre-release album and one of its songs not out yet (no playParams: `unreleased`).
 UPCOMING_ALBUM = Item({'id': '1000000060', 'kind': 'album', 'title': 'Harbour Lights To Come',
-                       'prerelease': True, 'releaseDate': '2026-12-04',
+                       'prerelease': True, 'releaseDate': '2099-12-04',
                        'play': {'kind': 'album', 'id': '1000000060'}})
 UNRELEASED_TRACK = Track({'id': '1000000061', 'catalogId': '1000000061', 'title': 'Soon',
                           'type': 'songs', 'index': 1, 'unreleased': True},

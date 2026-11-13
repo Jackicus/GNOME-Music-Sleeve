@@ -22,16 +22,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-METAINFO=(home albums album now-playing)
+METAINFO=(home albums album now-playing artist search)
 
 # The subjects: each one's screenshot.py arguments.
 declare -A SUBJECTS=(
     [home]='--page home --playing'
     [albums]='--page albums --playing'
     [album]='--page albums --open album:first --playing'
-    [now-playing]='--page albums --now-playing syllable --position 58.4'
+    [now-playing]='--page albums --now-playing syllable --position 16.7'
     [artist]='--page artists --open artist-page:1724041001 --playing'
-    [search]='--search light --search-in music --playing'
+    [search]='--search drift --search-in music --playing'
     [fullscreen-lyrics]='--page albums --fullscreen-player lyrics --position 40'
     [selection]='--page albums --open playlist:l.pl001 --select 3 --playing'
     [narrow]='--size 360x640 --page albums --open album:first --playing'
