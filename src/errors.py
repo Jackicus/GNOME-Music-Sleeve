@@ -20,6 +20,7 @@ def error_message(code):
     for an EngineError code; a code this does not know gets the generic sentence."""
     if code == errors.NO_BROWSER:
         # No browser at all: the one to install is Chrome, though others may do (Preferences).
+        # Translators: an error's toast, its button opening Preferences.
         return (_('Install Google Chrome to play Apple Music'), _('Preferences'),
                 'app.show-engine-preferences')
     if code == errors.NO_WIDEVINE:
@@ -27,6 +28,7 @@ def error_message(code):
         return (_('This browser cannot play songs; Google Chrome can'), _('Preferences'),
                 'app.show-engine-preferences')
     if code == errors.ENGINE_DOWN:
+        # Translators: an error's toast, its button starting the playback engine.
         return _('The playback engine is not running'), _('Start'), 'app.start-engine'
     if code == errors.NO_KEYRING:
         # Chrome was not started: without the keyring it would delete the cookies that hold

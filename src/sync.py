@@ -268,14 +268,14 @@ def last_sync_text(stamp, now=None):
     if minutes < 60:
         # Translators: Preferences' Last Refreshed row: how long ago, in minutes.
         return ngettext('{count} minute ago', '{count} minutes ago',
-                        minutes).format(count=minutes)
+                        minutes).format(count=f'{minutes:n}')
     hours = minutes // 60
     if hours < 24:
         # Translators: Preferences' Last Refreshed row: how long ago, in hours.
-        return ngettext('{count} hour ago', '{count} hours ago', hours).format(count=hours)
+        return ngettext('{count} hour ago', '{count} hours ago', hours).format(count=f'{hours:n}')
     days = hours // 24
     # Translators: Preferences' Last Refreshed row: how long ago, in days.
-    return ngettext('{count} day ago', '{count} days ago', days).format(count=days)
+    return ngettext('{count} day ago', '{count} days ago', days).format(count=f'{days:n}')
 
 
 def scale_image(src_path, dest_path, width, height):

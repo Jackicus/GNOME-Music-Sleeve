@@ -10,6 +10,7 @@ Library is GObject only, and the sync runs under asyncio.
 
 import asyncio
 import json
+import locale
 import os
 import pathlib
 import tempfile
@@ -1031,6 +1032,16 @@ class WhenToSyncTest(unittest.TestCase):
         self.assertEqual(text('2026-09-27T11:00:00+00:00', self.NOW), '1 day ago')
         self.assertEqual(text('2026-09-28T13:00:00+01:00', self.NOW),
                          'Just now')  # another zone, the same instant
+
+    def test_last_sync_text_writes_the_count_as_the_locale_does(self):
+        numeric = locale.setlocale(locale.LC_NUMERIC)
+        self.addCleanup(locale.setlocale, locale.LC_NUMERIC, numeric)
+        try:
+            locale.setlocale(locale.LC_NUMERIC, 'en_GB.UTF-8')
+        except locale.Error:
+            self.skipTest('en_GB.UTF-8 is not installed here')
+        self.assertEqual(app_sync.last_sync_text('2020-01-01T00:00:00+00:00', self.NOW),
+                         '2,462 days ago')
 
 
 if __name__ == '__main__':

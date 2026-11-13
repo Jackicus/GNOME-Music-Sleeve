@@ -1447,9 +1447,12 @@ class DetailPage(Adw.NavigationPage):
             # A pre-release album is pre-added, as Apple Music words it: its songs come into
             # the library as they come out.
             prerelease = is_prerelease(self.item)
-            # Translators: a button that adds an album not out yet to the library (its
-            # songs come as they are released); keep it short.
-            self.add_content.set_label(_('Pre-Add') if prerelease else _('Add'))
+            self.add_content.set_label(
+                # Translators: a button that adds an album not out yet to the library (its
+                # songs come as they are released); keep it short.
+                _('Pre-Add') if prerelease
+                # Translators: the button that adds an album or a playlist to the library.
+                else _('Add'))
             self.add_button.set_tooltip_text(
                 _('Pre-Add to Library') if prerelease else _('Add to Library'))
         self.add_button.set_visible(state == 'add')

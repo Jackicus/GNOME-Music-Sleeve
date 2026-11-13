@@ -20,8 +20,8 @@ new version instead.
 1. `main` is green in CI and `scripts/check.sh` passes locally.
 2. Walk `docs/accessibility.md`'s keyboard checklist (`scripts/a11y_check.py`, also
    `--size 360x640` and `--names`).
-3. Retake the metainfo screenshots if the UI changed (the `screenshots` skill, step 5), and
-   look at every one.
+3. Retake the metainfo screenshots if the UI changed (`scripts/retake_screenshots.sh`, the
+   `screenshots` skill's step 5), and look at every one.
 4. Set the version in `meson.build` (`version`). The development profile appends the git
    revision by itself. Which digit moves, given the last release:
    **patch** (0.9.0 → 0.9.1) for fixes alone; **minor** (→ 0.10.0) when a feature was added;
@@ -102,8 +102,8 @@ skipped at -1. Only stale files are compiled again, so development installs stay
 ## Screenshots
 
 `data/screenshots/{home,albums,album,now-playing}-{light,dark}.png`, 1100×760 at scale 1, taken
-with `scripts/screenshot.py --demo` from the invented library only (the `screenshots` skill has
-the exact options). The metainfo lists the light ones first (`environment="gnome"`, Home as
+with `scripts/screenshot.py --demo` from the invented library only; `scripts/retake_screenshots.sh`
+takes the set in one step (its `SUBJECTS` table has the exact options). The metainfo lists the light ones first (`environment="gnome"`, Home as
 `type="default"`), then the dark ones (`environment="gnome:dark"`), by
 `raw.githubusercontent.com/…/data/screenshots/…` URLs: on `main` between releases, pinned to
 the tag at a release (step 6). Renaming or removing a file still breaks the metainfo of any

@@ -294,7 +294,7 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         with open(os.path.join(self.cache, 'library.json'), 'w', encoding='utf-8') as file:
             file.write('{}')  # what the sync wrote
         sync.running = False
-        self.assertRegex(row.get_subtitle(), r'^\d+ days ago$')
+        self.assertRegex(row.get_subtitle(), r'^\d[\d,]* days ago$')  # the locale's grouping
         await self.app.settle()  # measured again once a sync has ended
         self.assertEqual(self.dialog.cache_row.get_subtitle(), '2 bytes')
 

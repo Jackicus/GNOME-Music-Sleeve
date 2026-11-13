@@ -38,9 +38,10 @@ subdir('src')
 subdir('po')
 
 # The unit tests, for `meson test` and IDEs. scripts/check.sh runs them itself (after meson
-# compile, for the widget tests' gresource) and the data tests with --no-suite unit.
+# compile, for the widget tests' gresource) and the data tests with --no-suite unit. Under
+# -X faulthandler, as there, so a crash prints the Python frames of the test it was in.
 test('unit', python3,
-  args: ['-m', 'unittest', 'discover', '-s', 'tests'],
+  args: ['-X', 'faulthandler', '-m', 'unittest', 'discover', '-s', 'tests'],
   workdir: meson.project_source_root(),
   timeout: 120,
   suite: 'unit',

@@ -3509,14 +3509,21 @@ def multiroom_cache_path(cache_dir, multiroom_id):
     return os.path.join(cache_dir, 'multirooms', f'{_safe_id(multiroom_id)}.json')
 
 
+def stamp_answer(answer):
+    """A copy of `answer` stamped as write_answer keeps it: `cached` with now, `shape` with
+    ANSWER_SHAPE (an answer shown without being kept carries the same stamps)."""
+    answer = dict(answer)
+    answer['cached'] = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    answer['shape'] = ANSWER_SHAPE
+    return answer
+
+
 def write_answer(path, answer, cache_dir, generation=None):
     """Keep `answer` at `path` (in the cache at `cache_dir`), atomically, as
     JSON without spaces, stamped `cached` with when and `shape` with ANSWER_SHAPE; not once
     the cache's generation has moved from `generation` (store.py). Best effort: a cache
     that cannot be written is only a cache."""
-    answer = dict(answer)
-    answer['cached'] = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-    answer['shape'] = ANSWER_SHAPE
+    answer = stamp_answer(answer)
     try:
         store.atomic_write(path, lambda f: json.dump(answer, f, separators=(',', ':')),
                            root=cache_dir, text=True, generation=generation)

@@ -273,7 +273,7 @@ def left_out_message(count):
     """The toast after a list of songs played or queued without the `count` of them MusicKit
     could not find."""
     return ngettext('{count} song could not be played', '{count} songs could not be played',
-                    count).format(count=count)
+                    count).format(count=f'{count:n}')
 
 
 def _holds_item(name, data):

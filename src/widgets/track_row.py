@@ -51,6 +51,7 @@ def is_playing(track, playing):
 def _word(key):
     """A row's words, looked up once: rows are bound by the thousand."""
     if not _words:
+        # Translators: a song row's description while that song is the one playing.
         _words['playing'] = _('Playing')
         # Translators: a track of a pre-release album that is not out yet: its row's
         # tooltip and description (it cannot be played).

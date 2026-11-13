@@ -2002,12 +2002,20 @@ class AlbumPageTest(EngineFixture):
         self.assertEqual((raised.exception.code, raised.exception.status), ('api', 404))
         self.assertFalse((self.cache / 'albums').exists())
 
-    async def test_more_by_left_out_when_its_read_fails(self):
+    async def test_more_by_left_out_when_its_read_fails_and_not_kept(self):
         await self.up()
         self.answer(more_by=False)  # the artist's view answers 404
         answer = await self.engine.album_page('1724049100')
         self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY])
         self.assertNotIn('more-by-artist', [shelf['key'] for shelf in answer['shelves']])
+        self.assertIn('cached', answer)
+        self.assertFalse((self.cache / 'albums' / '1724049100.json').exists())
+        # The next visit asks again, and a whole answer is kept.
+        self.answer()
+        answer = await self.engine.album_page('1724049100')
+        self.assertEqual(self.page.api_calls, [self.ALBUM, self.MORE_BY] * 2)
+        self.assertIn('more-by-artist', [shelf['key'] for shelf in answer['shelves']])
+        self.assertTrue((self.cache / 'albums' / '1724049100.json').is_file())
 
     async def test_an_album_the_catalog_lacks(self):
         await self.up()
@@ -2107,13 +2115,33 @@ class PlaylistPageTest(EngineFixture):
         self.assertEqual(again['shelves'], answer['shelves'])
         self.assertEqual(len(self.page.api_calls), 2)
 
-    async def test_more_by_left_out_when_its_read_fails(self):
+    async def test_more_by_left_out_when_its_read_fails_and_not_kept(self):
         await self.up()
+        path = self.cache / 'playlists' / 'pl.aW52ZW50ZWRwbA.json'
         self.answer(curator_playlists=False)  # the curator's playlists answer 404
         answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
         self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.CURATOR])
         self.assertEqual([shelf['key'] for shelf in answer['shelves']],
                          ['featured-artists', 'you-might-also-like'])
+        self.assertIn('cached', answer)
+        self.assertFalse(path.exists())
+        # The next visit asks again, and a whole answer is kept.
+        self.answer()
+        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
+        self.assertEqual(self.page.api_calls, [self.PLAYLIST, self.CURATOR] * 2)
+        self.assertIn('more-by-curator', [shelf['key'] for shelf in answer['shelves']])
+        self.assertTrue(path.is_file())
+
+    async def test_a_partial_answer_leaves_an_older_whole_one_kept(self):
+        await self.up()
+        path = self.cache / 'playlists' / 'pl.aW52ZW50ZWRwbA.json'
+        self.answer()
+        await self.engine.playlist_page('pl.aW52ZW50ZWRwbA')
+        kept = path.read_bytes()
+        del self.page.api_answers[self.CURATOR]
+        answer = await self.engine.playlist_page('pl.aW52ZW50ZWRwbA', refresh=True)
+        self.assertNotIn('more-by-curator', [shelf['key'] for shelf in answer['shelves']])
+        self.assertEqual(path.read_bytes(), kept)
 
     async def test_no_second_read_without_an_apple_curator(self):
         await self.up()
@@ -3279,6 +3307,26 @@ class SearchTest(EngineFixture):
         self.assertEqual(self.page.api_calls, [path])  # kept
         self.assertTrue((self.cache / 'charts.json').exists())
 
+    async def test_an_answer_that_cannot_be_shaped_is_an_engine_error_kept_nowhere(self):
+        self.page.storefront = 'gb'
+        await self.up()
+        path = '/v1/catalog/gb/charts'
+        confused = self.fixture('charts.json')
+        confused['results']['albums'][0]['data'][0]['attributes'] = ['junk']
+        self.page.api_answers[path] = confused
+        with self.assertLogs('applemusic.engine', 'WARNING'):
+            with self.assertRaises(EngineError) as raised:
+                await self.engine.charts()
+        self.assertEqual(raised.exception.code, 'api')
+        self.assertFalse((self.cache / 'charts.json').exists())
+        # An older answer kept there is the answer then, as no longer fresh.
+        normalize.write_answer(str(self.cache / 'charts.json'), {'shelves': []},
+                               str(self.cache))
+        self.expire(self.cache / 'charts.json')
+        with self.assertLogs('applemusic.engine', 'WARNING'):
+            answer = await self.engine.charts()
+        self.assertIs(answer.get('stale'), True)
+
     async def test_a_genres_charts_are_asked_for_it_and_kept_apart(self):
         self.page.storefront = 'gb'
         await self.up()
@@ -3492,9 +3540,12 @@ class SearchTest(EngineFixture):
             'data': [{'id': f'9000004{n:02d}', 'type': 'playlists',
                       'attributes': {'name': f'Invented Mix {n}'}} for n in range(10)],
             'next': f'{path}?offset=10'}
-        # The next page is Apple's 404 (the fake page's answer for what it has not got).
+        # The next page is Apple's 404 (the fake page's answer for what it has not got):
+        # the first page's answered, but not kept.
         answer = await self.engine.recently_played(refresh=True)
         self.assertEqual(len(answer['items']), 10)
+        self.assertIn('cached', answer)
+        self.assertFalse((self.cache / 'recent-played.json').exists())
         # The first page failing fails the ask.
         del self.page.api_answers[(path, 0)]
         with self.assertRaises(EngineError) as raised:
@@ -3587,6 +3638,22 @@ class SearchTest(EngineFixture):
         await self.engine.stop()
         self.assertEqual((await self.engine.replay())['year'], '2026')  # kept
         self.assertEqual(len(self.page.api_calls), 3)
+
+    async def test_a_replay_without_its_years_is_shown_not_kept(self):
+        await self.up()
+        self.replay_answers()
+        years = self.page.api_answers.pop(api.REPLAY_YEARS_ENDPOINT)  # a 404, once
+        answer = await self.engine.replay()
+        self.assertEqual((answer['year'], answer['years']), ('2026', []))
+        self.assertEqual(answer['shelves'][0]['key'], 'replay-songs')
+        self.assertIn('cached', answer)
+        self.assertFalse((self.cache / 'replay.json').exists())
+        self.page.api_answers[api.REPLAY_YEARS_ENDPOINT] = years
+        answer = await self.engine.replay()  # asked again
+        self.assertEqual(self.page.api_calls, [api.REPLAY_ENDPOINT, self.REPLAY_SONGS,
+                                               api.REPLAY_YEARS_ENDPOINT] * 2)
+        self.assertEqual(answer['years'], ['2026', '2025', '2024'])
+        self.assertTrue((self.cache / 'replay.json').is_file())
 
     async def test_a_replay_kept_in_an_older_shape_is_asked_again(self):
         await self.up()

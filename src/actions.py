@@ -251,6 +251,7 @@ def action_labels():
         'item-play': _('_Play'),
         'item-play-next': _('Play _Next'),
         'item-play-later': _('Play _Later'),
+        # Translators: a menu item marking the item as a favourite (a verb; the heart).
         'item-love': _('_Favourite'),
         'item-unlove': _('_Remove from Favourites'),
         'item-suggest-less': _('_Suggest Less'),
@@ -480,9 +481,9 @@ def queue_message(title, later, count=1):
     if count > 1:
         if later:
             return ngettext('{count} item will play later', '{count} items will play later',
-                            count).format(count=count)
+                            count).format(count=f'{count:n}')
         return ngettext('{count} item will play next', '{count} items will play next',
-                        count).format(count=count)
+                        count).format(count=f'{count:n}')
     if later:
         return (_('“{title}” will play later').format(title=title) if title
                 else _('Playing later'))
@@ -537,13 +538,13 @@ def added_message(count, playlist='', new=False):
     if new:
         return ngettext('Added {count} song to the new playlist “{playlist}”',
                         'Added {count} songs to the new playlist “{playlist}”',
-                        count).format(count=count, playlist=playlist)
+                        count).format(count=f'{count:n}', playlist=playlist)
     if playlist:
         return ngettext('Added {count} song to “{playlist}”',
                         'Added {count} songs to “{playlist}”',
-                        count).format(count=count, playlist=playlist)
+                        count).format(count=f'{count:n}', playlist=playlist)
     return ngettext('Added {count} song to the playlist', 'Added {count} songs to the playlist',
-                    count).format(count=count)
+                    count).format(count=f'{count:n}')
 
 
 def removed_message(count, playlist='', title=''):
@@ -554,16 +555,16 @@ def removed_message(count, playlist='', title=''):
     if playlist:
         return ngettext('Removed {count} song from “{playlist}”',
                         'Removed {count} songs from “{playlist}”',
-                        count).format(count=count, playlist=playlist)
+                        count).format(count=f'{count:n}', playlist=playlist)
     return ngettext('Removed {count} song from the playlist',
-                    'Removed {count} songs from the playlist', count).format(count=count)
+                    'Removed {count} songs from the playlist', count).format(count=f'{count:n}')
 
 
 def removals_words(count):
     """(heading, body) of the confirmation before Remove from Library takes out `count`
     songs (a selection's), and the toast once they are gone."""
     heading = ngettext('Remove {count} Song from Library?', 'Remove {count} Songs from Library?',
-                       count).format(count=count)
+                       count).format(count=f'{count:n}')
     body = ngettext('The song will be removed from your library and from your playlists on '
                     'all your devices.',
                     'The songs will be removed from your library and from your playlists on '
@@ -574,7 +575,7 @@ def removals_words(count):
 def library_removed_message(count):
     """The toast once `count` songs (a selection's) were taken out of the library."""
     return ngettext('Removed {count} song from your library',
-                    'Removed {count} songs from your library', count).format(count=count)
+                    'Removed {count} songs from your library', count).format(count=f'{count:n}')
 
 
 def station_target(obj):
@@ -1343,8 +1344,8 @@ def queue_move_message(title, index, queue_index, count):
     # Translators: said to screen reader users as a song is moved in Up Next: “Harbour
     # Lights” moved to position 2 of 9 in Up Next (1 plays next).
     return _('“{title}” moved to position {position} of {count} in Up Next').format(
-        title=title or _('Unknown Title'), position=index - queue_index,
-        count=count - queue_index - 1)
+        title=title or _('Unknown Title'), position=f'{index - queue_index:n}',
+        count=f'{count - queue_index - 1:n}')
 
 
 def now_playing_track(now_playing):
@@ -1379,10 +1380,11 @@ def love_messages(kind):
 def unfavourited_messages(count):
     """(removed, put back) toasts after a selection's Remove from Favourites took `count`
     songs out of Favourite Songs, and after its Undo put them back."""
+    number = f'{count:n}'
     return (ngettext('Removed {count} song from Favourite Songs',
-                     'Removed {count} songs from Favourite Songs', count).format(count=count),
+                     'Removed {count} songs from Favourite Songs', count).format(count=number),
             ngettext('Put back {count} song in Favourite Songs',
-                     'Put back {count} songs in Favourite Songs', count).format(count=count))
+                     'Put back {count} songs in Favourite Songs', count).format(count=number))
 
 
 def suggest_less_messages():
@@ -1981,7 +1983,7 @@ class ItemActions:
             # Translators: said to screen reader users as a song is moved in a playlist:
             # “Harbour Lights” moved to position 4 of 12.
             announce(_('“{title}” moved to position {position} of {count}').format(
-                title=track.title, position=to_index + 1, count=len(ids)),
+                title=track.title, position=f'{to_index + 1:n}', count=f'{len(ids):n}'),
                 Gtk.AccessibleAnnouncementPriority.MEDIUM)
         return True
 
@@ -2165,10 +2167,10 @@ class ItemActions:
         if name:
             message = ngettext('Put back {count} song in “{playlist}”',
                                'Put back {count} songs in “{playlist}”',
-                               count).format(count=count, playlist=name)
+                               count).format(count=f'{count:n}', playlist=name)
         else:
             message = ngettext('Put back {count} song', 'Put back {count} songs',
-                               count).format(count=count)
+                               count).format(count=f'{count:n}')
         return self._run(self.engine.put_back_playlist_entries, (playlist_id, kept, before),
                          message, after=lambda: self._follow_tracks(playlist_id),
                          playlist=playlist_id)
@@ -2621,7 +2623,7 @@ class ItemActions:
                     'your devices. This cannot be undone.',
                     '“{name}” and the {count} playlists in it will be deleted from your '
                     'library on all your devices. This cannot be undone.',
-                    count).format(name=name, count=count)
+                    count).format(name=name, count=f'{count:n}')
             else:
                 body = _('“{name}” will be deleted from your library on all your devices. '
                          'This cannot be undone.').format(name=name)
