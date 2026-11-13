@@ -325,7 +325,7 @@ def _classes():
         """The window's item actions as a playlist's Suggested Songs use them: an add that
         takes (it holds nothing of what it was given): its task, done, says it succeeded;
         and as the context menus and More Options ask them: the menu every page shows
-        (actions.build_menu), with nothing to move to."""
+        (item_menu.build_menu), with nothing to move to."""
 
         def add_to_playlist(self, playlist_id, song_id, title='', kind='song'):
             task = asyncio.get_running_loop().create_future()
@@ -333,7 +333,7 @@ def _classes():
             return task
 
         def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
-            from applemusic.actions import build_menu
+            from applemusic.item_menu import build_menu
 
             return build_menu(obj, queued=queued, queue_entry=queue_entry)
 
@@ -1550,7 +1550,7 @@ class DialogLifetimeTest(WidgetTestCase):
         await self.assert_freed(ref)
 
     async def test_playlist_dialog(self):
-        from applemusic.actions import Details
+        from applemusic.playlist_actions import Details
         from applemusic.dialogs.playlist import DESCRIPTION_LIMIT, PlaylistDialog
 
         answers = []

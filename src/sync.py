@@ -39,7 +39,7 @@ songs, the playlist listing and the shelves, and keeps last time's playlist trac
 videos and stations, none of which adding to the library changes. It writes library.json and
 reloads the models as a full pass does, but stamps no last-sync and says nothing when it ends:
 it is no substitute for the full one the clock waits for. After a removal from the library
-(actions.py), which does change them, the quick pass also reads the music videos (`videos`)
+(playlist_actions.py), which does change them, the quick pass also reads the music videos (`videos`)
 and the tracks of the playlists that held what went (`tracks_of`). A `playlists` pass
 (sync_library(playlists=True), LibrarySync.start(playlists=True)) is the one after a playlist
 or a folder was made, renamed or deleted: it reads the playlist listing and the folders alone,

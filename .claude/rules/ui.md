@@ -7,6 +7,11 @@ paths:
   - "src/dialogs/**"
   - "src/player_bar.py"
   - "src/actions.py"
+  - "src/action_messages.py"
+  - "src/item_menu.py"
+  - "src/item_targets.py"
+  - "src/playlist_actions.py"
+  - "src/web_links.py"
   - "src/sidebar.py"
   - "src/sidebar_view.py"
   - "src/sections.py"
@@ -83,7 +88,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   drag onto the sidebar's folders (every `GridPage`'s and `Shelf`'s tiles are drag
   sources: an album or a playlist onto a sidebar playlist, its songs added, or the bar). The playlists' dialogs are `dialogs/playlist.py`'s, presented by
   the item actions: `PlaylistDialog` (an `Adw.Dialog`) for every New Playlist… and a
-  playlist's Edit Details… (`item-rename`; `actions.Details`, `folder_choices()`,
+  playlist's Edit Details… (`item-rename`; `playlist_actions.Details`, `folder_choices()`,
   `playlist_changes()`: the name, description, folder and `isPublic`; no cover, which Apple
   takes from no web client), a folder's `NameDialog` and the confirmation before a delete;
   the sidebar's Playlists heading ends with a New button (sidebar.md). Add
@@ -223,11 +228,11 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   isPrerelease) says "Coming <date>" in its caption and footer, and the artist page's release
   card too (`release.coming_text()`). Its tracks not out yet (`Track.unreleased`) are dimmed
   rows described "Not yet released" (TrackRow's tooltip, `PlayingMark.description()`) that
-  play nothing, and no menu plays or queues them (`actions.can_play()`, `queue_target()`);
+  play nothing, and no menu plays or queues them (`item_targets.can_play()`, `queue_target()`);
   Play, Shuffle and the other rows play the released ones by id (`release.released_play()`),
   Play and Shuffle insensitive while none is. Its Add, and its menu's Add to Library, are
-  Pre-Add (`actions.pre_adds()`).
-- A song's View Credits (`actions.credits_target()`: a song with a catalog id) is
+  Pre-Add (`item_targets.pre_adds()`).
+- A song's View Credits (`item_targets.credits_target()`: a song with a catalog id) is
   `dialogs/credits.py`'s `CreditsDialog` over `Engine.credits`: an `Adw.PreferencesPage` of
   a group per kind of credit (Apple's title, else `credits.heading()`; a group's title is
   markup, so escaped), an `Adw.ActionRow` per person (`use-markup` off), the spinner, No
@@ -344,7 +349,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   that no assistive technology has asked about yet.
 - Grids and lists have `tab-behavior: item`. Dialog buttons have mnemonics (`_Label`,
   `use-underline: true`), and so does every menu item, unique within its menu
-  (`actions.action_labels()`, the sort menus' `grid.sort_labels()`). A combo row's or a
+  (`item_menu.action_labels()`, the sort menus' `grid.sort_labels()`). A combo row's or a
   drop-down's items are named by `labels.named_list_factory()` (the default factories
   leave them unnamed).
 - Text on an item's colour reaches WCAG AA (`artwork.band_colour()`), and so does the Now

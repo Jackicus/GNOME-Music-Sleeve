@@ -26,7 +26,7 @@ class CategoryTile(Gtk.Overlay):
     once each (a Gtk.FlowBox over the categories), not recycled; the picture is fetched while
     the tile is mapped, and decoded at its size and let go of when it is unmapped by an
     artwork.ArtworkSlot. The Item is the tile's `context_item`: its context menu (Open in
-    Browser, Copy Link: actions.curator_menu) is the flow box's (widgets/context_menu.py).
+    Browser, Copy Link: item_menu.curator_menu) is the flow box's (widgets/context_menu.py).
     """
 
     __gtype_name__ = 'AppleMusicCategoryTile'

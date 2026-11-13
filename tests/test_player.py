@@ -2203,7 +2203,7 @@ class SongListTest(unittest.TestCase):
         asyncio.run(go())
 
     def test_play_next_and_later_of_a_list_queue_the_rest(self):
-        """A selection's Play Next and Play Later (actions.queue_commands()' runs of songs),
+        """A selection's Play Next and Play Later (item_targets.queue_commands()' runs of songs),
         and a drop on the player bar."""
         async def go():
             for name in ('play_next', 'play_later'):

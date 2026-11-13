@@ -51,7 +51,7 @@ import time
 from gi.repository import Adw, Gdk, GLib, Gtk
 
 from .. import fullscreen
-from ..actions import now_playing_track
+from ..item_targets import now_playing_track
 from ..backend import config
 from ..remote import fetch_remote
 from . import artwork, context_menu

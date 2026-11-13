@@ -40,7 +40,7 @@ Application (main.py)    app.settings, .library, .engine, .player, .mpris, .sess
 │  ├─ content            AdwNavigationView: a sidebar item replaces the stack with its root page
 │  │                     (pages/, made on first visit); tiles and rows push pages
 │  ├─ bottom bar, sheet  PlayerBar (player_bar.py), NowPlayingSheet (widgets/now_playing.py)
-│  └─ item_actions       win.item-* actions, context menus (actions.py, widgets/context_menu.py)
+│  └─ item_actions       win.item-* actions, menus (actions.py, playlist_actions.py, item_menu.py)
 ├─ Library (library.py)  Item/Track GObjects in Gio.ListStores from the cache's library.json;
 │                        sync.py fetches and writes it; reload() keeps objects, notifies changes
 ├─ Engine (engine.py)    Chrome (Gio.Subprocess, CDP on its pipe) + CDPClient ─► bridge.js ─►
@@ -64,10 +64,10 @@ for both builds, the sign-in's keys each build's own (`account_key()`).
 ```
 src/main.py, src/window.py      the Application, the Window (player_bar, sidebar_view, fullscreen)
 src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
-                                sync, account, cache, background, actions, playlist_order, related,
-                                release, session, discography, suggestions, errors, i18n, lyrics,
-                                remote, recent_searches, radio, home, search_pager, timing,
-                                shortcuts, keyboard, sidebar, sections; new ones go here)
+                                sync, account, cache, background, actions, item_targets, related,
+                                playlist_order, release, session, discography, suggestions, errors,
+                                i18n, lyrics, remote, recent_searches, radio, home, search_pager,
+                                timing, shortcuts, keyboard, sidebar, sections; new ones go here)
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork

@@ -35,7 +35,7 @@ current(), the ItemRefs its source made, and not from the drop's value, which GT
 asynchronously (and AdwSidebar's `drop-enter` is told nothing but the item hovered). A drag
 from another application carries no ItemRefs, so no target here accepts it.
 
-Outward, a drag also offers its objects' links (actions.drag_links(): the music.apple.com
+Outward, a drag also offers its objects' links (web_links.drag_links(): the music.apple.com
 pages anyone can open, one a line) as `text/uri-list` and `text/plain`, so a drop on a
 browser, a text editor or a chat pastes them. The ItemRefs comes first in the union, and
 every target here asks for the ItemRefs type alone, so in the app nothing changes. A drag of
@@ -53,7 +53,7 @@ the tick.
 
 from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
-from ..actions import drag_links
+from ..web_links import drag_links
 from .util import weak_method
 
 # How near a scrolled view's top or bottom edge a drag starts scrolling it, in pixels, and
@@ -76,7 +76,7 @@ _offered = 0  # the actions its source offers
 
 def provider(refs, storefront=None):
     """The Gdk.ContentProvider a drag of `refs` (a library.ItemRefs) offers: the ItemRefs,
-    and, when its objects have pages anyone can open (actions.drag_links(), in `storefront`),
+    and, when its objects have pages anyone can open (web_links.drag_links(), in `storefront`),
     those addresses as text/uri-list and text/plain for other applications."""
     own = Gdk.ContentProvider.new_for_value(refs)
     urls = drag_links(refs.objects, storefront)

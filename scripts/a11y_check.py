@@ -206,7 +206,7 @@ import remote_keys  # noqa: E402  (imports Gtk, so after make_app)
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402  (after make_app)
 
 from applemusic import shortcuts  # noqa: E402  (the installed build's, after make_app)
-from applemusic.actions import submenu_labels  # noqa: E402  (likewise)
+from applemusic.item_menu import submenu_labels  # noqa: E402  (likewise)
 from applemusic.widgets import context_menu  # noqa: E402  (likewise)
 
 failures = []

@@ -14,7 +14,7 @@ Gtk.ColumnView of tiles or rows, a Gtk.FlowBox or Gtk.ListBox, or a single widge
 
 A widget offering a menu has a `context_item` attribute: the Item or Track it shows, or None
 (an unbound row), and `context_queued` true when that is an entry of the player's queue (the
-player bar's item, Up Next's rows: a menu without Play, actions.build_menu), and
+player bar's item, Up Next's rows: a menu without Play, item_menu.build_menu), and
 `context_queue_entry` its (index, id) there when Up Next may take it out (Remove from Up Next;
 None otherwise), and `context_queue_moves` where it can go there (Move Up and the rest),
 and `context_extra` a Gio.MenuModel section of its own the menu ends with (the player bar's

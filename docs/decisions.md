@@ -65,13 +65,13 @@ changes, change it here, with the date. The plan they came from is in
   `api.MOVE_FOLDERS` stay as the switches, so the app never offers a move Apple may refuse).
   Apple lists a folder in its new folder only about a minute after a move or a New Folder…
   inside a folder, having stopped listing a moved one where it was within seconds: the sync
-  that follows waits for it (`actions.FOLDER_SETTLE_DELAYS`), and a held folder move keeps the
-  folder's entries (`TreeChange.entries`), so a sync in between, finding it nowhere, does not
-  take it and its playlists out of the sidebar. Drags are the app's own: one type,
+  that follows waits for it (`playlist_actions.FOLDER_SETTLE_DELAYS`), and a held folder move
+  keeps the folder's entries (`TreeChange.entries`), so a sync in between, finding it
+  nowhere, does not take it and its playlists out of the sidebar. Drags are the app's own: one type,
   `library.ItemRefs`, and drop targets decide from the drag in progress
   (`widgets.dnd.current()`), so drags from other applications are not taken.
 - **Drags carry links outward** (2026-10-20). Every drag source also offers its objects'
-  music.apple.com pages (`actions.drag_links()`: what Copy Link copies, one a line, and a
+  music.apple.com pages (`web_links.drag_links()`: what Copy Link copies, one a line, and a
   library album's catalog page by its catalog id, since a drag cannot wait for the engine)
   as `text/uri-list` and `text/plain`, after the ItemRefs in one `Gdk.ContentProvider`
   union (`dnd.provider()`), so a drop on a browser, an editor or a chat gives the link, as
@@ -106,7 +106,7 @@ changes, change it here, with the date. The plan they came from is in
 - **Drops that queue and make playlists** (2026-10-20). As on Apple's Mac app, songs, music
   videos, albums and playlists dropped on the player bar join Up Next: at its end (Play
   Later, which is what the Mac app's drop does), or after the item playing with Shift held
-  (Play Next), each by the target its menu's Play Later queues (`actions.queue_targets()`: a
+  (Play Next), each by the target its menu's Play Later queues (`item_targets.queue_targets()`: a
   song by its catalog id, an album or a playlist by its play target); a drag holding anything that cannot be queued
   (a folder) is refused whole, not queued in part. The bar is the one place: the Now Playing
   sheet covers the window while open, so no drag source is in sight of its Up Next tab (its
@@ -142,7 +142,7 @@ changes, change it here, with the date. The plan they came from is in
   so Add to Playlist › a folder could open Move to Folder's page and move the playlist
   instead of adding its songs, and two Untitled Folders, or a folder named `main` (the
   menu's own page), would open each other's. So the folders are submenus only when every
-  submenu label of the whole menu is distinct and none is `main` (`actions.pages_distinct`
+  submenu label of the whole menu is distinct and none is `main` (`item_menu.pages_distinct`
   over the folders' labels, Add to Playlist's, Move to Folder's); otherwise Add to
   Playlist falls back to the headed sections (a folder inside another after that one's own
   playlists, headed "Evenings › Late Night"), the selection mode's too. A label made
@@ -187,7 +187,7 @@ changes, change it here, with the date. The plan they came from is in
   the move; nothing changed, nothing is written.
 - **A sidebar row's menu is its page's** (2026-10-20). A playlist's, a folder's, Favourite
   Songs' and All Playlists' rows open the item actions' menu for their Item
-  (`actions.build_menu`, through `menu_for`), the one their page's More Options and their
+  (`item_menu.build_menu`, through `menu_for`), the one their page's More Options and their
   tile show, so the two never drift apart (the sidebar's had been a shorter list of its
   own). The controller opens it from the row as a tile's opens (`widgets/context_menu.py`'s
   `popup()`): at the pointer for a right click or a long press, under the row for Menu or

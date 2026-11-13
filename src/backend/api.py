@@ -4,7 +4,7 @@
 """The Apple Music API as the app knows it, apart from any connection to it: which ids are the
 library's, the path that answers with one item, the resource type a kind is rated and added
 under, the resources of one page of an answer, and Apple's error answers as an EngineError.
-The standard library only; engine.py and actions.py use it.
+The standard library only; engine.py and the item actions (actions.py and its modules) use it.
 
     is_library_id('l.abc')              # True: under /v1/me/library, not the catalog
     item_endpoint('album', id, 'gb')    # '/v1/catalog/gb/albums/<id>?include=tracks,artists'

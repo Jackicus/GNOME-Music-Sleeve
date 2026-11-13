@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """The item menus as a Gtk.PopoverMenu shows them (applemusic.widgets.context_menu.popup over
-actions.build_menu): every submenu a page of its own, which its item opens. A PopoverMenu
+item_menu.build_menu): every submenu a page of its own, which its item opens. A PopoverMenu
 names each submenu's page by its label, so two submenus of one label share a page (issue
 423): Add to Playlist's folders are submenus only where every label is distinct, else
 headed sections (issue 554)."""
@@ -19,7 +19,7 @@ gi.require_version('Gtk', '4.0')
 
 from gi.repository import Gio, GObject  # noqa: E402
 
-from applemusic.actions import build_menu  # noqa: E402
+from applemusic.item_menu import build_menu  # noqa: E402
 from applemusic.library import Item  # noqa: E402
 
 # Invented: a playlist at the top level, and folders that hold playlists and folders, three

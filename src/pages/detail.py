@@ -103,7 +103,7 @@ from .. import keyboard, song_columns
 from ..backend.errors import EngineError
 from ..library import (HELD_KINDS, TRACK_REF_KINDS, Item, ItemRefs, ShelfModel, Track,
                        drop_index)
-from ..actions import adds_to, is_manageable
+from ..item_targets import adds_to, is_manageable
 from ..playlist_order import PlaylistOrder
 from ..related import catalog_target
 from ..release import (album_artist, album_shelves, album_target, curator, curator_item,
