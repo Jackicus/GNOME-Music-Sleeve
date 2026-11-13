@@ -16,20 +16,22 @@ field) are the window's own for the same reason, and tab_action() decides them a
 
     name = playback_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
     name = tab_action(keyval, mods, type(focus), dialog_open, in_popover, enabled)
-    step = move_step(keyval, mods, type(focus), dialog_open, in_popover)   # -1, 1 or None
+    step = move_step(keyval, mods, type(focus), dialog_open, in_popover)   # -1, 1, TOP, BOTTOM
+    to_index = move_place(step, index, first, last)   # where it goes, or None: nowhere
     remove = remove_key(keyval, mods, type(focus), dialog_open, in_popover)  # True or False
     step = volume_step(keyval, mods, type(focus), dialog_open, in_popover)  # -1, 1 or None
     name = selection_key(keyval, mods, type(focus), dialog_open, in_popover, active, on_row)
 
 move_step() is a playlist page's (pages/detail.py) and Up Next's (widgets/queue.py): Alt+Up
-or Alt+Down (shortcuts.MOVE_UP, MOVE_DOWN) moves the focused song or entry one place, on the
-same terms, and remove_key() is a playlist page's Delete (shortcuts.REMOVE_SONG): Remove from
-Playlist of the focused song (in the selection mode, of the songs selected). volume_step() is
-the window's: Ctrl+Up or Ctrl+Down (shortcuts.VOLUME_UP, VOLUME_DOWN) steps the volume,
-except where those keys are the focused widget's own (VOLUME_OWNERS). selection_key() is a
-track list's selection mode's (widgets/selection_mode.py), asked by the window before the
-playback keys, so that in the mode Space on a song selects it rather than playing or
-pausing.
+or Alt+Down (shortcuts.MOVE_UP, MOVE_DOWN) moves the focused song or entry one place, and
+Alt+Home or Alt+End (MOVE_TOP, MOVE_BOTTOM) to the top or the bottom of its list (an Up Next
+entry's section), on the same terms (move_place() says where), and remove_key() is a playlist
+page's Delete (shortcuts.REMOVE_SONG): Remove from Playlist of the focused song (in the
+selection mode, of the songs selected). volume_step() is the window's: Ctrl+Up or Ctrl+Down
+(shortcuts.VOLUME_UP, VOLUME_DOWN) steps the volume, except where those keys are the focused
+widget's own (VOLUME_OWNERS). selection_key() is a track list's selection mode's
+(widgets/selection_mode.py), asked by the window before the playback keys, so that in the mode
+Space on a song selects it rather than playing or pausing.
 
     target = search_target(page)   # 'filter' or 'search': where Ctrl+F goes
 
@@ -59,10 +61,16 @@ PLAYBACK_KEYS = parse_keys(shortcuts.PLAYBACK)
 # The keys that open Now Playing on a tab, by (keyval, modifiers) -> window action.
 TAB_KEYS = parse_keys(shortcuts.NOW_PLAYING_TABS)
 
+# move_step()'s answers for Alt+Home and Alt+End: to the top or the bottom of the list.
+TOP = 'top'
+BOTTOM = 'bottom'
+
 # The keys that move a playlist's focused song or an Up Next entry, by (keyval, modifiers)
-# -> the step (the keypad's arrows too).
+# -> the step (the keypad's arrows, Home and End too).
 MOVE_KEYS = parse_keys({-1: (shortcuts.MOVE_UP, '<alt>KP_Up'),
-                        1: (shortcuts.MOVE_DOWN, '<alt>KP_Down')})
+                        1: (shortcuts.MOVE_DOWN, '<alt>KP_Down'),
+                        TOP: (shortcuts.MOVE_TOP, '<alt>KP_Home'),
+                        BOTTOM: (shortcuts.MOVE_BOTTOM, '<alt>KP_End')})
 
 # The keys that remove a playlist's focused song (the keypad's Delete too).
 REMOVE_KEYS = frozenset(parse_keys({True: (shortcuts.REMOVE_SONG, 'KP_Delete')}))
@@ -137,12 +145,28 @@ def _key_action(keys, keyval, mods, focus_type, dialog_open, in_popover, enabled
 
 def move_step(keyval, mods, focus_type, dialog_open, in_popover):
     """How far a key press moves a playlist's focused song or an Up Next entry: -1 (Alt+Up),
-    1 (Alt+Down), or None for any other key, and while it is typed into, a dialog is open or
-    the focus is in a popover, as for the playback keys."""
+    1 (Alt+Down), TOP (Alt+Home), BOTTOM (Alt+End), or None for any other key, and while it
+    is typed into, a dialog is open or the focus is in a popover, as for the playback
+    keys."""
     step = MOVE_KEYS.get((keyval, int(mods)))
     if step is None or dialog_open or in_popover or issubclass(focus_type, TYPING):
         return None
     return step
+
+
+def move_place(step, index, first, last):
+    """Where move_step()'s `step` takes the song or entry at `index` in a list that runs from
+    `first` to `last` (an Up Next entry's section, a playlist's 0 to its last): the index it
+    goes to, or None when it would stay where it is (at that end already)."""
+    if step == TOP:
+        to_index = first
+    elif step == BOTTOM:
+        to_index = last
+    else:
+        to_index = index + step
+    if to_index == index or not first <= to_index <= last:
+        return None
+    return to_index
 
 
 def remove_key(keyval, mods, focus_type, dialog_open, in_popover):

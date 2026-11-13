@@ -155,6 +155,39 @@ def labels_of(menu):
     return found
 
 
+def levels_of(menu):
+    """The labels of each level of a menu, as a Gtk.PopoverMenu shows them one at a time:
+    [the menu's items and sections, then each submenu's level, depth first]."""
+    level, below = [], []
+
+    def walk(model):
+        for position in range(model.get_n_items()):
+            label = model.get_item_attribute_value(position, Gio.MENU_ATTRIBUTE_LABEL)
+            if label is not None:
+                level.append(label.unpack())
+            section = model.get_item_link(position, Gio.MENU_LINK_SECTION)
+            if section is not None:
+                walk(section)
+            submenu = model.get_item_link(position, Gio.MENU_LINK_SUBMENU)
+            if submenu is not None:
+                below.extend(levels_of(submenu))
+
+    walk(menu)
+    return [level, *below]
+
+
+def mnemonic_clashes(menu, names=()):
+    """The levels of a menu (levels_of()) where two labels share a mnemonic; the labels in
+    `names` (a playlist's, a folder's: underscores no mnemonics) left out."""
+    clashes = []
+    for level in levels_of(menu):
+        letters = [label[label.index('_') + 1].lower() for label in level
+                   if '_' in label and '__' not in label and label not in names]
+        if len(letters) != len(set(letters)):
+            clashes.append(level)
+    return clashes
+
+
 def submenu_of(menu, label):
     """The submenu labelled `label` among a menu's items and sections, or None."""
     for position in range(menu.get_n_items()):
@@ -288,10 +321,9 @@ class MenuTest(unittest.TestCase):
         self.assertEqual(set(rating_actions(0)), set(RATING_ACTIONS))
 
     def test_labels_have_distinct_mnemonics(self):
-        labels = labels_of(build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)]))
-        letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label
-                   and label != 'Road Trip']
-        self.assertEqual(len(letters), len(set(letters)), labels)
+        menu = build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)])
+        labels = labels_of(menu)
+        self.assertEqual(mnemonic_clashes(menu, ('Road Trip',)), [])
         self.assertIn('_Play', labels)
         self.assertIn('Add to Pla_ylist', labels)
 
@@ -450,33 +482,59 @@ class MenuTest(unittest.TestCase):
         menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(4, 'i.song1'))
         self.assertIn(('win.item-remove-from-queue', (4, 'i.song1')), actions_of(menu))
         self.assertIn('Remove from Up Ne_xt', labels_of(menu))
-        letters = [label[label.index('_') + 1].lower() for label in labels_of(menu)
-                   if '_' in label]
-        self.assertEqual(len(letters), len(set(letters)), labels_of(menu))
+        self.assertEqual(mnemonic_clashes(menu), [])
         self.assertNotIn('win.item-remove-from-queue',
                          names(build_menu(LIBRARY_TRACK, queued=True)))
         self.assertNotIn('win.item-remove-from-queue', names(build_menu(LIBRARY_TRACK)))
 
     def test_an_up_next_entry_moves_where_its_menu_says(self):
+        # The fifth entry of a section from 3 to 9 (QueueView.moves()).
         menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(4, 'i.song1'),
-                          queue_moves=(-1, 1))
+                          queue_moves={'top': 3, -1: 3, 1: 5, 'bottom': 9})
         moves = [(name, target) for name, target in actions_of(menu)
                  if name in ('win.item-move-in-queue', 'win.item-remove-from-queue')]
         self.assertEqual(moves, [('win.item-move-in-queue', (4, 3, 'i.song1')),
+                                 ('win.item-move-in-queue', (4, 3, 'i.song1')),
                                  ('win.item-move-in-queue', (4, 5, 'i.song1')),
+                                 ('win.item-move-in-queue', (4, 9, 'i.song1')),
                                  ('win.item-remove-from-queue', (4, 'i.song1'))])
-        self.assertIn('_Move Up', labels_of(menu))
-        self.assertIn('Move _Down', labels_of(menu))
-        letters = [label[label.index('_') + 1].lower() for label in labels_of(menu)
-                   if '_' in label]
-        self.assertEqual(len(letters), len(set(letters)), labels_of(menu))
-        # At the end of its section: Move Up alone; with no queue entry, neither.
+        labels = labels_of(menu)
+        self.assertEqual([label for label in labels
+                          if label.replace('_', '').startswith('Move')],
+                         ['Move to T_op', '_Move Up', 'Move _Down', 'Mov_e to Bottom'])
+        self.assertEqual(mnemonic_clashes(menu), [])
+        # At the end of its section: Move to Top and Move Up alone; with no queue entry,
+        # none.
         menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(4, 'i.song1'),
-                          queue_moves=(-1,))
+                          queue_moves={'top': 2, -1: 3})
         self.assertEqual([target for name, target in actions_of(menu)
-                          if name == 'win.item-move-in-queue'], [(4, 3, 'i.song1')])
+                          if name == 'win.item-move-in-queue'],
+                         [(4, 2, 'i.song1'), (4, 3, 'i.song1')])
         self.assertNotIn('win.item-move-in-queue',
-                         names(build_menu(LIBRARY_TRACK, queued=True, queue_moves=(-1, 1))))
+                         names(build_menu(LIBRARY_TRACK, queued=True,
+                                          queue_moves={-1: 3, 1: 5})))
+
+    def test_play_next_on_an_up_next_entry_moves_it(self):
+        # Its section begins just after the entry playing (2): Play Next moves it there.
+        menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(6, 'i.song1'),
+                          queue_moves={'next': 3, 'top': 3, -1: 5})
+        self.assertEqual(actions_of(menu)[0], ('win.item-move-in-queue', (6, 3, 'i.song1')))
+        self.assertEqual(labels_of(menu)[0], 'Play _Next')
+        self.assertNotIn('win.item-play-next', names(menu))  # not queued again
+        self.assertIn('win.item-play-later', names(menu))
+        self.assertEqual(mnemonic_clashes(menu), [])
+        # The entry after the one playing plays next already: no Play Next.
+        menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=(3, 'i.song1'),
+                          queue_moves={'next': None, 1: 4})
+        self.assertNotIn('Play _Next', labels_of(menu))
+        self.assertEqual([target for name, target in actions_of(menu)
+                          if name == 'win.item-move-in-queue'], [(3, 4, 'i.song1')])
+        # Autoplay's entry behind the songs queued (no 'next': MusicKit's queue moves it
+        # within its section only), the item playing and History's: queued again.
+        for queue_entry, queue_moves in (((8, 'i.song1'), {'top': 7}), (None, None)):
+            menu = build_menu(LIBRARY_TRACK, queued=True, queue_entry=queue_entry,
+                              queue_moves=queue_moves)
+            self.assertEqual(actions_of(menu)[0][0], 'win.item-play-next')
 
     def test_the_item_playing_as_a_track(self):
         playing = NowPlaying({'id': 'i.song1', 'catalogId': '1000000001', 'type': 'song',
@@ -651,11 +709,9 @@ class MenuTest(unittest.TestCase):
         for container in (READ_ONLY, FAVOURITES, LIBRARY_ALBUM, None):
             self.assertNotIn('win.item-remove-from-playlist',
                              names(build_menu(track, container=container)))
-        # Every label of the fullest menus has a mnemonic of its own.
-        for labels in (labels_of(menu), labels_of(build_menu(PLAYLIST)),
-                       labels_of(build_menu(FOLDER))):
-            letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label]
-            self.assertEqual(len(letters), len(set(letters)), labels)
+        # Every label of the fullest menus has a mnemonic of its own in its level.
+        for fullest in (menu, build_menu(PLAYLIST), build_menu(FOLDER)):
+            self.assertEqual(mnemonic_clashes(fullest), [])
 
     def test_copy_link_only_for_a_shareable_page(self):
         # A library playlist's page opens for its owner only: Open in Browser, no Copy Link.
@@ -752,10 +808,7 @@ class MenuTest(unittest.TestCase):
         self.assertEqual(submenu_labels(both), ['Add to Pla_ylist', 'Evenings', 'Late__Night',
                                                 'Mornings', 'Mov_e to Folder'])
         # Every level has mnemonics of its own (a popover shows one level at a time).
-        for level in (set(labels_of(menu)) - set(labels_of(submenu)), labels_of(submenu)):
-            letters = [label[label.index('_') + 1].lower() for label in level
-                       if '_' in label and '__' not in label]
-            self.assertEqual(len(letters), len(set(letters)), level)
+        self.assertEqual(mnemonic_clashes(menu), [])
         # Apple's own playlist at the top level: every folder, not the top level it is at;
         # Favourite Songs: never.
         self.assertEqual(move_targets(tree, playlists[1])[0], False)
@@ -2327,20 +2380,28 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
         return [self.app.playlist.groups[0].entries.get_item(n) for n in range(len(track_ids))]
 
     async def test_move_up_and_move_down_in_the_menu(self):
-        first, second, last = self.songs('i.a', 'i.b', 'i.c')
+        first, second, third, last = self.songs('i.a', 'i.b', 'i.c', 'i.d')
         moves = [entry for entry in actions_of(self.actions.menu_for(second))
                  if entry[0] == 'win.item-move-in-playlist']
-        self.assertEqual(moves, [('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, -1)),
-                                 ('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, 1))])
-        labels = labels_of(self.actions.menu_for(second))
-        self.assertLess(labels.index('_Move Up'), labels.index('Remo_ve from Playlist'))
-        letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label]
-        self.assertEqual(len(letters), len(set(letters)), labels)
+        # Move to Top, Move Up, Move Down, Move to Bottom: the index each moves it to.
+        self.assertEqual(moves, [('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, 0)),
+                                 ('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, 0)),
+                                 ('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, 2)),
+                                 ('win.item-move-in-playlist', ('p.pl1', 'i.b', 1, 3))])
+        menu = self.actions.menu_for(second)
+        labels = labels_of(menu)
+        self.assertEqual([label for label in labels
+                          if label.replace('_', '').startswith('Move')],
+                         ['Move to T_op', '_Move Up', 'Move _Down', 'Mov_e to Bottom'])
+        self.assertLess(labels.index('Mov_e to Bottom'), labels.index('Remo_ve from Playlist'))
+        self.assertEqual(mnemonic_clashes(menu), [])
         # Not up from the first, nor down from the last.
         self.assertEqual([entry[1][3] for entry in actions_of(self.actions.menu_for(first))
-                          if entry[0] == 'win.item-move-in-playlist'], [1])
+                          if entry[0] == 'win.item-move-in-playlist'], [1, 3])
         self.assertEqual([entry[1][3] for entry in actions_of(self.actions.menu_for(last))
-                          if entry[0] == 'win.item-move-in-playlist'], [-1])
+                          if entry[0] == 'win.item-move-in-playlist'], [0, 2])
+        self.assertEqual(len([entry for entry in actions_of(self.actions.menu_for(third))
+                              if entry[0] == 'win.item-move-in-playlist']), 4)
         # Nowhere else: Apple's playlist, Favourite Songs, an album, a list of one.
         for playlist_id in ('p.pl2', 'p.fav'):
             elsewhere = Track({'id': 'i.b', 'title': 'B', 'index': 0},
@@ -2380,14 +2441,14 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_move_is_shown_announced_and_written(self):
         self.songs('i.a', 'i.b', 'i.c')
         self.actions.playlist_order.delay = 0
-        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.b', 1, 1)
+        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.b', 1, 2)
         self.assertEqual(self.app.playlist.track_ids(), ['i.a', 'i.c', 'i.b'])
         self.assertEqual(self.window.announced, ['“Song B” moved to position 3 of 3'])
         self.assertIn(('reorder_playlist', 'p.pl1', ('i.a', 'i.b', 'i.c'), (0, 2, 1)),
                       self.writes())
         self.assertEqual(self.app.toasts, ['Moved “Song B”'])
         # A menu made before the list changed names a song no longer there: nothing.
-        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.b', 1, -1)
+        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.b', 1, 0)
         self.assertEqual(self.app.playlist.track_ids(), ['i.a', 'i.c', 'i.b'])
         # Undo: the order before, written back.
         await self.run_action('item-undo-reorder', 'p.pl1')
@@ -2398,7 +2459,7 @@ class PlaylistActionsTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_order_pending_goes_before_a_removal(self):
         self.app.engine.items[('playlist', 'p.pl1')] = PLAYLIST_ANSWER
         self.songs('i.a', 'i.b', 'i.c')
-        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.c', 2, -1)  # pending
+        await self.run_action('item-move-in-playlist', 'p.pl1', 'i.c', 2, 1)  # pending
         self.assertNotIn('reorder_playlist', [call[0] for call in self.writes()])
         await self.run_action('item-remove-from-playlist', 'p.pl1', 'i.c', 1)
         self.assertEqual([call[0] for call in self.writes()][:2],
@@ -2941,11 +3002,9 @@ class RemovalMenuTest(unittest.TestCase):
         self.assertIn('win.item-add-to-library', names(build_menu(CATALOG_ALBUM)))
 
     def test_the_mnemonics_stay_distinct(self):
-        labels = labels_of(build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)],
-                                      removable=('song', 'i.song1')))
-        letters = [label[label.index('_') + 1].lower() for label in labels if '_' in label
-                   and label != 'Road Trip']
-        self.assertEqual(len(letters), len(set(letters)), labels)
+        menu = build_menu(LIBRARY_TRACK, playlists=[('p.pl1', 'Road Trip', None)],
+                          removable=('song', 'i.song1'))
+        self.assertEqual(mnemonic_clashes(menu, ('Road Trip',)), [])
 
     def test_the_confirmation_says_what_goes_with_it(self):
         heading, body = removal_words('song', 'Undertow')

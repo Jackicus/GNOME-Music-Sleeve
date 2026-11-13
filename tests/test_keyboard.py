@@ -129,6 +129,30 @@ class MoveStepTest(unittest.TestCase):
         for other in ('Up', 'Down', '<primary>Up', '<alt><shift>Up', '<alt>Left'):
             self.assertIsNone(self.step(other), other)
 
+    def test_to_the_top_or_the_bottom(self):
+        self.assertEqual(self.step(shortcuts.MOVE_TOP), keyboard.TOP)
+        self.assertEqual(self.step(shortcuts.MOVE_BOTTOM), keyboard.BOTTOM)
+        self.assertEqual(self.step('<alt>KP_Home'), keyboard.TOP)
+        self.assertEqual(self.step('<alt>KP_End'), keyboard.BOTTOM)
+        # Home and End, with Ctrl or Shift, are the list's own: the first or the last row.
+        for other in ('Home', 'End', '<primary>Home', '<shift>End', '<alt><shift>Home'):
+            self.assertIsNone(self.step(other), other)
+        self.assertIsNone(self.step(shortcuts.MOVE_TOP, Gtk.Entry))
+        self.assertIsNone(self.step(shortcuts.MOVE_BOTTOM, in_popover=True))
+
+    def test_where_a_step_takes_it(self):
+        # A list from 3 to 7 (an Up Next section), the entry at 5.
+        self.assertEqual(keyboard.move_place(-1, 5, 3, 7), 4)
+        self.assertEqual(keyboard.move_place(1, 5, 3, 7), 6)
+        self.assertEqual(keyboard.move_place(keyboard.TOP, 5, 3, 7), 3)
+        self.assertEqual(keyboard.move_place(keyboard.BOTTOM, 5, 3, 7), 7)
+        # At an end already: nowhere.
+        self.assertIsNone(keyboard.move_place(keyboard.TOP, 3, 3, 7))
+        self.assertIsNone(keyboard.move_place(-1, 3, 3, 7))
+        self.assertIsNone(keyboard.move_place(keyboard.BOTTOM, 7, 3, 7))
+        self.assertIsNone(keyboard.move_place(1, 7, 3, 7))
+        self.assertIsNone(keyboard.move_place(1, 0, 0, 0))  # a list of one
+
     def test_typing_a_dialog_or_a_menu_keeps_them(self):
         self.assertIsNone(self.step(shortcuts.MOVE_UP, Gtk.Text))
         self.assertIsNone(self.step(shortcuts.MOVE_UP, dialog_open=True))
