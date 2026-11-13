@@ -52,8 +52,8 @@ def year_text(year):
 
 def labels():
     """The menu items' labels, by column: their mnemonics are their own in the Songs page's
-    Sort and Filter menu and a playlist's Sort By (songs.blp, detail.PLAYLIST_SORTS, the
-    directions and Favourites Only), which sort by _Genre and _Year."""
+    Sort and Filter menu and a playlist's Sort By (songs.blp, detail_sort_filter.PLAYLIST_SORTS,
+    the directions and Favourites Only), which sort by _Genre and _Year."""
     return {'genre': _('Genre _Column'), 'year': _('Year Co_lumn')}
 
 

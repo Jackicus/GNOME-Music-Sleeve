@@ -69,7 +69,7 @@ src/*.py                        services and logic (engine, player, mpris, searc
                                 remote, recent_searches, radio, home, search_pager, timing,
                                 shortcuts, keyboard, sidebar, sections; new ones go here)
 src/library.py                  the data model: GLib, GObject and Gio only, no GTK
-src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
+src/pages/<name>.py + .blp      one per page (PAGES in pages/__init__.py); detail_*.py: its parts
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
 src/dialogs/                    sign-in, preferences, keyboard shortcuts, about, the playlist dialogs
 src/backend/                    Chrome, the CDP client, bridge.js, API normalising: stdlib and
