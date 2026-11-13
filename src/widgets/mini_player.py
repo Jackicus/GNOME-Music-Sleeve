@@ -251,15 +251,20 @@ class MiniPlayerView(Adw.Bin):
     # -- layout -----------------------------------------------------------------------------
 
     def do_measure(self, orientation, for_size):
-        """The child's size; across, no minimum: the window's own (mini_player.MIN_WIDTH)
-        is the width the controls are made for."""
+        """The child's size, and the mini player's least: mini_player.MIN_WIDTH across,
+        the width the row of buttons is made for, whatever the child measures (a pane's
+        view may ask for less or more); MIN_HEIGHT down, or what the header bar, the short
+        layout and a pane open need. The least is the content's, so the window's is this
+        and whatever border its decoration adds (X11 without a compositor: 5 px a side)."""
         child = self.get_child()
         if child is None:
             return 0, 0, -1, -1
         minimum, natural, _baseline, _natural_baseline = child.measure(orientation, for_size)
         if orientation == Gtk.Orientation.HORIZONTAL:
-            minimum = 0
-        return minimum, natural, -1, -1
+            minimum = mini_player.MIN_WIDTH
+        else:
+            minimum = max(minimum, mini_player.MIN_HEIGHT)
+        return minimum, max(natural, minimum), -1, -1
 
     def do_size_allocate(self, width, height, baseline):
         if self._pane_wish is not None:
@@ -344,8 +349,8 @@ class MiniPlayer(Adw.ApplicationWindow):
     __gtype_name__ = 'AppleMusicMiniPlayer'
 
     def __init__(self, **kwargs):
-        super().__init__(title=_('Mini Player'), width_request=mini_player.MIN_WIDTH,
-                         height_request=mini_player.MIN_HEIGHT, **kwargs)
+        # Its least size is its view's (MiniPlayerView.do_measure).
+        super().__init__(title=_('Mini Player'), **kwargs)
         self.view = MiniPlayerView()
         self.set_content(self.view)
         self._app = None

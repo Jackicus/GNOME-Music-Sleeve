@@ -63,9 +63,10 @@ SMALL_ART = 56
 SIDE_ART = 120
 # The height the short layout takes, margins and all: the least the controls are given.
 SHORT_HEIGHT = 170
-# The window's smallest size. The width is the row of seven buttons (Favourite, Shuffle,
-# Previous, Play, Next, Repeat, Volume: 324 px as they measure) and the side margins, so
-# the row is whole at every size; the height the header bar and the short layout.
+# The mini player's smallest size, its content's (the view measures it as its least). The
+# width is the row of seven buttons (Favourite, Shuffle, Previous, Play, Next, Repeat,
+# Volume: 324 px as they measure) and the side margins, so the row is whole at every
+# size; the height the header bar and the short layout.
 MIN_WIDTH = 360
 MIN_HEIGHT = 220
 

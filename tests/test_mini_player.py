@@ -672,10 +672,16 @@ class WindowTest(unittest.TestCase):
            'next_button', 'repeat_button', 'volume_button')
 
     def sized(self, width, height):
-        """Whether the window is laid out, `width` by `height`: a predicate."""
-        return lambda: (self.view.shown_layout is not None
-                        and self.window.get_width() == width
-                        and self.window.get_height() == height)
+        """Whether the view is laid out for a window made `width` by `height`: that size,
+        less the border an X11 window without a compositor counts in its own (CI's), and
+        never less than the mini player's least. A predicate."""
+        def laid_out():
+            view = self.view
+            return (view.shown_layout is not None
+                    and max(width - 12, mini_player.MIN_WIDTH) <= view.get_width() <= width
+                    and max(height - 12, mini_player.MIN_HEIGHT) <= view.get_height()
+                    <= height)
+        return laid_out
 
     def test_the_buttons_are_one_row_in_one_order_at_every_size(self):
         from applemusic.widgets.mini_player import MiniPlayer
@@ -695,10 +701,10 @@ class WindowTest(unittest.TestCase):
             places = [button.compute_bounds(view)[1] for button in row]
             centres = {round(bounds.get_y() + bounds.get_height() / 2) for bounds in places}
             self.assertEqual(len(centres), 1, (width, height, centres))
-            # Whole inside the window's margins.
+            # Whole inside the view's margins.
             self.assertGreaterEqual(places[0].get_x(), mini_player.MARGIN - 1)
             self.assertLessEqual(places[-1].get_x() + places[-1].get_width(),
-                                 width - mini_player.MARGIN + 1)
+                                 view.get_width() - mini_player.MARGIN + 1)
             # And one box holds them, in the order Tab takes: nothing moves between two.
             order, child = [], view.transport_box.get_first_child()
             while child is not None:
@@ -714,8 +720,13 @@ class WindowTest(unittest.TestCase):
         row = self.view.transport_box.measure(Gtk.Orientation.HORIZONTAL, -1)[0]
         self.assertLessEqual(row + 2 * mini_player.MARGIN, mini_player.MIN_WIDTH)
         self.assertGreater(row + 2 * mini_player.MARGIN, mini_player.MIN_WIDTH - 12)
-        self.assertEqual(self.window.get_size_request(),
-                         (mini_player.MIN_WIDTH, mini_player.MIN_HEIGHT))
+        # The least is the view's own, so the window's counts whatever border it has.
+        self.assertEqual(self.view.measure(Gtk.Orientation.HORIZONTAL, -1)[0],
+                         mini_player.MIN_WIDTH)
+        self.assertEqual(self.view.measure(Gtk.Orientation.VERTICAL, -1)[0],
+                         mini_player.MIN_HEIGHT)
+        self.assertGreaterEqual(self.window.measure(Gtk.Orientation.HORIZONTAL, -1)[0],
+                                mini_player.MIN_WIDTH)
         header = self.view.header_bar.measure(Gtk.Orientation.HORIZONTAL, -1)[0]
         self.assertLessEqual(header, mini_player.MIN_WIDTH)
 
@@ -973,18 +984,20 @@ class PaneWindowTest(unittest.TestCase):
         self.assertEqual(self.of('lyrics'), [('lyrics', False, 'sheet')])
         self.assertEqual(self.place(self.lyrics), 'sheet')
         self.active.clear()
+        size = mini.get_default_size()
+        self.assertEqual(size.height, 548)
         self.toggle(mini, 'lyrics')
         self.assertEqual(self.of('lyrics'), [('lyrics', True, 'mini')])
         self.assertIs(mini.view.pane_slot.get_child(), self.lyrics)
         self.assertTrue(mini.view.pane_box.get_visible())
         self.assertEqual(self.pressed(mini), (True, False))
-        self.assertEqual(mini.get_default_size(), (360, 548))  # opened inside the window
+        self.assertEqual(mini.get_default_size(), size)  # opened inside the window
         self.active.clear()
         self.toggle(mini, 'lyrics')  # again: closed, the view back and inactive
         self.assertEqual(self.of('lyrics'), [('lyrics', False, 'mini')])
         self.assertEqual(self.place(self.lyrics), 'sheet')
         self.assertEqual(self.pressed(mini), (False, False))
-        self.assertEqual(mini.get_default_size(), (360, 548))
+        self.assertEqual(mini.get_default_size(), size)
         self.assertEqual(self.lyrics._next_change_source, 0)
         self.assertIsNone(self.lyrics._sweep_tick)
         # Open again, and leave with it open: back in the sheet, active there (it is open
@@ -1029,30 +1042,35 @@ class PaneWindowTest(unittest.TestCase):
         self.play()
         mini = self.enter()
         self.assertEqual(self.place(self.queue), 'mini')
-        self.assertEqual(mini.get_default_size(), (360, 548))
+        self.assertEqual(mini.get_default_size().height, 548)
         self.assertEqual(self.pressed(mini), (False, True))
         # The pane has its height from the bottom, the controls the layout of the rest.
         height, position = self.laid_out(mini)
-        self.assertEqual(height, 548 - mini.header_height())
+        self.assertEqual(height, mini.view.get_height() - mini.header_height())
         self.assertEqual(height - position, 240)
         self.assertTrue(wait_for(
             lambda: mini.view.shown_layout == layout_for(360, position)))
 
     def test_a_pane_opens_inside_the_window_over_the_short_layout(self):
+        self.app.settings.set_int('mini-player-pane-height', 300)
         self.play()
         mini = self.enter()
         self.assertTrue(wait_for(lambda: mini.view.shown_layout is not None
                                  and not mini.view.shown_layout.short))
+        window = mini.get_default_size()
+        size = (mini.view.get_width(), mini.view.get_height())
+        self.assertEqual(window.height, 548)
         self.toggle(mini, 'lyrics')
         height, position = self.laid_out(mini)
-        self.assertEqual((mini.get_width(), mini.get_height()), (360, 548))
-        self.assertEqual(height - position, 320)  # the setting's default
+        self.assertEqual(mini.get_default_size(), window)  # the window as it was
+        self.assertEqual((mini.view.get_width(), mini.view.get_height()), size)
+        self.assertEqual(height - position, 300)  # the setting's
         self.assertGreaterEqual(position, mini_player.SHORT_HEIGHT)
         self.assertTrue(wait_for(lambda: mini.view.shown_layout.short))
         self.assertIsNone(mini.pane_height())  # as it opened: nothing to remember
         self.toggle(mini, 'lyrics')
         self.assertTrue(wait_for(lambda: not mini.view.shown_layout.short))
-        self.assertEqual(self.app.settings.get_int('mini-player-pane-height'), 320)
+        self.assertEqual(self.app.settings.get_int('mini-player-pane-height'), 300)
 
     def test_the_divider_stops_at_the_short_layout_and_at_the_panes_least(self):
         self.play()
@@ -1080,25 +1098,36 @@ class PaneWindowTest(unittest.TestCase):
         self.assertEqual(height - position, 200)
         self.toggle(mini, 'queue')
         self.assertEqual(self.app.settings.get_int('mini-player-pane-height'), 200)
-        self.assertEqual(mini.get_default_size(), (360, 548))
+        self.assertEqual(mini.get_default_size().height, 548)
 
-    def test_a_low_window_grows_for_a_pane_and_shrinks_back(self):
+    def test_a_low_window_has_the_room_for_its_pane_and_shrinks_back(self):
+        # The pane it last had opens with it: the window is made with the room, so this
+        # needs no resize of a window just mapped (which can lose to the compositor's
+        # answer to the map). Opening one by its toggle in a low window is PanesTest's,
+        # and scripts/a11y_check.py's with real keys.
         least = mini_player.MIN_HEIGHT
         self.app.settings.set_int('mini-player-height', least)
+        self.app.settings.set_string('mini-player-pane', 'lyrics')
         self.play()
         mini = self.enter()
-        self.assertEqual(mini.get_default_size(), (360, least))
-        self.toggle(mini, 'lyrics')
         need = mini.header_height() + mini_player.SHORT_HEIGHT + mini_player.PANE_OPEN
-        self.assertEqual(mini.get_default_size(), (360, need))
+        self.assertEqual(mini.get_default_size().height, need)
+        self.assertEqual(mini.panes.grown, need - least)
         height, position = self.laid_out(mini)
+        # The border an X11 window without a compositor counts in its size (CI's; none
+        # on Wayland) comes off the pane.
+        border = need - mini.view.get_height()
+        self.assertIn(border, range(12))
         self.assertEqual((position, height - position),
-                         (mini_player.SHORT_HEIGHT, mini_player.PANE_OPEN))
+                         (mini_player.SHORT_HEIGHT, mini_player.PANE_OPEN - border))
+        self.assertIsNone(mini.pane_height())
         self.toggle(mini, 'lyrics')
-        self.assertEqual(mini.get_default_size(), (360, least))
+        self.assertEqual(mini.get_default_size().height, least)
+        self.assertEqual(mini.panes.grown, 0)
         self.assertEqual(self.app.settings.get_int('mini-player-pane-height'), 320)
         self.host.leave()
-        self.assertEqual(self.app.settings.get_int('mini-player-height'), least)
+        self.assertIn(self.app.settings.get_int('mini-player-height'),
+                      (least, least + border))
 
     def test_the_panes_fit_the_least_window(self):
         # Each view's least size against the pane's: no wider than the least window, no

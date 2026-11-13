@@ -163,10 +163,14 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
   GTK takes the pointer 6 px either side of it. libadwaita 1.10 draws its line as a
   `box-shadow`, not a background. A child whose layout follows its allocation measures a
   fixed minimum, never the last layout's (the mini player's `body`).
-- `set_default_size()` on a mapped window resizes it at the next layout, but a second call
-  in the frames just after the map can lose to the compositor's answer to the map (the
-  window keeps the first size, `get_default_size()` the second): seen under the headless
-  mutter in a test. A test that needs several sizes makes a window at each.
+- `set_default_size()` on a mapped window resizes it at the next layout, but one asked in
+  the frames just after the map can lose to the compositor's answer to the map (the window
+  keeps the size it had, `get_default_size()` says the new one, and asking again for the
+  same size does nothing): seen under the headless mutter. So a window is made at its size
+  before `present()` (the mini player with a pane to open), and a test that needs a size
+  makes its window at it. A window's least size is its content's measure, not a size
+  request on the window: an X11 window without a compositor (CI's Xvfb) counts 5 px of
+  border a side inside its own size, so a request there leaves the content 10 px short.
 
 ## Menus, drags, clipboard
 
