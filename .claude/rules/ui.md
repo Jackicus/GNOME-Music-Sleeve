@@ -178,7 +178,8 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
 - Artists (pages/artists.py) is a root page with an `AdwNavigationSplitView` of its own, in
   an `Adw.BreakpointBin` that collapses it. The window asks a root page of two panes, when it
   has them, for `can_go_back()`/`go_back()` (Back, before its own sidebar), `focus_content()`
-  (Ctrl+2) and `banner_host()` (the banners' toolbar view), and follows its `panes-changed`.
+  (Ctrl+2), `banner_host()` (the banners' toolbar view) and `sidebar_headers()` (the header
+  bars that get Show Sidebar), and follows its `panes-changed`.
 - A tile or row offers a context menu by exposing `context_item` (its Item or Track, None when
   unbound) and having `context_menu.attach(view)` called on its view (`drag=True` for tracks).
   The item actions take their object as a `(ss)` target (kind, id), not as state. Go to Album
@@ -232,7 +233,19 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   a group per kind of credit (Apple's title, else `credits.heading()`; a group's title is
   markup, so escaped), an `Adw.ActionRow` per person (`use-markup` off), the spinner, No
   Credits, and `EngineStatus`'s states with its button.
-- The window's keyed actions (`win.back`, `win.search`, `win.refresh`, `win.focus-*`,
+- The window's split view is an `Adw.OverlaySplitView` (docs/decisions.md): below 640sp it
+  is collapsed, the page fills the window and the sidebar slides over it
+  (`Window.sidebar_open()`), from a root page's Show Sidebar button (the window packs one
+  at the start of each root page's header bar, `_add_sidebar_button()`, shown by a
+  binding to `collapsed`; a pushed page has Back alone), `win.toggle-sidebar` (F9, enabled
+  only while collapsed), Ctrl+1 or libadwaita's swipe; it opens with the focus on the
+  selected row and closes with it back where it was in the page. `Window.hide_sidebar()`
+  closes it (never the sidebar beside the page): the sidebar's activated row calls it, and
+  so does whatever shows a page or moves the focus into one (`open_item()`, Ctrl+2, Ctrl+F),
+  as it calls `_close_sheet()`; `win.back` closes it before it pops anything. The page is
+  never moved or unmapped by the collapse, so nothing a page does may assume a map at the
+  breakpoint, and no code sets `show-sidebar` FALSE in the wide layout.
+- The window's keyed actions (`win.back`, `win.search`, `win.refresh`, `win.toggle-sidebar`, `win.focus-*`,
   `win.fullscreen-player`, `win.new-playlist`, `win.go-to-current-song`, and
   `win.show-lyrics` and `win.show-queue` through `TabActions.set_free()`) are disabled while a dialog is open over the window
   (`Window._update_actions`); add a new keyed window action there. `Window._close_sheet()`

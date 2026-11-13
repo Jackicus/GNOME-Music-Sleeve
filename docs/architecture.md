@@ -34,8 +34,9 @@ touches widgets.
   `account.py`'s, background playback `background.py`'s, the startup marks `timing.py`'s,
   the mini player (`app.mini-player`: a small window of its own in the main window's place,
   built as it shows) `mini_player.py`'s and `widgets/mini_player.py`'s.
-- **Window** (`window.py`): an `AdwBottomSheet` whose content is the split view (the
-  `AdwSidebar` and an `AdwNavigationView`) and whose bottom bar and sheet are the player bar and
+- **Window** (`window.py`): an `AdwBottomSheet` whose content is the split view (an
+  `AdwOverlaySplitView`: the `AdwSidebar` beside an `AdwNavigationView`, or over it below
+  640sp) and whose bottom bar and sheet are the player bar and
   Now Playing; the banners sit under the visible page's header bar. The bottom sheet is one page
   of a `Gtk.Stack`; the other, built on first use, is the full-screen player
   (`widgets/fullscreen_player.py`), which `fullscreen.py`'s host shows, the window fullscreened,

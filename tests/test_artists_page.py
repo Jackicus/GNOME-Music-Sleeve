@@ -186,6 +186,23 @@ class ArtistsPageTest(PageTestCase):
         self.assertEqual(page.stack.get_visible_child_name(), 'artists')
         self.assertIs(page.detail.artist, band)
 
+    async def test_show_sidebar_goes_in_each_states_header_bar_and_the_lists(self):
+        """The window's Show Sidebar button (the narrow layout's: Window._add_sidebar_button)
+        goes where sidebar_headers() says: the loading and empty states' header bars and
+        the list's, never the albums' pane's, which has Back to the list."""
+        from gi.repository import Adw
+
+        self.library.state = 'ready'
+        page = await self.page()
+        headers = page.sidebar_headers()
+        self.assertEqual(len(headers), 3)
+        self.assertTrue(all(isinstance(header, Adw.HeaderBar) for header in headers))
+        self.assertEqual(len({id(header) for header in headers}), 3)
+        self.assertIs(headers[-1], page.list_header)
+        self.assertFalse(any(header.is_ancestor(page.detail) for header in headers))
+        shown = page.stack.get_visible_child()  # no artists: the empty state
+        self.assertTrue(any(header.is_ancestor(shown) for header in headers[:2]))
+
 
 if __name__ == '__main__':
     unittest.main()
