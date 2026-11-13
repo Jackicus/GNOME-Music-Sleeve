@@ -50,9 +50,14 @@ What to shoot: $ARGUMENTS
      Playlists heading's **+** menu: `--new-menu` (the same);
    - the playlists' menus and dialogs: `--more-options` (the page's More Options menu),
      `--sidebar-menu playlist:first|folder:first|all-playlists`, and
-     `--dialog new-playlist|rename|delete` for the playlist or folder the page shows (a
-     playlist's rename is its Edit Details…, the playlist dialog);
-     `--dialog remove-from-library` for the item the page shows (else the first album).
+     `--dialog new-playlist|new-folder|rename|delete` for the playlist or folder the page
+     shows (a playlist's rename is its Edit Details…, the playlist dialog);
+     `--dialog remove-from-library` for the item the page shows (else the first album),
+     `--dialog credits` and `--dialog add-songs`;
+   - `--select N` (a track list in its selection mode, its first N selected), `--filter TEXT`
+     (the page's filter bar), `--fullscreen-player [lyrics|localized|syllable|none]`
+     (`--idle`: its controls hidden), `--mini-player` (`--mini-pane lyrics|queue`);
+     `--help` lists the rest.
    Dark is the default; add `--light`, `--high-contrast` for libadwaita's high-contrast
    style (with or without `--light`), and `--rtl` for a right-to-left layout (a mirrored
    window, its strings still English). Sizes: the default (1100x760), `--size 400x700`, and

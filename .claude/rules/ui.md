@@ -182,7 +182,7 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   page has no `item` (that names the page Go to Artist opens: `related.same_page`, `shows`).
 - Artists (pages/artists.py) is a root page with an `AdwNavigationSplitView` of its own, in
   an `Adw.BreakpointBin` that collapses it. The window asks a root page of two panes, when it
-  has them, for `can_go_back()`/`go_back()` (Back, before its own sidebar), `focus_content()`
+  has them, for `can_go_back()`/`go_back()` (Back, once nothing is pushed), `focus_content()`
   (Ctrl+2), `banner_host()` (the banners' toolbar view) and `sidebar_headers()` (the header
   bars that get Show Sidebar), and follows its `panes-changed`.
 - A tile or row offers a context menu by exposing `context_item` (its Item or Track, None when

@@ -17,8 +17,8 @@ paths:
 
 - The hand-kept lists, all checked by tests/test_build_lists.py: `src/meson.build`'s blueprint
   list (one `custom_target` per `.blp`, its `.ui` flat in build/src) and its `install_data`
-  lists (the app's modules; `pages/`, `widgets/`, `dialogs/` and `backend/`, bridge.js included,
-  each their own); `src/applemusic.gresource.xml` (every `.ui` by bare name, style.css, the
+  lists (the app's modules; `library/`, `pages/`, `dialogs/`, `widgets/`, `backend/`, bridge.js
+  included, and `engine/`, each their own); `src/applemusic.gresource.xml` (every `.ui` by bare name, style.css, the
   icons, aliased into `icons/scalable/actions/`, and `metainfo.xml`, the generated metainfo
   copied in by src/meson.build, which the About dialog is built from); `po/POTFILES.in`
   (every `.py` and `.blp` with `_()`, `ngettext` or `C_`).
