@@ -569,8 +569,9 @@ changes, change it here, with the date. The plan they came from is in
   and sweeps the lyrics; back in the sheet it centres the current line again. It is entered
   from Fullscreen in Now Playing (beside the translation button) or F11, the HIG's
   Fullscreen key and the one accelerator without a modifier (a function key no widget
-  takes), off while nothing plays (still listed among the shortcuts); Escape (once a menu
-  or a toast has had it), F11 and Leave Fullscreen leave. The window is fullscreened and
+  takes; no longer the only one: F5 is Refresh since #346 and F9 the sidebar's toggle since
+  #593, `src/shortcuts.py`), off while nothing plays (still listed among the shortcuts);
+  Escape (once a menu or a toast has had it), F11 and Leave Fullscreen leave. The window is fullscreened and
   put back as it was: GTK keeps its size and maximized state through it, so quitting while
   full screen saves the normal state, and a window that was full screen before (a window
   manager's shortcut) stays so; the window manager taking it out of full screen leaves the

@@ -63,17 +63,16 @@ for both builds, the sign-in's keys each build's own (`account_key()`).
 
 ```
 src/main.py, src/window.py      the Application, the Window (player_bar, sidebar_view, fullscreen)
-src/*.py                        services and logic (engine/, player, mpris, search_provider, discord,
-                                sync, account, cache, background, actions, item_targets, related,
-                                playlist_order, release, session, discography, suggestions, errors,
-                                i18n, lyrics, remote, recent_searches, radio, home, search_pager,
-                                timing, shortcuts, keyboard, sidebar, sections; new ones go here)
+src/*.py                        services and logic, one idea a module (player, sync, session, mpris,
+                                mini_player, keyboard, shortcuts, actions and its neighbours…):
+                                docs/architecture.md places each; new ones go here
+src/engine/                     the Engine: core.py, and its commands as mixins, one module an area
 src/library/                    the data model, a package: GLib, GObject and Gio only, no GTK
-src/pages/<name>.py + .blp      one per page (PAGES in pages/__init__.py); detail_*.py: its parts
+src/pages/<name>.py + .blp      one per page (PAGES in __init__.py); detail_*.py: detail.py's mixins
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
-src/dialogs/                    sign-in, preferences, keyboard shortcuts, about, the playlist dialogs
-src/backend/                    Chrome, the CDP client, bridge.js, API normalising: stdlib and
-                                asyncio only, never gi (tests/test_backend.py checks)
+src/dialogs/                    the dialogs (sign-in, preferences, credits, Add Songs, playlist…)
+src/backend/                    Chrome, the CDP client, bridge.js, Apple's answers shaped: stdlib
+                                and asyncio only, never gi (tests/test_backend.py checks)
 src/style.css, src/icons/       the only stylesheet; bundled symbolic icons
 data/                           desktop file, metainfo, gschema, app icons, metainfo screenshots
 po/                             translations (POTFILES.in)
@@ -116,8 +115,8 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
   widgets only on the main thread (an immutable `Gdk.Texture` may be made in a thread).
 - **Async**: start coroutines from signal handlers with `app.spawn(coro)` (it keeps a reference,
   logs the exception, returns the task). `GLib.idle_add`/`timeout_add` defer UI work past a
-  frame or a layout, not async work. Main-thread work in chunks yields with `await
-  yield_to_frames()` (library/pacing.py): asyncio outranks GTK's redraw: `sleep(0)` paints nothing.
+  frame or a layout, not async work. Chunked main-thread work yields with `await yield_to_frames()`
+  (library/pacing.py): asyncio runs above GTK's redraw, so `sleep(0)` paints nothing.
 - **Chrome and MusicKit only through `app.engine`**: engine/core.py is the one module that imports
   `backend.chrome` and `backend.client`; the rest of the app may import the backend's pure parts
   (all of it but `chrome`, `client` and `cdp`). Playback goes through `app.player`.
@@ -143,8 +142,8 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
   the window handles them as `src/keyboard.py` decides (Space belongs to a focused button).
 - **Quitting**: activate `app.quit`, never `Gio.Application.quit()` directly: the quit path
   saves the window state and stops Chrome cleanly, where `do_shutdown` could only SIGKILL it.
-- **Demo mode** (`--demo`, `app.demo`): no engine (`engine-down`; its invented artist and album
-  pages answer; a star is the session's), no MPRIS or search provider, own settings, no real cache.
+- **Demo mode** (`--demo`, `app.demo`): no engine (`engine-down`, but for what the demo library
+  wrote; a star is the session's), no MPRIS or search provider, settings and cache of its own.
 - **Logging**: `log = logging.getLogger(__name__)`, set up once in main.py; no `print` in `src/`.
 - **Style**: `ruff check .` must be clean (`pyproject.toml`, no per-file exemptions). Beyond
   ruff: 4-space indents, no type annotations, a docstring where a module or function is not
@@ -168,7 +167,7 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
 - Don't write to a real Apple account (love, add to library or a playlist, sign out, clear the
   cache) unless the task asks for it, and put back anything you change.
 - **Apple's marks are Apple's**: the name and icon are the app's own; "Apple Music" names the
-  service, never this app; Apple's logos, fonts and artwork are never used (packaging.md).
+  service, never this app; Apple's logos, fonts and artwork are never used (rules/packaging.md).
 
 ## Verifying and landing a change
 
@@ -180,7 +179,8 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
 3. Keyboard or accessibility changes, or a new page: `scripts/a11y_check.py`, also with
    `--size 360x640` and `--names`; a new page or key gets a step there.
 4. The startup path, a page's first build or a list's bind: `scripts/bench.py` and
-   `scripts/scroll_test.py` on build/demo-big, before and after (headless runs only).
+   `scripts/scroll_test.py` on build/demo-big, before and after (headless runs only); what a
+   width change runs, `scripts/resize_test.py` (`.claude/rules/performance.md`).
 5. The real engine only when the change needs it, and it never leaves data in the repo.
 6. `main` is protected and takes no direct push, from anyone. Work on a branch, open a pull
    request, let CI go green, then `gh pr merge --squash --delete-branch`: no approving review is
