@@ -65,8 +65,10 @@ paths:
 - `build-aux/flatpak/*.Devel.json` is for development only (why in its `x-comment`). It
   builds against GNOME 51 (`flatpak run org.flatpak.Builder`, with `org.gnome.Sdk//51` and
   `org.gnome.Platform//51`; the SDK's blueprint-compiler builds the `.blp`s) and installs
-  as a user Flatpak, whose demo runs on headless.sh's display (docs/release.md says how), but
-  the sandboxed app has not been run against the host's Chrome. Say so when you change it.
+  as a user Flatpak, which runs on headless.sh's display (docs/release.md says how and what
+  has been run: the demo, the host's Chrome up to `drm()`, not playback, which needs a
+  sign-in in its own profile). Its Discord paths are every socket discord.py tries
+  (tests/test_data_files.py). Say what you ran when you change it.
 - If Meson falls back to the blueprint-compiler wrap, that subproject installs a file of its
   own: installs use `--skip-subprojects`.
 - CI (`.github/workflows/ci.yml`) installs its dependencies with pacman in an Arch Linux

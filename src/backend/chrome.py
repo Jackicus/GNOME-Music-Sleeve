@@ -27,7 +27,7 @@ host's: find_chrome() asks the host's shell for it and chrome_args() runs it thr
 desktop's (host_environment_args()); host_secret_service() checks the keyring on that bus.
 flatpak-spawn relays SIGTERM to Chrome, and --watch-bus ends Chrome when flatpak-spawn itself
 goes (a SIGKILL, the sandbox closing). The profile (under ~/.var/app) is the same path on both
-sides. Checked with a host shell in Chrome's place, not yet with Chrome (docs/release.md).
+sides. Run so up to drm(), quitting and killing; not playback (docs/release.md).
 """
 
 import asyncio

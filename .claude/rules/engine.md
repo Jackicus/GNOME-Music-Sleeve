@@ -187,8 +187,7 @@ paths:
   call it in a thread), and the argv starts
   `flatpak-spawn --host --watch-bus [--env=DBUS_SESSION_BUS_ADDRESS=…] --forward-fd=3
   --forward-fd=4`, without setpriv (`--watch-bus` ends Chrome); `profile_owner()` answers None
-  there. With a host shell in Chrome's place the descriptors, the bus, SIGTERM's relay and
-  `--watch-bus` work (docs/release.md); Chrome itself has not been run so.
+  there. Run so up to `drm()`, quitting and killing (docs/release.md); not playback.
 - Chrome's environment (`chrome.chrome_environment()`, applied in `Engine._spawn`): the app's,
   plus `DBUS_SESSION_BUS_ADDRESS` set to `APPLE_MUSIC_HOST_SESSION_BUS` when that is set
   (`config.host_session_bus()`; scripts/headless.sh sets it to the desktop's bus). Chrome

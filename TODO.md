@@ -19,9 +19,10 @@ a release is made is in `docs/release.md`, and why the app is built the way it i
 - [ ] The lyrics cache: since the word timings (#315) a kept song is about five times bigger
       (14 to 41 KB), so the 2,000 songs `LYRICS_KEEP` allows may take about 60 MB. Lower the
       limit or keep the files compressed if that turns out to matter.
-- [ ] Run the Flatpak (the manifest in `build-aux/flatpak/` builds, installs and runs the
-      demo against GNOME 51, docs/release.md; its host Chrome through `flatpak-spawn` has
-      never been run). It can reach a native or Flatpak Discord's socket; that is untested too.
+- [ ] Run the Flatpak signed in: the manifest in `build-aux/flatpak/` builds, and the
+      sandboxed app runs its demo and the host's Chrome up to `drm()` (docs/release.md), but
+      playback, MPRIS with something playing, notifications and Discord's presence need a
+      sign-in in its own profile, which has not been done; nor has a Flatpak Discord.
 - [ ] Left by the review of everything since v1.0.1 (2026-11-11), each waiting for a decision
       or a check on the real engine:
       [#573](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/573), a playlist song's
