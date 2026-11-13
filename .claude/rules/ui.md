@@ -280,7 +280,10 @@ Platform behaviour worth knowing is in `gtk-notes.md`; list and artwork performa
   (HeaderTitle held), Cancel replaces Select, Sort and the filter's button (`hide_button()`)
   and Back are left out, the artist and album links are inert (`track_links.set_inert()`), a
   drag of a selected row carries the selection (`context_menu.set_drag_objects()`, its
-  icon a count), and a playlist does not reorder. Its keys are the window's
+  icon a count; more than `discography.PLAY_LIMIT` songs not dragged, a toast saying why),
+  Play Next and Play Later take its first PLAY_LIMIT (the toast says of how many), Add to
+  Playlist and New Playlist… all of it, their Tracks made in frame-sized steps
+  (`library.make_song_tracks()`), and a playlist does not reorder. Its keys are the window's
   (`keyboard.selection_key()`, before the playback keys), handed to the page that holds the
   focus (`focused_track()`, `selection_mode.key()`).
 - Songs has Play and Shuffle beside its title (under it below its 560sp breakpoint), which

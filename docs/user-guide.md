@@ -385,8 +385,12 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   Favourites** on Favourite Songs in its place (the songs leave the playlist and lose their
   hearts at once, with **Undo** in the message that follows; any that Apple Music refuses
   come back) and **Remove from Library…** (asking once for them all); in a narrow window
-  some are under its **⋮** menu.
-  Drag a selected song to drag them all, onto a playlist in the sidebar or the player bar.
+  some are under its **⋮** menu. **Play Next** and **Play Later** queue the first 300 songs
+  selected, as the Songs page's **Play** plays at most 300 (the message says so when you
+  selected more); **Add to Playlist** and **New Playlist…** take them all.
+  Drag a selected song to drag them all, onto a playlist in the sidebar or the player bar:
+  up to 300 songs. More than that are not dragged, and a message says to use **Add to
+  Playlist**, which takes them all.
   A filter keeps only the selected songs it still shows. **Cancel**, <kbd>Esc</kbd> or any of
   the bar's actions ends selecting. Without selecting, a click on a song still plays it.
 - **Remove from Library…** in the menu of a song, an album or a music video in your library,

@@ -691,6 +691,19 @@ changes, change it here, with the date. The plan they came from is in
   own (the user's songs and their autoplay come back as one batch), and stay after the
   user's songs when it took none (they are then the queue's autoplay); songs queued
   between Clear and Undo go before autoplay's, where Play Later puts them.
+- **A selection's queue actions and drag take at most PLAY_LIMIT songs** (2026-11-13,
+  #578). Select All of the Songs table selects its songs without making a Track, but every
+  batch action and a drag made them all: on build/demo-big's 40,000 songs a quarter of a
+  second on the main loop to wrap every album, then 400 queue commands for Play Next, and a
+  drag's ItemRefs and links besides, half a second as it began (docs/notes.md). Play Next and
+  Play Later now take the first `discography.PLAY_LIMIT` (300) in the order shown, as Songs'
+  Play does, and the toast says "The first 300 of 40,000 items will play next"; queueing
+  thousands is a station's or an album's job, and MusicKit's queue holds them one by one.
+  Add to Playlist and New Playlist… take every song (a playlist of the whole library is a
+  fair thing to make), their Tracks made in frame-sized steps
+  (`library.make_song_tracks()`, `tracks_of()`: the longest step 8 ms). A drag of more than
+  PLAY_LIMIT is refused at its start, with a toast saying so and that Add to Playlist takes
+  them all: a drop has no progress to show, and refusing at the start costs nothing.
 - **Moves of any distance from the keyboard: Move to Top, Move to Bottom, Play Next**
   (2026-11-13, #583). A drag moves a song or an Up Next entry any distance; the keys and Move
   Up and Move Down one place. So a playlist's song and an Up Next entry also have Move to Top

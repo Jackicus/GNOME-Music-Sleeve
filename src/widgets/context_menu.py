@@ -347,7 +347,8 @@ def drag_refs(obj):
 
 def set_drag_objects(view, objects):
     """What a drag from view carries: objects(obj) for the item obj pressed, a list of
-    Tracks in order (a selection's, widgets/selection_mode.py), or None for obj alone.
+    Tracks in order (a selection's, widgets/selection_mode.py), None for obj alone, or an
+    empty list for no drag at all (a selection too big to drag).
     `objects` is held by the view: pass one that does not hold the view's page
     (weak_method())."""
     view._drag_objects = objects
@@ -376,6 +377,8 @@ def _drag_finder(view):
         widget, obj = hit
         objects = getattr(view, '_drag_objects', None)
         several = objects(obj) if objects is not None else None
+        if several is not None and not several:
+            return None  # refused (a selection too big to drag)
         if several and len(several) > 1:
             refs = drag_refs_of(several)
             return (refs, widget, songs_label(len(refs))) if refs is not None else None

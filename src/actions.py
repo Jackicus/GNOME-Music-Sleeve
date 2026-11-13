@@ -174,6 +174,7 @@ opened: tests build the menus and run the actions with a stand-in window, app an
 
 import asyncio
 import logging
+import time
 from collections import OrderedDict, namedtuple
 from gettext import gettext as _
 from gettext import ngettext
@@ -185,8 +186,9 @@ from . import keyboard, related
 from .backend import api
 from .backend.errors import EngineError
 from .backend.api import is_library_id
-from .library import (PUBLIC, REMOVABLE, ROOT_FOLDER, TRACK_KINDS, TRACK_REF_KINDS, Item,
-                      ItemRefs, Track, TreeChange, entries_without, track_ref)
+from .library import (FRAME_BUDGET, PUBLIC, REMOVABLE, ROOT_FOLDER, TRACK_KINDS,
+                      TRACK_REF_KINDS, Item, ItemRefs, Track, TreeChange, entries_without,
+                      track_ref, yield_to_frames)
 from .playlist_order import PlaylistOrder, refresh_playlist, sync_tracks
 
 log = logging.getLogger(__name__)
@@ -479,9 +481,18 @@ def queued_count(commands):
     return sum(len(item_id.split(',')) if kind == 'songs' else 1 for kind, item_id in commands)
 
 
-def queue_message(title, later, count=1):
+def queue_message(title, later, count=1, total=None):
     """The toast after Play Next or Play Later (`later`) of one item called `title`, or of
-    `count` of them."""
+    `count` of them; of the first `count` of `total` selected, when that is more (a
+    selection's queue actions take at most PLAY_LIMIT)."""
+    if total is not None and total > count:
+        if later:
+            return ngettext('The first {count} of {total} items will play later',
+                            'The first {count} of {total} items will play later',
+                            count).format(count=f'{count:n}', total=f'{total:n}')
+        return ngettext('The first {count} of {total} items will play next',
+                        'The first {count} of {total} items will play next',
+                        count).format(count=f'{count:n}', total=f'{total:n}')
     if count > 1:
         if later:
             return ngettext('{count} item will play later', '{count} items will play later',
@@ -1988,7 +1999,11 @@ class ItemActions:
         one that came without them read through the engine's item(), which has them all,
         however Apple pages them). Raises the engine's EngineError."""
         tracks = []
+        paused = time.monotonic()
         for obj in objects:
+            if time.monotonic() - paused > FRAME_BUDGET:  # 40,000 songs: 100 ms at once
+                await yield_to_frames()
+                paused = time.monotonic()
             track = playlist_track(obj)
             if track is not None:
                 tracks.append(track)
@@ -2143,18 +2158,19 @@ class ItemActions:
 
     # -- a selection's actions (widgets/selection_mode.py) -----------------------------------
 
-    def queue_objects(self, objects, later=False):
+    def queue_objects(self, objects, later=False, total=None):
         """Play Next (or, `later`, Play Later) of several songs and music videos, a
-        selection's in the order shown: their queue targets as queue_commands() (a run of
-        songs one command), one toast that counts them. The task, or None when none can be
-        queued."""
+        selection's in the order shown (its first PLAY_LIMIT of `total` selected): their
+        queue targets as queue_commands() (a run of songs one command), one toast that
+        counts them, and says when they are the first of more. The task, or None when none
+        can be queued."""
         targets = [target for target in map(queue_target, objects) if target is not None]
         if not targets:
             self.app.toast(_('This cannot be queued'))
             return None
         commands = queue_commands(targets)
         title = objects[0].title if len(objects) == 1 else ''
-        message = queue_message(title, later, queued_count(commands))
+        message = queue_message(title, later, queued_count(commands), total)
         return self._run(self._send_queue, (commands, later), message, ensure=False)
 
     def new_playlist_of(self, objects):

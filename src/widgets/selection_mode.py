@@ -32,7 +32,13 @@ go through the window's item actions with the selected tracks in the order shown
 Play Later, Add to Playlist (the playlists, then New Playlist…), Remove from Playlist (a
 playlist of the user's: one write, Undo on its toast), or on Favourite Songs Remove from
 Favourites in its place (each song unloved, Undo on the toast), and Remove from Library…
-(one confirmation). In the narrow layout Play Later and the removals are in a More menu, and
+(one confirmation). Play Next and Play Later take the first discography.PLAY_LIMIT songs, as
+Songs' Play does, the toast saying "The first 300 of 40,000…"; Add to Playlist and New
+Playlist… take them all, their Tracks made in frame-sized steps (library.make_song_tracks());
+a drag carries the selection only up to PLAY_LIMIT songs, and a bigger one is not dragged, a
+toast saying so and that Add to Playlist takes them all (#578: Select All of 40,000 songs
+made every Track, sent 400 queue commands and built a drag of half a second, all on the main
+loop). In the narrow layout Play Later and the removals are in a More menu, and
 so is Remove from Library… beside Remove from Playlist or Remove from Favourites
 (_layout()). They are a `selection` action group on the page. The count is announced as it
 changes. A row's look is the page's: a check box in the
@@ -40,7 +46,8 @@ row (`.selection-mode`), "Selected" in its description, both from selection.has(
 
 `shown()` answers what the list shows, in order: its Tracks, or for the Songs table its
 SongEntries, which `key` (library.selection_key) knows as their rows' Tracks are known and
-`objects(entries)` makes the Tracks the batch actions and a drag take.
+`objects(entries)` makes the Tracks the queue actions, the removals and a drag take
+(make_song_tracks() makes Add to Playlist's, whatever the list holds).
 
 The page holds this object, which holds the page's widgets it made, the view and the
 selection; it holds the page only weakly (its hooks through weak_method()), and every child's
@@ -52,6 +59,8 @@ from gettext import ngettext
 
 from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango
 
+from ..discography import PLAY_LIMIT
+from ..library import make_song_tracks
 from ..selection import Selection
 from . import dnd, track_links
 from .util import connect_weak, weak_method
@@ -77,6 +86,13 @@ def row_description(selecting, selected, description):
         return description
     words = selection_words()[0 if selected else 1]
     return f'{words}, {description}' if description else words
+
+
+def drag_limit_message(limit):
+    """The toast when a drag of a selection of more songs than `limit` is refused."""
+    return ngettext('At most {limit} song can be dragged: Add to Playlist takes them all',
+                    'At most {limit} songs can be dragged: Add to Playlist takes them all',
+                    limit).format(limit=f'{limit:n}')
 
 
 def count_title(count):
@@ -291,9 +307,17 @@ class SelectionMode(GObject.Object):
 
     def drag_objects(self, obj):
         """What a drag of obj's row carries in the mode: the whole selection, in the order
-        shown, when obj is in it; None (obj alone) otherwise."""
+        shown, when obj is in it; None (obj alone) otherwise. A selection of more than
+        PLAY_LIMIT songs is not dragged (an empty list: no drag), and a toast says why and
+        what takes them all: its Tracks, ItemRefs and links took half a second for
+        40,000 songs as the drag began (docs/notes.md)."""
         if not self.active or not self.selection.has(obj):
             return None
+        if self.selection.count > PLAY_LIMIT:
+            app = Gio.Application.get_default()
+            if app is not None:
+                app.toast(drag_limit_message(PLAY_LIMIT))
+            return []
         return self._objects(self.selection.ordered(self._shown() or ()))
 
     # -- the selection's changes -------------------------------------------------------------
@@ -388,47 +412,74 @@ class SelectionMode(GObject.Object):
     def _on_select_none(self, _action, _parameter):
         self.selection.select_none()
 
-    def _chosen(self):
-        """The selected tracks in the order shown, and the window's item actions; the mode
-        left (an action of the bar ends it, its toast saying what happened)."""
-        tracks = self._objects(self.selection.ordered(self._shown() or ()))
+    def _chosen(self, limit=None):
+        """The selected tracks in the order shown (the first `limit` of them, when given),
+        how many are selected, and the window's item actions; the mode left (an action of
+        the bar ends it, its toast saying what happened)."""
+        selected = self.selection.ordered(self._shown() or ())
+        tracks = self._objects(selected[:limit] if limit is not None else selected)
         actions = getattr(self._view.get_root(), 'item_actions', None)
         self.leave()
-        return tracks, actions
+        return tracks, len(selected), actions
+
+    def _chosen_entries(self):
+        """The selected songs in the order shown, as the list holds them (SongEntries on
+        Songs), and the window's item actions; the mode left. Their Tracks are made by
+        _in_steps()."""
+        selected = self.selection.ordered(self._shown() or ())
+        actions = getattr(self._view.get_root(), 'item_actions', None)
+        self.leave()
+        return selected, actions
+
+    @staticmethod
+    def _in_steps(songs, then):
+        """then(tracks) once the Tracks of `songs` are made, in frame-sized steps
+        (library.make_song_tracks(): Select All of 40,000 songs wraps every album, a quarter
+        of a second at once)."""
+        async def make():
+            then(await make_song_tracks(songs))
+        app = Gio.Application.get_default()
+        if app is not None:
+            app.spawn(make())
 
     def _on_play_next(self, _action, _parameter):
-        tracks, actions = self._chosen()
-        if tracks and actions is not None:
-            actions.queue_objects(tracks, later=False)
+        self._queue(later=False)
 
     def _on_play_later(self, _action, _parameter):
-        tracks, actions = self._chosen()
+        self._queue(later=True)
+
+    def _queue(self, later):
+        """Play Next or Play Later of the first PLAY_LIMIT songs selected, as Songs' Play
+        takes at most that many; the toast says how many of how many went."""
+        tracks, count, actions = self._chosen(PLAY_LIMIT)
         if tracks and actions is not None:
-            actions.queue_objects(tracks, later=True)
+            actions.queue_objects(tracks, later=later, total=count)
 
     def _on_add_to_playlist(self, _action, parameter):
-        tracks, actions = self._chosen()
-        if tracks and actions is not None:
-            actions.add_items_to_playlist(parameter.get_string(), tracks)
+        songs, actions = self._chosen_entries()
+        playlist_id = parameter.get_string()
+        if songs and actions is not None:
+            self._in_steps(songs, lambda tracks: actions.add_items_to_playlist(playlist_id,
+                                                                                tracks))
 
     def _on_new_playlist(self, _action, _parameter):
-        tracks, actions = self._chosen()
-        if tracks and actions is not None:
-            actions.new_playlist_of(tracks)
+        songs, actions = self._chosen_entries()
+        if songs and actions is not None:
+            self._in_steps(songs, actions.new_playlist_of)
 
     def _on_remove_from_playlist(self, _action, _parameter):
         playlist = self._playlist
-        tracks, actions = self._chosen()
+        tracks, _count, actions = self._chosen()
         if tracks and actions is not None and playlist is not None:
             actions.remove_entries(playlist, tracks)
 
     def _on_remove_from_favourites(self, _action, _parameter):
-        tracks, actions = self._chosen()
+        tracks, _count, actions = self._chosen()
         if tracks and actions is not None:
             actions.remove_favourites(tracks)
 
     def _on_remove_from_library(self, _action, _parameter):
-        tracks, actions = self._chosen()
+        tracks, _count, actions = self._chosen()
         if tracks and actions is not None:
             actions.ask_remove_from_library(tracks)
 

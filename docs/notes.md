@@ -445,6 +445,15 @@ against +3.3); scroll_test.py on Albums five runs, 2.7 / 3.4 / 5.5 ms, none over
   on a reload. On the 5,000-song playlist, `Places` works out its repeats in 5.6 ms, once
   per change of the list (the first key asked after one), and keep() and ordered() of all
   5,000 take 1.9 and 1.6 ms.
+- A selection's batch actions over build/demo-big's 40,000 songs (#578, 2026-11-13, under
+  load: load average 3.8 to 5.5, 82-96 % idle; medians of 3 to 5 runs, each in a fresh
+  Library, the first wrap being the cost): their Tracks (`song_tracks()`, every album's
+  groups wrapped) 246-248 ms (300 of them: 2 ms); the queue targets and commands 71 ms (400
+  commands of QUEUE_BATCH); `describe()` of each 27 ms; `playlist_track()` of each
+  (`tracks_of()`) 99 ms; a drag's ItemRefs 105-123 ms and links 199-204 ms. After: Play Next
+  and Play Later make 300 Tracks; `make_song_tracks()` takes 249 ms in all in 31 steps, the
+  longest 8.1 ms between two frames, and `tracks_of()`'s longest step is 8.1 ms (10.0 at
+  most).
 
 ## Memory
 

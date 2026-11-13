@@ -501,15 +501,58 @@ class SongsPageTest(PageTestCase):
             mode.key('toggle', songs[1])
             self.assertTrue(mode.actions.get_action_enabled(name))
             mode.actions.activate_action(name, None)
+            await self.settle()  # New Playlist… makes its Tracks in steps first
             self.assertEqual(actions.batches[-1], expected, name)  # in the order shown
             self.assertFalse(mode.active)  # an action ends the mode
+        self.assertEqual(actions.queue_totals[-2:], [2, 2])
         mode.key('toggle', songs[0])
         from gi.repository import GLib
         mode.actions.activate_action('add-to-playlist', GLib.Variant('s', 'l.playlist009'))
+        await self.settle()
         self.assertEqual(actions.batches[-1], ('add', [songs[0]], 'l.playlist009'))
         # The Songs table is no playlist: no Remove from Playlist.
         mode.key('toggle', songs[0])
         self.assertFalse(mode.actions.get_action_enabled('remove-from-playlist'))
+
+    async def test_a_big_selection_queues_its_first_songs_and_adds_them_all(self):
+        # #578: Play Next and Play Later take the first PLAY_LIMIT (2 here), Add to
+        # Playlist all of them, as Tracks; a drag of more than PLAY_LIMIT is refused, a
+        # toast saying why.
+        from gi.repository import GLib
+
+        from applemusic.library import Track
+        from applemusic.widgets import context_menu, selection_mode
+
+        page = await self.songs_page(5)
+        mode = page.selection_mode
+        actions = page.get_root().item_actions
+        songs = [page._rows.get_item(n) for n in range(5)]
+        with mock.patch.object(selection_mode, 'PLAY_LIMIT', 2):
+            mode.key('select-all')
+            mode.actions.activate_action('play-later', None)
+            self.assertEqual(actions.batches[-1], ('queue', songs[:2], True))
+            self.assertEqual(actions.queue_totals[-1], 5)
+            mode.key('select-all')
+            self.assertEqual(page.column_view._drag_objects(songs[0]), [])
+            self.assertEqual(self.app.toasts[-1],
+                             'At most 2 songs can be dragged: Add to Playlist takes them all')
+            # The drag itself: a selected row pressed (find() stood in for) has nothing to
+            # drag; one of a selection of one carries it.
+            found = context_menu._drag_finder(page.column_view)
+            with mock.patch.object(context_menu, 'find',
+                                   return_value=(page.column_view, songs[0])):
+                self.assertIsNone(found(0, 0))
+                mode.key('select-none')
+                mode.key('toggle', songs[0])
+                self.assertIsNotNone(found(0, 0))
+            mode.key('select-all')
+            mode.actions.activate_action('add-to-playlist', GLib.Variant('s', 'l.playlist009'))
+            await self.settle()
+            self.assertEqual(actions.batches[-1], ('add', songs, 'l.playlist009'))
+            self.assertTrue(all(isinstance(song, Track) for song in actions.batches[-1][1]))
+            mode.key('toggle', songs[0])
+            mode.key('toggle', songs[1])
+            self.assertEqual(page.column_view._drag_objects(songs[0]), songs[:2])
 
     async def test_a_drag_of_a_selected_song_carries_the_selection(self):
         from applemusic.widgets import context_menu

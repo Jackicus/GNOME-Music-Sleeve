@@ -1959,6 +1959,26 @@ class TestBuildSongs(unittest.TestCase):
             asyncio.run(library.reload())
         self.assertTrue(all(a is b for a, b in zip(songs.entries, entries, strict=True)))
 
+    def test_tracks_made_in_steps(self):
+        from applemusic.library import SongEntry, make_song_tracks, song_track
+
+        entries = [SongEntry(TrackRecord(track(f'i.{n}', f'Song {n}', n)),
+                             (None, 0, {'kind': 'song', 'id': f'i.{n}'}, None))
+                   for n in range(20)]
+        yielded = []
+
+        async def yield_to_frames():
+            yielded.append(True)
+
+        with mock.patch.object(library_module, 'yield_to_frames', yield_to_frames):
+            tracks = asyncio.run(make_song_tracks(entries, budget=-1))
+            self.assertEqual(tracks, [song_track(entry) for entry in entries])
+            self.assertEqual(len(yielded), 20)  # a frame after each: the budget spent
+            asyncio.run(make_song_tracks(entries))
+            self.assertEqual(len(yielded), 20)  # 20 songs: well within one frame's budget
+        own = tracks[3]
+        self.assertEqual(asyncio.run(make_song_tracks([own])), [own])  # a Track is itself
+
     def test_an_entry_reads_as_its_track_does(self):
         from applemusic.library import (SongEntry, SongModel, song_key, song_track,
                                         song_tracks)
