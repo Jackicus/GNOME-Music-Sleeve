@@ -57,6 +57,55 @@ class TestDemoLibrarySchema(unittest.TestCase):
             [sys.executable, os.path.join(REPO_DIR, 'scripts', 'demo_stamp.py'), self.out_dir])
         self.assertEqual(stamp.returncode, 0)
 
+    def test_no_apple_mark_in_its_words(self):
+        # The screenshots show the demo's names: every one of them invented, Apple's
+        # editors' labels too, so no "Apple Music" appears in a picture of it.
+        found = []
+
+        def walk(value, where):
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    if key in ('title', 'subtitle', 'name', 'artist', 'album', 'host',
+                               'tagline') and isinstance(child, str) and 'Apple' in child:
+                        found.append((where, child))
+                    walk(child, where)
+            elif isinstance(value, list):
+                for child in value:
+                    walk(child, where)
+
+        for folder, _dirs, files in os.walk(self.out_dir):
+            for name in files:
+                if name.endswith('.json'):
+                    with open(os.path.join(folder, name), encoding='utf-8') as file:
+                        walk(json.load(file), name)
+        self.assertEqual(found, [])
+
+    def test_its_covers_are_varied_and_the_same_each_time(self):
+        # Each design is seeded by its words: drawn again, a cover is the same picture; the
+        # albums' covers are each their own.
+        albums = self.data['sections']['albums']
+        spec = importlib.util.spec_from_file_location(
+            'demo_library', os.path.join(REPO_DIR, 'scripts', 'demo_library.py'))
+        demo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(demo)
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, 'cover.jpg')
+            demo.draw_cover(path, title=albums[0]['title'], subtitle=albums[0]['subtitle'],
+                            badge=str(albums[0]['year']), palette=demo.PALETTES[1],
+                            motif=demo.album_motif(albums[0]['genre'], 1), size=64)
+            first = GdkPixbuf.Pixbuf.new_from_file(path).get_pixels()
+            demo.draw_cover(path, title=albums[0]['title'], subtitle=albums[0]['subtitle'],
+                            badge=str(albums[0]['year']), palette=demo.PALETTES[1],
+                            motif=demo.album_motif(albums[0]['genre'], 1), size=64)
+            self.assertEqual(GdkPixbuf.Pixbuf.new_from_file(path).get_pixels(), first)
+        covers = set()
+        for album in albums:
+            with open(album['art'], 'rb') as file:
+                covers.add(file.read())
+        self.assertEqual(len(covers), len(albums))
+        self.assertGreaterEqual(len({demo.album_motif(album['genre'], number) for number, album
+                                     in enumerate(albums, 1)}), 10)
+
     def test_top_level_schema(self):
         self.assertEqual(self.data.get('version'), 5)  # sync.LIBRARY_VERSION
         self.assertEqual(self.data.get('storefront'), 'us')

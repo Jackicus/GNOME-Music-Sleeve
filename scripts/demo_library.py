@@ -9,9 +9,11 @@
 Writes library.json in the shape src/backend/README.md describes, the covers
 and thumbnails it names (drawn here, at config's COVER_SIZE and THUMB_SIZE)
 and the art/.sizes marker, into DIR (default build/demo). Every artist, album,
-song, playlist, station and person in it is invented; only the curator labels
-mimic Apple's own ("Apple Music Chill", "Apple Music Radio"). It came from the
-GNOME Shell extension with the backend, and is this app's own now.
+song, playlist, station, curator and person in it is invented, the editors'
+labels too ("Harbourlight Chill", "Harbourlight Radio", where Apple's say
+"Apple Music"), and so is every cover, drawn here (draw_cover): no Apple mark,
+real name or real artwork appears in it, nor so in a screenshot taken on it. It
+came from the GNOME Shell extension with the backend, and is this app's own now.
 `--albums N` (N > 40) adds generated albums, by generated artists, to the 40
 hand-written ones, for measuring big libraries: about 12 songs an album, so
 2,500 albums make 30,000 songs, or `--tracks N` songs in all when given (the
@@ -131,7 +133,7 @@ PALETTES = [
     ('#1b263b', '#e76f51', '#f4a261'),  # Sunset terrace
     ('#073b3a', '#0b6e4f', '#80ed99'),  # Emerald canopy
     ('#2e1f27', '#854d27', '#dd722a'),  # Terracotta autumn
-    ('#212529', '#495057', '#f8f9fa'),  # Monochrome minimal
+    ('#212529', '#495057', '#e9c46a'),  # Graphite and mustard
     ('#132a13', '#31572c', '#90a955'),  # Olive ridge
     ('#2b2d42', '#8d99ae', '#ef233c'),  # Slate & scarlet
     ('#180018', '#7209b7', '#4cc9f0'),  # Cyber violet
@@ -140,9 +142,17 @@ PALETTES = [
     ('#1e1e24', '#444140', '#e54b4b'),  # Charcoal & coral
     ('#023047', '#219ebc', '#ffb703'),  # Mediterranean harbor
     ('#2b1e3a', '#a23b72', '#f18f01'),  # Twilight plum
-    ('#1a202c', '#4a5568', '#a0aec0'),  # Modern slate
+    ('#1a202c', '#4a5568', '#f6ad55'),  # Slate and apricot
     ('#1d3557', '#457b9d', '#a8dadc'),  # Atlantic blues
     ('#3d0c11', '#d1495b', '#edae49'),  # Rich garnet
+    ('#2d2a26', '#b5654a', '#e8c9a0'),  # Terracotta clay
+    ('#1f2a2e', '#5f7c74', '#c9d6c3'),  # Eucalyptus
+    ('#2a2135', '#b07ba6', '#f2d0c9'),  # Dusk rose
+    ('#22313f', '#c9a227', '#efe3c2'),  # Ink and ochre
+    ('#1b1b1b', '#3f6e8c', '#f0ede5'),  # Denim
+    ('#3a1f1d', '#c44536', '#f7e1c3'),  # Tomato and cream
+    ('#16302b', '#c86b3c', '#f3c98b'),  # Pine and rust
+    ('#2b2f3a', '#9aa5b1', '#f6d365'),  # Steel and butter
 ]
 
 # Each hand-written artist's About: where they are from, when born or formed (Apple's own
@@ -236,27 +246,71 @@ DEMO_GENRE_STATIONS = [('Coastal Indie', 'Indie & Alternative'), ('Night Jazz', 
 # The search's curators: Apple-like editors, whose tile opens a page of their playlists, and
 # a third party's (a label's), which has no page in the app (music.apple.com's, in the demo
 # refused). None plays.
-DEMO_SEARCH_CURATORS = [('Apple Music Chill', 'apple'), ('Apple Music Jazz', 'apple'),
+DEMO_SEARCH_CURATORS = [('Harbourlight Chill', 'apple'), ('Harbourlight Jazz', 'apple'),
                         ('Night Tide Editors', 'apple'), ('Paper Lantern Records', 'label')]
 
+# The covers' designs, each a whole picture drawn on the 512-unit square (draw_cover). An
+# album's follows its genre (GENRE_MOTIFS), so an artist's records look of a piece and a
+# shelf of them varied; anything else's is chosen by its index.
 MOTIFS = [
-    'sun_horizon',
-    'concentric_rings',
-    'geometric_facets',
-    'soundwave_bars',
-    'minimalist_arch',
-    'retro_grid',
-    'mountain_peaks',
-    'halftone_matrix',
-    'diagonal_stripes',
-    'organic_blobs',
+    'aurora',
+    'dunes',
+    'bauhaus',
+    'bokeh',
+    'contours',
+    'colour_field',
+    'orbit',
+    'mosaic',
+    'swiss',
+    'ribbons',
+    'horizon_grid',
+    'arch',
 ]
+
+GENRE_MOTIFS = {
+    'Post-Rock': ['dunes', 'contours', 'ribbons'],
+    'Synthwave': ['horizon_grid', 'orbit', 'ribbons'],
+    'Electronic': ['orbit', 'ribbons', 'swiss'],
+    'Indie Folk': ['dunes', 'arch', 'colour_field'],
+    'Modern Classical': ['contours', 'colour_field', 'arch'],
+    'Dream Pop': ['bokeh', 'aurora', 'ribbons'],
+    'Synthpop': ['aurora', 'bokeh', 'horizon_grid'],
+    'Ambient': ['aurora', 'orbit', 'contours'],
+    'Neo-Soul': ['colour_field', 'bokeh', 'swiss'],
+    'Shoegaze': ['bokeh', 'aurora', 'colour_field'],
+    'Nu-Jazz': ['swiss', 'bauhaus', 'mosaic'],
+    'Cinematic': ['dunes', 'orbit', 'colour_field'],
+    'Lo-Fi Hip-Hop': ['mosaic', 'arch', 'bauhaus'],
+    'Deep House': ['ribbons', 'swiss', 'orbit'],
+    'Melodic Techno': ['contours', 'ribbons', 'swiss'],
+    'Indie Pop': ['bauhaus', 'mosaic', 'arch'],
+    'Math Rock': ['mosaic', 'bauhaus', 'swiss'],
+    'Funk & Jazz': ['mosaic', 'bauhaus', 'swiss'],
+    'Contemporary Jazz': ['colour_field', 'bokeh', 'swiss'],
+}
+
+# The badges of what editors make (a playlist, a station, a show, a chart): their covers
+# carry the title large, as a streaming service's own do; an album's has its words small,
+# or none.
+EDITORIAL_BADGES = {'PLAYLIST', 'RADIO', 'LIVE', 'SHOW', 'REPLAY', 'TOP 100', 'TOP 25'}
+PAPER = (0.945, 0.918, 0.859)  # the light covers' ground, an off-white paper
+
+
+def album_motif(genre, index):
+    """The design of an album of `genre`, the index-th of the library."""
+    choices = GENRE_MOTIFS.get(genre)
+    return choices[index % len(choices)] if choices else MOTIFS[index % len(MOTIFS)]
 
 
 def hex_to_rgb(hex_code):
     """Convert hex string '#rrggbb' to (r, g, b) float tuple in 0..1."""
     h = hex_code.lstrip('#')
     return tuple(int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+
+def mix(first, second, amount):
+    """The colour `amount` of the way from `first` to `second`."""
+    return tuple(a + (b - a) * amount for a, b in zip(first, second, strict=True))
 
 
 def wrap_text(ctx, text, max_width, font_size):
@@ -278,259 +332,540 @@ def wrap_text(ctx, text, max_width, font_size):
     return lines
 
 
+def spaced_width(ctx, text, spacing):
+    """The width of text shown by show_spaced()."""
+    return sum(ctx.text_extents(char).x_advance for char in text) + spacing * (len(text) - 1)
+
+
+def show_spaced(ctx, text, x, y, spacing):
+    """Show text letter-spaced, as a sleeve's small capitals are, from (x, y)."""
+    for char in text:
+        ctx.move_to(x, y)
+        ctx.show_text(char)
+        x += ctx.text_extents(char).x_advance + spacing
+
+
+_GRAIN = []
+
+
+def grain_pattern():
+    """A tile of film grain, mid-grey noise painted over a cover with OVERLAY: made once in
+    each process, from a fixed seed, so a cover's grain is the same every time."""
+    if not _GRAIN:
+        rnd = random.Random(5)
+        size = 160
+        pixels = bytearray()
+        for _pixel in range(size * size):
+            value = max(0, min(255, int(rnd.gauss(128, 42))))
+            pixels += bytes((value, value, value, 255))
+        surface = cairo.ImageSurface.create_for_data(pixels, cairo.FORMAT_ARGB32, size, size,
+                                                     size * 4)
+        pattern = cairo.SurfacePattern(surface)
+        pattern.set_extend(cairo.EXTEND_REPEAT)
+        _GRAIN.append((pixels, surface, pattern))
+    return _GRAIN[0][2]
+
+
+def radial_glow(ctx, x, y, radius, colour, alpha):
+    """A soft light of `colour`, fading out from (x, y) over `radius`."""
+    glow = cairo.RadialGradient(x, y, 0, x, y, radius)
+    glow.add_color_stop_rgba(0.0, *colour, alpha)
+    glow.add_color_stop_rgba(1.0, *colour, 0.0)
+    ctx.set_source(glow)
+    ctx.paint()
+
+
+def hill_path(ctx, rnd, base, amplitude, step=8):
+    """A hill line across the square at `base`, a sum of two slow sines, closed below."""
+    waves = [(rnd.uniform(0.004, 0.012), rnd.uniform(0, 2 * math.pi), amplitude),
+             (rnd.uniform(0.015, 0.03), rnd.uniform(0, 2 * math.pi), amplitude * 0.35)]
+    ctx.move_to(0, 512)
+    for x in range(0, 513, step):
+        ctx.line_to(x, base + sum(a * math.sin(f * x + p) for f, p, a in waves))
+    ctx.line_to(512, 512)
+    ctx.close_path()
+
+
+# Each design paints the whole square and returns the colours words take on it at the top
+# and at the bottom (None where words would not read).
+
+def motif_aurora(ctx, rnd, dark, mid, light):
+    ctx.set_source_rgb(*dark)
+    ctx.paint()
+    # A glow in each quarter, in an order of its own, so the colours never pool in one place.
+    corners = [(128, 128), (384, 128), (128, 384), (384, 384)]
+    rnd.shuffle(corners)
+    for (x, y), (colour, alpha) in zip(corners, ((mid, 1.0), (light, 0.85),
+                                                  (mix(mid, light, 0.5), 0.8), (mid, 0.9)),
+                                       strict=True):
+        radial_glow(ctx, x + rnd.uniform(-70, 70), y + rnd.uniform(-70, 70),
+                    rnd.uniform(200, 300), colour, alpha)
+    radial_glow(ctx, rnd.uniform(100, 412), rnd.uniform(100, 412), 160, dark, 0.7)
+    return (1, 1, 1), (1, 1, 1)
+
+
+def motif_dunes(ctx, rnd, dark, mid, light):
+    sky = cairo.LinearGradient(0, 0, 0, 330)
+    sky.add_color_stop_rgb(0.0, *mix(mid, light, 0.55))
+    sky.add_color_stop_rgb(1.0, *mix(light, (1, 1, 1), 0.35))
+    ctx.set_source(sky)
+    ctx.paint()
+    ctx.arc(rnd.uniform(130, 380), rnd.uniform(170, 230), rnd.uniform(42, 70), 0, 2 * math.pi)
+    ctx.set_source_rgba(*mix(light, (1, 1, 1), 0.6), 0.95)
+    ctx.fill()
+    for layer in range(4):
+        ctx.set_source_rgb(*mix(mix(light, mid, 0.4), dark, (layer + 1) / 4.4))
+        hill_path(ctx, rnd, 262 + layer * 58, rnd.uniform(14, 30))
+        ctx.fill()
+    return mix(dark, mid, 0.2), mix(light, (1, 1, 1), 0.5)
+
+
+def motif_bauhaus(ctx, rnd, dark, mid, light):
+    ctx.set_source_rgb(*mix(PAPER, light, 0.12))
+    ctx.paint()
+    colours = [dark, mid, mix(mid, dark, 0.45), mix(mid, light, 0.35)]
+    # Three rows of shapes from the top, the bottom kept clear for the words.
+    cell, left, top = 120, 76, 44
+    for row in range(3):
+        for column in range(3):
+            shape = rnd.choice(['circle', 'half', 'quarter', 'square', 'bars', None, None])
+            if shape is None:
+                continue
+            ctx.save()
+            ctx.translate(left + (column + 0.5) * cell, top + (row + 0.5) * cell)
+            ctx.rotate(rnd.choice([0, 0.5, 1, 1.5]) * math.pi)
+            ctx.set_source_rgb(*rnd.choice(colours))
+            half = cell / 2 - 4
+            if shape == 'circle':
+                ctx.arc(0, 0, half, 0, 2 * math.pi)
+            elif shape == 'half':
+                ctx.arc(0, half, half * 2, math.pi, 2 * math.pi)
+                ctx.close_path()
+                ctx.save()
+                ctx.rectangle(-half, -half, half * 2, half * 2)
+                ctx.clip()
+                ctx.fill()
+                ctx.restore()
+            elif shape == 'quarter':
+                ctx.move_to(-half, -half)
+                ctx.arc(-half, -half, half * 2, 0, math.pi / 2)
+                ctx.close_path()
+            elif shape == 'square':
+                ctx.rectangle(-half, -half, half * 2, half * 2)
+            else:
+                for bar in range(4):
+                    ctx.rectangle(-half, -half + bar * half / 2, half * 2, half / 4)
+            ctx.fill()
+            ctx.restore()
+    return None, dark
+
+
+def motif_bokeh(ctx, rnd, dark, mid, light):
+    ground = cairo.LinearGradient(0, 0, 0, 512)
+    ground.add_color_stop_rgb(0.0, *dark)
+    ground.add_color_stop_rgb(1.0, *mix(dark, mid, 0.55))
+    ctx.set_source(ground)
+    ctx.paint()
+    warm = mix(light, (1.0, 0.86, 0.62), 0.4)
+    for _light in range(46):
+        x, y, r = rnd.uniform(-20, 532), rnd.uniform(-20, 532), rnd.uniform(12, 68)
+        colour = rnd.choice([mid, light, warm, mix(mid, light, 0.5)])
+        alpha = rnd.uniform(0.18, 0.55)
+        disc = cairo.RadialGradient(x, y, 0, x, y, r)
+        disc.add_color_stop_rgba(0.0, *colour, alpha * 0.7)
+        disc.add_color_stop_rgba(0.82, *colour, alpha)
+        disc.add_color_stop_rgba(1.0, *colour, 0.0)
+        ctx.arc(x, y, r, 0, 2 * math.pi)
+        ctx.set_source(disc)
+        ctx.fill()
+    return (1, 1, 1), (1, 1, 1)
+
+
+def motif_contours(ctx, rnd, dark, mid, light):
+    ground = cairo.LinearGradient(0, 0, 512, 512)
+    ground.add_color_stop_rgb(0.0, *mix(dark, mid, 0.6))
+    ground.add_color_stop_rgb(1.0, *dark)
+    ctx.set_source(ground)
+    ctx.paint()
+    for peak in range(2):
+        cx, cy = rnd.uniform(130, 380), rnd.uniform(130, 380)
+        phases = [rnd.uniform(0, 2 * math.pi) for _ in range(3)]
+        for level in range(16 if peak == 0 else 7):
+            radius = 14 + level * 19
+            ctx.new_path()
+            for step in range(121):
+                angle = step / 120 * 2 * math.pi
+                wobble = (1 + 0.16 * math.sin(2 * angle + phases[0] + level * 0.15)
+                          + 0.08 * math.sin(3 * angle + phases[1])
+                          + 0.05 * math.sin(5 * angle + phases[2] - level * 0.2))
+                ctx.line_to(cx + math.cos(angle) * radius * wobble,
+                            cy + math.sin(angle) * radius * wobble * 0.92)
+            ctx.close_path()
+            ctx.set_line_width(1.8 if level % 4 == 0 else 1.0)
+            ctx.set_source_rgba(*light, 0.6 if level % 4 == 0 else 0.35)
+            ctx.stroke()
+    return (1, 1, 1), (1, 1, 1)
+
+
+def soft_rect(ctx, x, y, width, height, colour, alpha=1.0, softness=14):
+    """A rectangle with feathered edges, as paint soaked into canvas."""
+    for step in range(softness, 0, -2):
+        ctx.rectangle(x - step, y - step, width + 2 * step, height + 2 * step)
+        ctx.set_source_rgba(*colour, alpha * 0.14)
+        ctx.fill()
+    ctx.rectangle(x, y, width, height)
+    ctx.set_source_rgba(*colour, alpha * 0.9)
+    ctx.fill()
+
+
+def motif_colour_field(ctx, rnd, dark, mid, light):
+    ctx.set_source_rgb(*mix(mid, dark, 0.25))
+    ctx.paint()
+    split = rnd.uniform(230, 290)
+    soft_rect(ctx, 46, 44, 420, split - 64, mix(light, mid, rnd.uniform(0.1, 0.4)))
+    soft_rect(ctx, 46, split + 12, 420, 456 - split, mix(dark, mid, 0.35))
+    if rnd.random() < 0.5:
+        soft_rect(ctx, 46, split - 6, 420, 10, mix(mid, light, 0.6), 0.8, 6)
+    return None, mix(light, (1, 1, 1), 0.4)
+
+
+def motif_orbit(ctx, rnd, dark, mid, light):
+    ctx.set_source_rgb(*mix(dark, (0, 0, 0), 0.3))
+    ctx.paint()
+    for _star in range(90):
+        ctx.arc(rnd.uniform(0, 512), rnd.uniform(0, 512), rnd.uniform(0.6, 2.0), 0, 2 * math.pi)
+        ctx.set_source_rgba(*mix(light, (1, 1, 1), 0.5), rnd.uniform(0.25, 0.9))
+        ctx.fill()
+    x, y, r = rnd.uniform(200, 312), rnd.uniform(220, 300), rnd.uniform(96, 130)
+    radial_glow(ctx, x, y, r * 2.2, mid, 0.45)
+    body = cairo.RadialGradient(x - r * 0.4, y - r * 0.45, r * 0.1, x, y, r)
+    body.add_color_stop_rgb(0.0, *mix(light, (1, 1, 1), 0.3))
+    body.add_color_stop_rgb(0.55, *mid)
+    body.add_color_stop_rgb(1.0, *mix(dark, mid, 0.3))
+    ctx.arc(x, y, r, 0, 2 * math.pi)
+    ctx.set_source(body)
+    ctx.fill()
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(-rnd.uniform(0.2, 0.45))
+    ctx.scale(1, 0.24)
+    ctx.arc(0, 0, r * 1.75, 0, 2 * math.pi)
+    ctx.restore()
+    ctx.set_line_width(2.5)
+    ctx.set_source_rgba(*light, 0.75)
+    ctx.stroke()
+    return (1, 1, 1), (1, 1, 1)
+
+
+def motif_mosaic(ctx, rnd, dark, mid, light):
+    count = rnd.choice([4, 5, 6])
+    cell = 512 / count
+    colours = [dark, mid, light, mix(dark, mid, 0.5), mix(mid, light, 0.5), PAPER]
+    for row in range(count):
+        for column in range(count):
+            x, y = column * cell, row * cell
+            ground = rnd.choice(colours)
+            ctx.rectangle(x, y, cell + 0.5, cell + 0.5)
+            ctx.set_source_rgb(*ground)
+            ctx.fill()
+            if rnd.random() < 0.45:
+                ctx.set_source_rgb(*rnd.choice([c for c in colours if c != ground]))
+                if rnd.random() < 0.5:
+                    ctx.arc(x + cell / 2, y + cell / 2, cell * 0.36, 0, 2 * math.pi)
+                else:
+                    corner = rnd.randrange(4)
+                    cx = x + (cell if corner in (1, 2) else 0)
+                    cy = y + (cell if corner >= 2 else 0)
+                    ctx.move_to(cx, cy)
+                    ctx.arc(cx, cy, cell, (corner + 2) * math.pi / 2, (corner + 3) * math.pi / 2)
+                    ctx.close_path()
+                ctx.save()
+                ctx.rectangle(x, y, cell, cell)
+                ctx.clip()
+                ctx.fill()
+                ctx.restore()
+    return None, None
+
+
+def motif_ribbons(ctx, rnd, dark, mid, light):
+    ground = cairo.LinearGradient(0, 0, 0, 512)
+    ground.add_color_stop_rgb(0.0, *mix(dark, (0, 0, 0), 0.2))
+    ground.add_color_stop_rgb(1.0, *dark)
+    ctx.set_source(ground)
+    ctx.paint()
+    base = rnd.uniform(220, 290)
+    freq, phase = rnd.uniform(0.008, 0.014), rnd.uniform(0, 2 * math.pi)
+    twist = rnd.uniform(0.02, 0.05)
+    for line in range(70):
+        ctx.new_path()
+        for x in range(-10, 523, 6):
+            y = (base + math.sin(x * freq + phase) * 60
+                 + math.sin(x * freq * 0.5 + line * twist) * (line - 35) * 1.4)
+            ctx.line_to(x, y)
+        ctx.set_line_width(1.1)
+        ctx.set_source_rgba(*mix(mid, light, line / 70), 0.55)
+        ctx.stroke()
+    return (1, 1, 1), (1, 1, 1)
+
+
+def motif_horizon_grid(ctx, rnd, dark, mid, light):
+    horizon = 300
+    sky = cairo.LinearGradient(0, 0, 0, horizon)
+    sky.add_color_stop_rgb(0.0, *mix(dark, (0, 0, 0), 0.3))
+    sky.add_color_stop_rgb(1.0, *mid)
+    ctx.set_source(sky)
+    ctx.rectangle(0, 0, 512, horizon)
+    ctx.fill()
+    radius = rnd.uniform(95, 125)
+    sun = cairo.LinearGradient(0, horizon - radius * 1.4, 0, horizon)
+    sun.add_color_stop_rgb(0.0, *mix(light, (1, 1, 1), 0.4))
+    sun.add_color_stop_rgb(1.0, *mix(light, mid, 0.5))
+    ctx.save()
+    ctx.rectangle(0, 0, 512, horizon)
+    ctx.clip()
+    ctx.arc(256, horizon - radius * 0.35, radius, 0, 2 * math.pi)
+    ctx.set_source(sun)
+    ctx.fill()
+    ctx.set_source_rgb(*mid)
+    for band in range(6):
+        ctx.rectangle(0, horizon - 8 - band * 13, 512, 6 - band * 0.8)
+        ctx.fill()
+    ctx.restore()
+    ctx.set_source_rgb(*mix(dark, (0, 0, 0), 0.4))
+    ctx.rectangle(0, horizon, 512, 512 - horizon)
+    ctx.fill()
+    ctx.set_line_width(1.3)
+    ctx.set_source_rgba(*light, 0.55)
+    for column in range(-12, 13):
+        ctx.move_to(256 + column * 12, horizon)
+        ctx.line_to(256 + column * 90, 512)
+        ctx.stroke()
+    for row in range(9):
+        y = horizon + (512 - horizon) * (row / 8) ** 2
+        ctx.move_to(0, y)
+        ctx.line_to(512, y)
+        ctx.stroke()
+    return (1, 1, 1), None
+
+
+def motif_arch(ctx, rnd, dark, mid, light):
+    wall = mix(PAPER, light, 0.3)
+    ctx.set_source_rgb(*wall)
+    ctx.paint()
+    floor = rnd.uniform(370, 410)
+    ctx.set_source_rgb(*mix(wall, mid, 0.25))
+    ctx.rectangle(0, floor, 512, 512 - floor)
+    ctx.fill()
+    width = rnd.uniform(170, 230)
+    left = 256 - width / 2
+    top = rnd.uniform(110, 150)
+    ctx.move_to(left, floor)
+    ctx.line_to(left, top + width / 2)
+    ctx.arc(256, top + width / 2, width / 2, math.pi, 0)
+    ctx.line_to(left + width, floor)
+    ctx.close_path()
+    ctx.set_source_rgb(*mid)
+    ctx.fill()
+    inner = width * 0.58
+    ctx.move_to(256 - inner / 2, floor)
+    ctx.arc(256, top + width / 2 + 30, inner / 2, math.pi, 0)
+    ctx.line_to(256 + inner / 2, floor)
+    ctx.close_path()
+    ctx.set_source_rgb(*dark)
+    ctx.fill()
+    ctx.arc(256 + rnd.choice([-1, 1]) * width * 0.78, top + 10, rnd.uniform(22, 34), 0,
+            2 * math.pi)
+    ctx.set_source_rgb(*mix(mid, light, 0.3))
+    ctx.fill()
+    return dark, dark
+
+
+def motif_swiss(ctx, rnd, dark, mid, light, title, subtitle):
+    """Type as the picture: the title's first word set huge, a rule, a block of small type,
+    a disc of colour."""
+    paper = rnd.random() < 0.5
+    ground, ink = (mix(PAPER, light, 0.1), dark) if paper else (mid, mix(light, (1, 1, 1), 0.5))
+    ctx.set_source_rgb(*ground)
+    ctx.paint()
+    ctx.arc(rnd.uniform(300, 420), rnd.uniform(290, 380), rnd.uniform(60, 100), 0, 2 * math.pi)
+    ctx.set_source_rgb(*(mid if paper else dark))
+    ctx.fill()
+    words = title.split()
+    word = (' '.join(words[:2]) if len(words) > 1 and len(words[0]) <= 3 else words[0]).upper()
+    ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+    size = 200
+    ctx.set_font_size(size)
+    while size > 40 and ctx.text_extents(word).width > 440:
+        size -= 4
+        ctx.set_font_size(size)
+    extents = ctx.text_extents(word)
+    ctx.set_source_rgb(*ink)
+    ctx.move_to(36 - extents.x_bearing, 40 - extents.y_bearing)
+    ctx.show_text(word)
+    rule = 40 + extents.height + 22
+    ctx.set_line_width(3)
+    ctx.move_to(36, rule)
+    ctx.line_to(476, rule)
+    ctx.stroke()
+    ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+    ctx.set_font_size(15)
+    for number, line in enumerate([subtitle or '', title]):
+        ctx.move_to(36, 452 + number * 22)
+        ctx.show_text(line)
+
+
+MOTIF_DRAW = {
+    'aurora': motif_aurora, 'dunes': motif_dunes, 'bauhaus': motif_bauhaus,
+    'bokeh': motif_bokeh, 'contours': motif_contours, 'colour_field': motif_colour_field,
+    'orbit': motif_orbit, 'mosaic': motif_mosaic, 'ribbons': motif_ribbons,
+    'horizon_grid': motif_horizon_grid, 'arch': motif_arch,
+}
+
+
+def draw_portrait(ctx, rnd, dark, mid, light, figures):
+    """An artist's photograph as a silhouette: stage light behind, a rim of light on each
+    figure. The tile crops the square to its inscribed circle, so all that matters sits well
+    inside it, and no words are drawn: the views print the name beside it."""
+    ground = cairo.LinearGradient(0, 0, 0, 512)
+    ground.add_color_stop_rgb(0.0, *mix(dark, mid, 0.5))
+    ground.add_color_stop_rgb(1.0, *dark)
+    ctx.set_source(ground)
+    ctx.paint()
+    radial_glow(ctx, rnd.uniform(200, 312), rnd.uniform(150, 230), 300,
+                mix(light, mid, 0.3), 0.75)
+    for _speck in range(30):
+        ctx.arc(rnd.uniform(60, 452), rnd.uniform(60, 300), rnd.uniform(1, 3), 0, 2 * math.pi)
+        ctx.set_source_rgba(*light, rnd.uniform(0.2, 0.5))
+        ctx.fill()
+    # Lit from one side: the figures' near side catches the light.
+    side = rnd.choice([-1, 1])
+    # The outer figures first, the middle one, the tallest, last: in front.
+    for number in sorted(range(figures), key=lambda n: -abs(n - (figures - 1) / 2)):
+        offset = (number - (figures - 1) / 2) * 125
+        ctx.save()
+        ctx.translate(256 + offset + rnd.uniform(-8, 8), 500 if offset == 0 else 470)
+        ctx.scale(*((1.0, 1.0) if offset == 0 else (0.82, 0.82)))
+        ctx.rotate(rnd.uniform(-0.05, 0.05))
+        ctx.new_path()
+        ctx.save()
+        ctx.translate(rnd.uniform(-6, 6), -268)
+        ctx.scale(0.84, 1.0)
+        ctx.arc(0, 0, 62, 0, 2 * math.pi)
+        ctx.restore()
+        ctx.new_sub_path()
+        ctx.move_to(-190, 40)
+        ctx.curve_to(-182, -100, -120, -140, -46, -158)
+        ctx.line_to(-34, -205)
+        ctx.line_to(34, -205)
+        ctx.line_to(46, -158)
+        ctx.curve_to(120, -140, 182, -100, 190, 40)
+        ctx.close_path()
+        path = ctx.copy_path()
+        shade = cairo.LinearGradient(-190 * side, 0, 190 * side, 0)
+        shade.add_color_stop_rgb(0.0, *mix(dark, (0, 0, 0), 0.5))
+        shade.add_color_stop_rgb(1.0, *mix(dark, mid, 0.35))
+        ctx.set_source(shade)
+        ctx.fill()
+        ctx.append_path(path)
+        rim = cairo.LinearGradient(-190 * side, 0, 190 * side, 0)
+        rim.add_color_stop_rgba(0.0, *light, 0.0)
+        rim.add_color_stop_rgba(1.0, *mix(light, (1, 1, 1), 0.3), 0.7)
+        ctx.set_line_width(3)
+        ctx.set_source(rim)
+        ctx.stroke()
+        ctx.restore()
+
+
+def draw_words(ctx, rnd, title, subtitle, badge, inks):
+    """The cover's words: an editorial cover's title large at the bottom; an album's in one
+    of a few sleeve layouts, small and quiet, or none at all, as most sleeves have."""
+    ink_top, ink_bottom = inks
+    if badge in EDITORIAL_BADGES:
+        if ink_bottom is None:
+            ink_bottom = (1, 1, 1)
+            scrim = cairo.LinearGradient(0, 300, 0, 512)
+            scrim.add_color_stop_rgba(0.0, 0, 0, 0, 0.0)
+            scrim.add_color_stop_rgba(1.0, 0, 0, 0, 0.6)
+            ctx.set_source(scrim)
+            ctx.paint()
+        ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        size = 40
+        lines = wrap_text(ctx, title, 430, size)
+        if len(lines) > 2:
+            size = 32
+            lines = wrap_text(ctx, title, 430, size)
+        ctx.set_source_rgb(*ink_bottom)
+        for number, line in enumerate(lines):
+            ctx.move_to(36, 476 - (len(lines) - 1 - number) * round(size * 1.12))
+            ctx.show_text(line)
+        return
+    layout = rnd.choice(['none', 'none', 'top_small', 'bottom_serif', 'top_centre'])
+    if layout in ('top_small', 'top_centre') and ink_top is None:
+        layout = 'bottom_serif'
+    if layout == 'bottom_serif' and ink_bottom is None:
+        layout = 'top_small' if ink_top is not None else 'none'
+    if layout == 'top_small':
+        ctx.set_source_rgb(*ink_top)
+        ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        ctx.set_font_size(15)
+        show_spaced(ctx, (subtitle or '').upper(), 36, 54, 2.2)
+        ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        ctx.set_font_size(19)
+        ctx.move_to(36, 80)
+        ctx.show_text(title)
+    elif layout == 'top_centre':
+        ctx.set_source_rgb(*ink_top)
+        ctx.select_font_face('Serif', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        name = (subtitle or title).upper()
+        size = 30
+        ctx.set_font_size(size)
+        while size > 14 and spaced_width(ctx, name, 3) > 440:
+            size -= 2
+            ctx.set_font_size(size)
+        show_spaced(ctx, name, 256 - spaced_width(ctx, name, 3) / 2, 66, 3)
+    elif layout == 'bottom_serif':
+        ctx.set_source_rgb(*ink_bottom)
+        ctx.select_font_face('Serif', cairo.FONT_SLANT_ITALIC, cairo.FONT_WEIGHT_NORMAL)
+        lines = wrap_text(ctx, title, 420, 34)[:2]
+        for number, line in enumerate(lines):
+            ctx.move_to(36, 470 - (len(lines) - 1 - number) * 38)
+            ctx.show_text(line)
+
+
 def draw_cover(out_path, title, subtitle, badge, palette, motif, is_artist=False,
                size=config.COVER_SIZE, wide=False):
     """Draw a size x size square artwork with Cairo and save as JPEG via GdkPixbuf.
-    The drawing is laid out on a 512-unit square and scaled to `size`. `wide` draws a
-    music video's 16:9 frame instead (size wide, on a 512 x 288 canvas): the motif in its
-    middle square, over the gradient, as a still from the video."""
-    dark_rgb = hex_to_rgb(palette[0])
-    mid_rgb = hex_to_rgb(palette[1])
-    light_rgb = hex_to_rgb(palette[2])
+    The drawing is laid out on a 512-unit square and scaled to `size`: the `motif`'s picture
+    (MOTIFS) in the palette's colours, maybe words (draw_words; `badge` says what kind of
+    thing it is, and is not drawn), and film grain over it all. Its random choices are
+    seeded by its words, so a cover is the same every time. `is_artist` draws an artist's
+    portrait instead; `wide` a music video's 16:9 frame (size wide, the middle 512 x 288 band
+    of the square picture, no words), as a still from the video."""
+    dark, mid, light = (hex_to_rgb(colour) for colour in palette)
+    rnd = random.Random(hashlib.sha1(f'{title}|{subtitle}|{motif}|{is_artist}'.encode()).digest())
 
     width, height = (size, round(size * 9 / 16)) if wide else (size, size)
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
     ctx = cairo.Context(surf)
     ctx.scale(size / 512, size / 512)
-
-    # 1. Base gradient
-    bg = cairo.LinearGradient(0, 0, 512, 288 if wide else 512)
-    bg.add_color_stop_rgb(0.0, *dark_rgb)
-    bg.add_color_stop_rgb(1.0, *mid_rgb)
-    ctx.set_source(bg)
-    ctx.paint()
-    if wide:  # the square design, scaled into the middle 288 x 288
-        ctx.save()
-        ctx.translate(112, 0)
-        ctx.scale(288 / 512, 288 / 512)
-
-    # 2. Geometric motif
-    if is_artist:
-        # The artist tile crops this square art into the circle inscribed in
-        # it (shape.js's `round` part: border-radius 9999px on a square box,
-        # i.e. a circle of radius 256 centred on the image). Nothing that
-        # matters — silhouette or text — may sit outside that circle, so the
-        # whole portrait is clipped to a slightly smaller, safe circle and no
-        # text is drawn here at all: the shelf/detail views already print the
-        # artist's name as their own label below the round artwork.
-        cx, cy, safe_r = 256, 256, 236
-
-        ctx.save()
-        ctx.arc(cx, cy, safe_r, 0, 2 * math.pi)
-        ctx.clip()
-
-        # Soft disc behind the silhouette
-        ctx.arc(cx, cy, safe_r, 0, 2 * math.pi)
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.22)
-        ctx.fill()
-
-        ctx.set_line_width(3.0)
-        ctx.arc(cx, cy, safe_r - 8, 0, 2 * math.pi)
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.8)
-        ctx.stroke()
-
-        # Centred head-and-shoulders silhouette, sized to stay inside safe_r
-        # even after the clip (the clip is the real guarantee; this keeps the
-        # unclipped shape close to it so nothing looks abruptly cut off).
-        ctx.arc(cx, cy - 55, 62, 0, 2 * math.pi)
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.95)
-        ctx.fill()
-
-        ctx.arc(cx, cy + 210, 150, math.pi, 2 * math.pi)
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.85)
-        ctx.fill()
-
-        ctx.restore()
-
-    elif motif == 'sun_horizon':
-        # Sun disc
-        ctx.arc(256, 195, 105, 0, 2 * math.pi)
-        ctx.set_source_rgb(*light_rgb)
-        ctx.fill()
-        # Horizontal blinds
-        ctx.set_source_rgb(*dark_rgb)
-        for i in range(5):
-            ctx.rectangle(90, 205 + i * 18, 332, 8)
-            ctx.fill()
-
-    elif motif == 'concentric_rings':
-        ctx.set_line_width(2.5)
-        for r in range(40, 220, 32):
-            ctx.arc(256, 195, r, 0, 2 * math.pi)
-            ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.35)
-            ctx.stroke()
-        ctx.arc(360, 140, 16, 0, 2 * math.pi)
-        ctx.set_source_rgb(*light_rgb)
-        ctx.fill()
-
-    elif motif == 'geometric_facets':
-        ctx.move_to(80, 280)
-        ctx.line_to(256, 70)
-        ctx.line_to(432, 280)
-        ctx.close_path()
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.45)
-        ctx.fill()
-
-        ctx.move_to(160, 280)
-        ctx.line_to(320, 100)
-        ctx.line_to(400, 280)
-        ctx.close_path()
-        ctx.set_source_rgba(mid_rgb[0], mid_rgb[1], mid_rgb[2], 0.7)
-        ctx.fill()
-
-    elif motif == 'soundwave_bars':
-        for i in range(16):
-            h = 35 + math.sin(i * 0.45) * 85 + (i % 3) * 22
-            x = 76 + i * 23
-            ctx.rectangle(x, 200 - h / 2, 14, h)
-            ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.75)
-            ctx.fill()
-
-    elif motif == 'minimalist_arch':
-        ctx.arc(256, 155, 95, math.pi, 0)
-        ctx.line_to(351, 290)
-        ctx.line_to(161, 290)
-        ctx.close_path()
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.55)
-        ctx.fill()
-
-        ctx.arc(256, 175, 60, math.pi, 0)
-        ctx.line_to(316, 290)
-        ctx.line_to(196, 290)
-        ctx.close_path()
-        ctx.set_source_rgba(dark_rgb[0], dark_rgb[1], dark_rgb[2], 0.8)
-        ctx.fill()
-
-    elif motif == 'retro_grid':
-        ctx.arc(256, 140, 65, 0, 2 * math.pi)
-        ctx.set_source_rgb(*light_rgb)
-        ctx.fill()
-
-        ctx.set_line_width(1.5)
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.45)
-        for x in range(40, 490, 45):
-            ctx.move_to(256, 170)
-            ctx.line_to(x, 310)
-            ctx.stroke()
-        for y in [185, 210, 245, 290]:
-            ctx.move_to(50, y)
-            ctx.line_to(462, y)
-            ctx.stroke()
-
-    elif motif == 'mountain_peaks':
-        ctx.move_to(40, 310)
-        ctx.line_to(190, 130)
-        ctx.line_to(340, 310)
-        ctx.close_path()
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.5)
-        ctx.fill()
-
-        ctx.move_to(180, 310)
-        ctx.line_to(330, 150)
-        ctx.line_to(480, 310)
-        ctx.close_path()
-        ctx.set_source_rgba(mid_rgb[0], mid_rgb[1], mid_rgb[2], 0.85)
-        ctx.fill()
-
-        ctx.arc(390, 95, 25, 0, 2 * math.pi)
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.9)
-        ctx.fill()
-
-    elif motif == 'halftone_matrix':
-        for gx in range(11):
-            for gy in range(8):
-                x = 66 + gx * 38
-                y = 70 + gy * 30
-                dist = math.hypot(x - 256, y - 175) / 200
-                rad = max(2, 13 * (1 - min(1, dist)))
-                ctx.arc(x, y, rad, 0, 2 * math.pi)
-                ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2],
-                                    0.7 * (1 - dist * 0.5))
-                ctx.fill()
-
-    elif motif == 'diagonal_stripes':
-        ctx.set_line_width(20)
-        for i in range(-4, 12):
-            ctx.move_to(i * 55, 0)
-            ctx.line_to(i * 55 + 200, 320)
-            ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2],
-                                0.35 if i % 2 == 0 else 0.15)
-            ctx.stroke()
-
-    elif motif == 'organic_blobs':
-        ctx.arc(200, 175, 95, 0, 2 * math.pi)
-        ctx.set_source_rgba(light_rgb[0], light_rgb[1], light_rgb[2], 0.4)
-        ctx.fill()
-
-        ctx.arc(310, 205, 85, 0, 2 * math.pi)
-        ctx.set_source_rgba(mid_rgb[0], mid_rgb[1], mid_rgb[2], 0.65)
-        ctx.fill()
-
     if wide:
-        # A frame with no play symbol of its own: a video's tile draws one (widgets/tile.py).
-        ctx.restore()
+        ctx.translate(0, -112)
 
-    # 3. Readability scrim + 4. Typography: skipped for artist portraits. That
-    # text (title near the bottom-left corner, the badge near the top-right
-    # one) sits well outside the inscribed circle the artist tile crops this
-    # image to, so it would just be clipped away; the shelf/detail views
-    # already show the artist's name as their own label under the artwork.
-    if not is_artist and not wide:
-        # 3. Readability scrim across bottom area
-        scrim = cairo.LinearGradient(0, 250, 0, 512)
-        scrim.add_color_stop_rgba(0.0, 0, 0, 0, 0.0)
-        scrim.add_color_stop_rgba(0.4, 0, 0, 0, 0.45)
-        scrim.add_color_stop_rgba(1.0, 0, 0, 0, 0.88)
-        ctx.set_source(scrim)
-        ctx.rectangle(0, 250, 512, 262)
-        ctx.fill()
+    if is_artist:
+        draw_portrait(ctx, rnd, dark, mid, light,
+                      3 if title.startswith('The ') or ' & ' in title else 1)
+    elif motif == 'swiss' and not wide:
+        motif_swiss(ctx, rnd, dark, mid, light, title, subtitle)
+    else:
+        inks = MOTIF_DRAW.get(motif, motif_contours)(ctx, rnd, dark, mid, light)
+        if not wide:
+            draw_words(ctx, rnd, title, subtitle, badge, inks)
 
-        # 4. Typography
-        ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+    ctx.identity_matrix()
+    ctx.set_operator(cairo.OPERATOR_OVERLAY)
+    ctx.set_source(grain_pattern())
+    ctx.paint_with_alpha(0.16)
 
-        # Compute optimal font size for title
-        title_upper = title.upper()
-        font_size = 32
-        lines = wrap_text(ctx, title_upper, 440, font_size)
-        if len(lines) > 2:
-            font_size = 26
-            lines = wrap_text(ctx, title_upper, 440, font_size)
-
-        line_step = round(font_size * 1.15)
-        y_start = 450 - (len(lines) - 1) * line_step - (28 if subtitle else 0)
-
-        # Draw title
-        ctx.set_font_size(font_size)
-        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.98)
-        for idx, line in enumerate(lines):
-            ctx.move_to(36, y_start + idx * line_step)
-            ctx.show_text(line)
-
-        # Draw subtitle / artist
-        if subtitle:
-            sub_y = y_start + len(lines) * line_step + 4
-            ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-            ctx.set_font_size(20)
-            ctx.set_source_rgba(1.0, 1.0, 1.0, 0.78)
-            ctx.move_to(36, sub_y)
-            ctx.show_text(subtitle)
-
-        # Draw badge / year in upper right
-        if badge:
-            ctx.select_font_face('Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-            ctx.set_font_size(14)
-            ext = ctx.text_extents(badge)
-            bx = 512 - 36 - ext.width - 16
-            by = 36
-            ctx.rectangle(bx, by, ext.width + 16, 26)
-            ctx.set_source_rgba(0, 0, 0, 0.45)
-            ctx.fill()
-
-            ctx.set_source_rgba(1.0, 1.0, 1.0, 0.85)
-            ctx.move_to(bx + 8, by + 18)
-            ctx.show_text(badge)
-
-    # 5. Save as JPEG via GdkPixbuf
     save_jpeg(surf, width, height, out_path)
 
 
@@ -695,7 +1030,7 @@ ARTISTS_DATA = [
                 'melodic techno for peak-time dance floors.'),
     },
     {
-        'name': 'Juniper Moon',
+        'name': 'Hollyhock Avenue',
         'genre': 'Indie Pop',
         'bio': ('Celebrated for upbeat jangly guitars, brass accents, lyrical wit, and '
                 'irresistible infectious hooks.'),
@@ -796,7 +1131,7 @@ ALBUMS_DATA = [
             [
                 'Frequency Lock', 'Cybernetic Heart', 'Signal Decode',
                 'Sublevel Terminal', 'Fiber Optic Sky', 'Rogue Satellite',
-                'Quantum Static', 'Data Stream', 'Baud Rate 9600', 'End of Line',
+                'Quantum Static', 'Packet Rain', 'Baud Rate 9600', 'Carrier Lost',
             ],
         ],
     },
@@ -810,7 +1145,7 @@ ALBUMS_DATA = [
         'discs': [
             [
                 'Atmosphere Exit', 'Zero G Velocity', 'Ion Engines',
-                'Orbital Decay', 'Solar Wind', 'Apogee Burn',
+                'Orbital Decay', 'Sunward Drift', 'Apogee Burn',
                 'Silent Thrusters', 'Dark Side Transit', 'Atmospheric Re-entry',
             ],
         ],
@@ -942,9 +1277,9 @@ ALBUMS_DATA = [
                     'and neon skylines.'),
         'discs': [
             [
-                'Dream Sequence', 'Laser Dance', 'Prism Glow',
+                'Dream Sequence', 'Laser Waltz', 'Prism Glow',
                 'Memory Card', 'Velvet Highway', 'Synthesizer Heartbeat',
-                'Mirage', 'Electric Blue', 'Midnight Kiss', 'Reverie Outro',
+                'Heat Shimmer', 'Cobalt Static', 'Kiss at the Crossing', 'Reverie Outro',
             ],
         ],
     },
@@ -959,7 +1294,7 @@ ALBUMS_DATA = [
             [
                 'City Lights Blurring', 'Last Call at the Lounge', 'Rainy Asphalt',
                 'Subway Tile Reflection', 'Taxi Ride Reverie', 'Neon Umbrella',
-                'Night Owl', '2 AM Espresso', 'Empty Dancefloor',
+                'Nightjar', '2 AM Espresso', 'Empty Dancefloor',
                 'Corner Booth', 'Distant Sirens', 'Dawn Breaking Over Rooftops',
             ],
         ],
@@ -975,7 +1310,7 @@ ALBUMS_DATA = [
                     'quiet cosmic voids.'),
         'discs': [
             [
-                'Pillars of Creation', 'Horsehead Nebula', 'Lagrange Point 2',
+                'Columns of Dust', 'Horsehead Nebula', 'Lagrange Point 2',
                 'Oort Cloud Passage', 'Kuiper Belt Drift', 'Cassini Gap',
                 'Andromeda Approaching', 'Cosmic Horizon',
             ],
@@ -995,7 +1330,7 @@ ALBUMS_DATA = [
                 "Titan's Atmosphere", 'Heliosphere Boundary',
             ],
             [
-                'Interstellar Medium', 'Pale Blue Dot', 'Signal Lag 19 Hours',
+                'Interstellar Medium', 'Faint Blue Speck', 'Signal Lag 19 Hours',
                 'Dark Void Transit', 'Radioisotope Glow', 'Cosmic Dust Impacts',
                 'Deep Space Antenna', 'Wandering the Galaxy', 'Infinite Silence',
             ],
@@ -1010,7 +1345,7 @@ ALBUMS_DATA = [
                     'background radiation.'),
         'discs': [
             [
-                'Vacuum Energy', 'Event Horizon', 'Singularity Pulse',
+                'Vacuum Energy', 'Edge of the Well', 'Singularity Pulse',
                 'Gravitational Wave', 'Supercluster Web', 'Dark Matter Halo',
                 'Cosmic Microwave Glow', 'Pulsar Beacon', 'Eternal Expansion',
             ],
@@ -1028,7 +1363,7 @@ ALBUMS_DATA = [
         'discs': [
             [
                 'Honey Amber', 'Warm Breeze', 'Rooftop Sundown',
-                'Smooth Operator', 'Silk Sheets', 'Golden Hour Glow',
+                'Smooth as Sunday', 'Silk Sheets', 'Golden Hour Glow',
                 'Chai Tea & Chords', 'Unspoken Rhythm', 'Lazy Sunday Grooves',
                 'Amber Skies', 'Dusk Embrace',
             ],
@@ -1036,7 +1371,7 @@ ALBUMS_DATA = [
     },
     {
         'artist_idx': 6,
-        'title': 'Midnight Bloom',
+        'title': 'Jasmine After Eleven',
         'year': 2022,
         'genre': 'Neo-Soul',
         'summary': ('Sensual nighttime R&B and jazz-infused chord work detailing romance and city '
@@ -1045,8 +1380,8 @@ ALBUMS_DATA = [
             [
                 'Night Jasmine', 'Velvet Petals', 'Moonlit Patio',
                 'Low Key Loving', 'Dim Lights & Wine', 'Late Night Text',
-                'Heartstrings', 'Midnight Bloom', 'Slow Burn',
-                'Soulful Cadence', 'Velvet Silhouette', 'After Dark',
+                'Heart on a Wire', 'Jasmine After Eleven', 'Ember, Slowly',
+                'Soulful Cadence', 'Velvet Silhouette', 'After the Lamps Go Out',
             ],
         ],
     },
@@ -1092,10 +1427,10 @@ ALBUMS_DATA = [
                     'yet sacred sonic sanctuary.'),
         'discs': [
             [
-                'Nave of Noise', 'Echo Chamber', 'Stained Glass Shards',
+                'Nave of Noise', 'Echo Vestry', 'Stained Glass Shards',
                 'Vault of Reverb', 'Sustained Note', 'Altar of Amps',
                 'Sonic Sacrament', 'Cathedral Bells', 'Fuzz Choir',
-                'Harmonic Resonator', 'Ascension',
+                'Harmonic Resonator', 'Upward Nave',
             ],
         ],
     },
@@ -1295,7 +1630,7 @@ ALBUMS_DATA = [
         ],
     },
 
-    # 13. Juniper Moon (2 albums)
+    # 13. Hollyhock Avenue (2 albums)
     {
         'artist_idx': 12,
         'title': 'Wildflower Gazette',
@@ -1305,9 +1640,9 @@ ALBUMS_DATA = [
                     'springtime adventures.'),
         'discs': [
             [
-                'Morning Gazette', 'Dandelion Wine', 'Bicycle Bell Song',
+                'Morning Gazette', 'Dandelion Clock', 'Bicycle Bell Song',
                 'Picnic in the Park', 'Penny Loafers', 'Botanical Garden Waltz',
-                'Lemon Drop Sun', 'Paper Airplane', 'Cottage Garden',
+                'Lemon Drop Sun', 'Paper Glider', 'Cottage Garden',
                 'Chamber Strings', 'Sunday Stroll',
             ],
         ],
@@ -1399,7 +1734,7 @@ ALBUMS_DATA = [
 PLAYLISTS_DATA = [
     {
         'title': 'Late Night Drift',
-        'subtitle': 'Apple Music Chill',
+        'subtitle': 'Harbourlight Chill',
         'genre': 'Downtempo',
         'summary': ('Low-tempo beats, atmospheric synths, and mellow melodies for late hours and '
                     'quiet contemplations.'),
@@ -1407,7 +1742,7 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Analog Horizons',
-        'subtitle': 'Apple Music Electronic',
+        'subtitle': 'Harbourlight Electronic',
         'genre': 'Electronic',
         'summary': ('Warm analog synthesizer compositions, arpeggiated sequences, and vintage '
                     'drum machines.'),
@@ -1415,15 +1750,15 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Indie Currents',
-        'subtitle': 'Apple Music Indie',
+        'subtitle': 'Harbourlight Indie',
         'genre': 'Alternative & Indie',
         'summary': ('The most compelling new sounds from independent bands, singer-songwriters, '
                     'and DIY studios.'),
         'filter_genres': ['Indie Folk', 'Indie Pop', 'Math Rock', 'Post-Rock'],
     },
     {
-        'title': 'Deep Focus & Stillness',
-        'subtitle': 'Apple Music Ambient',
+        'title': 'Still Hours',
+        'subtitle': 'Harbourlight Ambient',
         'genre': 'Ambient',
         'summary': ('Uncluttered ambient soundscapes and subtle drones designed to foster '
                     'concentration and flow.'),
@@ -1431,7 +1766,7 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Modern Jazz Underground',
-        'subtitle': 'Apple Music Jazz',
+        'subtitle': 'Harbourlight Jazz',
         'genre': 'Jazz',
         'summary': ('Contemporary jazz explorations, complex rhythms, and forward-thinking '
                     'acoustic improvisations.'),
@@ -1447,7 +1782,7 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Neon Expressway',
-        'subtitle': 'Apple Music Synthwave',
+        'subtitle': 'Harbourlight Synthwave',
         'genre': 'Synthwave',
         'summary': ('High-octane synthwave, retro electro, and driving basslines for night '
                     'driving under streetlights.'),
@@ -1455,7 +1790,7 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Golden Hour Melodies',
-        'subtitle': 'Apple Music Acoustic',
+        'subtitle': 'Harbourlight Acoustic',
         'genre': 'Acoustic & Folk',
         'summary': ('Warm fingerstyle acoustics, gentle cello lines, and heartfelt vocal '
                     'performances.'),
@@ -1463,7 +1798,7 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Subterranean Bass',
-        'subtitle': 'Apple Music Club',
+        'subtitle': 'Harbourlight Club',
         'genre': 'Deep House',
         'summary': ('Deep, rolling grooves and hypnotic club rhythms from subterranean '
                     'underground dancefloors.'),
@@ -1471,7 +1806,7 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Quiet Reflections',
-        'subtitle': 'Apple Music Classical',
+        'subtitle': 'Harbourlight Classical',
         'genre': 'Modern Classical',
         'summary': ('Gentle piano studies, minimalist string quartets, and contemplative '
                     'neo-classical works.'),
@@ -1479,7 +1814,7 @@ PLAYLISTS_DATA = [
     },
     {
         'title': 'Soul & Reverie',
-        'subtitle': 'Apple Music R&B',
+        'subtitle': 'Harbourlight R&B',
         'genre': 'Neo-Soul',
         'summary': ('Lush chord progressions, velvet vocals, and head-nodding neo-soul grooves '
                     'for relaxed evenings.'),
@@ -1520,56 +1855,56 @@ FOLDERS_DATA = [
 STATIONS_DATA = [
     {
         'title': 'Lighthouse One',
-        'subtitle': 'Apple Music Radio',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'Various',
         'summary': ('The pulse of music culture with daily live broadcasts, exclusive artist '
                     'interviews, and global premieres.'),
     },
     {
         'title': 'Evergreen Hits Radio',
-        'subtitle': 'Apple Music Radio',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'Pop & Rock',
         'summary': ("Celebrating the songs you know and love from the '80s, '90s, and 2000s with "
                     "passionate daily hosts."),
     },
     {
         'title': 'Slow Tide Radio',
-        'subtitle': 'Apple Music Radio',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'Downtempo & Ambient',
         'summary': ('An uninterrupted stream of relaxed beats, mellow melodies, and soothing '
                     'acoustic textures.'),
     },
     {
         'title': 'Echoes in the Dark',
-        'subtitle': 'Apple Music Radio',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'Electronic & Ambient',
         'summary': ('Atmospheric electronica, hypnotic modular synthesis, and dark ambient '
                     'soundscapes for nocturnal hours.'),
     },
     {
         'title': 'Pacific Highway Radio',
-        'subtitle': 'Apple Music Radio',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'Indie & Alternative',
         'summary': ('Carefree indie melodies, breezy dream pop, and road-trip classics broadcast '
                     'straight from the coast.'),
     },
     {
-        'title': 'The Soundstage',
-        'subtitle': 'Apple Music Radio',
+        'title': 'Soundstage Nine',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'Cinematic & Soundtracks',
         'summary': ('Sweeping orchestral film scores, modern classical compositions, and epic '
                     'cinematic themes.'),
     },
     {
         'title': 'Ambient Sleep Radio',
-        'subtitle': 'Apple Music Radio',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'Ambient',
         'summary': ('Gentle sonic textures, continuous pink noise, and calming generative drones '
                     'designed for deep sleep.'),
     },
     {
         'title': 'Global Rhythm Pulse',
-        'subtitle': 'Apple Music Radio',
+        'subtitle': 'Harbourlight Radio',
         'genre': 'World & Nu-Jazz',
         'summary': ('Infectious polyrhythms, Afrobeat brass, Latin jazz grooves, and '
                     'cross-cultural beat experiments.'),
@@ -1586,7 +1921,7 @@ VIDEOS_DATA = [
     {'title': 'Lanterns over the Shallows', 'artist_idx': 0, 'year': 2021},
     {'title': 'Night Drive to Nowhere', 'artist_idx': 1, 'year': 2022},
     {'title': 'Harbour Lights (Live at the Pier)', 'artist_idx': 2, 'year': 2023},
-    {'title': 'Paper Moons', 'artist_idx': 4, 'year': 2020},
+    {'title': 'Tissue-Paper Moons', 'artist_idx': 4, 'year': 2020},
     {'title': 'Slow Burn Sunday', 'artist_idx': 6, 'year': 2024},
     {'title': 'Tape Loop Afternoon', 'artist_idx': 10, 'year': 2025},
 ]
@@ -1818,7 +2153,7 @@ def generated_albums(count, tracks=None):
 def generated_playlists(count):
     """PLAYLISTS_DATA's entries, then enough invented ones to make `count` playlists with
     Favourite Songs (which the builder adds last) counted in: curated by invented people or
-    "Apple Music <genre>", each drawing on one to three genres. Seeded."""
+    "Harbourlight <genre>", each drawing on one to three genres. Seeded."""
     playlists = list(PLAYLISTS_DATA)
     rnd = random.Random(13)  # its own: the hand-written playlists' songs stay as they were
     genres = sorted({artist['genre'] for artist in ARTISTS_DATA})
@@ -1837,7 +2172,7 @@ def generated_playlists(count):
         seen.add(title)
         genre = rnd.choice(genres)
         curator = rnd.choice([f'Curated by {rnd.choice(GEN_FIRST)} {rnd.choice(GEN_LAST)}',
-                              f'Apple Music {genre}'])
+                              f'Harbourlight {genre}'])
         playlists.append({
             'title': title,
             'subtitle': curator,
@@ -1966,7 +2301,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
 
         # Assign artwork palette & motif
         palette = PALETTES[alb_idx % len(PALETTES)]
-        motif = MOTIFS[alb_idx % len(MOTIFS)]
+        motif = album_motif(alb_data['genre'], alb_idx)
         art_hash = hashlib.sha1(album_id.encode('utf-8')).hexdigest()
         art_path = os.path.join(art_dir, f'{art_hash}.jpg')
         draw_cover(
@@ -2211,10 +2546,10 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     draw_cover(
         out_path=art_path,
         title=FAVOURITES_DATA['title'],
-        subtitle='Apple Music',  # the picture's words, as before
+        subtitle=None,
         badge='PLAYLIST',
         palette=('#2b0914', '#d90429', '#ffb4a2'),
-        motif='concentric_rings',
+        motif='aurora',
         is_artist=False,
         size=cover_size,
     )
@@ -2695,9 +3030,9 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
                  for track, album in rnd.sample(tracks, min(12, len(tracks)))]
         artist_playlists = [
             collection(f'pl.demo{index:02d}1', 'playlist', f'{name} Essentials',
-                       f'Apple Music {genre}', None, picks, index * 5 + 1),
+                       f'Harbourlight {genre}', None, picks, index * 5 + 1),
             collection(f'pl.demo{index:02d}2', 'playlist', f'{name}: Deep Cuts',
-                       f'Apple Music {genre}', None, picks[::-1][:8], index * 5 + 2)]
+                       f'Harbourlight {genre}', None, picks[::-1][:8], index * 5 + 2)]
         shelf('playlists', 'Artist Playlists', artist_playlists)
         catalog_playlists.append((artist, genre, artist_playlists))
         hosted = None
@@ -2837,7 +3172,7 @@ def build_playlist_pages(out_dir, catalog_playlists, generated):
     """Write playlists/<id>.json for each catalog playlist of the artists' pages: what the
     catalog would answer for the rest of its page (normalize.playlist_page()'s shape, kept as
     the engine keeps it, stamped `cached` with the library's date): its curator, an invented
-    Apple curator, Apple Music <genre>, whose page is written in categories/<id>.json (its
+    Apple curator, Harbourlight <genre>, whose page is written in categories/<id>.json (its
     playlists), and its shelves: Featured Artists (the artist and the two after them), More
     By the curator (the artist's other playlist) and You Might Also Like (the next three
     artists' first playlists). The playlists keep their tracks, so their pages open in the
@@ -2849,7 +3184,7 @@ def build_playlist_pages(out_dir, catalog_playlists, generated):
     os.makedirs(categories_dir, exist_ok=True)
     count = len(catalog_playlists)
     for index, (_artist, genre, playlists) in enumerate(catalog_playlists):
-        title = f'Apple Music {genre}'
+        title = f'Harbourlight {genre}'
         curator_id = f'demo.apcurator{index:02d}'
         curator = {'id': curator_id, 'kind': 'category', 'title': title, 'subtitle': None,
                    'art': None, 'artColor': None,
@@ -3094,7 +3429,7 @@ def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, c
         with open(os.path.join(categories_dir, f'{show_id}.json'), 'w', encoding='utf-8') as f:
             json.dump(page, f, indent=2)
 
-    genres = [station(f'ra.genre{number:02d}', f'{name} Station', 'Apple Music', genre,
+    genres = [station(f'ra.genre{number:02d}', f'{name} Station', 'Harbourlight', genre,
                       number * 3 + 7)
               for number, (name, genre) in enumerate(DEMO_GENRE_STATIONS)]
     answer = {
@@ -3137,13 +3472,13 @@ def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for,
 
     def chart_playlist(item_id, title, count, palette_index, badge):
         path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
-        draw_cover(out_path=path, title=title, subtitle='Apple Music', badge=badge,
+        draw_cover(out_path=path, title=title, subtitle=None, badge=badge,
                    palette=PALETTES[palette_index % len(PALETTES)],
                    motif=MOTIFS[palette_index % len(MOTIFS)], is_artist=False, size=cover_size)
         play = {'kind': 'playlist', 'id': item_id}
         entries = [dict(track, index=position)
                    for position, (track, _album) in enumerate(rnd.sample(tracks, count))]
-        return {'id': item_id, 'kind': 'playlist', 'title': title, 'subtitle': 'Apple Music',
+        return {'id': item_id, 'kind': 'playlist', 'title': title, 'subtitle': 'Harbourlight',
                 'year': None, 'genre': None, 'summary': None, 'art': path,
                 'thumb': thumb_for(path), 'artColor': PALETTES[palette_index % len(PALETTES)][1],
                 'trackCount': len(entries),
@@ -3243,14 +3578,14 @@ def build_replay_page(out_dir, albums, artists, draw_cover, thumb_for, cover_siz
         item_id = f'pl.demo-replay-{year}'
         path = os.path.join(art_dir, f"{hashlib.sha1(item_id.encode('utf-8')).hexdigest()}.jpg")
         palette = PALETTES[palette_index % len(PALETTES)]
-        draw_cover(out_path=path, title=f'Replay {year}', subtitle='Apple Music',
+        draw_cover(out_path=path, title=f'Replay {year}', subtitle=None,
                    badge='REPLAY', palette=palette, motif=MOTIFS[palette_index % len(MOTIFS)],
                    is_artist=False, size=cover_size)
         play = {'kind': 'playlist', 'id': item_id}
         entries = [dict(track, index=position)
                    for position, (track, _album) in enumerate(rnd.sample(tracks, 30))]
         return {'id': item_id, 'kind': 'playlist', 'title': f'Replay {year}',
-                'subtitle': 'Apple Music', 'year': None, 'genre': None, 'summary': None,
+                'subtitle': 'Harbourlight', 'year': None, 'genre': None, 'summary': None,
                 'art': path, 'thumb': thumb_for(path), 'artColor': palette[1],
                 'trackCount': len(entries),
                 'durationMs': sum(entry['durationMs'] for entry in entries),
