@@ -596,6 +596,14 @@ class EventTest(unittest.TestCase):
                                ('SUBSCRIPTION_ERROR',
                                 'An Apple Music subscription is needed to play this'),
                                ('MEDIA_LICENSE', 'The engine could not play protected content'),
+                               ('MEDIA_KEY', 'The engine could not play protected content'),
+                               # #608: a lost connection and the device limit say so, not
+                               # that protected content could not be played.
+                               ('NETWORK_ERROR',
+                                'Apple Music could not be reached; check the internet '
+                                'connection'),
+                               ('DEVICE_LIMIT',
+                                'Too many devices are using this Apple Music account'),
                                ('', 'This could not be played')):
             self.assertEqual(playback_error_text(code), sentence, code)
 
