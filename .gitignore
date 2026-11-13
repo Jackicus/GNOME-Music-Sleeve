@@ -13,6 +13,8 @@ __pycache__/
 /build-aux/aur/pkg/
 /build-aux/aur/*.tar.*
 /.claude/worktrees/
+# The translation template, made by meson compile -C build music-sleeve-pot
+/po/music-sleeve.pot
 
 # Personal Claude Code instructions and settings
 /CLAUDE.local.md
