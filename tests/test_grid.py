@@ -7,6 +7,7 @@ title in the header bar, and a folder that is gone."""
 import unittest
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
+from tests.gtk import requires_gtk
 from tests.page_harness import PageTestCase, album, artist
 
 from applemusic.pages import estimate_width
@@ -24,6 +25,69 @@ class EstimateWidthTest(unittest.TestCase):
 
     def test_no_monitor_known_keeps_the_default(self):
         self.assertEqual(estimate_width(1100, True, 0, 280), 820)
+
+
+@requires_gtk
+class FewerColumnsTest(unittest.TestCase):
+    """A grid's max-columns lowered once its width has settled (grid.FewerColumns), with a
+    stand-in for GLib's timeouts."""
+
+    def setUp(self):
+        from applemusic.pages.grid import COLUMNS_SETTLE_MS, FewerColumns
+
+        self.settle = COLUMNS_SETTLE_MS
+        self.timers = {}  # source -> (interval, callback)
+        self.removed = []
+        self.lowered = []
+
+        def timeout_add(interval, callback):
+            source = len(self.timers) + len(self.removed) + 1
+            self.timers[source] = (interval, callback)
+            return source
+
+        def source_remove(source):
+            self.removed.append(source)
+            del self.timers[source]
+
+        self.fewer = FewerColumns(self.lowered.append, timeout_add, source_remove)
+
+    def fire(self):
+        (source, (interval, callback)), = self.timers.items()
+        self.assertEqual(interval, self.settle)
+        del self.timers[source]
+        callback()
+
+    def test_lowers_after_the_last_narrower_width(self):
+        self.fewer.wait(5, 900)
+        self.fewer.wait(4, 800)  # still narrowing: put off again
+        self.assertEqual(len(self.timers), 1)
+        self.assertEqual(len(self.removed), 1)
+        self.fewer.wait(4, 800)  # the same width laid out again: not put off
+        self.assertEqual(len(self.removed), 1)
+        self.assertTrue(self.fewer.pending)
+        self.fire()
+        self.assertEqual(self.lowered, [4])
+        self.assertFalse(self.fewer.pending)
+
+    def test_a_width_that_fits_again_forgets_it(self):
+        self.fewer.wait(4, 800)
+        self.fewer.cancel()  # widened back to the columns kept
+        self.assertEqual(self.timers, {})
+        self.assertFalse(self.fewer.pending)
+        self.fewer.cancel()  # nothing pending: nothing to remove
+        self.assertEqual(len(self.removed), 1)
+        self.assertEqual(self.lowered, [])
+
+    def test_flush_lowers_at_once_what_waits(self):
+        # The page unrealized (the split view collapsing): lowered before the grid builds
+        # its tiles again; nothing waiting, nothing lowered.
+        self.fewer.flush()
+        self.assertEqual(self.lowered, [])
+        self.fewer.wait(3, 600)
+        self.fewer.flush()
+        self.assertEqual(self.lowered, [3])
+        self.assertEqual(self.timers, {})
+        self.assertFalse(self.fewer.pending)
 
 
 class GridTest(PageTestCase):

@@ -81,6 +81,63 @@ def columns_for(width, column_width=COLUMN_WIDTH):
     return max(2, width // column_width)
 
 
+# How long a grid's width has to stay narrower before its max-columns is lowered to fit it.
+COLUMNS_SETTLE_MS = 400
+
+
+class FewerColumns:
+    """Lowers a grid's max-columns once its width has settled, not as it narrows.
+
+    A Gtk.GridView keeps tiles for max-columns columns (estimate_columns()), so lowering it
+    drops a column of about 30 tiles, and raising it again builds them: 20-29 ms a frame on
+    build/demo-big, at each column a window being dragged wider passed (docs/notes.md). A
+    max-columns above what fits costs only those tiles kept alive: the grid shows the columns
+    that fit whatever the maximum, so a narrowed window never shows it wider. wait(columns,
+    width) asks for `columns` COLUMNS_SETTLE_MS after the last width it was given (the same
+    width again does not put it off); cancel() forgets it, as a width that needs no fewer
+    does, and flush() lowers at once what waits (the page unrealized). `lower` is called with
+    the columns (a weak_method() of the page's, so the timeout
+    keeps no page alive); `timeout_add` and `source_remove` are GLib's, or a test's."""
+
+    def __init__(self, lower, timeout_add=GLib.timeout_add, source_remove=GLib.source_remove):
+        self._lower = lower
+        self._timeout_add = timeout_add
+        self._source_remove = source_remove
+        self._source = None
+        self._columns = None
+        self._width = None
+
+    @property
+    def pending(self):
+        return self._source is not None
+
+    def wait(self, columns, width):
+        if self._source is not None and width == self._width:
+            self._columns = columns
+            return
+        self.cancel()
+        self._columns, self._width = columns, width
+        self._source = self._timeout_add(COLUMNS_SETTLE_MS, self._run)
+
+    def cancel(self):
+        if self._source is not None:
+            self._source_remove(self._source)
+        self._source = self._width = None
+
+    def flush(self):
+        """Lower now what waits: the page is being unrealized, as the split view's collapse
+        does before it builds every tile again for max-columns (gtk-notes.md). Not on unmap:
+        the window's other breakpoints unmap and map the page without that."""
+        if self._source is not None:
+            self.cancel()
+            self._lower(self._columns)
+
+    def _run(self):
+        self._source = self._width = None
+        self._lower(self._columns)
+        return GLib.SOURCE_REMOVE
+
+
 def first_tiles(columns, height, row_height=ROW_HEIGHT):
     """How many items a grid shows before its first paint: the rows a content pane `height`
     px tall shows, and one more, of `columns` tiles; None (all) without a height."""
@@ -325,7 +382,7 @@ class GridPage(Adw.NavigationPage):
         connect_weak(self.overlay, 'get-child-position', self._on_title_position)
         # Before the model: the grid makes tiles for max-columns columns until it has a
         # width of its own (estimate_columns); _on_title_position keeps it fitting after.
-        self._columns_idle = None
+        self._fewer_columns = FewerColumns(weak_method(self._set_columns))
         if self._shape in WIDE_SHAPES:
             self.grid_view.set_min_columns(1)  # two of them are wider than a 360 px window
         columns = estimate_columns(self._column_width)
@@ -416,7 +473,6 @@ class GridPage(Adw.NavigationPage):
         return self._nothing if model is None else model
 
     def _set_columns(self, columns):
-        self._columns_idle = None
         if columns is not None and columns != self.grid_view.get_max_columns():
             self.grid_view.set_max_columns(columns)
         return GLib.SOURCE_REMOVE
@@ -471,6 +527,10 @@ class GridPage(Adw.NavigationPage):
             from ..remote import fetch_items_art
 
             self._art_task = app().spawn(fetch_items_art(list(self._fetched)))
+
+    def do_unrealize(self):
+        self._fewer_columns.flush()  # before the grid is built again for the columns kept
+        Adw.NavigationPage.do_unrealize(self)
 
     def do_unmap(self):
         if self._fetch is not None:
@@ -788,15 +848,18 @@ class GridPage(Adw.NavigationPage):
         Called at each layout of the overlay, so also where the page learns its width: the
         grid's max-columns follows it, so the grid makes tiles for the columns that fit
         rather than for twelve: more at once (a window that grew paints them in this frame),
-        fewer after the layout, in an idle."""
+        fewer once the width has settled (FewerColumns: a window being dragged narrower and
+        wider again would drop the tiles and build them again at each column)."""
         width = overlay.get_width()
         columns = columns_for(width, self._column_width)
         current = self.grid_view.get_max_columns()
         if columns > current:
+            self._fewer_columns.cancel()
             self.grid_view.set_max_columns(columns)
-        elif columns < current and self._columns_idle is None:
-            self._columns_idle = GLib.idle_add(self._set_columns, columns,
-                                               priority=GLib.PRIORITY_HIGH_IDLE)
+        elif columns < current:
+            self._fewer_columns.wait(columns, width)
+        else:
+            self._fewer_columns.cancel()
         allocation.x = 0
         allocation.y = -round(self._title_offset)
         allocation.width = width

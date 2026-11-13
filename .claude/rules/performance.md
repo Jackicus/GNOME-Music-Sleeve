@@ -26,8 +26,9 @@ bench.py checks all but scrolling. And resizing: the window dragged from 1400 px
 back on any page (`scripts/resize_test.py`, its defaults) with no frame's work over 50 ms and no
 more than 4 % of its frames over 16.7 ms, what Nautilus manages on the same display with a
 grid of 3,000 files (its breakpoints cost it a gap of three or four frames, nothing more).
-Every page misses it for now, by the split view's collapse (issue 590). The numbers behind
-these rules are in docs/notes.md.
+No page meets it in that sweep yet: the split view's collapse at 640sp costs each one a
+100-220 ms frame (issue 593, a design decision); a drag that stays above 640 px meets it on
+Albums and a library artist. The numbers behind these rules are in docs/notes.md.
 
 ## Measure
 
@@ -96,11 +97,13 @@ these rules are in docs/notes.md.
 - A `Gtk.GridView` keeps about 30 rows of `max-columns` tiles alive however few it shows: set
   `max-columns` to what fits (`grid.columns_for()`; `COLUMN_WIDTH` and `VIDEO_COLUMN_WIDTH`
   are a tile, `tile.ART_SIZE` or a video grid's `tile.GRID_VIDEO_SIZE`, plus Adwaita's
-  padding, so change them together). It makes them all in the frame its model fills in, so a
-  grid page shows the rows that fit at first (`grid.first_tiles()`, from the window's
-  `content_height()`) and lets the rest in `GROW_TILES` a frame after its first paint
-  (`GridPage._grow`); a filter (whose rows are recycled: `ShownModel.replacing()`) and a
-  focus by position call `_show_all()` first.
+  padding, so change them together): more at once, fewer only once the width has settled
+  (`grid.FewerColumns`, or at once as the page is unrealized), so a window dragged
+  narrower and wider again does not drop a column of tiles and build it again. It makes
+  them all in the frame its model fills in, so a grid page shows the rows that fit at first
+  (`grid.first_tiles()`, from the window's `content_height()`) and lets the rest in
+  `GROW_TILES` a frame after its first paint (`GridPage._grow`); a filter (whose rows are
+  recycled: `ShownModel.replacing()`) and a focus by position call `_show_all()` first.
 
 ## Sorting and filtering
 
