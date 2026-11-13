@@ -22,6 +22,10 @@ paths:
   icons, aliased into `icons/scalable/actions/`, and `metainfo.xml`, the generated metainfo
   copied in by src/meson.build, which the About dialog is built from); `po/POTFILES.in`
   (every `.py` and `.blp` with `_()`, `ngettext` or `C_`).
+- `po/LINGUAS` lists the catalogues: `en_US`, American spelling and dates only, the rest
+  falling back to the British source. tests/test_translations.py checks that each `.po` is
+  listed and compiles under `msgfmt --check`. The template is made, never committed:
+  CONTRIBUTING.md's Translating has the commands, and the new-language issue is #645.
 - `-Dprofile=development` gives the `.Devel` app ID (desktop file, icons, metainfo, MPRIS name),
   the name with " (Development)" after it (data/meson.build's `name_suffix`, put after each
   name, translated ones too, by `build-aux/meson/name-suffix.py` once the translations are

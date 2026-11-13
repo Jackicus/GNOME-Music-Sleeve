@@ -94,14 +94,86 @@ Security problems are reported privately, not as pull requests or issues: see
 
 ## Translating
 
-The strings are in gettext's usual form, with the sources in British English. To start a
-translation, say German, after a `scripts/demo.sh` or `scripts/check.sh` has configured
-`build/`:
+The strings are in gettext's usual form, and the sources are in British English. The one
+catalogue so far is `po/en_US.po`, American English. #645 is where new languages are
+discussed: say there which one you are starting.
+
+Everything below runs after a `scripts/demo.sh` or `scripts/check.sh` has configured
+`build/`. It needs no Apple account and no Chrome.
+
+### Starting a language
 
 ```bash
-meson compile -C build music-sleeve-pot            # the template, music-sleeve.pot, into po/
+meson compile -C build music-sleeve-pot          # the template, music-sleeve.pot in po (not committed)
 cd po && msginit -l de -i music-sleeve.pot -o de.po
 ```
 
-then add `de` to `po/LINGUAS`, translate `de.po` and rebuild. `meson compile -C build
-music-sleeve-update-po` merges new strings into every translation.
+Then add `de` to `po/LINGUAS` and translate `de.po`.
+
+- The comments starting `Translators:` explain strings that cannot be understood alone:
+  what a placeholder holds, whether a word is a verb or a noun, where a short label shows.
+- Keep each placeholder (`{count}`, `{title}`) as it is; you can move it within the sentence.
+- Keep one `_` in a menu item or button label for its keyboard access key.
+- Leave "Apple Music" (the service) and "Music Sleeve" (the app) as the source has them.
+- Dates are formats for `GLib.DateTime.format()`, such as `%-d %B %Y` for "24 September
+  2026": put the parts in your language's order.
+
+### Updating a language
+
+```bash
+meson compile -C build music-sleeve-pot music-sleeve-update-po
+```
+
+This makes the template again from the source and merges it into every catalogue in
+`po/LINGUAS`. New strings arrive untranslated and changed ones are marked fuzzy. Until they
+are translated, the app shows them in the source's English, so a catalogue that is behind
+fails nothing.
+
+### Trying it
+
+Install the build, then run the demo library in your language through the screenshot script.
+It runs on a private, invisible display:
+
+```bash
+meson install -C build --skip-subprojects
+LANGUAGE=de scripts/headless.sh scripts/screenshot.py build/de.png --demo --page albums
+LANGUAGE=de scripts/headless.sh scripts/screenshot.py build/de-narrow.png --demo --page albums --size 360x640
+```
+
+`scripts/screenshot.py --help` lists the other pages and dialogs. `LANGUAGE=de
+scripts/demo.sh` opens the demo itself on your desktop.
+
+`scripts/pseudo_locale.py` builds two pseudo-translations into `build/locale`:
+
+- `en_XA`: every letter accented and every string 40 % longer.
+- `ar_XB`: right to left.
+
+Run them with `MUSIC_SLEEVE_LOCALEDIR=build/locale LANGUAGE=en_XA` (and `--rtl` for
+`ar_XB`) to find text that is clipped or not translated.
+
+### Checks
+
+`tests/test_translations.py`, which CI runs, checks two things:
+
+- every `.po` file is listed in `po/LINGUAS`;
+- every `.po` compiles under `msgfmt --check`, which catches broken placeholders and plural
+  forms.
+
+`tests/test_build_lists.py` checks that every file with translatable strings is in
+`po/POTFILES.in`.
+
+### American English
+
+`po/en_US.po` translates only what American English spells or orders differently:
+"Favourite" becomes "Favorite", "catalogue" becomes "catalog", "colours" becomes "colors",
+"cancelled" becomes "canceled", "centred" becomes "centered", and dates go month first. Every
+other message is left untranslated and shows as the source.
+
+Before each release, the maintainer:
+
+1. runs the update above;
+2. searches the template for British spellings, in `po/`:
+   `grep -inE 'favourit|catalogu|colour|cancell|centred|ise[sd]?\b' music-sleeve.pot`, and
+   lists the catalogue's fuzzy entries with `msgattrib --only-fuzzy en_US.po`;
+3. translates the entries that differ and clears the fuzzy flags;
+4. commits it with the release.

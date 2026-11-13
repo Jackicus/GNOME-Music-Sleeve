@@ -14,7 +14,7 @@ from . import context_menu
 from .cover import Cover
 from .labels import ranked, song_caption, song_label, suggestion_caption, suggestion_label
 from .shelf import PagedRow
-from .util import connect_weak
+from .util import connect_weak, mirror_start
 
 # A song's width in the grid: two columns and a margin fit a 720 px window, one a 360 px.
 ROW_WIDTH = 300
@@ -67,6 +67,7 @@ class SongRow(Gtk.Box):
                                         valign=Gtk.Align.CENTER,
                                         accessible_role=Gtk.AccessibleRole.PRESENTATION,
                                         css_classes=['chart-rank-number', 'numeric', 'dimmed'])
+            mirror_start(self.rank)
             self.append(self.rank)
         self.cover = Cover(size=COVER_SIZE, valign=Gtk.Align.CENTER,
                            accessible_role=Gtk.AccessibleRole.PRESENTATION)
@@ -107,6 +108,7 @@ class SongRow(Gtk.Box):
             xalign=0, text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END)
         self.caption.add_css_class('caption')
         self.caption.add_css_class('dimmed')
+        mirror_start(self.caption)
         text.append(self.caption)
         self.append(text)
 
@@ -209,7 +211,7 @@ class SongShelf(PagedRow, Gtk.Box):
         # The first songs now, the rest a few a frame (positions are the shelf's own).
         self.grid_view.set_model(Gtk.NoSelection(
             model=self.give_items(shelf.items, FIRST_SONGS, MORE_SONGS)))
-        self.scrolled_window.get_hadjustment().set_value(0)
+        self._to_start()
         self._update_controls()
 
     def clear(self):

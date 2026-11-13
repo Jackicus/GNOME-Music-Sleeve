@@ -71,8 +71,8 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import song_columns
 from ..discography import PLAY_LIMIT
-from ..library import (SongModel, SongOrder, Track, apply_diff, narrows, song_key,
-                       song_tracks)
+from ..library import (SongModel, SongOrder, Track, apply_diff, narrows,
+                       selection_key, song_tracks)
 from ..widgets import context_menu, track_links
 from ..widgets.filter_bar import FilterBar
 from ..widgets.selection_mode import SelectionMode, row_description
@@ -81,7 +81,7 @@ from ..widgets.song_title import SongTitle
 from ..widgets.track_links import TrackLink
 from ..widgets.track_row import PlayingMark
 from ..widgets.util import (GrowBack, HeaderTitle, MappedHandlers, connect_weak,
-                            focus_position, rows_kept, weak_method)
+                            focus_position, mirror_start, rows_kept, weak_method)
 from . import SignInOffer, app, mark_bound
 
 # The columns' names in the Sort By menu's targets and SongOrder's keys.
@@ -223,7 +223,7 @@ class SongsPage(Adw.NavigationPage):
         # Filter, the batch actions in a bar under the table.
         self.selection_mode = SelectionMode(self, self.header_bar, self.toolbar,
                                             self.column_view, self._selectable,
-                                            self._focus_table, key=song_key,
+                                            self._focus_table, key=selection_key,
                                             objects=song_tracks)
         self.selection_mode.set_header_title(self._header_title)
         self.selection_mode.set_context(None, library=True)
@@ -696,6 +696,7 @@ class SongsPage(Adw.NavigationPage):
                                           text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END)
             if numeric:
                 inscription.add_css_class('numeric')
+            mirror_start(inscription)
             cell.set_child(inscription)
 
         if text is None:

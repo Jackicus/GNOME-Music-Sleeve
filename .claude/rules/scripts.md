@@ -125,4 +125,12 @@ paths:
   only: the other pages keep the six) and `--long-playlist N` one playlist of N songs,
   `l.pllong`, which `scroll_test.py --open playlist:l.pllong` scrolls. scroll_test.py reports
   a list that fits the window as having nothing to scroll and quits.
+- `pseudo_locale.py` makes the template (meson's `music-sleeve-pot`) and two
+  pseudo-translations of it into build/locale (`en_XA`: accented, 40 % longer, in brackets;
+  `ar_XB`: each run of words in a right-to-left override), build products never committed.
+  The harness binds `MUSIC_SLEEVE_LOCALEDIR` instead of the installed translations, so
+  `MUSIC_SLEEVE_LOCALEDIR=build/locale LANGUAGE=en_XA scripts/headless.sh
+  scripts/screenshot.py … --demo` shows the demo in one (with `--rtl` for ar_XB: GTK takes
+  its direction from its own catalogue). screenshot.py finds its menus by their translated
+  names.
 - Scripts may print; app code logs.

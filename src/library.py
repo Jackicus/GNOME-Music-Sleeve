@@ -322,6 +322,8 @@ TRACK_FIELDS = ('id', 'catalogId', 'title', 'artist', 'album', 'trackNumber', 'd
                 'year')
 _FIELDS = {name: position for position, name in enumerate(TRACK_FIELDS)}
 _CATALOG_ID = _FIELDS['catalogId']
+_ID = _FIELDS['id']
+_tuple_item = tuple.__getitem__
 _ABSENT = object()  # a TRACK_FIELDS key the dict did not have
 _ALL_ABSENT = (_ABSENT,) * len(TRACK_FIELDS)
 
@@ -544,9 +546,22 @@ def song_tracks(songs):
 
 def song_key(song):
     """What a list of songs that may hold SongEntries and their Tracks knows a song by: its
-    raw dict's identity, the same for an entry and its Track (selection.Selection's `key` on
-    the Songs page)."""
+    raw dict's identity, the same for an entry and its Track (SongModel.find())."""
     return id(song.raw)
+
+
+def selection_key(song):
+    """What a selection (selection.Selection) knows a song by through a reload: its own id,
+    the same for a SongEntry and its Track and for the new record a changed album or
+    playlist gives it (Item.merge()), else, without one, its record's identity. The Songs
+    store holds each id once; a list that may hold a song twice (a playlist) tells its
+    entries apart by selection.Places. A TrackRecord's id is read straight from the tuple:
+    keep() and ordered() run this on each of 40,000 songs (docs/notes.md)."""
+    raw = song.raw
+    if type(raw) is TrackRecord:
+        value = _tuple_item(raw, _ID)
+        return value if value is not _ABSENT and value else id(raw)
+    return _text(raw.get('id')) or id(raw)
 
 
 def narrows(old, new):

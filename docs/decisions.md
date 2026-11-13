@@ -385,10 +385,15 @@ changes, change it here, with the date. The plan they came from is in
   extends from the last one toggled, Ctrl+A and Ctrl+Shift+A select all and none, and
   Cancel, Escape or any batch action leaves it, as does leaving the page. Outside it nothing
   changed: a plain click and Enter play, Space plays or pauses. The lists stay
-  `Gtk.NoSelection` (nothing follows the pointer); the selection is a set of the Track
-  objects (`src/selection.py`), which a reload keeps and a filter's new rows do not lose,
-  where a `Gtk.MultiSelection`'s positions go at every key, and a filter narrows it to what
-  it still shows, so an action never reaches a song out of sight. Rows show a check box and
+  `Gtk.NoSelection` (nothing follows the pointer); the selection is a set of the songs by
+  their id (`src/selection.py`; on a detail page also which of a song's entries, for a
+  playlist holding it twice: `Places`), which a reload that changes an album or a playlist
+  keeps (#574: keyed by the Track objects, which such a reload makes anew, it lost them all
+  silently) and a filter's new rows do not lose, where a `Gtk.MultiSelection`'s positions go
+  at every key, and a filter or a reload narrows it to what the list still shows, so an
+  action never reaches a song out of sight. Keyed by id, keep() and ordered() over 40,000
+  songs take 8 to 12 ms (docs/notes.md): within a frame, so the mode is not left with a
+  toast on a reload, the fallback the decision allowed. Rows show a check box and
   say "Selected"; the header bar shows the count (a menu of Select All and Select None) and
   Cancel in place of Select, Sort and Filter, which leave it the room at 360 px; a bar under
   the list holds Play Next and Play Later (one queue command for each run of songs, MusicKit's

@@ -113,6 +113,7 @@ from ..suggestions import SPARES, Suggestions, preview_url
 from ..suggestions import basis as suggestion_basis
 from ..suggestions import count as suggestion_count
 from ..remote import fetch_cover, fetch_shelf_art, remote_item
+from ..selection import Places
 from ..widgets import context_menu, dnd, track_links
 from ..widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
 from ..widgets.engine_status import EngineStatus
@@ -626,9 +627,13 @@ class DetailPage(Adw.NavigationPage):
         self.more_button.set_create_popup_func(weak_method(self._on_more_popup))
         self._header_title = HeaderTitle(self.header_bar, self.title_label, self.scrolled_window)
         # The tracks' selection mode (widgets/selection_mode.py): Select at the header bar's
-        # end, the batch actions in a bar under the list.
+        # end, the batch actions in a bar under the list. A track is selected by its song's
+        # id and which of that song's entries it is (selection.Places), so a reload that
+        # changes the item, which makes new Tracks, keeps it selected.
+        self._places = Places(weak_method(self._all_tracks))
         self.selection_mode = SelectionMode(self, self.header_bar, self.toolbar, self.list_view,
-                                            self._selectable, self._focus_tracks)
+                                            self._selectable, self._focus_tracks,
+                                            key=self._places.key)
         self.selection_mode.set_header_title(self._header_title)
         # A playlist's Sort By at the header bar's end, then Select and the filter's button,
         # in the order the Songs page and the grids have them (its menu is made below).
@@ -639,6 +644,9 @@ class DetailPage(Adw.NavigationPage):
         self.header_bar.pack_end(self.selection_mode.select_button)
         self.header_bar.pack_end(self.selection_mode.cancel_button)
         connect_weak(self.selection_mode.selection, 'changed', self._on_selection_changed)
+        # A reorder (Item.reorder(): the same Tracks, new records) happens outside the mode:
+        # the places are worked out again as it starts.
+        connect_weak(self.selection_mode.selection, 'notify::active', self._on_selecting)
         context_menu.set_drag_objects(self.list_view,
                                       weak_method(self.selection_mode.drag_objects))
         # The table and the selection bar's narrow layout follow the bin's current breakpoint,
@@ -822,6 +830,8 @@ class DetailPage(Adw.NavigationPage):
         if item is not self.item:
             self._watch(self.item, item)
             self.item = item
+        # New groups or another item: their songs' places, before a row is bound for them.
+        self._places.forget()
         if item is None:
             self._shown_groups = None
             self._suggestions_start = None
@@ -1839,6 +1849,14 @@ class DetailPage(Adw.NavigationPage):
 
     # The selection mode.
 
+    def _all_tracks(self):
+        """Every track of the item shown, its filter aside, in its groups' order: what a
+        selected track's place among its song's entries counts in (selection.Places)."""
+        item = self.item
+        if item is None:
+            return []
+        return [track for group in item.groups for track in group.entries]
+
     def _selectable(self):
         """The tracks shown, in order: what the selection mode selects among. A filtered
         list growing back (ShownModel) counts whole: its rows still to come are shown as
@@ -1863,6 +1881,9 @@ class DetailPage(Adw.NavigationPage):
         mode.set_context(playlist, library=is_library_id(item.id or ''),
                          favourites=item.kind == 'playlist' and item.favourites)
         mode.prune()
+
+    def _on_selecting(self, _selection, _pspec):
+        self._places.forget()
 
     def _on_selection_changed(self, selection):
         """The bound rows' check boxes and descriptions, and the table header's room."""

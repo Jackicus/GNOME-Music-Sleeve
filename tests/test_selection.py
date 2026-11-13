@@ -1,15 +1,22 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The selection of a track list's selection mode (applemusic.selection): Track objects, not
-positions, so a filter or a sort keeps what it still shows. GObject only, no display."""
+"""The selection of a track list's selection mode (applemusic.selection): songs by their id,
+not positions, so a filter, a sort or a reload keeps what it still shows. GObject only, no
+display."""
 
+import asyncio
+import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from tests import ROOT  # noqa: F401  registers src/ as applemusic
 
-from applemusic.library import Item, Track
-from applemusic.selection import Picks, Selection
+from applemusic.library import Item, Library, SongEntry, Track, TrackRecord, selection_key
+from applemusic.selection import Picks, Places, Selection
 
 
 def tracks(count):
@@ -114,6 +121,145 @@ class SelectionTest(unittest.TestCase):
         selection.select_all(entries)
         self.assertTrue(all(selection.has(track) for track in tracks))
         self.assertEqual(selection.count, 5)
+
+    def test_nothing_selected_asks_no_key(self):
+        asked = []
+        selection = Selection(lambda track: asked.append(track) or track)
+        self.assertFalse(selection.has(self.shown[0]))  # a bind outside the mode
+        self.assertEqual(asked, [])
+
+
+def song(song_id, title, index=0):
+    """An invented library song as library.json holds it."""
+    return {'id': song_id, 'catalogId': None, 'title': title, 'artist': 'Invented Artist',
+            'album': 'Invented Album', 'trackNumber': index + 1, 'discNumber': 1,
+            'durationMs': 180000, 'durationLabel': '3:00', 'explicit': False, 'index': index,
+            'thumb': None, 'type': 'library-songs'}
+
+
+class SelectionKeyTest(unittest.TestCase):
+    """library.selection_key(): a song by its id, the same for its entry and its Track and
+    for the new record a reload gives it."""
+
+    def test_by_the_songs_id(self):
+        record = TrackRecord(song('i.a1', 'Tidewater'))
+        entry = SongEntry(record, (None, 0, {}, None))
+        self.assertEqual(selection_key(entry), 'i.a1')
+        self.assertEqual(selection_key(entry.track()), 'i.a1')
+        again = TrackRecord(song('i.a1', 'Tidewater (Remastered)'))  # a reload's
+        self.assertEqual(selection_key(Track(again)), 'i.a1')
+        self.assertEqual(selection_key(Track({'id': 'i.a2'})), 'i.a2')  # a dict too
+        # No id: the record itself, so two such songs are two.
+        loose = Track({'title': 'Untitled'})
+        self.assertEqual(selection_key(loose), id(loose.raw))
+        other = Track(TrackRecord({'title': 'Untitled'}))
+        self.assertEqual(selection_key(other), id(other.raw))
+
+
+class ReloadTest(unittest.TestCase):
+    """#574: a sync that changes an album gives it new records and Tracks; its songs stay
+    selected, and only a song the reload took out leaves the selection."""
+
+    def write(self, albums):
+        def album(album_id, ids):
+            play = {'kind': 'album', 'id': album_id}
+            return {'id': album_id, 'kind': 'album', 'title': album_id, 'play': play,
+                    'groups': [{'name': 'Disc 1', 'play': play, 'entries': [
+                        song(song_id, f'Song {song_id}', n) for n, song_id in enumerate(ids)]}]}
+
+        data = {'version': 5, 'generated': '2026-01-01T00:00:00Z', 'storefront': 'gb',
+                'sections': {'albums': [album(album_id, ids) for album_id, ids in albums]},
+                'shelves': []}
+        Path(self.cache, 'library.json').write_text(json.dumps(data), encoding='utf-8')
+
+    def run_library(self, call):
+        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.cache}):
+            asyncio.run(call())
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.cache = directory.name
+
+    def test_a_changed_album_keeps_its_songs_selected(self):
+        first = [f'i.a{n}' for n in range(4)]
+        second = [f'i.b{n}' for n in range(4)]
+        self.write([('l.a', first), ('l.b', second)])
+        library = Library()
+        self.run_library(library.load)
+        self.run_library(library.build_songs)
+        selection = Selection(selection_key)
+        selection.select_all(library.songs.entries)
+        self.assertEqual(selection.count, 8)
+        # One more song on the first album: its records are new, its songs the same.
+        self.write([('l.a', first + ['i.a4']), ('l.b', second)])
+        old = list(library.songs.entries)
+        self.run_library(library.reload)
+        self.assertFalse(any(entry is old[0] for entry in library.songs.entries))
+        self.assertFalse(selection.keep(library.songs.entries))
+        self.assertEqual(selection.count, 8)
+        self.assertEqual(len(selection.ordered(library.songs.entries)), 8)
+        self.assertFalse(selection.has(library.songs.entries[4]))  # the new song
+        # The album's own Tracks, made again, are selected too (a detail page's rows).
+        album = library.by_id('album', 'l.a')
+        self.assertTrue(selection.has(album.groups[0].entries.get_item(0)))
+        # A song taken out leaves the selection; the rest stay.
+        self.write([('l.a', first[1:] + ['i.a4']), ('l.b', second)])
+        self.run_library(library.reload)
+        self.assertTrue(selection.keep(library.songs.entries))
+        self.assertEqual(selection.count, 7)
+
+
+class PlacesTest(unittest.TestCase):
+    """A detail page's key: a song a playlist holds twice is two entries, each selected by
+    itself, and each keeps its selection when the playlist is read again."""
+
+    def playlist(self, ids):
+        return [Track(TrackRecord(song(song_id, f'Song {song_id}', n)))
+                for n, song_id in enumerate(ids)]
+
+    def test_a_song_held_twice_is_selected_twice(self):
+        shown = self.playlist(['i.x', 'i.y', 'i.x', 'i.z'])
+        places = Places(lambda: shown)
+        selection = Selection(places.key)
+        self.assertEqual([places.key(track) for track in shown],
+                         [('i.x', 0), ('i.y', 0), ('i.x', 1), ('i.z', 0)])
+        selection.toggle(shown[2])  # the second Song i.x
+        self.assertEqual(selection.ordered(shown), [shown[2]])
+        self.assertFalse(selection.has(shown[0]))
+
+    def test_a_reload_keeps_each_entry_selected(self):
+        shown = self.playlist(['i.x', 'i.y', 'i.x', 'i.z'])
+        places = Places(lambda: shown)
+        selection = Selection(places.key)
+        selection.toggle(shown[2])
+        selection.toggle(shown[3])
+        # Read again with a song added at the top: new Tracks, each place moved down one.
+        shown = self.playlist(['i.w', 'i.x', 'i.y', 'i.x', 'i.z'])
+        places.forget()
+        self.assertFalse(selection.keep(shown))
+        self.assertEqual(selection.ordered(shown), [shown[3], shown[4]])
+        # The first Song i.x taken out: the second is the first now, which was not selected.
+        shown = self.playlist(['i.w', 'i.y', 'i.x', 'i.z'])
+        places.forget()
+        self.assertTrue(selection.keep(shown))
+        self.assertEqual(selection.ordered(shown), [shown[3]])
+
+    def test_worked_out_once_until_forgotten(self):
+        shown = self.playlist(['i.x', 'i.x'])
+        asked = []
+
+        def tracks():
+            asked.append(True)
+            return shown
+
+        places = Places(tracks)
+        for track in shown + shown:
+            places.key(track)
+        self.assertEqual(len(asked), 1)
+        places.forget()
+        places.key(shown[0])
+        self.assertEqual(len(asked), 2)
 
 
 class PicksTest(unittest.TestCase):

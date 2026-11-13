@@ -39,7 +39,7 @@ changes. A row's look is the page's: a check box in the
 row (`.selection-mode`), "Selected" in its description, both from selection.has().
 
 `shown()` answers what the list shows, in order: its Tracks, or for the Songs table its
-SongEntries, which `key` (library.song_key) knows as their rows' Tracks are known and
+SongEntries, which `key` (library.selection_key) knows as their rows' Tracks are known and
 `objects(entries)` makes the Tracks the batch actions and a drag take.
 
 The page holds this object, which holds the page's widgets it made, the view and the
@@ -89,8 +89,9 @@ def count_title(count):
 class SelectionMode(GObject.Object):
     """The selection mode of a page's track list: see the module. `shown()` answers the
     tracks the list shows, in order; `focus_return(track)` puts the focus on track's row (or
-    the first) and answers whether it could, as a filter bar's does; `key` and `objects`, for
-    a list of SongEntries (the module)."""
+    the first) and answers whether it could, as a filter bar's does; `key`, what a track is
+    selected by (selection.Selection's: its song's id), and `objects`, for a list of
+    SongEntries (the module)."""
 
     __gtype_name__ = 'AppleMusicSelectionMode'
 
@@ -171,6 +172,13 @@ class SelectionMode(GObject.Object):
                                     visible=False)
         self._more.update_property([Gtk.AccessibleProperty.LABEL], [_('More')])
         self._more.set_create_popup_func(weak_method(self._on_more_popup))
+        # The text buttons may shrink, their labels ellipsized: the bar asks for its
+        # buttons' whole width even while it is not revealed, and with a language whose
+        # words run longer (40 % more, as the en_XA pseudo-locale has them) it made Songs,
+        # a playlist and an album wider than a 360 px window (#643).
+        for button in (self._play_next, self._play_later, self._add, self._remove_playlist,
+                       self._remove_favourites, self._remove_library):
+            button.set_can_shrink(True)
         for button in (self._play_next, self._play_later, self._add):
             self.bar.pack_start(button)
         for button in (self._more, self._remove_library, self._remove_playlist,

@@ -14,7 +14,7 @@ from ..library import Item
 from . import context_menu
 from .cover import Cover
 from .labels import bind_label, unbind_label
-from .util import connect_weak
+from .util import connect_weak, mirror_start
 
 # A result's cover, in logical pixels, as a top hit's row has it.
 COVER_SIZE = 40
@@ -67,6 +67,7 @@ class ResultRow(Gtk.Box):
         self.subtitle = Gtk.Inscription(xalign=0, nat_chars=24, hexpand=True,
                                         css_classes=['caption', 'dimmed'],
                                         text_overflow=Gtk.InscriptionOverflow.ELLIPSIZE_END)
+        mirror_start(self.title, self.subtitle)
         labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2,
                          valign=Gtk.Align.CENTER, hexpand=True)
         labels.append(self.title)

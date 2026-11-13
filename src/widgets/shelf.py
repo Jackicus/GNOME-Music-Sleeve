@@ -5,6 +5,8 @@
 tile, numbered; ShelfColumn: a page's shelves, one under another; PagedRow: the paging arrows
 and See All, which song_shelf.py's grid of songs shares."""
 
+from gettext import gettext as _
+
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from . import banner_tile, context_menu
@@ -29,6 +31,27 @@ MORE_TILES = 6
 PAGE_DURATION = 250
 
 
+def row_start(lower, upper, page, rtl):
+    """Where a row's horizontal adjustment is at the row's start: its lower end, or right to
+    left (a horizontal list lays its first item at the right) its upper end."""
+    return max(lower, upper - page) if rtl else lower
+
+
+def paging(value, lower, upper, page, rtl):
+    """(towards the start, towards the end): whether there is more of the row that way, for
+    the previous and next arrows."""
+    more_left = value > lower + 1
+    more_right = value < upper - page - 1
+    return (more_right, more_left) if rtl else (more_left, more_right)
+
+
+def page_target(value, lower, upper, page, step, rtl):
+    """The adjustment's value a page `step` (-1 towards the row's start, 1 towards its end)
+    away from `value`, within the row."""
+    delta = -step * page if rtl else step * page
+    return min(max(value + delta, lower), upper - page)
+
+
 class PagedRow:
     """A shelf's row controls, for a widget with `scrolled_window` (scrolling sideways only),
     `previous_button`, `next_button`, `see_all_button`, `_see_all` (See All offered) and its
@@ -37,7 +60,8 @@ class PagedRow:
     no scrollbar: they are what shows that it scrolls), each sensitive while there is more
     that way; a click on one scrolls a width and focuses the first item wholly shown. All
     of it follows the row's horizontal adjustment, which the scrolled window keeps whatever
-    its scrollbar policy.
+    its scrollbar policy. Right to left the row starts at the right (row_start()), so the
+    previous arrow, at the right then, pages to the right (paging(), page_target()).
 
     give_items() makes the row's model: the first of the items at once and the rest a few
     a frame (its row makes a widget for each item up to rows_kept() as it gets it, whether it
@@ -92,8 +116,29 @@ class PagedRow:
         self.see_all_button.set_visible(self._see_all and (self._truncated() or overflows))
         self.previous_button.set_visible(overflows)
         self.next_button.set_visible(overflows)
-        self.previous_button.set_sensitive(value > 1)
-        self.next_button.set_sensitive(value < upper - page - 1)
+        backwards, forwards = paging(value, adjustment.get_lower(), upper, page, self._rtl())
+        self.previous_button.set_sensitive(backwards)
+        self.next_button.set_sensitive(forwards)
+
+    def _rtl(self):
+        return self.scrolled_window.get_direction() == Gtk.TextDirection.RTL
+
+    def _to_start(self):
+        """Scroll the row back to its start (a new shelf in a widget used before). Right to
+        left that is the adjustment's upper end, which the new items' layout has yet to set:
+        the view scrolls to its first item once it has laid them out."""
+        if not self._rtl():
+            self.scrolled_window.get_hadjustment().set_value(0)
+        elif self._row.get_model() is not None and self._row.get_model().get_n_items():
+            self._row.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
+
+    def _name_arrows(self, *_args):
+        """The arrows' tooltips (their names) by the way each pages: right to left the
+        previous arrow scrolls right."""
+        left, right = _('Scroll Left'), _('Scroll Right')
+        previous, following = (right, left) if self._rtl() else (left, right)
+        self.previous_button.set_tooltip_text(previous)
+        self.next_button.set_tooltip_text(following)
 
     def _on_adjustment_changed(self, _adjustment, _pspec):
         self._update_controls()
@@ -102,8 +147,8 @@ class PagedRow:
         """Scroll the row one width that way, then focus the first item wholly shown."""
         adjustment = self.scrolled_window.get_hadjustment()
         page = adjustment.get_page_size()
-        target = min(max(adjustment.get_value() + direction * page, adjustment.get_lower()),
-                     adjustment.get_upper() - page)
+        target = page_target(adjustment.get_value(), adjustment.get_lower(),
+                             adjustment.get_upper(), page, direction, self._rtl())
         if self._animation is not None:
             self._animation.skip()
         # Not Adw.TimedAnimation.new(): its new reference is annotated (transfer none),
@@ -118,10 +163,14 @@ class PagedRow:
 
     def _on_paged(self, _animation):
         self._animation = None
+        width = self.scrolled_window.get_width()
+        rtl = self._rtl()
         child = self._row.get_first_child()
         while child is not None:
             found, bounds = child.compute_bounds(self.scrolled_window)
-            if child.get_visible() and found and bounds.get_x() >= -1:
+            whole = (bounds.get_x() + bounds.get_width() <= width + 1 if rtl
+                     else bounds.get_x() >= -1)
+            if child.get_visible() and found and whole:
                 child.grab_focus()
                 return
             child = child.get_next_sibling()
@@ -133,6 +182,8 @@ class PagedRow:
         adjustment = self.scrolled_window.get_hadjustment()
         for signal in ('notify::value', 'notify::upper', 'notify::page-size'):
             connect_weak(adjustment, signal, self._on_adjustment_changed)
+        self._name_arrows()
+        connect_weak(self.scrolled_window, 'direction-changed', self._name_arrows)
 
 
 class RankedTile(Gtk.Overlay):
@@ -300,7 +351,7 @@ class Shelf(PagedRow, Gtk.Box):
         self._show_title()
         self.list_view.set_model(Gtk.NoSelection(
             model=self.give_items(shelf.items, FIRST_TILES, MORE_TILES, ROW_LIMIT)))
-        self.scrolled_window.get_hadjustment().set_value(0)  # a new shelf starts at its start
+        self._to_start()  # a new shelf starts at its start
         self._update_controls()
 
     def clear(self):
