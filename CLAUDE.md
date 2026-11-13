@@ -41,7 +41,7 @@ Application (main.py)    app.settings, .library, .engine, .player, .mpris, .sess
 │  │                     (pages/, made on first visit); tiles and rows push pages
 │  ├─ bottom bar, sheet  PlayerBar (player_bar.py), NowPlayingSheet (widgets/now_playing.py)
 │  └─ item_actions       win.item-* actions, context menus (actions.py, widgets/context_menu.py)
-├─ Library (library.py)  Item/Track GObjects in Gio.ListStores from the cache's library.json;
+├─ Library (library/)    Item/Track GObjects in Gio.ListStores from the cache's library.json;
 │                        sync.py fetches and writes it; reload() keeps objects, notifies changes
 ├─ Engine (engine.py)    Chrome (Gio.Subprocess, CDP on its pipe) + CDPClient ─► bridge.js ─►
 │                        MusicKit; commands are coroutines; MusicKit events re-emitted as `event`
@@ -68,7 +68,7 @@ src/*.py                        services and logic (engine, player, mpris, searc
                                 release, session, discography, suggestions, errors, i18n, lyrics,
                                 remote, recent_searches, radio, home, search_pager, timing,
                                 shortcuts, keyboard, sidebar, sections; new ones go here)
-src/library.py                  the data model: GLib, GObject and Gio only, no GTK
+src/library/                    the data model, a package: GLib, GObject and Gio only, no GTK
 src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
 src/dialogs/                    sign-in, preferences, keyboard shortcuts, about, the playlist dialogs
@@ -117,7 +117,7 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
 - **Async**: start coroutines from signal handlers with `app.spawn(coro)` (it keeps a reference,
   logs the exception, returns the task). `GLib.idle_add`/`timeout_add` defer UI work past a
   frame or a layout, not async work. Main-thread work in chunks yields with `await
-  yield_to_frames()` (library.py): asyncio runs above GTK's redraw, so `sleep(0)` paints nothing.
+  yield_to_frames()` (library/pacing.py): asyncio outranks GTK's redraw: `sleep(0)` paints nothing.
 - **Chrome and MusicKit only through `app.engine`**: engine.py is the one module that imports
   `backend.chrome` and `backend.client`; the rest of the app may import the backend's pure parts
   (`api`, `config`, `errors`, `normalize`, `store`). Playback goes through `app.player`.

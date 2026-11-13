@@ -2,7 +2,7 @@
 paths:
   - "src/pages/**"
   - "src/widgets/**"
-  - "src/library.py"
+  - "src/library/**"
   - "src/main.py"
   - "src/window.py"
   - "scripts/bench.py"

@@ -675,7 +675,7 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 ## library.json
 
 `<cache>/library.json`, written by `src/sync.py` (and `scripts/demo_library.py`), read by
-`src/library.py`. Version 5: a Track carries its `genre` and `year`; version 4: the shape
+`src/library/`. Version 5: a Track carries its `genre` and `year`; version 4: the shape
 of 3, written by a full sync (a short pass keeps the version of the file it kept from, and
 1.0.0's could stamp 3 on a file without 3's keys);
 version 3: Items carry `added` and the file `favourites`; version 2: an album's track
@@ -872,7 +872,7 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 
 | Path | Written by | Read by | Kept |
 |---|---|---|---|
-| `library.json` | the sync | `library.py` | until the next sync |
+| `library.json` | the sync | `library/` | until the next sync |
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |

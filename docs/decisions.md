@@ -961,7 +961,7 @@ changes, change it here, with the date. The plan they came from is in
   already). A key on 3,000 albums went from 48 to 21 ms (docs/notes.md).
 - **The model's own words** (2026-09-28). What the app calls things (an untitled album,
   Home's own shelves, a count caption such as "12 songs, 43 min") is made and translated in
-  `library.py` from the data, not read from English text the backend wrote into
+  `library/words.py` from the data, not read from English text the backend wrote into
   library.json, which gettext cannot reach. The captions are made once per Item, never in a
   list's bind.
 - **Demo mode** (2026-09-27). `--demo` runs the app on a generated, invented library, so UI
