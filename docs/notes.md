@@ -435,6 +435,16 @@ against +3.3); scroll_test.py on Albums five runs, 2.7 / 3.4 / 5.5 ms, none over
   took 3.1-7.8 ms over 22 runs (also at 360x640, 1100x760, a 20,000 px/s fling, and the
   scroll at once after the queue's paint). Runs that had frames over 16.7 ms had them all
   along the scroll, with as many late compositor frames: other load on the machine.
+- The selection mode's key (#574, 2026-11-13, under load: load average 3.3 to 3.7, vmstat
+  88-96 % idle; medians of 15 runs; build/demo-big's 40,000 songs as SongEntries): keyed by
+  the song's id (`library.selection_key()`, the id read straight from the TrackRecord),
+  `Selection.keep()` takes 8.2 ms with one song or 1,000 selected and 11.5 ms with all
+  40,000, `ordered()` 7.1, 7.6 and 8.4 ms; keyed by `id(raw)`, as before, 4.7, 4.6 and
+  10.0 ms, and 3.1, 3.5 and 5.4 ms. The id through `TrackRecord.get()` cost 10.3 and
+  14.2 ms for keep(). Within a frame, so the selection is keyed by id; the mode is not left
+  on a reload. On the 5,000-song playlist, `Places` works out its repeats in 5.6 ms, once
+  per change of the list (the first key asked after one), and keep() and ordered() of all
+  5,000 take 1.9 and 1.6 ms.
 
 ## Memory
 

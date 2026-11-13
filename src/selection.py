@@ -2,8 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """Which tracks of a list are selected, in a track list's selection mode (docs/decisions.md):
-the Track objects themselves (or what `key` knows them by), not a Gtk.MultiSelection's
-positions.
+known by what `key` makes of them (the song's id), not as a Gtk.MultiSelection's positions.
 
     selection = Selection(key=None)
     selection.start()                     # the mode on (`active`), nothing selected
@@ -20,11 +19,23 @@ GTK selects the hovered row of a single-click list (the lists play on a single c
 select nothing, `Gtk.NoSelection`); a Gtk.MultiSelection keeps positions, which the Songs
 table's and a playlist's filters replace at every key (inserted, then the old removed: the
 rows recycled), so the selection would go with each; and its Select All would take a detail
-page's hero and footer rows. A Library reload keeps its Track objects, so they are stable
-keys, and a song a playlist holds twice is two Tracks, each selected by itself. The Songs
-table's list holds the library's songs as SongEntries and binds their Tracks to its rows:
-its Selection's `key` is library.song_key, which knows an entry and its Track as one song,
-so that Select All of 40,000 songs makes no Track.
+page's hero and footer rows.
+
+Nor are the Track objects the keys: a reload that changes an album or a playlist gives it
+new Tracks and records (Item.merge(), `groups-changed`; the Songs store's entries follow),
+and keep() would take every selected song of it for one no longer shown (#574). A song is
+selected by its id (library.selection_key), which a reload keeps: the Songs table's list
+holds the library's songs, each id once, as SongEntries and binds their Tracks to its rows,
+and the key knows an entry and its Track as one song, so that Select All of 40,000 songs
+makes no Track. A detail page's list may hold a song twice (a playlist): its key is
+Places.key(), the song's id and which of its entries in the list it is (the first, the
+second…), so each entry is selected by itself and keeps its selection when songs come or go
+around it. What a reload took out of the list leaves the selection at the page's prune(),
+as a filter's change does.
+
+    places = Places(tracks)               # tracks(): every track of the list, unfiltered
+    selection = Selection(places.key)
+    places.forget()                       # the list's tracks changed: worked out again
 
 `changed` is emitted after every change of the selected set or of `active`.
 
@@ -42,16 +53,16 @@ GObject only, no GTK: tests/test_selection.py.
 
 from gi.repository import GObject
 
-from .library import track_ref
+from .library import selection_key, track_ref
 
 
 class Selection(GObject.Object):
     """The selected tracks of one list: see the module. `changed` after every change.
 
     `key(obj)`, when given, is what a track is selected by (by default the object itself):
-    the Songs table's list holds SongEntries and its rows their Tracks, both known by
-    library.song_key(); ordered() answers the elements of `shown`, whichever of the two
-    selected them."""
+    library.selection_key (the Songs table: its list holds SongEntries and its rows their
+    Tracks, both known by their song's id) or a Places' key (a detail page's); ordered()
+    answers the elements of `shown`, whichever of them selected them."""
 
     __gtype_name__ = 'AppleMusicSelection'
 
@@ -77,8 +88,8 @@ class Selection(GObject.Object):
         return len(self._selected)
 
     def has(self, track):
-        """Whether track is selected."""
-        return self._key(track) in self._selected
+        """Whether track is selected (no key worked out while nothing is)."""
+        return bool(self._selected) and self._key(track) in self._selected
 
     def start(self):
         """Turn the mode on, nothing selected (nothing when it is on already)."""
@@ -173,6 +184,38 @@ class Selection(GObject.Object):
 
 def _itself(obj):
     return obj
+
+
+class Places:
+    """A detail page's selection key (see the module): `tracks()` answers every track of its
+    list, unfiltered, in order, and a track is known by (its song's id, which of that song's
+    entries it is: 0 for the first). Only songs the list holds more than once need the
+    second part worked out, from `tracks()` at the first key asked for after forget()."""
+
+    def __init__(self, tracks):
+        self._tracks = tracks
+        self._repeats = None  # id(record) -> its place among its song's entries, when not 0
+
+    def forget(self):
+        """The list's tracks changed: the places are worked out again when next asked."""
+        self._repeats = None
+
+    def key(self, track):
+        repeats = self._repeats
+        if repeats is None:
+            repeats = self._repeats = self._find_repeats()
+        return (selection_key(track), repeats.get(id(track.raw), 0) if repeats else 0)
+
+    def _find_repeats(self):
+        seen = {}
+        repeats = {}
+        for track in self._tracks() or ():
+            song = selection_key(track)
+            place = seen.get(song, 0)
+            if place:
+                repeats[id(track.raw)] = place
+            seen[song] = place + 1
+        return repeats
 
 
 class Picks(GObject.Object):

@@ -1444,6 +1444,7 @@ class SelectionTest(PageTestCase):
         data = album(1, tracks=4, kind=kind)
         if attributes:
             data['attributes'] = attributes
+        self.data = data
         self.item = Item(data)
         page = await self.push(DetailPage(self.library, self.item))
         self.assertTrue(await self.until(lambda: len(page._bound) == 4, timeout=2))
@@ -1473,6 +1474,41 @@ class SelectionTest(PageTestCase):
         self.assertFalse(mode.active)
         self.assertTrue(page.can_reorder())
         self.assertFalse(any(row.check.get_visible() for row in rows))
+
+    async def test_a_reload_that_changes_the_playlist_keeps_its_songs_selected(self):
+        # #574: new groups make new Tracks; the songs selected stay selected by their id
+        # and place, and a song held twice keeps the entry selected, not the other.
+        import copy
+
+        page = await self.show()
+        mode = page.selection_mode
+        first, second, third, _fourth = self.songs()
+        mode.selection.toggle(second)
+        mode.selection.toggle(third)
+        data = copy.deepcopy(self.data)
+        entries = data['groups'][0]['entries']
+        entries.insert(0, dict(entries[0], id='l.invented.extra', title='Invented Extra'))
+        entries.append(dict(entries[3]))  # the third song again, at the end
+        self.item.merge(data, replace=True)
+        songs = self.songs()
+        self.assertEqual(len(songs), 6)
+        self.assertNotIn(second, songs)  # new Tracks
+        self.assertTrue(mode.active)
+        self.assertEqual(mode.selection.count, 2)
+        self.assertEqual(mode.selection.ordered(songs), [songs[2], songs[3]])
+        self.assertEqual([song.id for song in mode.selection.ordered(songs)],
+                         [second.id, third.id])
+        self.assertFalse(mode.selection.has(songs[5]))  # the third song's second entry
+        self.assertTrue(await self.until(lambda: len(page._bound) == 6, timeout=2))
+        checked = [item.get_child().track_row.check.get_active() for item in page._bound
+                   if item.get_child().track_row.check.get_visible()]
+        self.assertEqual(checked.count(True), 2)
+        # A song the reload takes out leaves the selection.
+        data = copy.deepcopy(data)
+        del data['groups'][0]['entries'][2]
+        self.item.merge(data, replace=True)
+        self.assertEqual([song.id for song in mode.selection.ordered(self.songs())], [third.id])
+        self.assertEqual(first.id, self.songs()[1].id)
 
     async def test_a_plain_click_still_plays(self):
         page = await self.show()

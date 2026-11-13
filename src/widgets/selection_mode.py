@@ -39,7 +39,7 @@ changes. A row's look is the page's: a check box in the
 row (`.selection-mode`), "Selected" in its description, both from selection.has().
 
 `shown()` answers what the list shows, in order: its Tracks, or for the Songs table its
-SongEntries, which `key` (library.song_key) knows as their rows' Tracks are known and
+SongEntries, which `key` (library.selection_key) knows as their rows' Tracks are known and
 `objects(entries)` makes the Tracks the batch actions and a drag take.
 
 The page holds this object, which holds the page's widgets it made, the view and the
@@ -89,8 +89,9 @@ def count_title(count):
 class SelectionMode(GObject.Object):
     """The selection mode of a page's track list: see the module. `shown()` answers the
     tracks the list shows, in order; `focus_return(track)` puts the focus on track's row (or
-    the first) and answers whether it could, as a filter bar's does; `key` and `objects`, for
-    a list of SongEntries (the module)."""
+    the first) and answers whether it could, as a filter bar's does; `key`, what a track is
+    selected by (selection.Selection's: its song's id), and `objects`, for a list of
+    SongEntries (the module)."""
 
     __gtype_name__ = 'AppleMusicSelectionMode'
 
