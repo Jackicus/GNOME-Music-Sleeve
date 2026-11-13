@@ -21,9 +21,9 @@ The screenshots show an invented demo library.
 
 ## Features
 
-- **Your library**: Recently Added, Artists, Albums, Songs, Music Videos, Made for You and
-  Genres, with your playlists and folders in the sidebar. Favourites, filtering as you type,
-  and selecting several songs at once.
+- **Your library**: Recently Added, Artists, Albums, Songs, Music Videos and Made for You
+  (and Genres, if you turn it on in Preferences), with your playlists and folders in the
+  sidebar. Favourites, filtering as you type, and selecting several songs at once.
 - **Apple Music's catalogue**: Home, New, Charts, Radio, Search and Replay, with full album,
   playlist and artist pages.
 - **Playlists**: create, rename, duplicate, delete, reorder, and organise into folders by
@@ -66,9 +66,12 @@ Build the [latest release](https://github.com/Jackicus/GNOME-Music-Sleeve/releas
 `music-sleeve-….tar.xz` with Meson. Install the build dependencies first:
 
 ```bash
-sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3-gobject-devel meson gettext  # Fedora
-sudo apt install libgtk-4-dev libadwaita-1-dev python3-gi python-gi-dev meson gettext                         # Ubuntu
+sudo dnf install gtk4-devel libadwaita-devel glib2-devel python3-gobject python3-gobject-devel meson gettext blueprint-compiler git  # Fedora
+sudo apt install libgtk-4-dev libadwaita-1-dev python3-gi python-gi-dev meson gettext blueprint-compiler git                         # Ubuntu
 ```
+
+The interface is compiled with blueprint-compiler 0.22 or newer: when the installed one is
+older, Meson fetches its own with git, which needs a network connection.
 
 Then build and install it:
 
