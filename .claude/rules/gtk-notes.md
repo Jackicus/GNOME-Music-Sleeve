@@ -167,7 +167,7 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
 - The one drag type is `library.ItemRefs` (one or more library objects, in order), offered
   with `Gdk.ContentProvider.new_for_value(refs)` through `widgets/dnd.py`: in-app drags plus
   links outward. `dnd.provider()` puts it first in a `Gdk.ContentProvider.new_union()` with
-  the objects' music.apple.com links (`actions.drag_links()`) as `new_for_bytes()` of
+  the objects' music.apple.com links (`web_links.drag_links()`) as `new_for_bytes()` of
   `text/uri-list` (CRLF after each) and `text/plain` (with and without `;charset=utf-8`),
   only when there are links. A value provider's own `write_mime_type_async()` serializes
   nothing (GDK's drag does that), so the text formats are bytes, which a test reads back;
@@ -192,7 +192,7 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
   (`duplicate child name in GtkStack`), and one labelled `main` is the menu's own. Nothing
   names a page otherwise (4.20 to 4.22), so a submenu labelled with a name of the user's
   (Add to Playlist's folders) is made only while every submenu label of the menu is
-  distinct and none is `main` (`actions.pages_distinct()`), else its folders are headed
+  distinct and none is `main` (`item_menu.pages_distinct()`), else its folders are headed
   sections (a section's label, plain text, no mnemonic), docs/decisions.md.
 - A `Gio.MenuItem` with the attribute `hidden-when` = `action-disabled` is shown by a
   `Gtk.PopoverMenu` only while its action is enabled, and follows the action's state while

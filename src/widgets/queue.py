@@ -63,7 +63,8 @@ from gettext import pgettext as C_
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango
 
 from .. import keyboard, shortcuts
-from ..actions import move_places, now_playing_track
+from ..item_menu import move_places
+from ..item_targets import now_playing_track
 from ..backend import art_cache, config, store
 from ..library import ItemRefs, drop_index
 from ..player import NowPlaying, format_time
@@ -448,7 +449,7 @@ class QueueRow(Gtk.Box):
 
     @property
     def context_item(self):
-        """The entry bound, as the Track its menu is for (actions.now_playing_track)."""
+        """The entry bound, as the Track its menu is for (item_targets.now_playing_track)."""
         return now_playing_track(self._entry)
 
     @property
@@ -679,7 +680,7 @@ class QueueView(Gtk.Stack):
     def moves(self, position, entry):
         """Where `entry`, the row at list `position`, can go within its section
         (Player.move_range()): {step: the queue index it moves to}, each of the menu's moves
-        (actions.move_places(): keyboard.TOP, -1, 1, keyboard.BOTTOM) that moves it, and
+        (item_menu.move_places(): keyboard.TOP, -1, 1, keyboard.BOTTOM) that moves it, and
         'next', Play Next, when its section begins just after the entry playing (None when
         it is that first entry already: it plays next). {} when it cannot move."""
         if self._player is None:

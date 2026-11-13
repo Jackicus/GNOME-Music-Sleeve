@@ -67,7 +67,7 @@ class ItemRefs(GObject.Object):
     same playlist are a reorder, not an add. Only drags that start in the app carry one
     (widgets.dnd.current() is the drag in progress); a drop target takes no other.
     `objects` are what the refs name, for a drop that needs more than a Ref says (the player
-    bar queues each by its play target: actions.queue_targets()); empty for ItemRefs made
+    bar queues each by its play target: item_targets.queue_targets()); empty for ItemRefs made
     of Refs alone.
     """
 

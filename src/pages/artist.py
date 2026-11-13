@@ -12,7 +12,7 @@ from gettext import pgettext as C_
 
 from gi.repository import Adw, GLib, Gtk
 
-from ..actions import can_play, favourite_target
+from ..item_targets import can_play, favourite_target
 from ..backend.api import is_library_id
 from ..backend.errors import EngineError
 from ..discography import library_artist
@@ -94,7 +94,7 @@ def page_shelves(dicts):
 @Gtk.Template(resource_path='/io/github/jackicus/MusicSleeve/artist.ui')
 class ArtistPage(Adw.NavigationPage):
     """An artist Item's page: a round portrait, the name and genre, Play (the catalog
-    artist's top songs, actions.can_play()) and the artist's menu, or, once the catalog
+    artist's top songs, item_targets.can_play()) and the artist's menu, or, once the catalog
     answers with the artist's banner (banner_art.artist_banner: about half of Apple's artists
     have one), the name, genre and buttons in white over the foot of that wide image
     (widgets.banner.ArtistBanner), edge to edge, as music.apple.com shows it; then what

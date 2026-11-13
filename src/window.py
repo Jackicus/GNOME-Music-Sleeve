@@ -49,7 +49,9 @@ from gettext import gettext as _
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 
 from . import keyboard, pages, related
-from .actions import ItemActions, main_menu_section, now_playing_track
+from .actions import ItemActions
+from .item_menu import main_menu_section
+from .item_targets import now_playing_track
 from .backend.errors import EngineError
 from .fullscreen import FullscreenHost
 from .library import ROOT_FOLDER, Item

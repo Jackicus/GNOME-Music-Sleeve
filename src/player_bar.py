@@ -37,7 +37,7 @@ button does, with Mini Player at its end (`context_extra`: app.mini-player).
 The bar takes drops (widgets/dnd.py, library.ItemRefs: drags that start in the app): songs,
 music videos, albums and playlists dragged onto it are queued at the end, as Play Later
 does, or after the item playing with Shift held, as Play Next does
-(ItemActions.queue_drop, actions.queue_targets); the bar is highlighted while a drag it
+(ItemActions.queue_drop, item_targets.queue_targets); the bar is highlighted while a drag it
 takes is over it. A drag carrying anything that cannot be queued (a folder) is refused.
 
 For assistive technology: the bar announces each new item (Gtk.Accessible.announce, "Now
@@ -55,7 +55,7 @@ from gettext import gettext as _
 from gi.repository import Adw, Gdk, Gio, GObject, Gtk
 
 from . import shortcuts
-from .actions import now_playing_track, queue_targets
+from .item_targets import now_playing_track, queue_targets
 from .library import ItemRefs
 from .widgets import context_menu, dnd
 from .widgets.cover import Cover  # noqa: F401  registers $AppleMusicCover for the template
@@ -193,7 +193,7 @@ class PlayerBar(Adw.Bin):
 
     @property
     def context_item(self):
-        """The item playing, as the Track its menu is for (actions.now_playing_track), or
+        """The item playing, as the Track its menu is for (item_targets.now_playing_track), or
         None."""
         return now_playing_track(self._player.track if self._player is not None else None)
 
@@ -225,7 +225,7 @@ class PlayerBar(Adw.Bin):
     @staticmethod
     def takes(refs):
         """Whether a drop of `refs` (a library.ItemRefs) is queued here: all it carries can
-        be (actions.queue_targets)."""
+        be (item_targets.queue_targets)."""
         return queue_targets(refs) is not None
 
     def show_drop_target(self, shown=True):

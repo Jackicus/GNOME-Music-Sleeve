@@ -255,7 +255,7 @@ class StubActions:
 
 @requires_gtk
 class DropTest(unittest.TestCase):
-    """The bar as a drop target: what it takes (actions.queue_targets), its highlight, and
+    """The bar as a drop target: what it takes (item_targets.queue_targets), its highlight, and
     the drop handed to the item actions, Shift-drops as Play Next."""
 
     def setUp(self):

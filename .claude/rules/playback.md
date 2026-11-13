@@ -181,7 +181,7 @@ paths:
   it is a phone's bar: `transport_box` moved after `item_box` (the item, then Play and
   Next), no Previous, and the seek row only for a live station's LIVE badge. The bar
   is a drop target (`Gtk.DropTarget` of `library.ItemRefs`, deciding from `dnd.current()`):
-  what `actions.queue_targets()` can queue all of goes through `item_actions.queue_drop()`,
+  what `item_targets.queue_targets()` can queue all of goes through `item_actions.queue_drop()`,
   Play Later, or Play Next when `dnd.shift_held()`; the sheet is no target (open, it covers
   every drag source). The sheet's layout follows three of its own properties, set by window.blp's
   breakpoints: `wide` (900sp and up: the item beside the tabs), `compact` (600sp and under:
@@ -201,7 +201,7 @@ paths:
   (`context_queue_entry`) and on Delete (the focus then on the row in its place); Move to
   Top, Move Up, Move Down and Move to Bottom too (`context_queue_moves`, `QueueView.moves()`:
   where each takes it, and Play Next's move to just after the entry playing where its section
-  begins there, `actions.queue_play_next()`), on Alt+Up, Alt+Down, Alt+Home and Alt+End
+  begins there, `item_menu.queue_play_next()`), on Alt+Up, Alt+Down, Alt+Home and Alt+End
   (`keyboard.move_step()`, `move_place()`, the list's capture-phase key controller; the focus
   goes with the entry) and by a drag
   within the entry's section (`dnd.attach_source()` on the list, MOVE only, a

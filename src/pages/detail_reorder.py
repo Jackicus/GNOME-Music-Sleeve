@@ -21,7 +21,7 @@ once the songs show again; an empty playlist of the user's offers Add Songs… i
 from gi.repository import Gdk, Graphene, Gtk
 
 from .. import keyboard
-from ..actions import is_manageable
+from ..item_targets import is_manageable
 from ..library import TRACK_REF_KINDS, Track, drop_index
 from ..playlist_order import PlaylistOrder
 from ..widgets import dnd

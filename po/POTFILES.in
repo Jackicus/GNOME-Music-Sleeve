@@ -4,6 +4,9 @@ data/io.github.jackicus.MusicSleeve.gschema.xml
 src/main.py
 src/account.py
 src/actions.py
+src/action_messages.py
+src/item_menu.py
+src/playlist_actions.py
 src/credits.py
 src/errors.py
 src/explore.py

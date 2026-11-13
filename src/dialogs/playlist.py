@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""The playlists' dialogs, which the item actions (actions.py) present over the window.
+"""The playlists' dialogs, which the item actions (playlist_actions.py) present over the
+window.
 
     PlaylistDialog(heading, confirm, details, folders, done)   # a playlist's details
     NameDialog(heading, confirm, name, description, done)   # a folder's name
@@ -11,9 +12,9 @@ PlaylistDialog is the one dialog that makes a playlist (New Playlist…, whereve
 offered) and changes one (Edit Details…): an `Adw.Dialog` (playlist.blp) with Cancel and the
 confirming button in its header bar, the name (Enter confirms; the button is off while the
 name is blank), the description (several lines), the folder it goes in (`folders`, the
-choices actions.folder_choices() makes: Top Level and the folders, as Move to Folder names
+choices playlist_actions.folder_choices() makes: Top Level and the folders, as Move to Folder names
 them; no row when None) and whether it is public, shown on the account's profile and in
-search (Apple's isPublic). `details` is the actions.Details it opens with; done(details)
+search (Apple's isPublic). `details` is the playlist_actions.Details it opens with; done(details)
 gets the Details confirmed, the name stripped, the description at most DESCRIPTION_LIMIT
 characters (Apple's limits, as the web player's form sets them). Apple takes no cover image
 for a library playlist (src/backend/README.md), so it has none.
@@ -31,7 +32,7 @@ from gettext import gettext as _
 
 from gi.repository import Adw, Gtk
 
-from ..actions import Details
+from ..playlist_actions import Details
 from ..library import ROOT_FOLDER
 from ..widgets.labels import named_list_factory
 from ..widgets.util import connect_weak

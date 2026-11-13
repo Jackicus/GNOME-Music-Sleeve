@@ -53,7 +53,7 @@ from gettext import gettext as _
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
-from ..actions import now_playing_track
+from ..item_targets import now_playing_track
 from ..backend import config
 from ..remote import fetch_remote
 from . import context_menu

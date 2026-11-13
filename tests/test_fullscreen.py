@@ -335,7 +335,7 @@ class ItemActions:
         self.asked = []
 
     def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
-        from applemusic.actions import build_menu
+        from applemusic.item_menu import build_menu
 
         self.asked.append((obj.id, queued))
         return build_menu(obj, queued=queued)

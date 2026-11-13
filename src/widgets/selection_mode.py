@@ -494,7 +494,7 @@ class SelectionMode(GObject.Object):
         """Add to Playlist's menu, made as it opens: the library's playlists that take songs
         (not the one shown), each folder a submenu (playlist_submenu()), then New
         Playlist…."""
-        from ..actions import playlist_submenu
+        from ..item_menu import playlist_submenu
         actions = getattr(self._view.get_root(), 'item_actions', None)
         menu = Gio.Menu()
         playlists = getattr(actions, 'playlists', None)

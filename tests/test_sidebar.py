@@ -829,7 +829,7 @@ class MenuLibrary(StubLibrary):
 
 
 class MenuActions:
-    """The item actions' menu_for: the menu every page and tile shows (actions.build_menu),
+    """The item actions' menu_for: the menu every page and tile shows (item_menu.build_menu),
     each one asked for recorded."""
 
     def __init__(self):
@@ -837,7 +837,7 @@ class MenuActions:
         self.menus = []
 
     def menu_for(self, obj, queued=False, queue_entry=None, queue_moves=()):
-        from applemusic.actions import build_menu
+        from applemusic.item_menu import build_menu
 
         self.asked.append(obj)
         self.menus.append(build_menu(obj))
@@ -1183,7 +1183,7 @@ class NewButtonTest(unittest.TestCase):
         return row.get_header()
 
     def test_the_button_and_its_menu(self):
-        from tests.test_actions import actions_of
+        from tests.item_actions_harness import actions_of
 
         button = self.controller.new_button()
         self.assertEqual(button.get_tooltip_text(), 'New Playlist or Folder')

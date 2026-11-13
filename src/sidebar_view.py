@@ -56,7 +56,7 @@ walks them). After a move the moved row has the focus again if it had it.
 
 Context menus: a playlist's, a folder's, Favourite Songs' and All Playlists' rows have the item
 actions' menu for their Item, the one its page's More Options and its tile show
-(actions.build_menu), opened from the row itself as a tile's is (widgets/context_menu.py's
+(item_menu.build_menu), opened from the row itself as a tile's is (widgets/context_menu.py's
 popup()): by a right click or a long press, pointing at the pointer, or by Menu or Shift+F10
 on the focused row, under it. AdwSidebar's own menu (a section's menu-model, filled on
 setup-menu) is not used: a section's model leaves Menu and Shift+F10 dead (they need a model
@@ -64,7 +64,7 @@ on the whole sidebar), and they would open the selected row's menu, not the focu
 
 The Playlists heading ends with a New button (`list-add-symbolic`, named "New Playlist or
 Folder"), a Gtk.MenuButton whose menu is New Playlist… and New Folder…, both at the top level
-(actions.new_items(ROOT_FOLDER)): AdwSidebar 1.9 has no suffix for a section's heading
+(item_menu.new_items(ROOT_FOLDER)): AdwSidebar 1.9 has no suffix for a section's heading
 (libadwaita 1.10's AdwSidebarSection:suffix, used where it exists), so the controller puts
 one there itself whenever update_rows() runs, or the sidebar's items change: in the page
 mode as the section's AdwPreferencesGroup's header suffix (Tab reaches it, before the
@@ -88,7 +88,8 @@ from gettext import gettext as _
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango
 
 from . import sections, shortcuts
-from .actions import new_items, new_playlist_refs
+from .item_menu import new_items
+from .item_targets import new_playlist_refs
 from .library import ROOT_FOLDER, ItemRefs
 from .sections import ALL_PLAYLISTS, FAVOURITE_SONGS, HOME, PLAYLISTS_SECTION
 from .sidebar import (DEPTH_CLASSES, SidebarEntry, SidebarItem, depth_class, is_shown,
@@ -760,7 +761,7 @@ class SidebarController:
         track, an album or a playlist onto a playlist that takes its songs
         (actions.can_drop_refs; MOVE when the drag offers nothing else, as a sidebar row's
         does), or songs, music videos and albums onto All Playlists (a new playlist of them:
-        actions.new_playlist_refs), MOVE playlists or folders into a folder (All Playlists:
+        item_targets.new_playlist_refs), MOVE playlists or folders into a folder (All Playlists:
         the top level) they can go into (actions.can_move_refs), else 0."""
         if not isinstance(refs, ItemRefs):
             return 0

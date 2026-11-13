@@ -44,7 +44,7 @@ from ..backend.api import is_library_id
 from .. import keyboard, song_columns
 from ..backend.errors import EngineError
 from ..library import HELD_KINDS, ItemRefs, Track
-from ..actions import adds_to, is_manageable
+from ..item_targets import adds_to, is_manageable
 from ..related import catalog_target
 from ..release import (album_artist, curator, hero_caption, is_prerelease, playlist_target,
                        released_play, unbroken)

@@ -103,6 +103,7 @@ configure_file(
 install_data(
   '__init__.py',
   'account.py',
+  'action_messages.py',
   'actions.py',
   'background.py',
   'cache.py',
@@ -115,6 +116,8 @@ install_data(
   'fullscreen.py',
   'home.py',
   'i18n.py',
+  'item_menu.py',
+  'item_targets.py',
   'keyboard.py',
   'lyrics.py',
   'main.py',
@@ -122,6 +125,7 @@ install_data(
   'mpris.py',
   'player.py',
   'player_bar.py',
+  'playlist_actions.py',
   'playlist_order.py',
   'radio.py',
   'recent_searches.py',
@@ -142,6 +146,7 @@ install_data(
   'suggestions.py',
   'sync.py',
   'timing.py',
+  'web_links.py',
   'window.py',
   install_dir: moduledir,
 )

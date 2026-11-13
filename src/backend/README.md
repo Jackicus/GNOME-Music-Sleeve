@@ -61,7 +61,7 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `signout()` | `mk.unauthorize()`, which revokes the session at Apple's end: `{ok: true}` or `{error}`, never a throw |
 | `api(path, params, options)`, `apiAll(paths)` | the API's answer body (`mk.api.music()`); `apiAll` answers null in place of a failed read |
 | `play(kind, id, {startWith, startId, shuffle, startTime, paused})` | `{ok: true}` (with `moved: {from, to}` when the queue held another item than `startId` at `startWith` and was moved to it, and `sought: true` when it sought to `startTime` itself), or `{error, code}` when MusicKit refuses. `kind`: `album playlist station song musicVideo artist songs` (`songs`: ids joined by commas; `artist`: its top songs, else its station). `shuffle` true turns shuffle on, false off, null leaves it. `startTime` (seconds: a restored session's position) goes to `setQueue`, and once the item plays, when MusicKit began it more than 2 s earlier and it is `startId`'s, a `seekToTime` follows. `paused` queues it without playing or moving it (`startPlaying: false`); the start time then waits for the next `control('play')` or `'toggle'` (a `pause` keeps it, anything else gives it up). With autoplay on, MusicKit's autoplay station is stopped first ("Autoplay across queues") |
-| `playNext(kind, id)`, `playLater(kind, id)` | `{ok: true}`. `kind` as `play()` takes it; `songs` (ids joined by commas: a selection's run of songs, `actions.queue_commands()`) queues them in their order, after the item playing or at the end of the user's queue (before what autoplay added), checked live on 2026-10-20 with two catalog songs |
+| `playNext(kind, id)`, `playLater(kind, id)` | `{ok: true}`. `kind` as `play()` takes it; `songs` (ids joined by commas: a selection's run of songs, `item_targets.queue_commands()`) queues them in their order, after the item playing or at the end of the user's queue (before what autoplay added), checked live on 2026-10-20 with two catalog songs |
 | `control(action)` | `play pause toggle next previous stop`: `{ok: true}` |
 | `seek(seconds)` | `{ok: true}` |
 | `volume(level)` | `{volume}`: MusicKit's level after the set (0 to 1; the page keeps it) |
@@ -110,7 +110,7 @@ way, the listings read past MusicKit's cache (`apiFresh`) once a second:
 | `DELETE /v1/me/library/playlists/<id>` | 204. A playlist is still listed for minutes after, nameless (`api.is_deleted`), and a second DELETE is a 500 |
 | `PUT /v1/me/library/playlists/<id>/parent` `{data: [{id: <folder>, type: 'library-playlist-folders'}]}` | 204, no body: moved into the folder (Move to Folder, a drop on a sidebar folder). Listed in the folder, and gone from the top level, 5 s later (2026-10-21) |
 | `PUT /v1/me/library/playlists/<id>/parent` with Apple's root folder, `p.playlistsroot` | 204, no body: out of its folder to the top level (Top Level, a drop on All Playlists; `api.MOVE_TO_TOP_LEVEL`). Listed at the top level, and gone from the folder, 5.2 s later (2026-10-21) |
-| `PUT /v1/me/library/playlist-folders/<id>/parent` (the same body) | 204, no body: the folder, with what it holds, into the folder (`api.MOVE_FOLDERS`), or with `p.playlistsroot` to the top level. To the top level: listed there, and gone from its folder, 3.3 to 4.9 s later. Into a folder: gone from the top level 5.5 s later, but listed in the new folder only 59 s later, so for most of a minute Apple lists it nowhere (2026-10-21): `actions.FOLDER_SETTLE_DELAYS`, `TreeChange.entries` |
+| `PUT /v1/me/library/playlist-folders/<id>/parent` (the same body) | 204, no body: the folder, with what it holds, into the folder (`api.MOVE_FOLDERS`), or with `p.playlistsroot` to the top level. To the top level: listed there, and gone from its folder, 3.3 to 4.9 s later. Into a folder: gone from the top level 5.5 s later, but listed in the new folder only 59 s later, so for most of a minute Apple lists it nowhere (2026-10-21): `playlist_actions.FOLDER_SETTLE_DELAYS`, `TreeChange.entries` |
 | `POST /v1/me/library/playlist-folders` `{attributes: {name}}` | 201 with the folder, `{data: [{id, type, href, attributes: {canDelete, canEdit, dateAdded, name}}]}` (New Folder…; the web player makes none); listed at the top level 5.8 s later. With `relationships: {parent: {data: [{id, type: 'library-playlist-folders'}]}}`, a folder inside another: the same 201, and the parent honoured (a read with `include=parent` names it at once), but listed in it only 61 s later (2026-10-21) |
 | `PATCH /v1/me/library/playlist-folders/<id>` `{attributes: {name}}` | 204, although Apple lists every folder with `canEdit` false |
 | `DELETE /v1/me/library/playlist-folders/<id>` | 204, the folder and what is in it gone; but playlists deleted with their folder stayed listed, nameless, for more than half an hour, where one deleted by itself left the listing within minutes: `Engine.delete_folder()` deletes the contents first |
@@ -168,11 +168,11 @@ playlist stays, without the entry). Music videos and Apple's playlists added to 
 were not tried; the web player removes them by the same request (`music-videos`,
 `playlists`, which `deletePlaylist()` sends for the user's own). The app leaves an item
 removed out of its models at once and until a load no longer meets it (`Library.hide`), and
-syncs once `libraryHas` answers false (actions.py).
+syncs once `libraryHas` answers false (playlist_actions.py).
 
 ### Stations from a song or an artist
 
-Create Station (`actions.station_target()`). Checked against a real account on 2026-10-20
+Create Station (`item_targets.station_target()`). Checked against a real account on 2026-10-20
 (MusicKit `playback/AppleMusic-2642.7.0-external`, the `gb` storefront):
 `GET /v1/catalog/<sf>/songs/<id>?include=station` and `.../artists/<id>?include=station`
 both answer `relationships.station.data[0]`, a `stations` resource whose id is `ra.<the
@@ -298,9 +298,9 @@ Less. Checked against a real account on 2026-10-20 (MusicKit
 | `PUT /v1/me/ratings/songs/<id>` `{type: 'ratings', attributes: {value: -1}}` | 200 with the rating (`value` -1): Suggest Less. `GET` answers it, the catalog read gives `personalRating: -1`; `DELETE` takes it away (204, then 404). The web player offers Suggest Less for albums, artists, music videos, playlists, songs and stations, and not with a favourite |
 
 The menus follow the web player: Favourite or Remove from Favourites, and Suggest Less (not
-beside a favourite) or Undo Suggest Less (`actions.rating_actions()`). An artist's favourite
+beside a favourite) or Undo Suggest Less (`item_menu.rating_actions()`). An artist's favourite
 is not a rating ("Favourites of artists", below): an artist's menu has Favourite or Remove
-from Favourites alone (`actions.favourite_items()`).
+from Favourites alone (`item_menu.favourite_items()`).
 
 ### Favourites of artists
 
@@ -466,7 +466,7 @@ nothing plays a curator, and there is nothing to favourite (checked live on 2026
 subtitled with its host) wherever Apple puts one: a grouping's shelf (New's "New for …",
 Radio, a category page), the search landing, an artist's `view/radio-shows`, and
 `normalize_item()`, which never makes one a station. Its menu is Open in Browser and Copy
-Link alone (`actions.curator_menu()`), and its tile opens its page:
+Link alone (`item_menu.curator_menu()`), and its tile opens its page:
 
 - `bridge.category(id)` asks `GET
   /v1/catalog/<sf>/apple-curators/<id>?include=grouping,playlists&include[editorial-elements]=children,contents,room&extend=editorialArtwork&platform=web`,

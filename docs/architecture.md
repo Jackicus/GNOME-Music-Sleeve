@@ -51,7 +51,10 @@ touches widgets.
   folders, the drops) is `sidebar_view.py`'s controller, with its decisions as `sidebar.py`'s
   functions; which action a window key runs (playback, the Now Playing tabs, the volume, a
   playlist's moves, Ctrl+F's filter or Search) is `keyboard.py`'s decision. The item actions
-  and context menus are `actions.py` and `widgets/context_menu.py`; where their Go to Album
+  and context menus are `actions.py` (with `playlist_actions.py`, the playlists' and folders'
+  writes and Remove from Library; `item_targets.py`, what each takes of an object;
+  `item_menu.py`, the menus; `action_messages.py`, their words; `web_links.py`, the
+  music.apple.com addresses) and `widgets/context_menu.py`; where their Go to Album
   and Go to Artist lead is `related.py`'s: an album the library's, else the catalog's, which
   the engine looks up; an artist Apple Music's while the engine is up, the library's
   otherwise. Making, renaming and deleting playlists and folders, and moving playlists into
