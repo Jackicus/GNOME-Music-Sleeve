@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: music-sleeve\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-13 18:34+0000\n"
+"POT-Creation-Date: 2026-11-13 18:56+0000\n"
 "PO-Revision-Date: 2026-11-13 12:34+0000\n"
 "Last-Translator: Jack Tully\n"
 "Language-Team: English (United States)\n"
@@ -144,8 +144,8 @@ msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:134
 msgid ""
-"A lost connection, or an account in use on too many devices, is now said "
-"plainly, not reported as a problem with protected content"
+"An account in use on too many devices is now said plainly, not reported as a "
+"problem with protected content"
 msgstr ""
 
 #: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:135

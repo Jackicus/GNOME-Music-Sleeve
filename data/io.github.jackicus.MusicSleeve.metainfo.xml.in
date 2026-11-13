@@ -131,7 +131,7 @@
           <li>Move to Top and Move to Bottom on a playlist's song and in Up Next, also with Alt+Home and Alt+End; Play Next on an Up Next entry moves it up rather than adding it again</li>
           <li>Lyrics light up word by word in time with the singing, no longer a little ahead of it</li>
           <li>A pre-release album in your library can be played on its release day, without waiting for the next sync</li>
-          <li>A lost connection, or an account in use on too many devices, is now said plainly, not reported as a problem with protected content</li>
+          <li>An account in use on too many devices is now said plainly, not reported as a problem with protected content</li>
           <li>Songs you have selected stay selected when a sync changes their album or playlist</li>
           <li>Deleting several songs from a playlist one after another removes each of them; a second Delete is no longer lost</li>
           <li>In high contrast, the lyric line being sung is marked with a bar</li>
