@@ -104,7 +104,7 @@ Everything below runs after a `scripts/demo.sh` or `scripts/check.sh` has config
 ### Starting a language
 
 ```bash
-meson compile -C build music-sleeve-pot          # the template, po/music-sleeve.pot (not committed)
+meson compile -C build music-sleeve-pot          # the template, music-sleeve.pot in po (not committed)
 cd po && msginit -l de -i music-sleeve.pot -o de.po
 ```
 
@@ -172,8 +172,8 @@ other message is left untranslated and shows as the source.
 Before each release, the maintainer:
 
 1. runs the update above;
-2. searches the template for British spellings, for example
-   `grep -inE 'favourit|catalogu|colour|cancell|centred|ise[sd]?\b' po/music-sleeve.pot`,
-   and lists the catalogue's fuzzy entries with `msgattrib --only-fuzzy po/en_US.po`;
+2. searches the template for British spellings, in `po/`:
+   `grep -inE 'favourit|catalogu|colour|cancell|centred|ise[sd]?\b' music-sleeve.pot`, and
+   lists the catalogue's fuzzy entries with `msgattrib --only-fuzzy en_US.po`;
 3. translates the entries that differ and clears the fuzzy flags;
 4. commits it with the release.
