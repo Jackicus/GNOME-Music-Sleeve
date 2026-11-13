@@ -56,8 +56,6 @@ is, is in `docs/decisions.md`.
       Delete swallowed while the last removal's sync runs;
       [#574](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/574), a reload unselecting
       songs in selection mode;
-      [#576](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/576), an answer kept for a
-      day though one of its reads failed;
       [#577](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/577), a notification for
       the same song at another place in the queue;
       [#578](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/578), Select All's
