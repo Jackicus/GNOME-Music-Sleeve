@@ -4,7 +4,8 @@
 
 """Render the app's window to a PNG, for checking UI changes without a human.
 
-    scripts/headless.sh scripts/screenshot.py [out.png] --demo [--light] [--rtl] [--size WxH]
+    scripts/headless.sh scripts/screenshot.py [out.png] --demo [--light] [--high-contrast]
+                          [--rtl] [--size WxH]
                           [--page KEY] [--open KIND:ID] [--sidebar] [--expand ID[,ID…]]
                           [--banner sign-in|expired] [--signed-in [NAME]]
                           [--now-playing [lyrics|localized|syllable|queue]]
@@ -172,6 +173,9 @@ virtual monitor, which a --size cannot show.
 as Tab would), with the focus ring shown: a music video's play symbol shows with it.
 --rtl lays the window out right to left, as a right-to-left language would
 (Gtk.Widget.set_default_direction), its strings still the source's.
+--high-contrast draws the app in libadwaita's high-contrast style, as the desktop's High
+Contrast setting would (ADW_DEBUG_HIGH_CONTRAST, set before libadwaita starts), dark or
+--light.
 """
 
 import argparse
@@ -187,6 +191,8 @@ parser.add_argument('out', nargs='?', default=os.path.join(harness.ROOT, 'build'
                                                             'screenshot.png'))
 parser.add_argument('--light', action='store_true')
 parser.add_argument('--rtl', action='store_true', help='lay the window out right to left')
+parser.add_argument('--high-contrast', action='store_true',
+                    help="libadwaita's high-contrast style, as the desktop's setting gives it")
 parser.add_argument('--size', help="the window's size, WxH (1100x760; with --mini-player, "
                                    'its own default)')
 parser.add_argument('--page')
@@ -338,6 +344,9 @@ if args.lost and not (args.playing or args.mini_player):
 if args.idle and not args.fullscreen_player:
     parser.error('--idle needs --fullscreen-player')
 width, height = (int(n) for n in (args.size or '1100x760').split('x'))
+
+if args.high_contrast:
+    os.environ['ADW_DEBUG_HIGH_CONTRAST'] = '1'  # read as libadwaita starts, in make_app
 
 # With --mini-player, --size is the mini player's (on_activate); the main window keeps its own.
 app = harness.make_app('Screenshot', demo=args.demo, light=args.light,

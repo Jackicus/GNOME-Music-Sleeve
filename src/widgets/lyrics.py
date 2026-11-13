@@ -117,9 +117,19 @@ HOLD_BACK = 1.5            # seconds: the estimate falling back less than this i
                            # hold where they were
 SWEEP_EDGE = 8.0           # px: half the width of the soft edge a sweep fills in with
 # The opacity of the text not yet sung on the current line: libadwaita's --dim-opacity, as
-# the lines that are not current have through .dimmed (and in high contrast).
+# the lines that are not current have through .dimmed. In high contrast those lines are at
+# libadwaita's 0.9 there, which would leave the sweep unseen: the unsung words are at 0.7,
+# measured 8.4:1 against the high-contrast dark window and 4.8:1 against the light one
+# (the lines are large text: AAA asks 4.5:1), while the current line itself is told by its
+# bar (style.css), not by the others' dimming.
 UNSUNG_OPACITY = 0.55
-UNSUNG_OPACITY_HIGH_CONTRAST = 0.9
+UNSUNG_OPACITY_HIGH_CONTRAST = 0.7
+
+
+def unsung_opacity(high_contrast):
+    """The opacity a current line's words not yet sung are drawn at, with or without the
+    high-contrast style."""
+    return UNSUNG_OPACITY_HIGH_CONTRAST if high_contrast else UNSUNG_OPACITY
 
 
 class LyricsView(Gtk.Stack):
@@ -833,8 +843,7 @@ class LyricLabel(Gtk.Label):
         if sung is None or sung.whole >= count:
             Gtk.Label.do_snapshot(self, snapshot)       # not current, or all sung
             return
-        unsung = (UNSUNG_OPACITY_HIGH_CONTRAST if Adw.StyleManager.get_default()
-                  .get_high_contrast() else UNSUNG_OPACITY)
+        unsung = unsung_opacity(Adw.StyleManager.get_default().get_high_contrast())
         segments = self.segments()
         if (not sung.whole and not sung.fraction) or len(segments) != count:
             snapshot.push_opacity(unsung)               # nothing sung yet
