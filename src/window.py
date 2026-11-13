@@ -359,6 +359,11 @@ class Window(Adw.ApplicationWindow):
             self.split_view.bind_property('collapsed', button, 'visible',
                                           GObject.BindingFlags.SYNC_CREATE)
             header.pack_start(button)
+            # First at the start, as GNOME's apps have it, before what the page packed
+            # there itself (All Playlists' and a folder's New Playlist and New Folder).
+            box = button.get_parent()
+            if isinstance(box, Gtk.Box):
+                box.reorder_child_after(button, None)
 
     # -- toasts and the sheet --------------------------------------------------------------
 

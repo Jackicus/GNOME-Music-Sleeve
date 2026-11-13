@@ -229,6 +229,26 @@ class SidebarButtonTest(unittest.TestCase):
         split_view.set_collapsed(False)
         self.assertFalse(button.get_visible())
 
+    def test_first_before_the_buttons_the_page_packed_at_the_start(self):
+        # All Playlists and a folder's page pack New Playlist and New Folder at the start
+        # (pages.add_folder_buttons): Show Sidebar still comes first.
+        from gi.repository import Adw, Gtk
+
+        from applemusic.widgets.util import first_descendant
+        from applemusic.window import Window
+
+        split_view = Adw.OverlaySplitView(sidebar=Gtk.Box(), content=Gtk.Box())
+        window = types.SimpleNamespace(split_view=split_view)
+        page = self.page()
+        header = first_descendant(page, Adw.HeaderBar)
+        new = Gtk.Button(icon_name='list-add-symbolic')
+        header.pack_start(new)
+        header.pack_start(Gtk.Button(icon_name='folder-new-symbolic'))
+        Window._add_sidebar_button(window, page)
+        button = self.button(page)
+        self.assertIs(button.get_parent(), new.get_parent())
+        self.assertIs(button.get_parent().get_first_child(), button)
+
     def test_the_page_is_freed_once_dropped(self):
         import gc
 
