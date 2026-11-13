@@ -1,0 +1,3919 @@
+# American English for Music Sleeve: the source strings are British English, and this
+# catalogue changes only what American spelling and dates change ("Favourite" is "Favorite",
+# "24 September 2026" is "September 24, 2026"). Every other message is left untranslated on
+# purpose and shows as the source, as does any message added since this file was updated.
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: 2026 Jack Tully
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: music-sleeve\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-13 12:37+0000\n"
+"PO-Revision-Date: 2026-11-13 12:34+0000\n"
+"Last-Translator: Jack Tully\n"
+"Language-Team: English (United States)\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#. Translators: the app's name, a proper name: keep it as it is, or write it in your
+#. language's script.
+#. Translators: the app's name, as in the desktop file.
+#: data/io.github.jackicus.MusicSleeve.desktop.in:4
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:7 src/window.blp:9
+#: src/window.blp:122 src/mpris.py:255
+msgid "Music Sleeve"
+msgstr ""
+
+#. Translators: “Apple Music” names Apple's service, here and in every other string: keep it
+#. as it is, untranslated.
+#: data/io.github.jackicus.MusicSleeve.desktop.in:7
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:8
+msgid "Play your Apple Music library, playlists and radio"
+msgstr ""
+
+#. Translators: Search terms to find this application. Do NOT translate or localize the semicolons.
+#: data/io.github.jackicus.MusicSleeve.desktop.in:14
+msgid ""
+"apple;apple music;music;songs;albums;playlists;radio;streaming;lyrics;player;"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:10
+msgid ""
+"A GNOME app for Apple Music: your library, playlists, radio and "
+"recommendations in a native interface, laid out like Apple's web player."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:14
+msgid ""
+"Playback runs through Google Chrome, which the app starts in the background: "
+"Apple's streams are protected with Widevine, which Google Chrome includes. "
+"Another Chromium-based browser with Widevine can be used instead. It needs "
+"one of them and an Apple Music subscription."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:20
+msgid ""
+"The app talks only to Apple, and controls its Chrome through a private pipe "
+"rather than a network port. Chrome keeps its own connections to Google, as "
+"any Chrome does, for example to update the Widevine module."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:25
+#: src/dialogs/about.py:37
+msgid "Not affiliated with Apple. Apple Music is a trademark of Apple Inc."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:66
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:82
+msgid ""
+"Home: your heavy rotation and what you played recently, a song playing below"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:70
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:86
+msgid ""
+"Your albums in a grid, sorted the way you choose, a heart on your favourites"
+msgstr ""
+"Your albums in a grid, sorted the way you choose, a heart on your favorites"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:74
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:90
+msgid "An album's page, with its first song playing"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:78
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:94
+msgid ""
+"Now Playing, tinted by the artwork, a duet's lyrics lit word by word as they "
+"are sung"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:107
+msgid ""
+"A new icon, an easier way to make playlists, and folders in Add to Playlist."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:111
+msgid "A new app icon: a double note lit on a dot-matrix panel"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:112
+msgid "A + on the sidebar's Playlists heading makes a new playlist or folder"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:113
+msgid ""
+"One dialog makes and edits a playlist: its name, a description over several "
+"lines, its folder, and whether it shows on your profile and in search; "
+"Rename… on a playlist is now Edit Details…"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:114
+msgid ""
+"Add to Playlist shows each folder as a submenu, nested as in the sidebar"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:115
+msgid ""
+"The rows of Home, New and an artist's page show no scrollbar, so scrolling "
+"the page no longer catches on them; their arrows page them at any window "
+"width"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:121
+msgid ""
+"A fix for 1.1.0, which closed a second after it started when opened from the "
+"desktop."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:126
+msgid ""
+"The app no longer closes at once when GNOME asks it which actions it has"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:127
+msgid ""
+"An Arch Linux package is attached to each release, to install with pacman"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:133
+msgid ""
+"Select several songs at once, put Up Next in your own order, a mini player, "
+"your year in Replay and your library's genres."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:138
+msgid ""
+"Select songs on Songs, an album or a playlist to play them next or later, "
+"add them to a playlist, or remove them from a playlist, your favourites or "
+"your library, all at once"
+msgstr ""
+"Select songs on Songs, an album or a playlist to play them next or later, "
+"add them to a playlist, or remove them from a playlist, your favorites or "
+"your library, all at once"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:139
+msgid ""
+"Reorder Up Next by dragging, with Move Up and Move Down, or with Alt+Up and "
+"Alt+Down"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:140
+msgid ""
+"A mini player, from the main menu or Ctrl+Shift+M: a small window with the "
+"artwork and the controls in place of the main one"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:141
+msgid ""
+"Replay: the songs, artists and albums you played most this year, and each "
+"year's Replay playlist"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:142
+msgid ""
+"A Genres view in the library, if you turn it on, and Genre and Year columns "
+"in the song tables"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:143
+msgid "View Credits shows who performed, wrote and produced a song"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:144
+msgid ""
+"Choose the streaming quality, 256 or 64 kbps, and, if you like, a "
+"notification when the song changes while the window is out of sight"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:145
+msgid ""
+"New opens with the featured banners and ends with More to Explore's "
+"collections and pages; the charts narrow to a genre"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:146
+msgid ""
+"Your playlists can be duplicated, sorted on their page and filled from Add "
+"Songs…; Songs has Play and Shuffle; a curator's playlist names its curator "
+"as a link and ends with Featured Artists and More By"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:147
+msgid ""
+"An album not out yet says when it comes, plays the songs already out and can "
+"be pre-added"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:148
+msgid ""
+"Move a playlist out of its folder to the top level, and a folder into "
+"another folder, from the menu or by dragging"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:149
+msgid ""
+"Drag a song, an album, a playlist or a station into another app to give it "
+"the link"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:150
+msgid ""
+"In a narrow window the player bar shows the artwork and the song first, and "
+"a radio show's page wears its banner"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:151
+msgid "Catalogue playlists show their songs' artwork again"
+msgstr "Catalog playlists show their songs' artwork again"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:152
+msgid ""
+"The song playing stays in the player bar, paused, if the player stops mid-"
+"song, and large libraries start, scroll and use memory more lightly"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:158
+msgid ""
+"Fixes: signing out forgets the account, the last session comes back as it "
+"should, and Undo and Autoplay in Up Next work again."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:163
+msgid ""
+"Signing out forgets what the app held of the account: Home's Recently "
+"Played, ratings and favourites, Recently Searched and Up Next's covers are "
+"never shown to the next one"
+msgstr ""
+"Signing out forgets what the app held of the account: Home's Recently "
+"Played, ratings and favorites, Recently Searched and Up Next's covers are "
+"never shown to the next one"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:164
+msgid ""
+"The last session, restored at launch: Play, Next or Previous pressed while "
+"the player starts plays what you chose, once; a song that can no longer be "
+"found no longer loses the whole session; Autoplay's songs no longer come "
+"back as songs you queued; and your Autoplay setting is kept"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:165
+msgid ""
+"Undo after Clear in Up Next puts the songs back again, and Autoplay carries "
+"on after every queue you play, not only the first"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:166
+msgid ""
+"A library kept by an older version is synced in full once, so its dates "
+"added and favourites appear"
+msgstr ""
+"A library kept by an older version is synced in full once, so its dates "
+"added and favorites appear"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:167
+msgid "An album's page shows You Might Also Like"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:168
+msgid ""
+"Closing a filter with Escape leaves the focus on the item you were on, and "
+"clearing Up Next from the keyboard leaves it on the song playing"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:169
+msgid "The first shelf on Home shows its paging arrows"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:170
+msgid "Go to Current Song works in a filtered playlist"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:176
+msgid ""
+"The first release to stand behind: Apple Music's pages and the ways to look "
+"after your library that its own apps have, as far as the web player allows."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:181
+msgid ""
+"Charts, with Top Songs, Top Albums, Top Playlists, the Daily Top 100 and "
+"City Charts, and Apple Music's own Radio page"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:182
+msgid ""
+"An album's page ends with its release date and its other versions, music "
+"videos, more by the artist and what else you might like; a playlist's page "
+"names its curator and when it was updated, and album and playlist pages add "
+"to your library from the header"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:183
+msgid ""
+"Artist pages wear the artist's banner, show their latest release beside "
+"their top songs and their radio shows, and an artist can be made a favourite "
+"with the star"
+msgstr ""
+"Artist pages wear the artist's banner, show their latest release beside "
+"their top songs and their radio shows, and an artist can be made a favorite "
+"with the star"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:184
+msgid ""
+"Search shows what you searched for recently, filters by kind and lists every "
+"result with See All, radio shows and curators among them"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:185
+msgid ""
+"Your favourite songs, albums, playlists and music videos show a heart, and "
+"Favourites Only shows them alone; Recently Added holds everything you added, "
+"and albums sort by Date Added; Albums, Artists, Songs, Music Videos and a "
+"playlist's songs filter as you type"
+msgstr ""
+"Your favorite songs, albums, playlists and music videos show a heart, and "
+"Favorites Only shows them alone; Recently Added holds everything you added, "
+"and albums sort by Date Added; Albums, Artists, Songs, Music Videos and a "
+"playlist's songs filter as you type"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:186
+msgid ""
+"Create Station from a song or an artist, Suggest Less, and Remove from "
+"Library"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:187
+msgid ""
+"Playlist folders: New Folder and Move to Folder, from a menu or by dragging "
+"in the sidebar; reorder a playlist's songs by dragging or with Alt+Up and "
+"Alt+Down; add whole albums and playlists to a playlist, or drag them onto "
+"one in the sidebar; drop songs on the player bar to queue them"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:188
+msgid ""
+"Up Next shows covers and what played before, removes songs, clears with Undo "
+"and carries on with similar songs through Autoplay; Now Playing is tinted by "
+"the artwork"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:189
+msgid ""
+"The last song you played is back, paused, when the app starts; live radio "
+"shows LIVE and Stop"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:190
+msgid ""
+"Lyrics and Up Next buttons on the player bar, and new keys: Ctrl+N for a new "
+"playlist, Ctrl+Up and Ctrl+Down for the volume, Ctrl+L to go to the current "
+"song, F5 to refresh Home"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:191
+msgid ""
+"Any Chromium-based browser with Widevine can play the music in place of "
+"Google Chrome"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:197
+msgid ""
+"Lyrics that follow the singers word by word, with translations and "
+"pronunciations, and a full-screen player."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:202
+msgid ""
+"Show Translations and Show Pronunciations, from a Translation and "
+"Pronunciation button in Now Playing: under each line its translation into "
+"your language, or how it is pronounced written in your alphabet, or both, "
+"when the song's lyrics have them"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:203
+msgid ""
+"In songs timed word by word, the words light as they are sung, in a smooth "
+"sweep, or a word or a syllable at a time with animations off"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:204
+msgid ""
+"Background vocals show as a smaller line of their own under the line they "
+"echo"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:205
+msgid ""
+"In a duet each singer's lines sit on their own side, and lines sung together "
+"are centred"
+msgstr ""
+"In a duet each singer's lines sit on their own side, and lines sung together "
+"are centered"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:206
+msgid "Three dots fill in during a long instrumental break"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:207
+msgid ""
+"A full-screen player, from the Fullscreen button in Now Playing or F11: the "
+"artwork, the controls and the lyrics over the artwork's own colours, the "
+"controls fading away while the music plays undisturbed"
+msgstr ""
+"A full-screen player, from the Fullscreen button in Now Playing or F11: the "
+"artwork, the controls and the lyrics over the artwork's own colors, the "
+"controls fading away while the music plays undisturbed"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:208
+msgid ""
+"The sidebar has a divider above Library and above Playlists, and a folder's "
+"playlists are indented under it"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:214
+msgid ""
+"Your playlists managed from the app, your library's artists as Apple Music's "
+"library shows them, and songs suggested for the playlists you make."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:219
+msgid ""
+"New Playlist, Rename, Delete and Remove from Playlist; playlists and folders "
+"listed as Apple Music lists them, folders first, each by title; Add to "
+"Playlist offers each folder as a submenu of what it holds"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:220
+msgid ""
+"Artists lists the artists in your library beside what you have of each, and "
+"an artist's menu opens their page on Apple Music"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:221
+msgid ""
+"Suggested Songs under a playlist you can edit: six songs Apple Music "
+"suggests, or twelve, each with a button to add it; Refresh asks for new "
+"ones, and an added song's place is filled at once"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:222
+msgid ""
+"A suggested song plays in full, or as a 30-second preview that leaves your "
+"queue as it was"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:223
+msgid "Refreshing the library skips the playlists that have not changed"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:224
+msgid ""
+"A column of the Songs table dragged wider or narrower follows the pointer "
+"and keeps its width"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:230
+msgid ""
+"A pass over the whole app against GNOME's Human Interface Guidelines, artist "
+"pages laid out as Apple Music's are, and a way from any song to its album "
+"and its artist."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:236
+msgid ""
+"An artist's page has what Apple Music's has: the latest release beside the "
+"top songs, essential albums, albums, singles and EPs, music videos, "
+"playlists, a biography and similar artists, with your own albums by them "
+"first"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:237
+msgid ""
+"Go to Album and Go to Artist in a song's menu, and in the player bar's and "
+"Now Playing's; the artist and the album in the Songs table are links to "
+"their pages"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:238
+msgid ""
+"A playlist's songs are a table in a wide window, as the Songs page's are, "
+"with the same links; the Songs filter is a search bar (Ctrl+F); the grid "
+"pages sort ascending or descending"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:239
+msgid ""
+"Clicking a song plays that song, where a list could start the one after it; "
+"the song playing is marked in its list, and the player bar shows only while "
+"something plays"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:240
+msgid ""
+"Typing in GNOME's Activities overview finds your artists, albums, playlists "
+"and songs, and opens or plays the one you choose"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:241
+msgid ""
+"Preferences' rows read as Settings' do, with a Last Refreshed row and its "
+"Refresh button; the sidebar is titled Music Sleeve; the library's pages "
+"offer Sign In while you are signed out"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:242
+msgid ""
+"Album and playlist pages fit a 360 px window, the player bar's title shows "
+"whole there, and the play button has its own play and pause icons, which no "
+"icon theme can swap"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:243
+msgid "Discord presence clears five seconds into a pause, as Spotify's does"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:249
+msgid "What you are listening to can now show on your Discord profile."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:253
+msgid ""
+"Discord rich presence, off until you turn it on in Preferences: the song, "
+"its artist, its album and the album's cover, shown as listening to Apple "
+"Music, with the time left counting down"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:254
+msgid ""
+"The artist shows in the status under your name, and the presence is taken "
+"off when playback ends or the app quits"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:260
+msgid ""
+"The first release candidate. With Google Chrome and an Apple Music "
+"subscription, it plays your library and Apple Music's catalogue:"
+msgstr ""
+"The first release candidate. With Google Chrome and an Apple Music "
+"subscription, it plays your library and Apple Music's catalog:"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:265
+msgid ""
+"Your albums, artists, songs, music videos, playlists and playlist folders, "
+"synced from your account and browsable offline"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:266
+msgid ""
+"Home, New, Radio, Made for You and Search, with a page for every album, "
+"playlist and artist"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:267
+msgid "A player bar and a Now Playing view with synced lyrics and the queue"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:268
+msgid "GNOME's media controls and the keyboard's media keys"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:269
+msgid ""
+"Favourites, Play Next and Play Later, and adding to your library and "
+"playlists from context menus or by dragging songs"
+msgstr ""
+"Favorites, Play Next and Play Later, and adding to your library and "
+"playlists from context menus or by dragging songs"
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:270
+msgid ""
+"Playback in the background with the window closed, keyboard navigation "
+"throughout, and screen reader labels"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.metainfo.xml.in:271
+msgid ""
+"Keys as elsewhere in GNOME: Space presses a focused button and otherwise "
+"plays or pauses, and Ctrl+Shift+N opens Now Playing"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:6
+msgid "Window width"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:10
+msgid "Window height"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:14
+msgid "Whether the window is maximized"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:18
+msgid "Mini player width"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:22
+msgid "Mini player height"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:26
+msgid "Last page shown"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:27
+msgid ""
+"The sidebar item that was selected when the window closed: a destination's "
+"key, or \"playlist:ID\" or \"folder:ID\" for one of the library's playlists "
+"or folders."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:31
+msgid "Expanded playlist folders"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:32
+msgid ""
+"The IDs of the playlist folders shown open in the sidebar, their contents "
+"listed under them."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:36
+msgid "Keep playing when the window is closed"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:37
+msgid ""
+"Whether closing the window while something plays hides it and lets the music "
+"play on, the system's media controls bringing the window back; the app quits "
+"once playback stops. Off, closing the window quits the app and stops the "
+"engine."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:41
+msgid "Show what you are listening to on Discord"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:42
+msgid ""
+"Whether the title, artist and album of the playing track, and the address of "
+"its cover on Apple's servers, are sent to a running Discord as rich "
+"presence, so they show on your profile as listening to Apple Music. Nothing "
+"is sent while this is off, and nothing is sent when Discord is not running. "
+"No account information ever leaves the app."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:46
+msgid "Notify when the song changes"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:47
+msgid ""
+"Whether a notification with the title, the artist and the cover of each new "
+"song is shown once it has played for a second, while the window is hidden or "
+"not focused. Each replaces the last; none is shown for the first song after "
+"launch, for the session restored, or while the window is in front of you."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:51
+msgid "Show twelve suggested songs under a playlist"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:52
+msgid ""
+"Whether a playlist's Suggested Songs show twelve songs at a time instead of "
+"six. The songs come from Apple Music; one added to the playlist gives its "
+"place to the next."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:56
+msgid "Play a suggested song as a preview"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:57
+msgid ""
+"Whether clicking one of a playlist's Suggested Songs plays Apple Music's 30-"
+"second preview of it instead of the whole song. A preview leaves the queue "
+"as it is: the music playing pauses for it. A song without a preview plays in "
+"full."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:61
+msgid "Autoplay similar music"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:62
+msgid ""
+"Whether Apple Music keeps playing similar songs when the queue ends, added "
+"to Up Next under Autoplay. The app sets it on the playback engine at every "
+"start: it is the app's setting, not the account's, and Apple Music's other "
+"players keep their own."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:70
+msgid "Streaming quality"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:71
+msgid ""
+"The bitrate Apple Music streams at: 'high' (High Quality, 256 kbps AAC) or "
+"'standard' (High Efficiency, 64 kbps AAC, which uses less data). The app "
+"sets it on the playback engine at every start and page load, and at once "
+"when it changes; MusicKit may still choose 64 kbps itself on a slow "
+"connection. Lossless is not available in the web player."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:75
+msgid "Show translations under lyrics"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:76
+msgid ""
+"Whether each line of a song's lyrics shows, under it, what it means in your "
+"language, when Apple Music has a translation for the song."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:80
+msgid "Show pronunciations under lyrics"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:81
+msgid ""
+"Whether each line of a song's lyrics shows, under it, how it is pronounced, "
+"when Apple Music has a pronunciation for the song: lyrics in another script, "
+"such as Japanese or Korean, written in the script of your language (for "
+"English, Latin letters)."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:85
+#: src/dialogs/preferences.blp:145
+msgid "Browser program"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:86
+msgid ""
+"The program that runs the playback engine's browser, Google Chrome or "
+"another Chromium-based browser with Widevine (which Google Chrome ships and "
+"Chromium lacks): a name on PATH or an absolute path, without arguments. When "
+"it is not found, Google Chrome (google-chrome-stable, google-chrome, /opt/"
+"google/chrome/chrome), then microsoft-edge-stable, brave-browser, brave, "
+"vivaldi-stable, vivaldi, chromium and chromium-browser are tried, snaps left "
+"out. Another browser on the same profile may need signing in again: each "
+"keeps its cookies' key under its own name in the keyring."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:90
+msgid "Run the engine headless"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:91
+msgid ""
+"Whether Chrome runs without a window once signed in, from the next engine "
+"start. Off, the Chrome window stays visible after signing in and whenever "
+"the engine starts, which helps debugging."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:95
+msgid "Start the engine on launch"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:96
+msgid ""
+"Whether the engine is started when the app starts and the account is signed "
+"in (headless unless engine-headless is off)."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:100
+msgid "Signed in to Apple Music"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:101
+msgid ""
+"Whether the engine's Chrome profile holds an Apple Music sign-in; set by "
+"signing in and cleared by signing out."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:105
+msgid "Account display name"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:106
+msgid ""
+"The name shown on the account button, read from the Apple Music page after "
+"signing in; empty when none could be read."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:110
+msgid "When the library was last synced"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:111
+msgid ""
+"The time the library was last fetched from Apple Music in full, as an ISO "
+"8601 timestamp; empty before the first sync."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:115
+msgid ""
+"Signed in to Apple Music, for the development build's own Chrome profile"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:116
+msgid ""
+"As signed-in, for the development build (-Dprofile=development), whose "
+"Chrome profile and cache are its own."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:120
+msgid "Account display name, for the development build's own Chrome profile"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:121
+msgid "As account-name, for the development build."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:125
+msgid "When the library was last synced, for the development build's own cache"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:126
+msgid "As last-sync, for the development build."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:130
+msgid "Last page shown, for the development build's own library"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:131
+msgid "As last-page, for the development build."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:135
+msgid "Expanded playlist folders, for the development build's own library"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:136
+msgid "As expanded-folders, for the development build."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:141
+msgid "Hours between automatic library syncs"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:142
+msgid ""
+"While the app runs, the library is synced again whenever the last sync is "
+"older than this many hours and the engine is running and signed in (it is "
+"not started for a sync). 0 syncs only when asked (Refresh Library). A "
+"library missing or damaged on disk is synced as soon as the engine is up, "
+"whatever this says."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:146
+msgid "Sort order of each grid page"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:147
+msgid ""
+"The order last chosen in a grid page's Sort By menu (title, artist, year or "
+"added), by page: albums, music-videos, or library-artist (an artist's albums "
+"in the library: year or title)."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:151
+msgid "Library pages showing favourites only"
+msgstr "Library pages showing favorites only"
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:152
+msgid ""
+"The pages (albums, music-videos, songs) last left with Favourites Only "
+"chosen in their Sort and Filter menu."
+msgstr ""
+"The pages (albums, music-videos, songs) last left with Favorites Only chosen "
+"in their Sort and Filter menu."
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:156
+msgid "Show Genres in the sidebar"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:157
+msgid ""
+"Whether the sidebar's Library section lists Genres: the library's albums by "
+"genre."
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:161
+msgid "Optional columns of the song tables"
+msgstr ""
+
+#: data/io.github.jackicus.MusicSleeve.gschema.xml:162
+msgid ""
+"The optional columns (genre, year) the Songs table and a playlist's table "
+"show, as last chosen in their menus. Narrow windows leave them out."
+msgstr ""
+
+#: src/main.py:219
+msgid "Log debug messages"
+msgstr ""
+
+#: src/main.py:223
+msgid "Show an invented library instead of yours, without the engine"
+msgstr ""
+
+#: src/main.py:465 src/window.py:75
+msgid "Your Apple Music sign-in has expired"
+msgstr ""
+
+#: src/main.py:465 src/errors.py:39 src/dialogs/signin.blp:8 src/window.blp:245
+msgid "Sign In"
+msgstr ""
+
+#: src/main.py:594
+msgid "Sign Out of Apple Music?"
+msgstr ""
+
+#: src/main.py:595
+msgid ""
+"You are signed out of Apple Music, and your library, artwork and sign-in "
+"kept on this computer are removed."
+msgstr ""
+
+#: src/main.py:598 src/dialogs/add_songs.blp:20 src/dialogs/playlist.py:139
+#: src/dialogs/playlist.py:172 src/dialogs/playlist.blp:23
+#: src/dialogs/preferences.py:227 src/dialogs/signin.blp:27
+#: src/widgets/selection_mode.py:119
+msgid "_Cancel"
+msgstr ""
+
+#: src/main.py:599
+msgid "Sign _Out"
+msgstr ""
+
+#: src/main.py:730
+msgid "Not available with the demo library"
+msgstr ""
+
+#: src/main.py:742
+msgid "The playback engine stopped"
+msgstr ""
+
+#: src/main.py:742
+msgid "Restart"
+msgstr ""
+
+#: src/account.py:56 src/dialogs/signin.blp:20
+msgid "Starting Chrome…"
+msgstr ""
+
+#: src/account.py:59
+msgid "Sign in with your Apple Account in the Chrome window"
+msgstr ""
+
+#: src/account.py:70
+msgid "Sign-in timed out"
+msgstr ""
+
+#: src/account.py:72
+msgid "Sign-in cancelled: the Chrome window was closed"
+msgstr "Sign-in canceled: the Chrome window was closed"
+
+#: src/account.py:79
+msgid "Could not sign in"
+msgstr ""
+
+#: src/account.py:90 src/account.py:91 src/dialogs/preferences.py:393
+msgid "Signed in"
+msgstr ""
+
+#: src/account.py:169
+msgid "Signed out"
+msgstr ""
+
+#: src/actions.py:253
+msgid "_Play"
+msgstr ""
+
+#: src/actions.py:254 src/widgets/selection_mode.py:151
+msgid "Play _Next"
+msgstr ""
+
+#: src/actions.py:255 src/widgets/selection_mode.py:153
+#: src/widgets/selection_mode.py:347
+msgid "Play _Later"
+msgstr ""
+
+#. Translators: a menu item marking the item as a favourite (a verb; the heart).
+#: src/actions.py:257
+msgid "_Favourite"
+msgstr "_Favorite"
+
+#: src/actions.py:258 src/widgets/selection_mode.py:162
+#: src/widgets/selection_mode.py:352
+msgid "_Remove from Favourites"
+msgstr "_Remove from Favorites"
+
+#: src/actions.py:259
+msgid "_Suggest Less"
+msgstr ""
+
+#: src/actions.py:260
+msgid "_Undo Suggest Less"
+msgstr ""
+
+#: src/actions.py:261
+msgid "_Add to Library"
+msgstr ""
+
+#: src/actions.py:262 src/widgets/selection_mode.py:156
+msgid "Add to Pla_ylist"
+msgstr ""
+
+#: src/actions.py:263
+msgid "_Go to Album"
+msgstr ""
+
+#: src/actions.py:264
+msgid "Go to Ar_tist"
+msgstr ""
+
+#: src/actions.py:265
+msgid "Open in Bro_wser"
+msgstr ""
+
+#: src/actions.py:266
+msgid "Copy Lin_k"
+msgstr ""
+
+#: src/actions.py:267
+msgid "Remo_ve from Playlist"
+msgstr ""
+
+#: src/actions.py:268
+msgid "Remove from Up Ne_xt"
+msgstr ""
+
+#: src/actions.py:269 src/widgets/selection_mode.py:449
+msgid "Ne_w Playlist…"
+msgstr ""
+
+#: src/actions.py:270
+msgid "Rena_me…"
+msgstr ""
+
+#: src/actions.py:271
+msgid "_Delete Playlist…"
+msgstr ""
+
+#: src/actions.py:272
+msgid "Mov_e to Folder"
+msgstr ""
+
+#: src/actions.py:273
+msgid "New _Folder…"
+msgstr ""
+
+#: src/actions.py:274 src/widgets/selection_mode.py:167
+#: src/widgets/selection_mode.py:348
+msgid "Remove from Li_brary…"
+msgstr ""
+
+#: src/actions.py:275
+msgid "Create Stat_ion"
+msgstr ""
+
+#: src/actions.py:276
+msgid "_Move Up"
+msgstr ""
+
+#: src/actions.py:277
+msgid "Move _Down"
+msgstr ""
+
+#: src/actions.py:278
+msgid "Move to T_op"
+msgstr ""
+
+#: src/actions.py:279
+msgid "Mov_e to Bottom"
+msgstr ""
+
+#: src/actions.py:280
+msgid "View _Credits"
+msgstr ""
+
+#: src/actions.py:281
+msgid "Dupl_icate"
+msgstr ""
+
+#: src/actions.py:282
+msgid "Add Son_gs…"
+msgstr ""
+
+#. Translators: Add to Library for an album not out yet (its songs come as they are
+#. released); keep the mnemonic of "_Add to Library".
+#: src/actions.py:297
+msgid "Pre-_Add to Library"
+msgstr ""
+
+#: src/actions.py:343
+msgid "Top Level"
+msgstr ""
+
+#: src/actions.py:380
+msgid "_Delete Folder…"
+msgstr ""
+
+#: src/actions.py:386
+msgid "Edit De_tails…"
+msgstr ""
+
+#: src/actions.py:487
+#, python-brace-format
+msgid "{count} item will play later"
+msgid_plural "{count} items will play later"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:489
+#, python-brace-format
+msgid "{count} item will play next"
+msgid_plural "{count} items will play next"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:492
+#, python-brace-format
+msgid "“{title}” will play later"
+msgstr ""
+
+#: src/actions.py:493
+msgid "Playing later"
+msgstr ""
+
+#: src/actions.py:494
+#, python-brace-format
+msgid "“{title}” will play next"
+msgstr ""
+
+#: src/actions.py:494
+msgid "Playing next"
+msgstr ""
+
+#: src/actions.py:543
+#, python-brace-format
+msgid "Added {count} song to the new playlist “{playlist}”"
+msgid_plural "Added {count} songs to the new playlist “{playlist}”"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:547
+#, python-brace-format
+msgid "Added {count} song to “{playlist}”"
+msgid_plural "Added {count} songs to “{playlist}”"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:550
+#, python-brace-format
+msgid "Added {count} song to the playlist"
+msgid_plural "Added {count} songs to the playlist"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:558 src/actions.py:2810
+#, python-brace-format
+msgid "Removed “{title}” from “{playlist}”"
+msgstr ""
+
+#: src/actions.py:560
+#, python-brace-format
+msgid "Removed {count} song from “{playlist}”"
+msgid_plural "Removed {count} songs from “{playlist}”"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:563
+#, python-brace-format
+msgid "Removed {count} song from the playlist"
+msgid_plural "Removed {count} songs from the playlist"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:570
+#, python-brace-format
+msgid "Remove {count} Song from Library?"
+msgid_plural "Remove {count} Songs from Library?"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:572
+msgid ""
+"The song will be removed from your library and from your playlists on all "
+"your devices."
+msgid_plural ""
+"The songs will be removed from your library and from your playlists on all "
+"your devices."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:581
+#, python-brace-format
+msgid "Removed {count} song from your library"
+msgid_plural "Removed {count} songs from your library"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:757
+msgid "Remove from Library?"
+msgstr ""
+
+#: src/actions.py:759
+#, python-brace-format
+msgid "“{title}” will be removed from your library on all your devices."
+msgstr ""
+
+#: src/actions.py:760
+msgid "The playlist will be removed from your library on all your devices."
+msgstr ""
+
+#: src/actions.py:763
+#, python-brace-format
+msgid ""
+"“{title}” and its songs will be removed from your library and from your "
+"playlists on all your devices."
+msgstr ""
+
+#: src/actions.py:765
+msgid ""
+"The album and its songs will be removed from your library and from your "
+"playlists on all your devices."
+msgstr ""
+
+#: src/actions.py:768
+#, python-brace-format
+msgid ""
+"“{title}” will be removed from your library and from your playlists on all "
+"your devices."
+msgstr ""
+
+#: src/actions.py:770
+msgid ""
+"It will be removed from your library and from your playlists on all your "
+"devices."
+msgstr ""
+
+#. Translators: the name Duplicate gives a copy of a playlist: {name} is its name
+#. ("Road Trip Copy").
+#: src/actions.py:912
+#, python-brace-format
+msgid "{name} Copy"
+msgstr ""
+
+#: src/actions.py:912
+msgid "Untitled Playlist Copy"
+msgstr ""
+
+#: src/actions.py:1058 src/actions.py:1134
+msgid "Untitled Folder"
+msgstr ""
+
+#. Translators: a folder inside another, as Add to Playlist and Move to Folder name
+#. it: "Evenings › Late Night".
+#: src/actions.py:1063
+#, python-brace-format
+msgid "{outer} › {inner}"
+msgstr ""
+
+#: src/actions.py:1107
+msgid "Untitled Playlist"
+msgstr ""
+
+#: src/actions.py:1229
+msgid "_Top Level"
+msgstr ""
+
+#. Translators: said to screen reader users as a song is moved in Up Next: “Harbour
+#. Lights” moved to position 2 of 9 in Up Next (1 plays next).
+#: src/actions.py:1397
+#, python-brace-format
+msgid "“{title}” moved to position {position} of {count} in Up Next"
+msgstr ""
+
+#: src/actions.py:1398 src/widgets/queue.py:522 src/widgets/transport.py:212
+msgid "Unknown Title"
+msgstr ""
+
+#: src/actions.py:1421
+msgid "Could not find the album"
+msgstr ""
+
+#: src/actions.py:1421
+msgid "Could not find the artist"
+msgstr ""
+
+#: src/actions.py:1427
+msgid "Added to Favourite Songs"
+msgstr "Added to Favorite Songs"
+
+#: src/actions.py:1427
+msgid "Removed from Favourite Songs"
+msgstr "Removed from Favorite Songs"
+
+#: src/actions.py:1428
+msgid "Added to Favourites"
+msgstr "Added to Favorites"
+
+#: src/actions.py:1428
+msgid "Removed from Favourites"
+msgstr "Removed from Favorites"
+
+#: src/actions.py:1435
+#, python-brace-format
+msgid "Removed {count} song from Favourite Songs"
+msgid_plural "Removed {count} songs from Favourite Songs"
+msgstr[0] "Removed {count} song from Favorite Songs"
+msgstr[1] "Removed {count} songs from Favorite Songs"
+
+#: src/actions.py:1437
+#, python-brace-format
+msgid "Put back {count} song in Favourite Songs"
+msgid_plural "Put back {count} songs in Favourite Songs"
+msgstr[0] "Put back {count} song in Favorite Songs"
+msgstr[1] "Put back {count} songs in Favorite Songs"
+
+#: src/actions.py:1443
+msgid "Apple Music will suggest less like this"
+msgstr ""
+
+#: src/actions.py:1443
+msgid "Suggest Less undone"
+msgstr ""
+
+#: src/actions.py:1718
+msgid "No station can be made from this"
+msgstr ""
+
+#: src/actions.py:1726 src/actions.py:2153
+msgid "This cannot be queued"
+msgstr ""
+
+#: src/actions.py:1745 src/actions.py:1764 src/actions.py:2242
+msgid "This cannot be a favourite"
+msgstr "This cannot be a favorite"
+
+#: src/actions.py:1785
+msgid "This cannot be rated"
+msgstr ""
+
+#: src/actions.py:1811
+msgid "This is in your library already"
+msgstr ""
+
+#. Translators: a toast once an album not out yet is added to the library.
+#: src/actions.py:1816
+#, python-brace-format
+msgid "Pre-added “{title}” to your library"
+msgstr ""
+
+#: src/actions.py:1818
+#, python-brace-format
+msgid "Added “{title}” to your library"
+msgstr ""
+
+#: src/actions.py:1819
+msgid "Added to your library"
+msgstr ""
+
+#: src/actions.py:1929
+msgid "Only songs can be added to a playlist"
+msgstr ""
+
+#: src/actions.py:1934
+#, python-brace-format
+msgid "Added “{title}” to “{playlist}”"
+msgstr ""
+
+#: src/actions.py:1936
+#, python-brace-format
+msgid "Added to “{playlist}”"
+msgstr ""
+
+#: src/actions.py:1938
+msgid "Added to the playlist"
+msgstr ""
+
+#: src/actions.py:1967 src/actions.py:2535
+msgid "There are no songs to add"
+msgstr ""
+
+#. Translators: said to screen reader users as a song is moved in a playlist:
+#. “Harbour Lights” moved to position 4 of 12.
+#: src/actions.py:2036
+#, python-brace-format
+msgid "“{title}” moved to position {position} of {count}"
+msgstr ""
+
+#: src/actions.py:2201 src/actions.py:2265 src/actions.py:2746
+#: src/playlist_order.py:317 src/widgets/queue.py:1118
+msgid "Undo"
+msgstr ""
+
+#: src/actions.py:2219
+#, python-brace-format
+msgid "Put back {count} song in “{playlist}”"
+msgid_plural "Put back {count} songs in “{playlist}”"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:2223
+#, python-brace-format
+msgid "Put back {count} song"
+msgid_plural "Put back {count} songs"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:2364
+msgid "These are not in your library"
+msgstr ""
+
+#: src/actions.py:2369 src/actions.py:2372 src/actions.py:2929
+msgid "_Remove"
+msgstr ""
+
+#: src/actions.py:2485 src/shortcuts.py:171 src/pages/__init__.py:317
+msgid "New Playlist"
+msgstr ""
+
+#: src/actions.py:2485 src/actions.py:2761 src/actions.py:2771
+msgid "_Create"
+msgstr ""
+
+#: src/actions.py:2521
+#, python-brace-format
+msgid "Added “{title}” to the new playlist “{playlist}”"
+msgstr ""
+
+#: src/actions.py:2524
+#, python-brace-format
+msgid "Created “{playlist}”"
+msgstr ""
+
+#: src/actions.py:2560
+msgid "This cannot be duplicated"
+msgstr ""
+
+#: src/actions.py:2579
+msgid "Songs cannot be added to this playlist"
+msgstr ""
+
+#: src/actions.py:2592
+msgid "This cannot be renamed"
+msgstr ""
+
+#: src/actions.py:2595
+msgid "Rename Folder"
+msgstr ""
+
+#: src/actions.py:2595
+msgid "_Rename"
+msgstr ""
+
+#: src/actions.py:2606
+msgid "Edit Details"
+msgstr ""
+
+#: src/actions.py:2606
+msgid "_Save"
+msgstr ""
+
+#: src/actions.py:2665
+msgid "This cannot be deleted"
+msgstr ""
+
+#: src/actions.py:2670
+msgid "Delete Folder?"
+msgstr ""
+
+#: src/actions.py:2673
+#, python-brace-format
+msgid ""
+"“{name}” and the playlist in it will be deleted from your library on all "
+"your devices. This cannot be undone."
+msgid_plural ""
+"“{name}” and the {count} playlists in it will be deleted from your library "
+"on all your devices. This cannot be undone."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/actions.py:2679 src/actions.py:2683
+#, python-brace-format
+msgid ""
+"“{name}” will be deleted from your library on all your devices. This cannot "
+"be undone."
+msgstr ""
+
+#: src/actions.py:2682
+msgid "Delete Playlist?"
+msgstr ""
+
+#: src/actions.py:2685
+msgid "_Delete"
+msgstr ""
+
+#: src/actions.py:2702
+#, python-brace-format
+msgid "Deleted “{name}”"
+msgstr ""
+
+#: src/actions.py:2725 src/actions.py:2768
+msgid "This cannot be moved there"
+msgstr ""
+
+#: src/actions.py:2730
+#, python-brace-format
+msgid "Moved “{name}” to the top level"
+msgstr ""
+
+#: src/actions.py:2732
+#, python-brace-format
+msgid "Moved “{name}” to “{folder}”"
+msgstr ""
+
+#: src/actions.py:2761 src/actions.py:2771 src/pages/__init__.py:321
+msgid "New Folder"
+msgstr ""
+
+#: src/actions.py:2792
+#, python-brace-format
+msgid "Created “{folder}”"
+msgstr ""
+
+#: src/actions.py:2813
+msgid "Removed from the playlist"
+msgstr ""
+
+#: src/actions.py:2831
+msgid "Removed from Up Next"
+msgstr ""
+
+#: src/actions.py:2926
+msgid "This is not in your library"
+msgstr ""
+
+#: src/actions.py:2947
+#, python-brace-format
+msgid "Removed “{title}” from your library"
+msgstr ""
+
+#: src/actions.py:2948
+msgid "Removed from your library"
+msgstr ""
+
+#: src/actions.py:3043
+msgid "This song has no credits"
+msgstr ""
+
+#: src/actions.py:3100
+msgid "This has no page to open"
+msgstr ""
+
+#: src/actions.py:3116
+msgid "Could not open the browser"
+msgstr ""
+
+#: src/actions.py:3130
+msgid "This has no link to copy"
+msgstr ""
+
+#: src/actions.py:3133
+msgid "Link copied"
+msgstr ""
+
+#: src/credits.py:24
+msgid "Performers"
+msgstr ""
+
+#: src/credits.py:25
+msgid "Composition and Lyrics"
+msgstr ""
+
+#: src/credits.py:26
+msgid "Production and Engineering"
+msgstr ""
+
+#: src/credits.py:34
+msgid "Other Credits"
+msgstr ""
+
+#. Translators: between a person's roles in a song's credits ("Vocals, Guitar").
+#: src/credits.py:41
+msgctxt "credit roles"
+msgid ", "
+msgstr ""
+
+#. Translators: an error's toast, its button opening Preferences.
+#: src/errors.py:24
+msgid "Install Google Chrome to play Apple Music"
+msgstr ""
+
+#: src/errors.py:24 src/errors.py:28 src/shortcuts.py:134
+msgid "Preferences"
+msgstr ""
+
+#: src/errors.py:28
+msgid "This browser cannot play songs; Google Chrome can"
+msgstr ""
+
+#. Translators: an error's toast, its button starting the playback engine.
+#: src/errors.py:32
+msgid "The playback engine is not running"
+msgstr ""
+
+#: src/errors.py:32 src/errors.py:37
+msgid "Start"
+msgstr ""
+
+#: src/errors.py:37
+msgid "Unlock the keyring, then start the engine"
+msgstr ""
+
+#: src/errors.py:39
+msgid "Sign in to Apple Music again"
+msgstr ""
+
+#: src/errors.py:41
+msgid "Apple Music did not answer in time"
+msgstr ""
+
+#: src/errors.py:43
+msgid "Apple Music could not do that"
+msgstr ""
+
+#: src/errors.py:45
+msgid "Up Next cannot be changed while a station plays"
+msgstr ""
+
+#: src/errors.py:47
+msgid "Up Next changed meanwhile; try again"
+msgstr ""
+
+#: src/errors.py:51
+msgid "The playlist changed elsewhere: try again"
+msgstr ""
+
+#: src/errors.py:54
+msgid "The playback engine did not answer as expected"
+msgstr ""
+
+#: src/explore.py:46
+msgid "Top Charts"
+msgstr ""
+
+#. Translators: the link at the end of Made for You and Home to the Replay page: the
+#. songs, artists and albums the account played most this year, and in the years before.
+#: src/explore.py:56
+msgid "Replay: Your Year in Music"
+msgstr ""
+
+#. Translators: the heading of the link to Replay at the end of Made for You and Home.
+#: src/explore.py:65
+msgid "More for You"
+msgstr ""
+
+#. Translators: the heading of the New page's links to other pages of Apple Music (Top
+#. Charts, its collections), as music.apple.com's New page ends.
+#: src/explore.py:117
+msgid "More to Explore"
+msgstr ""
+
+#: src/dialogs/about.py:34
+msgid ""
+"Your Apple Music library, playlists, radio and recommendations in a native "
+"GNOME app, played through Google Chrome, or another Chromium-based browser, "
+"in the background."
+msgstr ""
+
+#. Translators: your names, one per line (with an address if you like), for the About
+#. dialog's credits.
+#: src/dialogs/about.py:76
+msgid "translator-credits"
+msgstr ""
+
+#: src/dialogs/add_songs.py:56
+#, python-brace-format
+msgid "{count} song selected"
+msgid_plural "{count} songs selected"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: under Add Songs in its dialog's header bar: the playlist they go to.
+#: src/dialogs/add_songs.py:59
+#, python-brace-format
+msgid "To “{playlist}”"
+msgstr ""
+
+#: src/dialogs/add_songs.py:187 src/pages/search.py:244
+msgid "Start the engine to search Apple Music"
+msgstr ""
+
+#: src/dialogs/add_songs.py:188
+msgid "Songs from Apple Music appear once you sign in"
+msgstr ""
+
+#: src/dialogs/add_songs.py:189
+msgid "Could Not Search Apple Music"
+msgstr ""
+
+#: src/dialogs/add_songs.py:190
+msgid "Search Apple Music for songs of the demo’s invented catalogue"
+msgstr "Search Apple Music for songs of the demo’s invented catalog"
+
+#: src/dialogs/add_songs.py:372 src/dialogs/add_songs.py:390
+#: src/pages/artists.blp:101 src/pages/detail.py:982 src/pages/grid.py:741
+#: src/pages/search.py:747 src/pages/songs.py:597 src/pages/songs.blp:234
+msgid "No Results Found"
+msgstr ""
+
+#: src/dialogs/add_songs.py:373
+msgid "No song in your library matches"
+msgstr ""
+
+#: src/dialogs/add_songs.py:375 src/pages/detail.py:1540
+#: src/pages/detail.py:1543 src/pages/songs.py:242
+msgid "No Songs"
+msgstr ""
+
+#: src/dialogs/add_songs.py:376
+msgid "Your library has no songs yet"
+msgstr ""
+
+#: src/dialogs/add_songs.py:379 src/pages/search.py:428 src/pages/search.py:752
+#: src/pages/search.blp:70
+msgid "Search Apple Music"
+msgstr ""
+
+#: src/dialogs/add_songs.py:380
+msgid "Find songs to add to the playlist"
+msgstr ""
+
+#: src/dialogs/add_songs.py:391 src/pages/search.py:747
+msgid "Try a different search"
+msgstr ""
+
+#: src/dialogs/add_songs.py:456
+msgid "No songs selected"
+msgstr ""
+
+#: src/dialogs/add_songs.blp:8 src/dialogs/add_songs.blp:25
+msgid "Add Songs"
+msgstr ""
+
+#: src/dialogs/add_songs.blp:30
+msgid "_Add"
+msgstr ""
+
+#: src/dialogs/add_songs.blp:55 src/dialogs/add_songs.blp:58
+msgid "Search Songs"
+msgstr ""
+
+#: src/dialogs/add_songs.blp:67 src/pages/search.blp:91
+msgid "Search In"
+msgstr ""
+
+#: src/dialogs/add_songs.blp:72 src/dialogs/add_songs.blp:106
+#: src/pages/search.blp:102
+msgid "Your Library"
+msgstr ""
+
+#. Translators: Apple's service, by its name, which is not translated.
+#: src/dialogs/add_songs.blp:77 src/pages/search.blp:97
+msgid "Apple Music"
+msgstr ""
+
+#: src/dialogs/credits.py:52
+msgid "Start the engine to see the credits"
+msgstr ""
+
+#: src/dialogs/credits.py:53
+msgid "Credits appear once you sign in to Apple Music"
+msgstr ""
+
+#: src/dialogs/credits.py:54
+msgid "Could Not Load the Credits"
+msgstr ""
+
+#: src/dialogs/credits.py:55
+msgid "Credits come from Apple Music; the demo library is offline"
+msgstr ""
+
+#: src/dialogs/credits.py:98
+msgid "No Credits"
+msgstr ""
+
+#: src/dialogs/credits.py:99
+msgid "Apple Music has no credits for this song"
+msgstr ""
+
+#: src/dialogs/credits.blp:8 src/dialogs/credits.blp:16
+msgid "Credits"
+msgstr ""
+
+#: src/dialogs/playlist.py:130 src/dialogs/playlist.blp:40
+msgid "Name"
+msgstr ""
+
+#: src/dialogs/playlist.py:135 src/dialogs/playlist.blp:46
+#: src/dialogs/playlist.blp:68
+msgid "Description"
+msgstr ""
+
+#: src/dialogs/playlist.blp:76 src/window.py:744
+msgid "Folder"
+msgstr ""
+
+#: src/dialogs/playlist.blp:80
+msgid "Show on My Profile and in Search"
+msgstr ""
+
+#: src/dialogs/playlist.blp:81
+msgid "Anyone can see it on your Apple Music profile"
+msgstr ""
+
+#. Translators: the Engine row's one button, starting or stopping the playback
+#. engine: give _Start and _Stop the same mnemonic letter if you can.
+#: src/dialogs/preferences.py:108 src/dialogs/preferences.blp:119
+msgid "_Start"
+msgstr ""
+
+#: src/dialogs/preferences.py:108
+msgid "_Stop"
+msgstr ""
+
+#: src/dialogs/preferences.py:186
+msgid "Refreshing…"
+msgstr ""
+
+#. Translators: the Cache row's subtitle, in place of its size, when there is none.
+#: src/dialogs/preferences.py:216
+msgid "Empty"
+msgstr ""
+
+#: src/dialogs/preferences.py:222
+msgid ""
+"The library, artwork and lyrics kept on this computer are removed, then your "
+"library is fetched again from Apple Music."
+msgstr ""
+
+#: src/dialogs/preferences.py:225
+msgid "The library, artwork and lyrics kept on this computer are removed."
+msgstr ""
+
+#: src/dialogs/preferences.py:226
+msgid "Clear Cache?"
+msgstr ""
+
+#: src/dialogs/preferences.py:228
+msgid "C_lear"
+msgstr ""
+
+#: src/dialogs/preferences.py:244
+msgid "Clearing…"
+msgstr ""
+
+#: src/dialogs/preferences.py:256
+msgid "Cache cleared"
+msgstr ""
+
+#: src/dialogs/preferences.py:265 src/dialogs/preferences.py:387
+msgid "Not used with the demo library"
+msgstr ""
+
+#: src/dialogs/preferences.py:267
+msgid "Starting…"
+msgstr ""
+
+#: src/dialogs/preferences.py:269
+msgid "Signing in…"
+msgstr ""
+
+#: src/dialogs/preferences.py:271 src/dialogs/preferences.blp:115
+msgid "Not running"
+msgstr ""
+
+#: src/dialogs/preferences.py:273
+msgid "Running, but this browser cannot play songs"
+msgstr ""
+
+#: src/dialogs/preferences.py:275
+msgid "Running, not signed in"
+msgstr ""
+
+#: src/dialogs/preferences.py:277
+msgid "Running hidden"
+msgstr ""
+
+#: src/dialogs/preferences.py:279
+msgid "Running in a window"
+msgstr ""
+
+#: src/dialogs/preferences.py:330
+#, python-brace-format
+msgid "No program called “{name}” was found"
+msgstr ""
+
+#. Translators: {bitrate} is a number of kilobits a second, 256 or 64.
+#: src/dialogs/preferences.py:361
+#, python-brace-format
+msgid "Streaming at {bitrate} kbps now"
+msgstr ""
+
+#: src/dialogs/preferences.py:363 src/dialogs/preferences.blp:129
+msgid "High Efficiency uses less data"
+msgstr ""
+
+#: src/dialogs/preferences.py:389
+msgid "Not signed in"
+msgstr ""
+
+#: src/dialogs/preferences.py:391
+#, python-brace-format
+msgid "Signed in as {name}"
+msgstr ""
+
+#: src/dialogs/preferences.blp:13 src/shortcuts.py:132
+msgid "General"
+msgstr ""
+
+#: src/dialogs/preferences.blp:17 src/shortcuts.py:153
+msgid "Playback"
+msgstr ""
+
+#: src/dialogs/preferences.blp:20
+msgid "Background Playback"
+msgstr ""
+
+#: src/dialogs/preferences.blp:21
+msgid ""
+"Keep playing when the window is closed; the system’s media controls bring it "
+"back"
+msgstr ""
+
+#: src/dialogs/preferences.blp:25 src/widgets/queue.py:519
+msgid "Autoplay"
+msgstr ""
+
+#: src/dialogs/preferences.blp:26
+msgid "When the queue ends, keep playing similar songs, shown in Up Next"
+msgstr ""
+
+#: src/dialogs/preferences.blp:30
+msgid "Notify When the Song Changes"
+msgstr ""
+
+#: src/dialogs/preferences.blp:31
+msgid ""
+"Show each new song’s title, artist and cover while the app is in the "
+"background"
+msgstr ""
+
+#: src/dialogs/preferences.blp:35
+msgid "Discord Presence"
+msgstr ""
+
+#: src/dialogs/preferences.blp:36
+msgid ""
+"Show the song playing, with its artist, album and cover, on your Discord "
+"profile while Discord is running"
+msgstr ""
+
+#. Translators: the title of the songs Apple Music suggests adding to a playlist,
+#. shown under its songs.
+#: src/dialogs/preferences.blp:42 src/widgets/suggested_songs.py:180
+#: src/widgets/suggested_songs.py:201
+msgid "Suggested Songs"
+msgstr ""
+
+#: src/dialogs/preferences.blp:45
+msgid "Show More Suggestions"
+msgstr ""
+
+#: src/dialogs/preferences.blp:46
+msgid "Twelve songs under a playlist instead of six"
+msgstr ""
+
+#: src/dialogs/preferences.blp:50
+msgid "Preview Suggestions"
+msgstr ""
+
+#: src/dialogs/preferences.blp:51
+msgid "Play a 30-second preview of a suggested song instead of the whole song"
+msgstr ""
+
+#: src/dialogs/preferences.blp:56 src/sections.py:58
+msgid "Library"
+msgstr ""
+
+#: src/dialogs/preferences.blp:60
+msgid "Show Genres"
+msgstr ""
+
+#: src/dialogs/preferences.blp:61
+msgid "List the library’s albums by genre in the sidebar"
+msgstr ""
+
+#: src/dialogs/preferences.blp:65 src/shortcuts.py:135
+msgid "Refresh Library"
+msgstr ""
+
+#: src/dialogs/preferences.blp:69
+msgid "Every hour"
+msgstr ""
+
+#: src/dialogs/preferences.blp:70
+msgid "Every 6 hours"
+msgstr ""
+
+#: src/dialogs/preferences.blp:71
+msgid "Every day"
+msgstr ""
+
+#: src/dialogs/preferences.blp:72
+msgid "Manually"
+msgstr ""
+
+#: src/dialogs/preferences.blp:80
+msgid "Last Refreshed"
+msgstr ""
+
+#: src/dialogs/preferences.blp:84
+msgid "_Refresh"
+msgstr ""
+
+#: src/dialogs/preferences.blp:92
+msgid "Cache"
+msgstr ""
+
+#: src/dialogs/preferences.blp:93
+msgid "Calculating…"
+msgstr ""
+
+#: src/dialogs/preferences.blp:97
+msgid "C_lear…"
+msgstr ""
+
+#: src/dialogs/preferences.blp:107 src/dialogs/preferences.blp:114
+msgid "Engine"
+msgstr ""
+
+#: src/dialogs/preferences.blp:111
+msgid ""
+"Apple Music plays in Google Chrome, which the app starts and controls in the "
+"background. Another Chromium-based browser with Widevine can be used instead."
+msgstr ""
+
+#: src/dialogs/preferences.blp:128
+msgid "Streaming Quality"
+msgstr ""
+
+#: src/dialogs/preferences.blp:133
+msgid "High Quality"
+msgstr ""
+
+#: src/dialogs/preferences.blp:134
+msgid "High Efficiency"
+msgstr ""
+
+#: src/dialogs/preferences.blp:141
+msgid "Browser"
+msgstr ""
+
+#: src/dialogs/preferences.blp:142
+msgid ""
+"The browser program is a program name or path, without arguments, such as "
+"google-chrome-stable or brave-browser. Changes here apply the next time the "
+"engine starts; another browser may need you to sign in again."
+msgstr ""
+
+#: src/dialogs/preferences.blp:150
+msgid "Run Browser Hidden"
+msgstr ""
+
+#: src/dialogs/preferences.blp:151
+msgid "Turn off to show the browser window, for debugging"
+msgstr ""
+
+#: src/dialogs/preferences.blp:155
+msgid "Start Engine on Launch"
+msgstr ""
+
+#: src/dialogs/preferences.blp:156
+msgid "Starts the browser when the app opens, once you have signed in"
+msgstr ""
+
+#: src/dialogs/preferences.blp:161
+msgid "Account"
+msgstr ""
+
+#: src/dialogs/preferences.blp:166
+msgid "Sign _In…"
+msgstr ""
+
+#: src/dialogs/preferences.blp:171 src/window.py:651
+msgid "Sign _Out…"
+msgstr ""
+
+#. Translators: a shortcut's alternative keys, as a screen reader hears them:
+#. {keys} is the list but the last ("Menu"), {key} the last ("Shift+F10").
+#: src/dialogs/shortcuts.py:32
+#, python-brace-format
+msgid "{keys} or {key}"
+msgstr ""
+
+#. Translators: a shortcut's row as a screen reader hears it: {title} is what the
+#. shortcut does ("Quit"), {keys} its key or keys ("Ctrl+Q").
+#: src/dialogs/shortcuts.py:35
+#, python-brace-format
+msgid "{title}: {keys}"
+msgstr ""
+
+#: src/dialogs/signin.blp:19
+msgid "Signing In to Apple Music"
+msgstr ""
+
+#: src/window.py:76 src/window.blp:244
+msgid "Sign in to see your library"
+msgstr ""
+
+#: src/window.py:583 src/pages/editorial.py:36 src/pages/editorial.py:49
+#: src/pages/editorial.py:61 src/pages/shelves.py:119 src/pages/shelves.py:375
+msgid "Nothing Here"
+msgstr ""
+
+#: src/window.py:584
+msgid "This shelf is empty now"
+msgstr ""
+
+#: src/window.py:608
+msgid "This cannot be played"
+msgstr ""
+
+#. Translators: the account button's label, in place of the account's name when
+#. Apple gave none.
+#: src/window.py:641 src/window.blp:210
+msgid "Signed In"
+msgstr ""
+
+#: src/window.py:648
+msgid "Sign _In Again…"
+msgstr ""
+
+#: src/window.py:741 src/search_provider.py:100 src/pages/search.py:90
+msgid "Playlist"
+msgstr ""
+
+#: src/window.py:985 src/player_bar.py:179 src/player_bar.blp:95
+#: src/widgets/now_playing.blp:179 src/widgets/fullscreen_player.blp:145
+#: src/widgets/mini_player.blp:76 src/widgets/transport.py:212
+msgid "Not Playing"
+msgstr ""
+
+#: src/window.blp:132
+msgid "Main Menu"
+msgstr ""
+
+#: src/window.blp:176 src/pages/__init__.py:69 src/widgets/engine_status.py:180
+msgid "Sign In…"
+msgstr ""
+
+#: src/window.blp:229 src/sections.py:52
+msgid "Home"
+msgstr ""
+
+#: src/window.blp:250 src/sync.py:1067
+msgid "Syncing your library…"
+msgstr ""
+
+#: src/window.blp:256
+msgid "_Refresh Library"
+msgstr ""
+
+#: src/window.blp:262 src/player_bar.py:186
+msgid "_Mini Player"
+msgstr ""
+
+#: src/window.blp:269
+msgid "_Preferences"
+msgstr ""
+
+#: src/window.blp:274
+msgid "_Keyboard Shortcuts"
+msgstr ""
+
+#: src/window.blp:279
+msgid "_About Music Sleeve"
+msgstr ""
+
+#: src/player.py:275
+#, python-brace-format
+msgid "{count} song could not be played"
+msgid_plural "{count} songs could not be played"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/player.py:1264
+msgid "Starting playback engine…"
+msgstr ""
+
+#: src/player.py:1730 src/player.py:1742
+msgid "The cleared songs could not be put back"
+msgstr ""
+
+#: src/player.py:1879
+msgid "This isn’t available in your country or region"
+msgstr ""
+
+#: src/player.py:1881
+msgid "This content is restricted"
+msgstr ""
+
+#: src/player.py:1883
+msgid "An Apple Music subscription is needed to play this"
+msgstr ""
+
+#: src/player.py:1885
+msgid "The engine could not play protected content"
+msgstr ""
+
+#: src/player.py:1886
+msgid "This could not be played"
+msgstr ""
+
+#. Translators: Preferences' Last Refreshed row, while the library never was.
+#: src/sync.py:262
+msgid "Never"
+msgstr ""
+
+#. Translators: Preferences' Last Refreshed row, under a minute after a refresh.
+#: src/sync.py:267
+msgid "Just now"
+msgstr ""
+
+#. Translators: Preferences' Last Refreshed row: how long ago, in minutes.
+#: src/sync.py:270
+#, python-brace-format
+msgid "{count} minute ago"
+msgid_plural "{count} minutes ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: Preferences' Last Refreshed row: how long ago, in hours.
+#: src/sync.py:275
+#, python-brace-format
+msgid "{count} hour ago"
+msgid_plural "{count} hours ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: Preferences' Last Refreshed row: how long ago, in days.
+#: src/sync.py:278
+#, python-brace-format
+msgid "{count} day ago"
+msgid_plural "{count} days ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: the sync banner, while the stations played last and Apple's
+#. recommendations for the Home page are fetched.
+#: src/sync.py:1042
+msgid "Syncing recommendations…"
+msgstr ""
+
+#. Translators: the sync banner, while the library's songs are fetched: "Syncing
+#. songs: 300 of 2,000".
+#: src/sync.py:1046
+#, python-brace-format
+msgid "Syncing songs: {done} of {total}"
+msgstr ""
+
+#: src/sync.py:1046
+msgid "Syncing songs…"
+msgstr ""
+
+#. Translators: the sync banner, while each playlist's songs are fetched.
+#: src/sync.py:1048
+#, python-brace-format
+msgid "Syncing playlists: {done} of {total}"
+msgstr ""
+
+#: src/sync.py:1048
+msgid "Syncing playlists…"
+msgstr ""
+
+#. Translators: the sync banner, while the folders the playlists are in are fetched.
+#: src/sync.py:1050
+#, python-brace-format
+msgid "Syncing playlist folders: {done} of {total}"
+msgstr ""
+
+#: src/sync.py:1051
+msgid "Syncing playlist folders…"
+msgstr ""
+
+#. Translators: the sync banner, while the library's music videos are fetched.
+#: src/sync.py:1053
+#, python-brace-format
+msgid "Syncing music videos: {done} of {total}"
+msgstr ""
+
+#: src/sync.py:1053
+msgid "Syncing music videos…"
+msgstr ""
+
+#. Translators: the sync banner, while the covers' small versions are downloaded.
+#: src/sync.py:1058
+#, python-brace-format
+msgid "Downloading artwork: {done} of {total}"
+msgstr ""
+
+#: src/sync.py:1058
+msgid "Downloading artwork…"
+msgstr ""
+
+#: src/sync.py:1235 src/sync.py:1240
+msgid "Could not sync your library"
+msgstr ""
+
+#: src/sync.py:1235 src/sync.py:1240
+msgid "Retry"
+msgstr ""
+
+#. Translators: how many albums of an artist, or of a genre, the library has.
+#: src/sync.py:1266 src/widgets/search_list.py:33 src/library.py:255
+#, python-brace-format
+msgid "{count} album"
+msgid_plural "{count} albums"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/sync.py:1267 src/widgets/search_list.py:35
+#, python-brace-format
+msgid "{count} playlist"
+msgid_plural "{count} playlists"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: the end of a search's list of one kind of results, as each
+#. of these: how many were found.
+#. Translators: how many songs an album or a playlist has.
+#: src/sync.py:1269 src/pages/search.py:722 src/widgets/search_list.py:32
+#: src/library.py:230 src/release.py:275
+#, python-brace-format
+msgid "{count} song"
+msgid_plural "{count} songs"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: the toast when a refresh of the library (Refresh Library) ends, with
+#. what the library holds: "Library synced: 120 albums, 8 playlists, 1,400 songs".
+#: src/sync.py:1273
+#, python-brace-format
+msgid "Library synced: {summary}"
+msgstr ""
+
+#: src/playlist_order.py:309
+#, python-brace-format
+msgid "Put back the order of “{playlist}”"
+msgstr ""
+
+#: src/playlist_order.py:314
+#, python-brace-format
+msgid "Moved “{title}”"
+msgstr ""
+
+#: src/playlist_order.py:316
+#, python-brace-format
+msgid "Changed the order of “{playlist}”"
+msgstr ""
+
+#: src/search_provider.py:100 src/pages/search.py:90 src/pages/songs.blp:194
+#: src/widgets/track_row.py:415
+msgid "Album"
+msgstr ""
+
+#. Translators: the second line of an artist's card among a search's
+#. results, where an album's card names its artist.
+#: src/search_provider.py:100 src/pages/search.py:90 src/pages/songs.blp:187
+#: src/widgets/track_row.py:415 src/remote.py:332
+msgid "Artist"
+msgstr ""
+
+#: src/search_provider.py:101 src/pages/search.py:91
+msgid "Song"
+msgstr ""
+
+#: src/search_provider.py:352
+msgid "Not in the library any more"
+msgstr ""
+
+#: src/player_bar.py:178 src/widgets/now_playing.blp:20
+msgid "Now Playing"
+msgstr ""
+
+#. Translators: the player bar's description for a screen reader: the song's
+#. title, then its artist and album ("Song, Artist — Album").
+#. Translators: what a screen reader says for a tile: its title, then its
+#. subtitle (an album's artist, a playlist's curator): "Album, Artist".
+#: src/player_bar.py:182 src/widgets/labels.py:29
+#, python-brace-format
+msgid "{title}, {subtitle}"
+msgstr ""
+
+#. Translators: a button's tooltip with its shortcut: {tooltip} is what it does
+#. ("Lyrics"), {keys} its key ("Shift+Ctrl+L").
+#: src/player_bar.py:324 src/widgets/mini_player.py:121
+#, python-brace-format
+msgid "{tooltip} ({keys})"
+msgstr ""
+
+#: src/player_bar.blp:37 src/shortcuts.py:156 src/widgets/now_playing.blp:298
+#: src/widgets/fullscreen_player.blp:279 src/widgets/mini_player.blp:177
+msgid "Previous"
+msgstr ""
+
+#: src/player_bar.blp:49 src/pages/artist.blp:142
+#: src/pages/library_artist.blp:120 src/pages/detail.blp:216
+#: src/pages/songs.blp:129 src/widgets/now_playing.blp:311
+#: src/widgets/fullscreen_player.blp:292 src/widgets/mini_player.blp:190
+#: src/widgets/transport.py:248
+msgid "Play"
+msgstr ""
+
+#: src/player_bar.blp:62 src/shortcuts.py:155 src/widgets/now_playing.blp:324
+#: src/widgets/fullscreen_player.blp:305 src/widgets/mini_player.blp:203
+msgid "Next"
+msgstr ""
+
+#. Translators: the badge marking a song with explicit lyrics, as Apple Music shows it
+#: src/player_bar.blp:107 src/widgets/song_shelf.py:35
+#: src/widgets/track_row.py:88 src/widgets/queue.py:423
+msgctxt "explicit badge"
+msgid "E"
+msgstr ""
+
+#: src/player_bar.blp:108 src/player_bar.blp:113 src/widgets/song_shelf.py:35
+#: src/widgets/track_row.py:88 src/widgets/track_row.py:90
+#: src/widgets/queue.py:423
+msgid "Explicit"
+msgstr ""
+
+#. Translators: the name of the slider of the time played in the song.
+#: src/player_bar.blp:174 src/widgets/now_playing.blp:244
+#: src/widgets/fullscreen_player.blp:225 src/widgets/mini_player.blp:135
+msgid "Position"
+msgstr ""
+
+#. Translators: the badge in place of the position slider while a live radio station plays
+#: src/player_bar.blp:180 src/widgets/now_playing.blp:250
+#: src/widgets/fullscreen_player.blp:231 src/widgets/mini_player.blp:141
+msgctxt "live badge"
+msgid "LIVE"
+msgstr ""
+
+#: src/player_bar.blp:181 src/player_bar.blp:186
+#: src/widgets/now_playing.blp:251 src/widgets/now_playing.blp:256
+#: src/widgets/fullscreen_player.blp:232 src/widgets/fullscreen_player.blp:237
+#: src/widgets/mini_player.blp:142 src/widgets/mini_player.blp:147
+#: src/widgets/transport.py:238
+msgid "Live Radio"
+msgstr ""
+
+#: src/player_bar.blp:221 src/player_bar.blp:227 src/pages/artist.py:575
+#: src/pages/artist.blp:153 src/pages/artist.blp:158
+#: src/widgets/now_playing.blp:69 src/widgets/now_playing.blp:74
+#: src/widgets/fullscreen_player.blp:70 src/widgets/fullscreen_player.blp:75
+#: src/widgets/mini_player.blp:224 src/widgets/mini_player.blp:229
+#: src/widgets/transport.py:707
+msgid "Favourite"
+msgstr "Favorite"
+
+#: src/player_bar.blp:238 src/pages/library_artist.blp:133
+#: src/pages/detail.blp:229 src/pages/songs.blp:142
+#: src/widgets/now_playing.blp:286 src/widgets/fullscreen_player.blp:267
+#: src/widgets/mini_player.blp:241
+msgid "Shuffle"
+msgstr ""
+
+#: src/player_bar.blp:249 src/widgets/now_playing.blp:337
+#: src/widgets/fullscreen_player.blp:318 src/widgets/mini_player.blp:253
+#: src/widgets/transport.py:476 src/widgets/transport.py:479
+msgid "Repeat"
+msgstr ""
+
+#. Translators: the volume button's name, as a screen reader hears it.
+#: src/player_bar.blp:272 src/widgets/now_playing.blp:98
+#: src/widgets/fullscreen_player.blp:98 src/widgets/mini_player.blp:277
+#: src/widgets/transport.py:530
+msgid "Volume"
+msgstr ""
+
+#: src/player_bar.blp:286 src/player_bar.blp:291 src/widgets/lyrics.py:162
+#: src/widgets/lyrics.py:180 src/widgets/lyrics.py:214
+#: src/widgets/lyrics.py:344 src/widgets/now_playing.py:129
+msgid "Lyrics"
+msgstr ""
+
+#: src/player_bar.blp:301 src/player_bar.blp:306 src/widgets/now_playing.py:130
+#: src/widgets/queue.py:570
+msgid "Up Next"
+msgstr ""
+
+#: src/sections.py:51 src/pages/search.blp:73
+msgid "Search"
+msgstr ""
+
+#. Translators: the sidebar's page of new releases and Apple's picks, as Apple
+#. Music names it.
+#: src/sections.py:55
+msgid "New"
+msgstr ""
+
+#: src/sections.py:56
+msgid "Radio"
+msgstr ""
+
+#. Translators: a shelf on the Home page: what was added to the library last.
+#: src/sections.py:59 src/library.py:138
+msgid "Recently Added"
+msgstr ""
+
+#: src/sections.py:60 src/pages/artists.blp:65 src/pages/artists.blp:85
+#: src/pages/search.py:81 src/pages/search.py:286 src/remote.py:62
+msgid "Artists"
+msgstr ""
+
+#: src/sections.py:61 src/pages/search.py:81 src/pages/search.py:287
+#: src/remote.py:63
+msgid "Albums"
+msgstr ""
+
+#: src/sections.py:62 src/pages/search.py:81 src/pages/search.blp:338
+#: src/remote.py:64
+msgid "Songs"
+msgstr ""
+
+#: src/sections.py:65
+msgid "Genres"
+msgstr ""
+
+#. Translators: the shelf of the music videos of an album's songs.
+#: src/sections.py:66 src/pages/search.py:82 src/remote.py:66
+#: src/release.py:339
+msgid "Music Videos"
+msgstr ""
+
+#: src/sections.py:67 src/remote.py:312
+msgid "Made for You"
+msgstr ""
+
+#: src/sections.py:69 src/shortcuts.py:170 src/pages/search.py:82
+#: src/pages/search.py:288 src/remote.py:65
+msgid "Playlists"
+msgstr ""
+
+#: src/sections.py:70
+msgid "All Playlists"
+msgstr ""
+
+#: src/sections.py:72
+msgid "Favourite Songs"
+msgstr "Favorite Songs"
+
+#: src/sidebar_view.py:268
+msgid "New Playlist or Folder"
+msgstr ""
+
+#: src/song_columns.py:57
+msgid "Genre _Column"
+msgstr ""
+
+#: src/song_columns.py:57
+msgid "Year Co_lumn"
+msgstr ""
+
+#: src/shortcuts.py:133
+msgid "Show Main Menu"
+msgstr ""
+
+#: src/shortcuts.py:136
+msgid "Keyboard Shortcuts"
+msgstr ""
+
+#: src/shortcuts.py:137
+msgid "Close Dialog, Now Playing or Fullscreen"
+msgstr ""
+
+#: src/shortcuts.py:138
+msgid "Close Window"
+msgstr ""
+
+#: src/shortcuts.py:139
+msgid "Quit"
+msgstr ""
+
+#: src/shortcuts.py:141
+msgid "Navigation"
+msgstr ""
+
+#: src/shortcuts.py:142
+msgid "Search or Filter"
+msgstr ""
+
+#: src/shortcuts.py:143
+msgid "Go to Current Song"
+msgstr ""
+
+#: src/shortcuts.py:144
+msgid "Refresh the Page"
+msgstr ""
+
+#: src/shortcuts.py:145
+msgid "Go Back"
+msgstr ""
+
+#: src/shortcuts.py:146
+msgid "Focus the Sidebar"
+msgstr ""
+
+#: src/shortcuts.py:147
+msgid "Focus the Page"
+msgstr ""
+
+#: src/shortcuts.py:148
+msgid "Focus the Player Bar"
+msgstr ""
+
+#: src/shortcuts.py:149
+msgid "Show Context Menu"
+msgstr ""
+
+#: src/shortcuts.py:150
+msgid "Open Sidebar Folder"
+msgstr ""
+
+#: src/shortcuts.py:151
+msgid "Close Sidebar Folder"
+msgstr ""
+
+#: src/shortcuts.py:154
+msgid "Play or Pause"
+msgstr ""
+
+#: src/shortcuts.py:157
+msgid "Volume Up"
+msgstr ""
+
+#: src/shortcuts.py:158
+msgid "Volume Down"
+msgstr ""
+
+#: src/shortcuts.py:159
+msgid "Show or Hide Now Playing"
+msgstr ""
+
+#: src/shortcuts.py:160
+msgid "Show or Hide Lyrics"
+msgstr ""
+
+#: src/shortcuts.py:161
+msgid "Show or Hide Up Next"
+msgstr ""
+
+#: src/shortcuts.py:162
+msgid "Remove from Up Next"
+msgstr ""
+
+#: src/shortcuts.py:163
+msgid "Move Up in Up Next"
+msgstr ""
+
+#: src/shortcuts.py:164
+msgid "Move Down in Up Next"
+msgstr ""
+
+#: src/shortcuts.py:165
+msgid "Move to Top of Up Next"
+msgstr ""
+
+#: src/shortcuts.py:166
+msgid "Move to Bottom of Up Next"
+msgstr ""
+
+#: src/shortcuts.py:167 src/widgets/fullscreen_player.blp:18
+msgid "Fullscreen Player"
+msgstr ""
+
+#: src/shortcuts.py:168
+msgid "Mini Player or Main Window"
+msgstr ""
+
+#: src/shortcuts.py:172
+msgid "Move Song Up"
+msgstr ""
+
+#: src/shortcuts.py:173
+msgid "Move Song Down"
+msgstr ""
+
+#: src/shortcuts.py:174
+msgid "Move Song to Top"
+msgstr ""
+
+#: src/shortcuts.py:175
+msgid "Move Song to Bottom"
+msgstr ""
+
+#: src/shortcuts.py:176
+msgid "Remove from Playlist"
+msgstr ""
+
+#: src/shortcuts.py:178
+msgid "Selecting Songs"
+msgstr ""
+
+#: src/shortcuts.py:179
+msgid "Select All"
+msgstr ""
+
+#: src/shortcuts.py:180
+msgid "Select None"
+msgstr ""
+
+#: src/shortcuts.py:181
+msgid "Select or Unselect the Song"
+msgstr ""
+
+#: src/shortcuts.py:182
+msgid "Select Up to the Song"
+msgstr ""
+
+#: src/shortcuts.py:183
+msgid "Stop Selecting"
+msgstr ""
+
+#: src/pages/__init__.py:95
+msgid "Sign in to Apple Music to see your library"
+msgstr ""
+
+#: src/pages/__init__.py:168 src/pages/__init__.py:233 src/pages/artist.py:370
+#: src/pages/library_artist.blp:165
+msgid "No Albums"
+msgstr ""
+
+#: src/pages/__init__.py:169
+msgid "Albums in your library appear here"
+msgstr ""
+
+#: src/pages/__init__.py:170
+msgid "No Favourite Albums"
+msgstr "No Favorite Albums"
+
+#: src/pages/__init__.py:171
+msgid "Albums you mark as favourites appear here"
+msgstr "Albums you mark as favorites appear here"
+
+#: src/pages/__init__.py:172 src/pages/__init__.py:235
+msgid "Filter Albums"
+msgstr ""
+
+#. Translators: said to screen reader users as the Albums filter changes: {shown} of the
+#. library's {total} albums match it ("36 of 460 albums").
+#: src/pages/__init__.py:178
+#, python-brace-format
+msgid "{shown} of {total} album"
+msgid_plural "{shown} of {total} albums"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: said to screen reader users as the Music Videos filter changes: {shown} of
+#. the library's {total} music videos match it ("3 of 12 music videos").
+#: src/pages/__init__.py:184
+#, python-brace-format
+msgid "{shown} of {total} music video"
+msgid_plural "{shown} of {total} music videos"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pages/__init__.py:200
+msgid "Nothing Recently Added"
+msgstr ""
+
+#: src/pages/__init__.py:201
+msgid "Music you add to your library appears here"
+msgstr ""
+
+#: src/pages/__init__.py:216
+msgid "No Genres"
+msgstr ""
+
+#: src/pages/__init__.py:217
+msgid "The genres of the albums in your library appear here"
+msgstr ""
+
+#: src/pages/__init__.py:234
+msgid "Albums of this genre in your library appear here"
+msgstr ""
+
+#: src/pages/__init__.py:247
+msgid "No Playlists"
+msgstr ""
+
+#: src/pages/__init__.py:248
+msgid "Playlists in your library appear here"
+msgstr ""
+
+#: src/pages/__init__.py:259 src/pages/songs.py:597
+msgid "No Favourite Songs"
+msgstr "No Favorite Songs"
+
+#: src/pages/__init__.py:260 src/pages/songs.py:599
+msgid "Songs you mark as favourites appear here"
+msgstr "Songs you mark as favorites appear here"
+
+#: src/pages/__init__.py:271
+msgid "No Music Videos"
+msgstr ""
+
+#: src/pages/__init__.py:272
+msgid "Music videos in your library appear here"
+msgstr ""
+
+#: src/pages/__init__.py:273
+msgid "No Favourite Music Videos"
+msgstr "No Favorite Music Videos"
+
+#: src/pages/__init__.py:274
+msgid "Music videos you mark as favourites appear here"
+msgstr "Music videos you mark as favorites appear here"
+
+#: src/pages/__init__.py:275
+msgid "Filter Music Videos"
+msgstr ""
+
+#: src/pages/__init__.py:286
+msgid "Playlist Not Found"
+msgstr ""
+
+#: src/pages/__init__.py:287
+msgid "This playlist is no longer in your library"
+msgstr ""
+
+#: src/pages/__init__.py:299
+msgid "Empty Folder"
+msgstr ""
+
+#: src/pages/__init__.py:300
+msgid "Playlists you put in this folder appear here"
+msgstr ""
+
+#: src/pages/__init__.py:301
+msgid "Folder Not Found"
+msgstr ""
+
+#: src/pages/__init__.py:302
+msgid "This folder is no longer in your library"
+msgstr ""
+
+#: src/pages/__init__.py:327 src/pages/artist.blp:168 src/pages/artist.blp:172
+#: src/pages/library_artist.blp:145 src/pages/detail.blp:286
+#: src/pages/detail.blp:290 src/widgets/now_playing.blp:52
+#: src/widgets/now_playing.blp:57 src/widgets/fullscreen_player.blp:58
+#: src/widgets/fullscreen_player.blp:63
+msgid "More Options"
+msgstr ""
+
+#. Translators: a release's date on an artist's page, as GLib.DateTime.format() takes it:
+#. "%-d %b %Y" is "24 Sept 2026".
+#: src/pages/artist.py:67
+msgctxt "release date"
+msgid "%-d %b %Y"
+msgstr "%b %-d, %Y"
+
+#: src/pages/artist.py:194
+msgid "Start the engine to see the rest of this artist’s music"
+msgstr ""
+
+#: src/pages/artist.py:195
+msgid "The rest of this artist’s music appears once you sign in to Apple Music"
+msgstr ""
+
+#: src/pages/artist.py:197
+msgid "Could Not Load the Artist"
+msgstr ""
+
+#: src/pages/artist.py:200
+msgid "In Your Library"
+msgstr ""
+
+#. Translators: the heading of an artist's biography: "About Taylor Swift".
+#: src/pages/artist.py:293
+#, python-brace-format
+msgid "About {name}"
+msgstr ""
+
+#. Translators: where an artist is from, over the place on their page ("From").
+#: src/pages/artist.py:297
+msgid "From"
+msgstr ""
+
+#. Translators: over the date a band was formed (Formed) or a person born (Born).
+#: src/pages/artist.py:301
+msgid "Formed"
+msgstr ""
+
+#: src/pages/artist.py:301
+msgid "Born"
+msgstr ""
+
+#. Translators: the heart button's tooltip, what a click does: "Favourite" marks the
+#. song as a favourite (a verb, as in the menus); it is the button's name too.
+#: src/pages/artist.py:574 src/widgets/transport.py:707
+msgid "Remove from Favourites"
+msgstr "Remove from Favorites"
+
+#. Translators: under the first lines of a long text (a biography, an album's
+#. notes): shows the rest.
+#: src/pages/artist.blp:333 src/pages/detail.blp:320
+#: src/widgets/selection_mode.py:170 src/widgets/selection_mode.py:172
+msgid "More"
+msgstr ""
+
+#: src/pages/artist.blp:389 src/pages/charts.py:58 src/pages/charts.py:59
+#: src/pages/songs.blp:203 src/widgets/track_row.py:417
+msgid "Genre"
+msgstr ""
+
+#: src/pages/artists.py:85
+msgid "Filter Artists"
+msgstr ""
+
+#. Translators: said to screen reader users as the Artists filter changes: {shown}
+#. of the library's {total} artists match it ("4 of 120 artists").
+#: src/pages/artists.py:211
+#, python-brace-format
+msgid "{shown} of {total} artist"
+msgid_plural "{shown} of {total} artists"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pages/artists.blp:48
+msgid "No Artists"
+msgstr ""
+
+#: src/pages/artists.blp:49
+msgid "Artists in your library appear here"
+msgstr ""
+
+#: src/pages/artists.blp:102 src/pages/detail.py:982 src/pages/grid.py:741
+#: src/pages/songs.py:600 src/pages/songs.blp:235
+msgid "Try a different filter"
+msgstr ""
+
+#: src/pages/library_artist.blp:53 src/pages/library_artist.blp:56
+#: src/pages/detail.py:636 src/pages/detail.py:637 src/pages/grid.blp:37
+#: src/pages/grid.blp:41
+msgid "Sort By"
+msgstr ""
+
+#: src/pages/library_artist.blp:84
+msgid "Go to Artist"
+msgstr ""
+
+#: src/pages/library_artist.blp:166
+msgid "This artist’s albums in your library appear here"
+msgstr ""
+
+#: src/pages/detail.py:162
+msgid "_Playlist Order"
+msgstr ""
+
+#: src/pages/detail.py:163 src/pages/grid.py:180 src/pages/songs.blp:253
+msgid "_Title"
+msgstr ""
+
+#: src/pages/detail.py:164 src/pages/grid.py:181 src/pages/songs.blp:259
+msgid "_Artist"
+msgstr ""
+
+#: src/pages/detail.py:165 src/pages/songs.blp:265
+msgid "Al_bum"
+msgstr ""
+
+#: src/pages/detail.py:166 src/pages/songs.blp:271
+msgid "_Genre"
+msgstr ""
+
+#: src/pages/detail.py:167 src/pages/grid.py:182 src/pages/songs.blp:277
+msgid "_Year"
+msgstr ""
+
+#: src/pages/detail.py:168 src/pages/songs.blp:283
+msgid "T_ime"
+msgstr ""
+
+#: src/pages/detail.py:576
+msgid "Start the engine to load the songs"
+msgstr ""
+
+#: src/pages/detail.py:577
+msgid "The songs appear once you sign in to Apple Music"
+msgstr ""
+
+#: src/pages/detail.py:578
+msgid "Could Not Load the Songs"
+msgstr ""
+
+#: src/pages/detail.py:652 src/pages/songs.py:233
+msgid "Filter Songs"
+msgstr ""
+
+#: src/pages/detail.py:675 src/pages/grid.py:191 src/pages/songs.blp:291
+msgid "Asc_ending"
+msgstr ""
+
+#: src/pages/detail.py:676 src/pages/grid.py:191 src/pages/songs.blp:297
+msgid "Desce_nding"
+msgstr ""
+
+#: src/pages/detail.py:948 src/pages/songs.py:602
+#, python-brace-format
+msgid "{shown} of {total} song"
+msgid_plural "{shown} of {total} songs"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: a button that adds an album not out yet to the library (its
+#. songs come as they are released); keep it short.
+#: src/pages/detail.py:1454
+msgid "Pre-Add"
+msgstr ""
+
+#. Translators: the button that adds an album or a playlist to the library.
+#: src/pages/detail.py:1456 src/pages/detail.blp:250
+msgid "Add"
+msgstr ""
+
+#: src/pages/detail.py:1458
+msgid "Pre-Add to Library"
+msgstr ""
+
+#: src/pages/detail.py:1458 src/pages/detail.blp:245
+msgid "Add to Library"
+msgstr ""
+
+#: src/pages/detail.py:1541
+msgid "Add songs from your library or Apple Music"
+msgstr ""
+
+#: src/pages/detail.py:1541
+msgid "Add Songs…"
+msgstr ""
+
+#. Translators: the heading over one disc's songs on an album's page: {number}
+#. is the disc's number ("Disc 2").
+#: src/pages/detail.py:1576
+#, python-brace-format
+msgid "Disc {number}"
+msgstr ""
+
+#. Translators: in place of the Add button once the album or playlist is in
+#. the library.
+#: src/pages/detail.blp:275
+msgid "In Library"
+msgstr ""
+
+#: src/pages/grid.py:184
+msgid "Date A_dded"
+msgstr ""
+
+#: src/pages/grid.py:192 src/pages/songs.blp:305
+msgid "_Favourites Only"
+msgstr "_Favorites Only"
+
+#: src/pages/grid.py:426 src/pages/grid.py:428 src/pages/songs.blp:41
+#: src/pages/songs.blp:46
+msgid "Sort and Filter"
+msgstr ""
+
+#: src/pages/grid.py:456 src/pages/shelves.py:131
+msgid "Start the engine to load this page"
+msgstr ""
+
+#: src/pages/grid.py:457 src/pages/shelves.py:132
+msgid "This page appears once you sign in to Apple Music"
+msgstr ""
+
+#: src/pages/grid.py:458 src/pages/shelves.py:133
+msgid "Could Not Load This Page"
+msgstr ""
+
+#: src/pages/grid.py:465 src/pages/home.blp:16 src/pages/shelves.blp:16
+msgid "Refresh"
+msgstr ""
+
+#: src/pages/home.blp:36
+msgid "Nothing to Show Yet"
+msgstr ""
+
+#: src/pages/home.blp:37
+msgid "Recommendations and the music you play appear here"
+msgstr ""
+
+#: src/pages/charts.py:122
+msgid "No Charts"
+msgstr ""
+
+#: src/pages/charts.py:123
+msgid "Apple Music has no charts to show right now"
+msgstr ""
+
+#: src/pages/replay.py:55 src/pages/replay.py:56 src/pages/songs.blp:212
+#: src/widgets/track_row.py:420
+msgid "Year"
+msgstr ""
+
+#: src/pages/replay.py:124
+msgid "No Replay Yet"
+msgstr ""
+
+#: src/pages/replay.py:125
+msgid ""
+"Replay appears once Apple Music has enough of your listening history for the "
+"year"
+msgstr ""
+
+#: src/pages/editorial.py:37
+msgid "This collection has nothing to show right now"
+msgstr ""
+
+#: src/pages/editorial.py:50 src/pages/editorial.py:62
+msgid "This page has nothing to show right now"
+msgstr ""
+
+#: src/pages/radio.py:30
+msgid "No Stations"
+msgstr ""
+
+#: src/pages/radio.py:31
+msgid "Apple Music has no radio to show right now"
+msgstr ""
+
+#. Translators: the Search page's filter: results of every kind.
+#: src/pages/search.py:80
+msgid "All Results"
+msgstr ""
+
+#: src/pages/search.py:83 src/remote.py:67
+msgid "Stations"
+msgstr ""
+
+#: src/pages/search.py:83 src/remote.py:68
+msgid "Radio Shows"
+msgstr ""
+
+#: src/pages/search.py:83 src/remote.py:69
+msgid "Curators"
+msgstr ""
+
+#: src/pages/search.py:91
+msgid "Station"
+msgstr ""
+
+#: src/pages/search.py:91
+msgid "Music Video"
+msgstr ""
+
+#: src/pages/search.py:92
+msgid "Category"
+msgstr ""
+
+#: src/pages/search.py:245
+msgid "Sign In to Search Apple Music"
+msgstr ""
+
+#: src/pages/search.py:246
+msgid "Apple Music’s catalogue is searched once you sign in"
+msgstr "Apple Music’s catalog is searched once you sign in"
+
+#: src/pages/search.py:247
+msgid "Search Failed"
+msgstr ""
+
+#. Translators: the first shelf of a search's results: Apple's best few hits of any kind.
+#: src/pages/search.py:302 src/remote.py:61
+msgid "Top Results"
+msgstr ""
+
+#: src/pages/search.py:428 src/pages/search.py:754 src/pages/search.blp:146
+msgid "Search Your Library"
+msgstr ""
+
+#. Translators: said to a screen reader when a search's results show: how many
+#. shelves of them (Top Results, Artists, Albums…) there are.
+#: src/pages/search.py:608
+#, python-brace-format
+msgid "{count} shelf of results"
+msgid_plural "{count} shelves of results"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pages/search.py:750
+msgid "No Suggestions"
+msgstr ""
+
+#: src/pages/search.py:750
+msgid "Press Enter to search anyway"
+msgstr ""
+
+#: src/pages/search.py:752
+msgid "Type to search the catalogue"
+msgstr "Type to search the catalog"
+
+#: src/pages/search.py:755
+msgid "Songs, artists, albums and playlists in your library"
+msgstr ""
+
+#: src/pages/search.blp:79 src/pages/search.blp:82
+msgid "Show Results Of"
+msgstr ""
+
+#: src/pages/search.blp:182
+msgid "Recently Searched"
+msgstr ""
+
+#: src/pages/search.blp:193 src/widgets/queue.py:545
+msgid "Clear"
+msgstr ""
+
+#: src/pages/search.blp:195
+msgid "Clear Recently Searched"
+msgstr ""
+
+#: src/pages/search.blp:224
+msgid "Browse Categories"
+msgstr ""
+
+#: src/pages/search.blp:358 src/widgets/shelf.blp:83
+#: src/widgets/song_shelf.blp:62
+msgid "See All"
+msgstr ""
+
+#. Translators: the subtitle of a search's See All page: what was searched for.
+#: src/pages/search_all.py:48
+#, python-brace-format
+msgid "“{term}”"
+msgstr ""
+
+#: src/pages/shelves.py:376
+msgid "This category has nothing to show right now"
+msgstr ""
+
+#: src/pages/new.py:22
+msgid "Nothing New"
+msgstr ""
+
+#: src/pages/new.py:23
+msgid "Apple Music has nothing new to show right now"
+msgstr ""
+
+#: src/pages/made_for_you.py:24
+msgid "Nothing Made for You Yet"
+msgstr ""
+
+#: src/pages/made_for_you.py:25
+msgid "Your mixes and stations appear here once Apple Music has made some"
+msgstr ""
+
+#: src/pages/songs.py:243
+msgid "Songs in your library appear here"
+msgstr ""
+
+#: src/pages/songs.py:604
+#, python-brace-format
+msgid "{total} song"
+msgid_plural "{total} songs"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pages/songs.blp:180 src/widgets/track_row.py:415
+msgid "Title"
+msgstr ""
+
+#: src/pages/songs.blp:220 src/widgets/track_row.py:431
+msgid "Time"
+msgstr ""
+
+#: src/widgets/engine_status.py:170
+msgid "Not Available in the Demo"
+msgstr ""
+
+#: src/widgets/engine_status.py:172
+msgid "This page needs Apple Music; the demo library is offline"
+msgstr ""
+
+#: src/widgets/engine_status.py:179
+msgid "Sign In to Apple Music"
+msgstr ""
+
+#: src/widgets/engine_status.py:182
+msgid "Engine Not Running"
+msgstr ""
+
+#: src/widgets/engine_status.py:184
+msgid "Start Engine"
+msgstr ""
+
+#: src/widgets/engine_status.py:186
+msgid "Something Went Wrong"
+msgstr ""
+
+#: src/widgets/engine_status.py:188 src/widgets/search_list.py:123
+msgid "Try Again"
+msgstr ""
+
+#: src/widgets/context_menu.py:390
+#, python-brace-format
+msgid "{count} Song"
+msgid_plural "{count} Songs"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: a song row's description in the selection mode: whether it is
+#. one of the songs selected.
+#: src/widgets/selection_mode.py:68
+msgid "Selected"
+msgstr ""
+
+#: src/widgets/selection_mode.py:69
+msgid "Not Selected"
+msgstr ""
+
+#: src/widgets/selection_mode.py:85
+msgid "Select Songs"
+msgstr ""
+
+#: src/widgets/selection_mode.py:86
+#, python-brace-format
+msgid "{count} Selected"
+msgid_plural "{count} Selected"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/widgets/selection_mode.py:116 src/widgets/selection_mode.py:117
+msgid "Select"
+msgstr ""
+
+#: src/widgets/selection_mode.py:123
+msgid "Select _All"
+msgstr ""
+
+#: src/widgets/selection_mode.py:124
+msgid "Select _None"
+msgstr ""
+
+#: src/widgets/selection_mode.py:159 src/widgets/selection_mode.py:350
+msgid "_Remove from Playlist"
+msgstr ""
+
+#. Translators: said to a screen reader as the selection
+#. mode starts with nothing selected yet.
+#: src/widgets/selection_mode.py:322
+msgid "Selection mode"
+msgstr ""
+
+#: src/widgets/explore.py:46
+msgid "Opens in the web browser"
+msgstr ""
+
+#. Translators: the accessible name of a row of links without a heading of its own on
+#. the New page (Apple's genres).
+#: src/widgets/explore.py:62
+msgid "Links"
+msgstr ""
+
+#: src/widgets/shelf.py:138 src/widgets/shelf.blp:58
+#: src/widgets/song_shelf.blp:39
+msgid "Scroll Left"
+msgstr ""
+
+#: src/widgets/shelf.py:138 src/widgets/shelf.blp:70
+#: src/widgets/song_shelf.blp:51
+msgid "Scroll Right"
+msgstr ""
+
+#: src/widgets/suggested_songs.py:49
+msgid "Add to Playlist"
+msgstr ""
+
+#: src/widgets/suggested_songs.py:81
+msgid "Previewing"
+msgstr ""
+
+#. Translators: the line under a playlist's Suggested Songs.
+#: src/widgets/suggested_songs.py:185
+msgid "Based on what’s in this playlist"
+msgstr ""
+
+#: src/widgets/suggested_songs.py:191
+msgid "Suggest Other Songs"
+msgstr ""
+
+#. Translators: a song row's description while that song is the one playing.
+#: src/widgets/track_row.py:56 src/widgets/queue.py:518
+msgid "Playing"
+msgstr ""
+
+#. Translators: a track of a pre-release album that is not out yet: its row's
+#. tooltip and description (it cannot be played).
+#: src/widgets/track_row.py:59
+msgid "Not yet released"
+msgstr ""
+
+#: src/widgets/lyrics.py:345
+msgid "Lyrics for the song playing appear here"
+msgstr ""
+
+#: src/widgets/lyrics.py:347 src/widgets/lyrics.py:350
+msgid "No Lyrics"
+msgstr ""
+
+#: src/widgets/lyrics.py:348
+msgid "Lyrics are not available for live radio"
+msgstr ""
+
+#: src/widgets/lyrics.py:351
+msgid "No lyrics are available for this song"
+msgstr ""
+
+#: src/widgets/now_playing.blp:44
+msgid "Close"
+msgstr ""
+
+#: src/widgets/now_playing.blp:111
+msgid "Fullscreen"
+msgstr ""
+
+#: src/widgets/now_playing.blp:125 src/widgets/now_playing.blp:130
+#: src/widgets/fullscreen_player.blp:106 src/widgets/fullscreen_player.blp:111
+msgid "Translation and Pronunciation"
+msgstr ""
+
+#: src/widgets/now_playing.py:449
+msgid "Show _Translations"
+msgstr ""
+
+#: src/widgets/now_playing.py:451
+msgid "Show _Pronunciations"
+msgstr ""
+
+#: src/widgets/fullscreen_player.blp:48
+msgid "Leave Fullscreen"
+msgstr ""
+
+#: src/widgets/mini_player.blp:39
+msgid "Return to Main Window"
+msgstr ""
+
+#: src/widgets/mini_player.py:275
+msgid "Mini Player"
+msgstr ""
+
+#. Translators: the heading over the songs queued after the one playing, in Up Next
+#: src/widgets/queue.py:521
+msgid "Playing Next"
+msgstr ""
+
+#: src/widgets/queue.py:524
+msgid "Nothing Queued"
+msgstr ""
+
+#: src/widgets/queue.py:525
+msgid "Play something to fill Up Next"
+msgstr ""
+
+#: src/widgets/queue.py:531 src/widgets/queue.py:536 src/widgets/queue.py:603
+msgid "History"
+msgstr ""
+
+#: src/widgets/queue.py:546
+msgid "Remove Everything After the Song Playing"
+msgstr ""
+
+#: src/widgets/queue.py:610
+msgid "No History"
+msgstr ""
+
+#: src/widgets/queue.py:611
+msgid "Songs played before this one in the queue show here"
+msgstr ""
+
+#: src/widgets/queue.py:716
+msgid "Autoplay Is Not Available Here"
+msgstr ""
+
+#: src/widgets/queue.py:718
+msgid "Autoplay Is Off While Repeat Is On"
+msgstr ""
+
+#: src/widgets/queue.py:1118
+msgid "Up Next cleared"
+msgstr ""
+
+#. Translators: announced as the volume keys change the volume; {percent} is a whole
+#. number ("70").
+#: src/widgets/transport.py:71
+#, python-brace-format
+msgid "Volume {percent}%"
+msgstr ""
+
+#. Translators: announced as a live radio station starts; {title} is its name.
+#: src/widgets/transport.py:229
+#, python-brace-format
+msgid "Now playing live: {title}"
+msgstr ""
+
+#: src/widgets/transport.py:231
+#, python-brace-format
+msgid "Now playing: {title} by {artist}"
+msgstr ""
+
+#: src/widgets/transport.py:232
+#, python-brace-format
+msgid "Now playing: {title}"
+msgstr ""
+
+#: src/widgets/transport.py:245
+msgid "Stop"
+msgstr ""
+
+#: src/widgets/transport.py:247
+msgid "Pause"
+msgstr ""
+
+#. Translators: the position slider's value as a screen reader hears it: {position}
+#. is the time played ("1:05"), {duration} the song's length ("3:40").
+#: src/widgets/transport.py:315
+#, python-brace-format
+msgid "{position} of {duration}"
+msgstr ""
+
+#: src/widgets/transport.py:477
+msgid "Repeat All"
+msgstr ""
+
+#: src/widgets/transport.py:478
+msgid "Repeat One"
+msgstr ""
+
+#. Translators: the volume's level as a screen reader hears it: {percent} is a
+#. whole number ("70%").
+#: src/widgets/transport.py:533
+#, python-brace-format
+msgid "{percent}%"
+msgstr ""
+
+#. Translators: what a screen reader says for a song's row is its title, then its
+#. artist and album, each added to what comes before it with this, e.g.
+#. "Song, Artist" then "Song, Artist, Album".
+#: src/widgets/labels.py:33
+#, python-brace-format
+msgid "{label}, {part}"
+msgstr ""
+
+#. Translators: added to what a screen reader says for a song with explicit lyrics.
+#: src/widgets/labels.py:35
+#, python-brace-format
+msgid "{label}, explicit"
+msgstr ""
+
+#. Translators: added to what a screen reader says for a song, album, playlist or
+#. music video the user has marked as a favourite (the heart it shows).
+#: src/widgets/labels.py:38
+#, python-brace-format
+msgid "{label}, favourite"
+msgstr "{label}, favorite"
+
+#. Translators: what a screen reader says for a chart's entry: its place in the
+#. chart, then the tile's or the song's words, e.g. "Number 1, Song, Artist".
+#: src/widgets/labels.py:41
+#, python-brace-format
+msgid "Number {rank}, {label}"
+msgstr ""
+
+#: src/widgets/search_list.py:34
+#, python-brace-format
+msgid "{count} artist"
+msgid_plural "{count} artists"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/widgets/search_list.py:36
+#, python-brace-format
+msgid "{count} music video"
+msgid_plural "{count} music videos"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/widgets/search_list.py:37
+#, python-brace-format
+msgid "{count} station"
+msgid_plural "{count} stations"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/widgets/search_list.py:38
+#, python-brace-format
+msgid "{count} radio show"
+msgid_plural "{count} radio shows"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/widgets/search_list.py:39
+#, python-brace-format
+msgid "{count} curator"
+msgid_plural "{count} curators"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/widgets/search_list.py:41
+#, python-brace-format
+msgid "{count} result"
+msgid_plural "{count} results"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/widgets/search_list.py:261
+msgid "Could not load more results"
+msgstr ""
+
+#: src/widgets/search_list.py:264
+msgid "Loading more results…"
+msgstr ""
+
+#. Translators: the Charts page's genre menu, the first entry: the charts of every genre.
+#: src/charts.py:41
+msgid "All Genres"
+msgstr ""
+
+#: src/home.py:97 src/radio.py:29
+msgid "Recently Played"
+msgstr ""
+
+#. Translators: a shelf on the Home page, as Apple Music names it: the albums,
+#. playlists and stations played most lately.
+#: src/library.py:136
+msgid "Heavy Rotation"
+msgstr ""
+
+#. Translators: in place of the name of an album that has none.
+#: src/library.py:144
+msgid "Unknown Album"
+msgstr ""
+
+#. Translators: in place of the name of an artist that has none.
+#: src/library.py:146
+msgid "Unknown Artist"
+msgstr ""
+
+#. Translators: an album's or a playlist's songs, then their total time: "12 songs, 43 min".
+#: src/library.py:234
+#, python-brace-format
+msgid "{songs}, {duration}"
+msgstr ""
+
+#. Translators: a total time in hours and minutes, abbreviated: "1 hr 5 min".
+#: src/library.py:244
+#, python-brace-format
+msgid "{hours} hr {minutes} min"
+msgstr ""
+
+#. Translators: a total time in whole hours, abbreviated: "2 hr".
+#: src/library.py:247
+#, python-brace-format
+msgid "{hours} hr"
+msgid_plural "{hours} hr"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: a total time in minutes, abbreviated: "43 min".
+#: src/library.py:249
+#, python-brace-format
+msgid "{minutes} min"
+msgid_plural "{minutes} min"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: the title of a shelf of Apple Music's recommendations that has none.
+#: src/library.py:265
+msgid "For You"
+msgstr ""
+
+#: src/remote.py:75
+msgid "Top Songs"
+msgstr ""
+
+#: src/remote.py:76
+msgid "Top Artists"
+msgstr ""
+
+#: src/remote.py:77
+msgid "Top Albums"
+msgstr ""
+
+#. Translators: the Replay page's shelf of Apple's playlist of the songs the account
+#. played most in each year, one a year.
+#: src/remote.py:80
+msgid "Replay Playlists"
+msgstr ""
+
+#: src/remote.py:81
+msgid "Top Playlists"
+msgstr ""
+
+#: src/remote.py:82
+msgid "Top Music Videos"
+msgstr ""
+
+#. Translators: the Charts page's shelf of Apple's daily playlists of the hundred songs
+#. played most, the world's and each country's.
+#: src/remote.py:85
+msgid "Daily Top 100"
+msgstr ""
+
+#. Translators: the Charts page's shelf of Apple's playlists of the songs played most in
+#. each of a number of cities.
+#: src/remote.py:88
+msgid "City Charts"
+msgstr ""
+
+#. Translators: the shelf of banners at the top of the New page.
+#: src/remote.py:305
+msgid "Featured"
+msgstr ""
+
+#. Translators: the second line of a radio show's card among a search's
+#. results, when Apple names no host.
+#: src/remote.py:335
+msgid "Radio Show"
+msgstr ""
+
+#. Translators: the second line of a curator's card among a search's results
+#. (an editor of playlists: Apple's own, or another's).
+#: src/remote.py:338
+msgid "Curator"
+msgstr ""
+
+#. Translators: the Replay page's year menu, while Apple names no year for the latest
+#. Replay: the latest one, whichever year it is of.
+#: src/replay.py:43
+msgid "Latest"
+msgstr ""
+
+#. Translators: the Replay page's title: the account's year in music, of that year.
+#: src/replay.py:62
+#, python-brace-format
+msgid "Replay {year}"
+msgstr ""
+
+#. Translators: the Replay page's title while it names no year.
+#: src/replay.py:64
+msgid "Replay"
+msgstr ""
+
+#. Translators: when a playlist was last changed, under its title.
+#: src/release.py:162
+msgid "Updated today"
+msgstr ""
+
+#. Translators: when a playlist was last changed, under its title.
+#: src/release.py:165
+msgid "Updated yesterday"
+msgstr ""
+
+#. Translators: when a playlist was last changed, under its title, within the past
+#. week: {weekday} is the day's name ("Updated Monday").
+#: src/release.py:169
+#, python-brace-format
+msgid "Updated {weekday}"
+msgstr ""
+
+#. Translators: a playlist's last change this year, as GLib.DateTime.format() takes
+#. it: "%-d %B" is "3 March".
+#: src/release.py:173
+msgctxt "playlist updated date"
+msgid "%-d %B"
+msgstr "%B %-d"
+
+#. Translators: a playlist's last change in another year, as GLib.DateTime.format()
+#. takes it: "%-d %B %Y" is "3 March 2025".
+#: src/release.py:177
+msgctxt "playlist updated date"
+msgid "%-d %B %Y"
+msgstr "%B %-d, %Y"
+
+#. Translators: when a playlist was last changed, under its title: {date} is a date
+#. ("Updated 3 March").
+#: src/release.py:180
+#, python-brace-format
+msgid "Updated {date}"
+msgstr ""
+
+#. Translators: when a pre-release album (not out yet) comes out, its date unknown.
+#: src/release.py:195
+msgid "Coming Soon"
+msgstr ""
+
+#. Translators: when a pre-release album (not out yet) comes out: {date} is its release
+#. date ("Coming 4 December 2026").
+#: src/release.py:198
+#, python-brace-format
+msgid "Coming {date}"
+msgstr ""
+
+#. Translators: an album's release date under its songs, in full, as
+#. GLib.DateTime.format() takes it: "%-d %B %Y" is "24 September 2026".
+#: src/release.py:268
+msgctxt "album release date"
+msgid "%-d %B %Y"
+msgstr "%B %-d, %Y"
+
+#. Translators: part of an album's total time under its songs: "1 hour".
+#: src/release.py:283
+#, python-brace-format
+msgid "{hours} hour"
+msgid_plural "{hours} hours"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: part of an album's total time under its songs: "43 minutes".
+#: src/release.py:287
+#, python-brace-format
+msgid "{minutes} minute"
+msgid_plural "{minutes} minutes"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Translators: what joins the parts of an album's length under its songs: "12 songs,
+#. 1 hour, 5 minutes".
+#: src/release.py:291
+msgctxt "album length"
+msgid ", "
+msgstr ""
+
+#. Translators: the shelf of an album's artist's other albums, its artist unknown.
+#: src/release.py:320
+msgid "More By the Artist"
+msgstr ""
+
+#. Translators: the shelf of an album's artist's other albums: "More By Taylor Swift".
+#: src/release.py:322
+#, python-brace-format
+msgid "More By {artist}"
+msgstr ""
+
+#. Translators: the shelf of the other playlists by a playlist's curator, the
+#. curator unknown.
+#: src/release.py:329
+msgid "More By the Curator"
+msgstr ""
+
+#. Translators: the shelf of the other playlists by a playlist's curator: "More By
+#. Apple Music Jazz".
+#: src/release.py:332
+#, python-brace-format
+msgid "More By {curator}"
+msgstr ""
+
+#. Translators: the shelf of the artists a playlist's songs are by.
+#: src/release.py:335
+msgid "Featured Artists"
+msgstr ""
+
+#. Translators: the shelf of an album's other editions (deluxe, remastered).
+#: src/release.py:337
+msgid "Other Versions"
+msgstr ""
+
+#. Translators: the shelf of the playlists an album's songs are on.
+#: src/release.py:341
+msgid "Featured On"
+msgstr ""
+
+#. Translators: the shelf of albums like the one shown.
+#: src/release.py:343
+msgid "You Might Also Like"
+msgstr ""

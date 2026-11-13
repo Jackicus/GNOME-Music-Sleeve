@@ -70,7 +70,7 @@ from ..player import NowPlaying, format_time
 from ..remote import fetch_remote, on_disk, remote_art_path, sized_url
 from . import context_menu, dnd
 from .labels import track_label
-from .util import focus_position, weak_method
+from .util import focus_position, mirror_start, weak_method
 
 # The keys that remove the focused row's entry: the shortcut's, and the keypad's.
 REMOVE_KEYS = f'{shortcuts.QUEUE_REMOVE}|KP_Delete'
@@ -439,6 +439,7 @@ class QueueRow(Gtk.Box):
                                               valign=Gtk.Align.CENTER)
         self.duration_label.add_css_class('numeric')
         self.duration_label.add_css_class('dimmed')
+        mirror_start(self.artist_label, self.duration_label)
         self.append(self.duration_label)
 
     @property

@@ -30,7 +30,8 @@ new version instead.
    Nothing detects this: the version stays where it is while work lands on `main`, and moves
    only here, as the first step of releasing.
 5. Add a `<release version="…" date="…">` at the top of the metainfo's `<releases>`, with a
-   short description: a `<p>` and a `<ul>`.
+   short description: a `<p>` and a `<ul>`. Then bring `po/en_US.po` up to date, the new
+   notes with it (CONTRIBUTING.md, Translating, American English).
 6. Pin the metainfo's screenshot URLs to the tag: `/main/` becomes `/v<version>/` in each
    `<image>`, so an installed copy keeps showing the shots it was released with whatever
    later happens to the files on `main`.

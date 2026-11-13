@@ -25,6 +25,17 @@ class MirrorStartTest(unittest.TestCase):
         mirror_start(start, end)
         self.assertEqual((start.get_xalign(), end.get_xalign()), (1, 0))
 
+    def test_an_up_next_row_mirrors_its_artist_and_time(self):
+        from gi.repository import Gtk
+
+        from applemusic.widgets.queue import QueueRow
+
+        Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)
+        self.addCleanup(Gtk.Widget.set_default_direction, Gtk.TextDirection.LTR)
+        row = QueueRow(view=None)
+        self.assertEqual((row.artist_label.get_xalign(), row.duration_label.get_xalign()),
+                         (1, 0))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -69,7 +69,8 @@ is, is in `docs/decisions.md`.
 - [ ] Report to GTK that a popover menu keeps its model's sections after it is freed (found
       for #541, `docs/notes.md`, Memory; the app shares its Sort By sections instead, but a
       menu built each time it opens still leaves its sections behind).
-- [ ] Translations: the strings are ready (`po/`), no languages yet.
+- [ ] Translations: the strings are ready (`po/`, CONTRIBUTING.md's Translating) and en_US
+      loads; other languages are #645.
 - [ ] The internal names that still say Apple Music, none of them user-visible: the
       `applemusic` Python package, the `AppleMusic*` GType names, the `APPLE_MUSIC_*`
       environment variables, and the cache and Chrome profile directories. Left alone on
