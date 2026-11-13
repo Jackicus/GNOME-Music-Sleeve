@@ -40,37 +40,37 @@ rest are at the top level (`folders`, whose "root" entry lists the top level).
 sections.videos holds six invented music videos with 16:9 artwork, as Apple's
 is (the thumbnails 320 x 180). Each hand-written artist also gets the page
 Apple's catalog would answer for it (artists/<catalog id>.json, the shape
-normalize.artist_page() gives: its top songs, latest release and shelves, made
+item_pages.artist_page() gives: its top songs, latest release and shelves, made
 of the demo's own albums, songs and videos and a few invented singles,
 playlists, radio episodes and interviews, and for every third artist an invented
 3:1 banner drawn here, the first artist's among them), each hand-written album what the
 catalog would show under its tracks (albums/<catalog id>.json, the shape
-normalize.album_page() gives: its release date, copyright and label, and its
+item_pages.album_page() gives: its release date, copyright and label, and its
 shelves, made of the demo's own albums, videos and playlists and an invented
 edition or two), each catalog playlist of the artists' pages what the catalog would
-show under its tracks (playlists/<id>.json, normalize.playlist_page()'s shape: an
+show under its tracks (playlists/<id>.json, item_pages.playlist_page()'s shape: an
 invented Apple curator, its page in categories/, and Featured Artists, More By the
 curator and You Might Also Like of the demo's own artists and playlists), which the
 demo engine answers from, and each playlist the songs Apple would suggest adding to it
-(suggestions/<playlist id>.json, normalize.playlist_suggestions()'s shape:
+(suggestions/<playlist id>.json, item_pages.playlist_suggestions()'s shape:
 twenty-four of the demo's own songs it does not hold), and the Radio page's answer
-(radio.json, normalize.radio_shelves()'s shape: invented live stations, shows, episodes
+(radio.json, editorial.radio_shelves()'s shape: invented live stations, shows, episodes
 and genre stations beside the demo's own albums and videos, each show's page in
 categories/, all but the last under an invented banner), the catalog the demo's search
 answers from (demo-search.json: its artists, albums, songs, playlists, videos and
 stations, the Radio page's shows, and
 invented curators with their pages in categories/), and the Charts page's
-(charts.json, normalize.charts_shelves()'s shape: the demo's own songs, albums,
+(charts.json, charts.charts_shelves()'s shape: the demo's own songs, albums,
 playlists and videos ranked, and invented Daily Top 100 and City Charts playlists of
 its songs, for invented places; invented genres in genres.json, each genre's charts of
 the demo's albums of it in charts/<id>.json), the Replay page's (replay.json and
-replay/<year>.json, normalize.replay_page()'s shape: the demo's own songs, artists and
+replay/<year>.json, charts.replay_page()'s shape: the demo's own songs, artists and
 albums ranked for each invented year, and an invented Replay playlist of its songs for each
 year), the New page's (browse.json,
-normalize.editorial_shelves()'s shape: invented banners over the demo's own albums and
+editorial.editorial_shelves()'s shape: invented banners over the demo's own albums and
 playlists, its shelves, and More to Explore's invented links, each link's page in rooms/,
 groupings/ or multirooms/), and each hand-written album's songs' credits (credits/<catalog
-id>.json, normalize.song_credits()'s shape: invented performers, writers, producers and
+id>.json, item_pages.song_credits()'s shape: invented performers, writers, producers and
 engineers; the last album's last song none). Last it writes .demo-stamp, the
 record of what made it (demo_stamp.py), by which the harness and demo.sh know an out-of-date
 build/demo and write it again. The other keys the app's sync adds
@@ -108,7 +108,7 @@ if 'applemusic' not in sys.modules:
     sys.modules['applemusic'] = _module
     _spec.loader.exec_module(_module)
 
-from applemusic.backend import config, normalize  # noqa: E402
+from applemusic.backend import art_cache, banner_art, charts, config  # noqa: E402
 
 # scripts/ is on the path when this runs as a script, not when a test loads it by its file.
 if str(ROOT / 'scripts') not in sys.path:
@@ -196,7 +196,7 @@ DEMO_UPCOMING = ('Lanterns Over the Reef', '2030-12-04', [
     ('Underneath the Pier Lights', False), ('Tidewater Hymn', False),
     ('Reef at Dusk', False)])
 # The people of the hand-written albums' songs' credits beside their artists (credits/), and
-# the roles they are credited with, by Apple's kinds of credit (normalize.song_credits).
+# the roles they are credited with, by Apple's kinds of credit (item_pages.song_credits).
 DEMO_CREDIT_PEOPLE = ['Ada Brightwater', 'Bram Holloway', 'Cleo Ashdown', 'Dario Fenwick',
                       'Elin Marlowe', 'Felix Dunmore', 'Greta Sallow', 'Hugo Penrith',
                       'Ines Quarry', 'Jonah Thistle', 'Kira Wendle', 'Lars Okewood',
@@ -2218,17 +2218,17 @@ def _draw_one(job):
 
 def thumb_file(thumb_dir, art_path, wide=False):
     """The thumbnail of the cover at art_path in thumb_dir, named as a sync names it
-    (normalize.thumb_name(): a wide cover's, a video's, apart)."""
-    return os.path.join(thumb_dir, normalize.thumb_name(os.path.basename(art_path), wide))
+    (art_cache.thumb_name(): a wide cover's, a video's, apart)."""
+    return os.path.join(thumb_dir, art_cache.thumb_name(os.path.basename(art_path), wide))
 
 
 def draw_covers(covers, thumb_dir, thumb_size):
     """Draw each queued cover (draw_cover arguments) and its thumbnail (thumb_file(), in
-    normalize.thumb_box(): a wide cover's by its shorter edge, as a sync scales a video's) in
+    art_cache.thumb_box(): a wide cover's by its shorter edge, as a sync scales a video's) in
     thumb_dir: in this process for the usual few dozen, in a pool of processes (forked:
     there are no threads here) for a big generated library."""
     jobs = [(out_path, kwargs, thumb_file(thumb_dir, out_path, kwargs.get('wide', False)),
-             normalize.thumb_box(thumb_size, kwargs.get('wide', False)))
+             art_cache.thumb_box(thumb_size, kwargs.get('wide', False)))
             for out_path, kwargs in covers]
     if len(jobs) < 200:
         for job in jobs:
@@ -2270,7 +2270,7 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
     os.makedirs(art_dir, exist_ok=True)
     os.makedirs(thumb_dir, exist_ok=True)
     # Before drawing: a changed thumbnail size wipes thumb/.
-    normalize.apply_art_sizes(out_dir, cover_size, thumb_size)
+    art_cache.apply_art_sizes(out_dir, cover_size, thumb_size)
 
     # The covers are drawn together at the end (draw_covers), in parallel when
     # there are many; each draw_cover call below only queues one.
@@ -2803,8 +2803,8 @@ def build_demo_library(out_dir, cover_size=config.COVER_SIZE, thumb_size=config.
 
 def build_search_catalog(out_dir, artists, albums, playlists, videos, stations, draw_cover,
                          thumb_for, cover_size, generated):
-    """Write demo-search.json (normalize.demo_search_path()): the invented catalog the demo
-    engine searches (Engine.search, engine.demo_search()), {shelves: [{key, items}]} by search
+    """Write demo-search.json (cache_files.demo_search_path()): the invented catalog the demo
+    engine searches (Engine.search, catalog.demo_search()), {shelves: [{key, items}]} by search
     kind: the hand-written artists, their albums and songs, the playlists, music videos and
     stations, the Radio page's shows (radio.json, written first: their pages are there) and
     invented curators drawn here, each Apple-like one with its page (categories/<id>.json:
@@ -2880,7 +2880,7 @@ def build_search_catalog(out_dir, artists, albums, playlists, videos, stations, 
 
 def build_suggestions(out_dir, playlists, albums, generated):
     """Write suggestions/<playlist id>.json for each playlist: the songs Apple would suggest
-    adding to it (normalize.playlist_suggestions()'s shape, kept as the engine keeps it),
+    adding to it (item_pages.playlist_suggestions()'s shape, kept as the engine keeps it),
     SUGGESTIONS of the library's songs it does not hold, its genre's first: enough for
     twelve shown and spares to fill places and step through on Refresh."""
     rnd = random.Random(37)
@@ -2916,7 +2916,7 @@ def build_suggestions(out_dir, playlists, albums, generated):
 def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums, videos,
                        draw_cover, thumb_for, cover_size, generated):
     """Write artists/<catalog id>.json for each hand-written artist: the page the catalog would
-    answer (normalize.artist_page()'s shape, kept as the engine keeps it, stamped `cached`
+    answer (item_pages.artist_page()'s shape, kept as the engine keeps it, stamped `cached`
     with the library's date), made of the artist's albums, songs and videos in the library,
     and invented singles, playlists, radio episodes and interviews drawn here. Every other
     artist, the first among them, hosts a radio show (Radio Shows: a category tile, as
@@ -3147,7 +3147,7 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
         with open(os.path.join(pages_dir, f'{catalog_id}.json'), 'w', encoding='utf-8') as f:
             json.dump(page, f, indent=2)
         if coming is not None:
-            # What the catalog shows under its tracks (normalize.album_page()'s shape): its
+            # What the catalog shows under its tracks (item_pages.album_page()'s shape): its
             # date to come, its label, and More By.
             label = DEMO_LABELS[index % len(DEMO_LABELS)]
             album_page = {
@@ -3170,7 +3170,7 @@ def build_artist_pages(out_dir, artists_data, artists, artist_albums_map, albums
 
 def build_playlist_pages(out_dir, catalog_playlists, generated):
     """Write playlists/<id>.json for each catalog playlist of the artists' pages: what the
-    catalog would answer for the rest of its page (normalize.playlist_page()'s shape, kept as
+    catalog would answer for the rest of its page (item_pages.playlist_page()'s shape, kept as
     the engine keeps it, stamped `cached` with the library's date): its curator, an invented
     Apple curator, Harbourlight <genre>, whose page is written in categories/<id>.json (its
     playlists), and its shelves: Featured Artists (the artist and the two after them), More
@@ -3224,7 +3224,7 @@ def build_playlist_pages(out_dir, catalog_playlists, generated):
 def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums, videos,
                       playlists, draw_cover, thumb_for, cover_size, generated):
     """Write albums/<catalog id>.json for each hand-written album: what the catalog would
-    answer for the rest of its page (normalize.album_page()'s shape, kept as the engine keeps
+    answer for the rest of its page (item_pages.album_page()'s shape, kept as the engine keeps
     it, stamped `cached` with the library's date): its release date, copyright and label,
     and its shelves, made of the library's own albums, videos and playlists (their pages the
     library's) and an invented deluxe or remastered edition or two drawn here."""
@@ -3308,7 +3308,7 @@ def build_album_pages(out_dir, artists_data, artists, artist_albums_map, albums,
 
 def build_credits(out_dir, albums, generated):
     """Write credits/<catalog id>.json for each song of the hand-written albums: the credits
-    Apple would answer for it (normalize.song_credits()'s shape, kept as the engine keeps it,
+    Apple would answer for it (item_pages.song_credits()'s shape, kept as the engine keeps it,
     stamped `cached` with the library's date): its artist and a session player or two as
     Performers, its writers, its producers and engineers, all invented. The last album's last
     song has none (the dialog's No Credits)."""
@@ -3341,7 +3341,7 @@ def build_credits(out_dir, albums, generated):
 
 
 def build_recently_played(out_dir, items, generated):
-    """Write recent-played.json, Home's Recently Played (normalize.recently_played()'s shape,
+    """Write recent-played.json, Home's Recently Played (recommendations.recently_played()'s shape,
     kept as the engine keeps it, stamped `cached` with the library's date): the library's
     own albums, playlists and station, without their track lists, as Apple's answer has
     them."""
@@ -3354,12 +3354,12 @@ def build_recently_played(out_dir, items, generated):
 
 def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, cover_size,
                      generated):
-    """Write radio.json, the Radio page's answer (normalize.radio_shelves()'s shape, kept as
+    """Write radio.json, the Radio page's answer (editorial.radio_shelves()'s shape, kept as
     the engine keeps it, stamped `cached` with the library's date): the invented live
     stations first (`live`), then the latest episodes of the invented shows, the shows
     themselves (category tiles, as Apple's curators are), genre stations, albums and music
     videos from the library. Each show also gets the page its tile opens
-    (categories/<id>.json, normalize.category_page()'s shape: its host, its episodes, and an
+    (categories/<id>.json, editorial.category_page()'s shape: its host, its episodes, and an
     invented 3:1 banner drawn here for all but the last). No `events`
     and no `expires`: a demo built once cannot know what is on air when it is shown."""
     art_dir = os.path.join(out_dir, 'art')
@@ -3419,7 +3419,7 @@ def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, c
             draw_cover(out_path=path, banner={'palette': palette, 'figures': 1,
                                               'seed': 100 + number})
             width, height = BANNER_SIZE
-            banner = {'url': None, 'art': path, 'crop': normalize.CURATOR_BANNER_CROP,
+            banner = {'url': None, 'art': path, 'crop': banner_art.CURATOR_BANNER_CROP,
                       'width': width, 'height': height, 'color': palette[0]}
         page = {'id': show_id, 'title': show, 'host': host, 'banner': banner,
                 'shelves': [{'key': f'cat-{show_id}-episodes', 'title': 'Episodes',
@@ -3452,13 +3452,13 @@ def build_radio_page(out_dir, stations, albums, videos, draw_cover, thumb_for, c
 
 def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for, cover_size,
                       generated):
-    """Write charts.json, the Charts page's answer (normalize.charts_shelves()'s shape, kept
+    """Write charts.json, the Charts page's answer (charts.charts_shelves()'s shape, kept
     as the engine keeps it, stamped `cached` with the library's date): Top Songs (fifty of
     the library's songs, ranked, a list), Top Albums and Top Playlists (the library's own,
     ranked: their pages are the library's), the Daily Top 100 (the world's and invented
     countries') and City Charts (invented cities') as playlists of the library's songs with
     their tracks, so their pages open without the engine, and Top Music Videos. Beside it,
-    genres.json (DEMO_CHART_GENRES, normalize.catalog_genres()'s shape) and each genre's
+    genres.json (DEMO_CHART_GENRES, charts.catalog_genres()'s shape) and each genre's
     charts in charts/<id>.json: Top Songs and Top Albums of the library's albums of it."""
     rnd = random.Random(43)
     art_dir = os.path.join(out_dir, 'art')
@@ -3548,7 +3548,7 @@ def build_charts_page(out_dir, albums, playlists, videos, draw_cover, thumb_for,
 
 
 def chart_song(track, album):
-    """One of the library's songs as a chart's song (normalize.charts_shelves()'s, and
+    """One of the library's songs as a chart's song (charts.charts_shelves()'s, and
     Replay's Top Songs): its catalog id, its album's art and name."""
     return {'id': track['catalogId'], 'kind': 'song', 'title': track['title'],
             'subtitle': track['artist'], 'year': album['year'], 'genre': album['genre'],
@@ -3561,8 +3561,8 @@ def chart_song(track, album):
 
 def build_replay_page(out_dir, albums, artists, draw_cover, thumb_for, cover_size, generated):
     """Write replay.json, the Replay page's answer for the latest of DEMO_REPLAY_YEARS
-    (normalize.replay_page()'s shape, kept as the engine keeps it, with its `basis`,
-    normalize.REPLAY_SHAPE, and stamped `cached` with the library's date), and each earlier
+    (charts.replay_page()'s shape, kept as the engine keeps it, with its `basis`,
+    charts.REPLAY_SHAPE, and stamped `cached` with the library's date), and each earlier
     year's in replay/<year>.json: Top Songs (twenty-five
     of the library's songs, ranked, a list), Top Artists and Top Albums (ten of the
     library's own each, ranked: their pages are the library's), untitled for the app to name
@@ -3611,7 +3611,7 @@ def build_replay_page(out_dir, albums, artists, draw_cover, thumb_for, cover_siz
                 {'key': 'replay-playlists', 'title': '', 'chart': 'replay-playlists',
                  'items': playlists},
             ],
-            'basis': normalize.REPLAY_SHAPE,  # the shape the engine keeps it in
+            'basis': charts.REPLAY_SHAPE,  # the shape the engine keeps it in
             'cached': generated,
             'demo': True,  # invented: the demo engine answers only these
         }
@@ -3643,14 +3643,14 @@ DEMO_BANNER_SIZE = 1280  # an invented banner's width; 16:9, as Apple's wide cut
 
 
 def build_new_page(out_dir, albums, playlists, videos, stations, draw_cover, generated):
-    """Write browse.json, the New page's answer (normalize.editorial_shelves()'s shape, kept
+    """Write browse.json, the New page's answer (editorial.editorial_shelves()'s shape, kept
     as the engine keeps it, stamped `cached` with the library's date): the featured shelf of
     banners (DEMO_BANNERS: the library's own albums and playlists, so their pages are the
     library's, each with Apple's label, a line and, but the last, a 16:9 banner drawn here,
     on disk as `art` where Apple's would be a URL to fetch; `form: 'banners'`), then New
     Releases, playlists, stations and music videos of the library's, and `links`: More to
     Explore (DEMO_EXPLORE) and an untitled row of the albums' genres. Each link's page is
-    written too: rooms/<id>.json (normalize.editorial_room()'s shape), groupings/<id>.json
+    written too: rooms/<id>.json (editorial.editorial_room()'s shape), groupings/<id>.json
     (editorial_grouping()'s: the genres' pages too) and multirooms/<id>.json
     (editorial_multiroom()'s)."""
     art_dir = os.path.join(out_dir, 'art')

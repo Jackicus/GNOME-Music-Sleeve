@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""What a playlist's page shows of the songs Apple suggests adding to it (pages/detail.py).
+"""What a playlist's page shows of the songs Apple suggests adding to it
+(pages/detail_suggestions.py).
 
 music.apple.com shows six at a time out of an answer of twenty, fills an added song's place
 from the rest, and on Refresh asks again, telling Apple which songs it has offered and which
@@ -43,7 +44,7 @@ def basis(held):
 
 def preview_url(item):
     """The https address of Apple's preview of a suggested song Item (its `previewUrl`,
-    normalize.playlist_suggestions()), or None: a song without one plays in full."""
+    item_pages.playlist_suggestions()), or None: a song without one plays in full."""
     raw = item.raw if item is not None and isinstance(item.raw, dict) else {}
     url = raw.get('previewUrl')
     return url if isinstance(url, str) and url.startswith('https://') else None

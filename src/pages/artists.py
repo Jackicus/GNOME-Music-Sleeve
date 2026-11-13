@@ -365,6 +365,14 @@ class ArtistsPage(Adw.NavigationPage):
             else:
                 self.list_view.child_focus(Gtk.DirectionType.TAB_FORWARD)
 
+    def sidebar_headers(self):
+        """The header bars the window's Show Sidebar button goes in (the narrow layout's):
+        each state's own, and the list's, the pane a narrow window shows first (the
+        albums' pane has Back to the list there)."""
+        states = [first_descendant(self.stack.get_child_by_name(name), Adw.HeaderBar)
+                  for name in ('loading', 'empty')]
+        return [*states, self.list_header]
+
     def banner_host(self):
         """The Adw.ToolbarView the window's banners go in: the albums' (or the list's, while
         the list is the pane shown); the state's own while there is no list."""

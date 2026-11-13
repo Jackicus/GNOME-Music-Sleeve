@@ -31,8 +31,10 @@ sidebar.py's functions; this applies them to the widget. The AdwSidebar behaviou
 on is listed in .claude/rules/sidebar.md.
 
 Folders: a click (or Enter) on a folder shows its page and, in the sidebar mode, opens or
-closes it; in the page mode (the collapsed layout) it only drills down, and the folder's
-arrow is hidden (the row has one of its own). Right and Left on a focused folder open and
+closes it, the narrow layout's sidebar staying open over the page; any other row closes it
+(window.hide_sidebar()). The window keeps the sidebar mode at every width; in AdwSidebar's
+page mode, should it be set, a folder only drills down, and its arrow is hidden (the row
+has one of its own). Right and Left on a focused folder open and
 close it without changing the page, Left on a nested item moves to its folder. The open
 folders are kept in the expanded-folders setting, written a moment after the last change
 (EXPANDED_WRITE_DELAY_MS) and when the window closes.
@@ -208,8 +210,8 @@ class SidebarController:
         self._build_new_button()
 
         self._sidebar.connect('notify::selected-item', self._on_selected_item)
-        # The page mode (the collapsed layout) builds new rows: named and indented again
-        # once built, and the folders' arrows shown only in the sidebar mode.
+        # The page mode (which the window never sets) builds new rows: named and indented
+        # again once built, and the folders' arrows shown only in the sidebar mode.
         self._sidebar.connect('notify::mode', self._on_mode_changed)
         self._sidebar.connect('activated', self._on_activated)
         # Tracks dragged from a list (widgets/context_menu.py) drop onto playlists, and
@@ -436,23 +438,22 @@ class SidebarController:
     def _on_activated(self, sidebar, index):
         """A click (or Enter) on an item, selected already or not: show its page (selecting it
         did, unless it was selected while a restored page waited for the library), back at
-        its root when it is the page shown already in the wide layout (the pages pushed on
-        it are popped, as the web player's sidebar does), show the content when the layout
-        is collapsed, and in the sidebar mode open or close a folder (in the page mode a
-        folder only drills down: its page lists what it holds)."""
+        its root when it is the page shown already (the pages pushed on it are popped, as
+        the web player's sidebar does), and close the narrow layout's sidebar over it
+        (window.hide_sidebar()). A folder, in the sidebar mode, opens or closes instead and
+        leaves the sidebar open, so that what it holds can be chosen (in the page mode,
+        which the window never sets, a folder only drills down: its page lists what it
+        holds)."""
         item = sidebar.get_item(index)
         key = self.key_of(item)
-        collapsed = self._window.split_view.get_collapsed()
         if key is not None:
-            if key != self._window.shown:
-                self._window.show_root(key)
-            elif not collapsed:
-                self._window.show_root(key, pop=True)
-        self._window.split_view.set_show_content(True)
+            self._window.show_root(key, pop=key == self._window.shown)
         if (isinstance(item, SidebarItem) and item.entry.kind == 'folder'
                 and not self._page_mode()):
             folder_id = item.entry.folder_id
             self._set_expanded(folder_id, folder_id not in self._expanded)
+        else:
+            self._window.hide_sidebar()
 
     def _on_arrow(self, expand):
         """Right (expand) or Left on the focused row: a folder opens or closes without a
@@ -477,7 +478,7 @@ class SidebarController:
     def focus(self):
         """The focus on the selected row, or on the sidebar's first focusable widget when
         there is none. Always the selected row, not wherever the focus was in the sidebar
-        before: the collapsed layout brings its page back with the row last focused there."""
+        before: the narrow layout opens it on its first widget."""
         row = self.row(self._sidebar.get_selected())
         if row is None or not row.grab_focus():
             self._sidebar.child_focus(Gtk.DirectionType.TAB_FORWARD)
@@ -564,8 +565,7 @@ class SidebarController:
             self._playlist_section.get_item(position).set_arrow_visible(not page_mode)
         # libadwaita builds the mode's rows before it notifies, so they are named here, in
         # the frame that lays them out; should a version build them later, the idle finds
-        # them. Named once: a pass over a few hundred rows is about 8 ms, and the window's
-        # breakpoint changes the mode at each crossing of a resize (docs/notes.md).
+        # them. Named once: a pass over a few hundred rows is about 8 ms.
         if self._name_rows():
             GLib.idle_add(self._place_new_button_idle)
         else:

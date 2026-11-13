@@ -111,7 +111,6 @@ install_data(
   'credits.py',
   'discord.py',
   'discography.py',
-  'engine.py',
   'errors.py',
   'explore.py',
   'fullscreen.py',
@@ -120,7 +119,6 @@ install_data(
   'item_menu.py',
   'item_targets.py',
   'keyboard.py',
-  'library.py',
   'lyrics.py',
   'main.py',
   'mini_player.py',
@@ -154,11 +152,32 @@ install_data(
 )
 
 install_data(
+  'library/__init__.py',
+  'library/diff.py',
+  'library/folders.py',
+  'library/model.py',
+  'library/objects.py',
+  'library/pacing.py',
+  'library/reading.py',
+  'library/records.py',
+  'library/refs.py',
+  'library/songs.py',
+  'library/text_keys.py',
+  'library/words.py',
+  install_dir: moduledir / 'library',
+)
+
+install_data(
   'pages/__init__.py',
   'pages/artist.py',
   'pages/artists.py',
   'pages/charts.py',
   'pages/detail.py',
+  'pages/detail_catalog.py',
+  'pages/detail_reorder.py',
+  'pages/detail_rows.py',
+  'pages/detail_sort_filter.py',
+  'pages/detail_suggestions.py',
   'pages/editorial.py',
   'pages/grid.py',
   'pages/home.py',
@@ -225,15 +244,35 @@ install_data(
 install_data(
   'backend/__init__.py',
   'backend/api.py',
+  'backend/art_cache.py',
+  'backend/banner_art.py',
   'backend/bridge.js',
+  'backend/cache_files.py',
   'backend/cdp.py',
+  'backend/charts.py',
   'backend/chrome.py',
   'backend/client.py',
   'backend/config.py',
+  'backend/editorial.py',
   'backend/errors.py',
+  'backend/item_pages.py',
   'backend/normalize.py',
+  'backend/recommendations.py',
+  'backend/search.py',
   'backend/store.py',
   install_dir: moduledir / 'backend',
+)
+
+# The engine package.
+install_data(
+  'engine/__init__.py',
+  'engine/browse.py',
+  'engine/catalog.py',
+  'engine/core.py',
+  'engine/edits.py',
+  'engine/playback.py',
+  'engine/reads.py',
+  install_dir: moduledir / 'engine',
 )
 
 # Byte-compile the modules once they are installed (after every install_data above): they live

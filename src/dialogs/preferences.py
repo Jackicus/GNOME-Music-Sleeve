@@ -35,7 +35,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 from ..backend import config
 from ..backend.errors import EngineError
 from ..cache import cache_size
-from ..engine import QUALITIES
+from ..engine.playback import QUALITIES
 from ..sync import INTERVALS, interval_index, last_sync_text
 from ..widgets.labels import named_list_factory
 from ..widgets.util import connect_weak

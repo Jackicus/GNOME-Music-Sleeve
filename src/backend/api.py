@@ -4,7 +4,8 @@
 """The Apple Music API as the app knows it, apart from any connection to it: which ids are the
 library's, the path that answers with one item, the resource type a kind is rated and added
 under, the resources of one page of an answer, and Apple's error answers as an EngineError.
-The standard library only; engine.py and the item actions (actions.py and its modules) use it.
+The standard library only; the engine and the item actions (actions.py and its modules) use
+it.
 
     is_library_id('l.abc')              # True: under /v1/me/library, not the catalog
     item_endpoint('album', id, 'gb')    # '/v1/catalog/gb/albums/<id>?include=tracks,artists'
@@ -211,7 +212,7 @@ def replay_songs_params(song_ids):
 # An artist's page, as music.apple.com's views-based artist page asks for it: the artist with
 # every view its page shows (each answered with Apple's own title, its first page of
 # resources and a `next` link where there are more), the attributes its About reads, and
-# the two its wide header is made from (editorialArtwork, hero: normalize.artist_banner).
+# the two its wide header is made from (editorialArtwork, hero: banner_art.artist_banner).
 # featured-release, when an artist has one, is shown in latest-release's place;
 # featured-albums is "Essential Albums", more-to-hear the radio episodes about the artist,
 # more-to-see the videos about them (uploaded videos and films). top-songs is 24 long, three
@@ -319,7 +320,7 @@ RELATED_PARAMS = {
 }
 
 # A catalog search (the bridge's search()): every kind at once, with Apple's Top Results, or
-# one kind alone, by its shelf's key (normalize.search_results), a page of up to
+# one kind alone, by its shelf's key (search.search_results), a page of up to
 # SEARCH_PAGE_LIMIT (the most Apple answers a search with) from an offset. Curators come only
 # when asked for: `apple-curators` are Apple's own (its radio shows, genres and editors),
 # `curators` third parties; a radio show is an Apple curator of kind Show.

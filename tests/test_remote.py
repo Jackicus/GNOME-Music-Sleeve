@@ -3,7 +3,7 @@
 
 """remote.py: artwork URLs and paths, the shared downloads, and the engine's shelves.
 
-Runs under asyncio.run, without GTK: the downloads are normalize.cache_artwork's, replaced by a
+Runs under asyncio.run, without GTK: the downloads are art_cache.cache_artwork's, replaced by a
 stand-in that writes a few bytes (or fails, for a URL with "missing" in it).
 """
 
@@ -52,7 +52,7 @@ class RemoteTestCase(unittest.TestCase):
                 file.write(b'jpeg')
             return dest_path
 
-        patcher = mock.patch.object(remote.normalize, 'cache_artwork', fake_cache_artwork)
+        patcher = mock.patch.object(remote.art_cache, 'cache_artwork', fake_cache_artwork)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -186,7 +186,7 @@ class FetchRemoteTest(RemoteTestCase):
 
 
 class BannerTest(RemoteTestCase):
-    """An artist's banner (normalize.artist_banner's dict): asked at the header's width in
+    """An artist's banner (banner_art.artist_banner's dict): asked at the header's width in
     steps, no wider than Apple has it, in the shape its crop gives."""
 
     WIDE = {'url': 'https://x.invalid/b/{w}x{h}vf.jpg', 'crop': 'vf', 'width': 3000,
@@ -212,7 +212,7 @@ class BannerTest(RemoteTestCase):
         self.assertIsNone(remote.banner_url(dict(self.WIDE, url='http://x.invalid/{w}x{h}vf.jpg'),
                                             1100))
         self.assertIsNone(remote.banner_url(None, 1100))
-        # A composite Apple makes (normalize.template_effect) at its own 4:1, query kept.
+        # A composite Apple makes (banner_art.template_effect) at its own 4:1, query kept.
         composed = {'url': 'https://x.invalid/c/source.png/{w}x{h}SH.FPINV01.jpg?l=en-GB',
                     'crop': 'SH.FPINV01', 'width': 4320, 'height': 1080, 'color': None}
         self.assertEqual(remote.banner_url(composed, 1100),
@@ -276,7 +276,7 @@ class FetchCoverTest(RemoteTestCase):
         def broken(*_args, **_kwargs):
             raise OSError('the disk is full')
 
-        with mock.patch.object(remote.normalize, 'cache_artwork', broken), \
+        with mock.patch.object(remote.art_cache, 'cache_artwork', broken), \
                 self.assertLogs(remote.log, 'ERROR'):
             self.assertFalse(run(remote.fetch_cover(self.cover_item('b'))))
 

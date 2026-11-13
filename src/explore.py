@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
 """More to Explore: the rows of links Apple's editorial pages end with (the engine's `links`:
-normalize.element_links), as the Items the window opens and the sections a page shows. No
+editorial.element_links), as the Items the window opens and the sections a page shows. No
 GTK here (widgets/explore.py draws them).
 
     sections(answer.get('links'))            # [Section(key, title, items)] in Apple's order
@@ -24,7 +24,7 @@ from gettext import gettext as _
 
 from .library import Item
 
-# What a link opens, by its kind (normalize.editorial_link's); window.PAGE_KINDS has those
+# What a link opens, by its kind (editorial.editorial_link's); window.PAGE_KINDS has those
 # with a page of their own.
 LINK_KINDS = ('room', 'grouping', 'multiroom', 'charts', 'link')
 # The key of the section New makes for Top Charts when Apple's links have no titled row.

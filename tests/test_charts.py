@@ -84,7 +84,7 @@ def playlist(key, number):
 
 
 def answer():
-    """An invented charts answer, as Engine.charts gives it (normalize.charts_shelves)."""
+    """An invented charts answer, as Engine.charts gives it (charts.charts_shelves)."""
     return {'shelves': [
         {'key': 'charts-songs', 'title': 'Top Songs', 'chart': 'songs', 'ranked': True,
          'form': 'songs', 'items': [song(n) for n in range(6)]},

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""Replay: Apple's music summaries shaped into the page's answer (normalize.replay_page,
+"""Replay: Apple's music summaries shaped into the page's answer (charts.replay_page,
 replay_years, api.replay_request), the year menu's choices and the page's title
 (src/replay.py), the link to it (explore.replay_item, replay_sections), and the page itself
 (pages/replay.py) over the stand-in engine: its shelves in their forms, its year menu, its
@@ -19,7 +19,7 @@ from tests.page_harness import PageTestCase, album
 
 from applemusic import explore
 from applemusic import replay as years_menu
-from applemusic.backend import api, normalize
+from applemusic.backend import api, cache_files, charts
 from applemusic.backend.errors import EngineError
 
 
@@ -97,7 +97,7 @@ def years(*numbers, playlists=True):
 
 
 class ReplayShapeTest(unittest.TestCase):
-    """normalize.replay_page and replay_years, without the engine."""
+    """charts.replay_page and replay_years, without the engine."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -105,7 +105,7 @@ class ReplayShapeTest(unittest.TestCase):
         self.cache = tmp.name
 
     def shape(self, **raw):
-        return normalize.replay_page(raw, self.cache)
+        return charts.replay_page(raw, self.cache)
 
     def test_the_views_in_the_pages_order_then_the_playlists(self):
         answer = self.shape(summary=summary(), songs=catalog_songs(0, 1, 2),
@@ -153,9 +153,9 @@ class ReplayShapeTest(unittest.TestCase):
         data.append({'type': 'song-period-summaries', 'relationships': {'song': {'data': []}}})
         data.append(period_summary('songs', 7) | {'relationships': {'song': {'data': [
             {'id': 'i.inv7', 'type': 'library-songs'}]}}})  # no catalog id
-        self.assertEqual(normalize.replay_song_ids(raw), ['900000', '900001', '900002'])
+        self.assertEqual(charts.replay_song_ids(raw), ['900000', '900001', '900002'])
         for junk in (None, {}, {'data': 'x'}, {'data': [{'views': {'top-songs': 'x'}}]}):
-            self.assertEqual(normalize.replay_song_ids(junk), [])
+            self.assertEqual(charts.replay_song_ids(junk), [])
         self.assertEqual(api.replay_songs_params(['900000', '900001', '900000', 'i.x', None]),
                          {'ids': '900000,900001'})
         self.assertIsNone(api.replay_songs_params([]))
@@ -169,7 +169,7 @@ class ReplayShapeTest(unittest.TestCase):
         self.assertEqual(self.shape(summary=raw, year='')['year'], '2025')
         listing = years(2024)
         del listing['data'][0]['attributes']['year']
-        self.assertEqual([entry['year'] for entry in normalize.replay_years(listing)], ['2024'])
+        self.assertEqual([entry['year'] for entry in charts.replay_years(listing)], ['2024'])
 
     def test_apples_titles_are_kept(self):
         answer = self.shape(summary=summary(titles=True), songs=catalog_songs(0, 1, 2),
@@ -199,7 +199,7 @@ class ReplayShapeTest(unittest.TestCase):
         self.assertEqual([shelf['key'] for shelf in answer['shelves']], ['replay-albums'])
         self.assertEqual(len(answer['shelves'][0]['items']), 1)
         for junk in (None, {}, [], 'x', {'summary': 'x', 'years': 3, 'year': '../x'}):
-            self.assertEqual(normalize.replay_page(junk, self.cache)['shelves'], [])
+            self.assertEqual(charts.replay_page(junk, self.cache)['shelves'], [])
 
     def test_the_years_each_once_newest_first(self):
         raw = years(2024, 2025, playlists=False)
@@ -208,17 +208,17 @@ class ReplayShapeTest(unittest.TestCase):
             {'type': 'music-summaries', 'attributes': {'period': 'month', 'year': 2023}},
             {'type': 'music-summaries', 'attributes': {'year': 'next'}},
             {'type': 'music-summaries', 'attributes': {'year': 2022}}]  # no period: a year
-        found = normalize.replay_years(raw, self.cache)
+        found = charts.replay_years(raw, self.cache)
         self.assertEqual([(entry['year'], entry['playlist']) for entry in found],
                          [('2025', None), ('2024', None), ('2022', None)])
-        self.assertEqual(normalize.replay_years(None), [])
+        self.assertEqual(charts.replay_years(None), [])
 
     def test_where_it_is_kept(self):
-        self.assertEqual(normalize.replay_cache_path('/c'), os.path.join('/c', 'replay.json'))
-        self.assertEqual(normalize.replay_cache_path('/c', '2025'),
+        self.assertEqual(cache_files.replay_cache_path('/c'), os.path.join('/c', 'replay.json'))
+        self.assertEqual(cache_files.replay_cache_path('/c', '2025'),
                          os.path.join('/c', 'replay', '2025.json'))
-        self.assertIn('replay.json', normalize.KEPT_ANSWERS)
-        self.assertIn('replay', normalize.ANSWER_FOLDERS)
+        self.assertIn('replay.json', cache_files.KEPT_ANSWERS)
+        self.assertIn('replay', cache_files.ANSWER_FOLDERS)
 
     def test_what_a_year_is_asked_with(self):
         # The latest year by filter[year]=latest; a past year by its own resource, since
@@ -283,7 +283,7 @@ def artist(number):
 
 
 def answer(year='2026', listed=('2026', '2025', '2024'), songs=6):
-    """An invented Replay answer, as Engine.replay gives it (normalize.replay_page)."""
+    """An invented Replay answer, as Engine.replay gives it (charts.replay_page)."""
     return {'year': year, 'years': list(listed), 'shelves': [
         {'key': 'replay-songs', 'title': '', 'chart': 'songs', 'ranked': True,
          'form': 'songs', 'items': [song(n) for n in range(songs)]},

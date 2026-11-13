@@ -21,9 +21,11 @@ dialog lists every one of them. Keys that are none of these are listed as they a
 dialogs', the Now Playing sheet's, the full-screen player's), under General with the other keys
 that act on windows.
 
-F11 and F5 are the accelerators without a modifier: function keys, which no GTK widget takes
-for its own, set as accelerators by GNOME's own apps: F11 the HIG's Fullscreen key (the
-window's action is disabled while nothing plays), F5 Refresh, the page's own (Home, New, Made
+F11, F9 and F5 are the accelerators without a modifier: function keys, which no GTK widget
+takes for its own, set as accelerators by GNOME's own apps: F11 the HIG's Fullscreen key (the
+window's action is disabled while nothing plays), F9 the sidebar's toggle, as Files and Text
+Editor have it (the action is the narrow layout's, where the sidebar slides over the page:
+disabled while it shows beside it), F5 Refresh, the page's own (Home, New, Made
 for You, Radio, Charts, a category: the action is disabled on a page without one). Ctrl+R,
 which GNOME's apps also give Refresh, is Refresh Library here (app.sync), the sync of
 everything.
@@ -59,6 +61,7 @@ ACCELS = {
     'win.back': ('<alt>Left',),
     'win.search': ('<primary>f',),
     'win.refresh': ('F5',),
+    'win.toggle-sidebar': ('F9',),
     'win.focus-sidebar': ('<primary>1',),
     'win.focus-content': ('<primary>2',),
     'win.focus-player': ('<primary>3',),
@@ -143,6 +146,7 @@ def sections():
             (_('Go to Current Song'), 'win.go-to-current-song'),
             (_('Refresh the Page'), 'win.refresh'),
             (_('Go Back'), 'win.back'),
+            (_('Show or Hide the Sidebar'), 'win.toggle-sidebar'),
             (_('Focus the Sidebar'), 'win.focus-sidebar'),
             (_('Focus the Page'), 'win.focus-content'),
             (_('Focus the Player Bar'), 'win.focus-player'),

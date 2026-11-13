@@ -25,8 +25,8 @@ mutter keeps. So a tick callback on the window sets the width each frame, moving
 px/s from --wide down to --narrow and back, --rounds times, at --height; a frame that runs
 long is followed by a bigger step, as the edge under a pointer moves on meanwhile. The
 compositor's own way, configure events (mutter's keyboard resize, Alt+F8, driven through
-remote_keys.py), costs the same frames (docs/notes.md). The page's split view shows its
-content (collapsed, it would show the sidebar). The sweep waits for the page to settle
+remote_keys.py), costs the same frames (docs/notes.md). Collapsed, the window's split view
+shows the page, its sidebar closed. The sweep waits for the page to settle
 first (SETTLED_FRAMES quiet frames: Songs prepares its order over frames).
 
 --page KEY shows a sidebar destination (albums by default), --open KIND:ID pushes an item
@@ -245,7 +245,6 @@ class Run:
             window.open_item(item)
             GLib.timeout_add(1500, self.start)
             return GLib.SOURCE_REMOVE
-        window.split_view.set_show_content(True)
         if self.args.now_playing and not window.bottom_sheet.get_open():
             self.app.player.apply(harness.invented_playing_state(self.app, lyrics=True))
             window.now_playing.tab_stack.set_visible_child_name('lyrics')

@@ -5,7 +5,7 @@
  * The app's side of music.apple.com. The app's CDP client (client.load_bridge) injects it
  * into the page, where it defines window.__appleMusicLibrary over the page's own MusicKit
  * instance and forwards MusicKit's events through the __amEvent binding. The Engine's
- * commands (src/engine.py) are calls into it; src/backend/README.md lists them and the
+ * commands (src/engine/) are calls into it; src/backend/README.md lists them and the
  * events, and tests/test_bridge.py runs it under gjs against a fake MusicKit.
  */
 

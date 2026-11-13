@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from gettext import gettext as _
 
 from .backend import errors
-from .backend.normalize import STAMP_FORMAT
+from .backend.cache_files import STAMP_FORMAT
 from .library import Item, ShelfModel, apply_diff
 from .remote import remote_item
 
@@ -43,7 +43,7 @@ REPEAT_MIN = 2
 
 
 def answer_age(answer, now=None):
-    """Seconds since the answer's `cached` stamp (normalize.write_answer's), or None without
+    """Seconds since the answer's `cached` stamp (cache_files.write_answer's), or None without
     one (or one that is not a stamp)."""
     stamp = answer.get('cached') if isinstance(answer, dict) else None
     if not isinstance(stamp, str):

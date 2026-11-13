@@ -33,7 +33,7 @@ One thread runs GTK and asyncio: the GLib main loop is the asyncio loop
 ```
 Application (main.py)    app.settings, .library, .engine, .player, .mpris, .session, .library_sync,
 │                        .demo; app.spawn(coro), app.toast(), app.report(error), .player_command()
-├─ Window (window.py)    Stack: AdwBottomSheet > AdwToastOverlay > AdwNavigationSplitView, or
+├─ Window (window.py)    Stack: AdwBottomSheet > AdwToastOverlay > AdwOverlaySplitView, or
 │  │                     the full-screen player (fullscreen.py); keys as keyboard.py decides
 │  ├─ sidebar            AdwSidebar run by sidebar_view.SidebarController: sections.py's
 │  │                     destinations, then the Playlists (sidebar.py over playlist_tree())
@@ -41,9 +41,9 @@ Application (main.py)    app.settings, .library, .engine, .player, .mpris, .sess
 │  │                     (pages/, made on first visit); tiles and rows push pages
 │  ├─ bottom bar, sheet  PlayerBar (player_bar.py), NowPlayingSheet (widgets/now_playing.py)
 │  └─ item_actions       win.item-* actions, menus (actions.py, playlist_actions.py, item_menu.py)
-├─ Library (library.py)  Item/Track GObjects in Gio.ListStores from the cache's library.json;
+├─ Library (library/)    Item/Track GObjects in Gio.ListStores from the cache's library.json;
 │                        sync.py fetches and writes it; reload() keeps objects, notifies changes
-├─ Engine (engine.py)    Chrome (Gio.Subprocess, CDP on its pipe) + CDPClient ─► bridge.js ─►
+├─ Engine (engine/)      Chrome (Gio.Subprocess, CDP on its pipe) + CDPClient ─► bridge.js ─►
 │                        MusicKit; commands are coroutines; MusicKit events re-emitted as `event`
 ├─ Player (player.py)    what is playing, as GObject properties fed by engine events; the bar,
 │                        the sheet and MPRIS follow its notify:: signals; nothing polls MusicKit
@@ -63,13 +63,13 @@ for both builds, the sign-in's keys each build's own (`account_key()`).
 
 ```
 src/main.py, src/window.py      the Application, the Window (player_bar, sidebar_view, fullscreen)
-src/*.py                        services and logic (engine, player, mpris, search_provider, discord,
+src/*.py                        services and logic (engine/, player, mpris, search_provider, discord,
                                 sync, account, cache, background, actions, item_targets, related,
                                 playlist_order, release, session, discography, suggestions, errors,
                                 i18n, lyrics, remote, recent_searches, radio, home, search_pager,
                                 timing, shortcuts, keyboard, sidebar, sections; new ones go here)
-src/library.py                  the data model: GLib, GObject and Gio only, no GTK
-src/pages/<name>.py + .blp      one per destination or pushed page (PAGES in pages/__init__.py)
+src/library/                    the data model, a package: GLib, GObject and Gio only, no GTK
+src/pages/<name>.py + .blp      one per page (PAGES in pages/__init__.py); detail_*.py: its parts
 src/widgets/                    reusable widgets: tiles, shelves, rows, covers, transport, artwork
 src/dialogs/                    sign-in, preferences, keyboard shortcuts, about, the playlist dialogs
 src/backend/                    Chrome, the CDP client, bridge.js, API normalising: stdlib and
@@ -117,10 +117,10 @@ meson setup _build --prefix=/usr …   a system install, never into build/ (docs
 - **Async**: start coroutines from signal handlers with `app.spawn(coro)` (it keeps a reference,
   logs the exception, returns the task). `GLib.idle_add`/`timeout_add` defer UI work past a
   frame or a layout, not async work. Main-thread work in chunks yields with `await
-  yield_to_frames()` (library.py): asyncio runs above GTK's redraw, so `sleep(0)` paints nothing.
-- **Chrome and MusicKit only through `app.engine`**: engine.py is the one module that imports
+  yield_to_frames()` (library/pacing.py): asyncio outranks GTK's redraw: `sleep(0)` paints nothing.
+- **Chrome and MusicKit only through `app.engine`**: engine/core.py is the one module that imports
   `backend.chrome` and `backend.client`; the rest of the app may import the backend's pure parts
-  (`api`, `config`, `errors`, `normalize`, `store`). Playback goes through `app.player`.
+  (all of it but `chrome`, `client` and `cdp`). Playback goes through `app.player`.
 - **Errors**: engine failures are `EngineError(code)`, codes in `src/backend/errors.py`. The
   user sees a plain-text toast (`app.report(error)`: `errors.error_message()`'s sentence and
   button for the code, the detail in the log; `app.toast()` makes every toast), no traceback.

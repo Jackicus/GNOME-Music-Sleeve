@@ -15,21 +15,23 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import unittest
-import weakref
 from pathlib import Path
 from unittest import mock
 
 from tests import ROOT
 
-from applemusic import library as library_module
-from applemusic.library import (PENDING_HOLD, ROOT_FOLDER, SECTIONS, Group, Item, ItemRefs,
-                                Library, PlaylistTree, Ref, SongEntry, SongOrder, Track,
-                                TrackRecord, TreeChange, apply_changes, change_settled,
-                                drop_index, entries_without, fold, folder_entries, folder_of,
-                                item_ref, moved, order_for, parse, paused_gc, release_passed,
-                                reorder_entries, track_ref)
+from applemusic.library import (ROOT_FOLDER, Item, Library, SongOrder, Track, TrackRecord,
+                                drop_index, entries_without, moved, order_for, parse)
+from applemusic.library import model as model_module
+from applemusic.library import reading as reading_module
+from applemusic.library import records as records_module
+from applemusic.library import songs as songs_module
+from applemusic.library import text_keys as text_keys_module
+from applemusic.library import words as words_module
+from applemusic.library.folders import PENDING_HOLD
+from applemusic.library.model import SECTIONS
+from applemusic.library.objects import Group, reorder_entries
 
 
 def load(cache_dir, library=None):
@@ -77,13 +79,6 @@ def playlist(playlist_id, title=None):
                  'play': {'kind': 'playlist', 'id': playlist_id}, 'groups': []})
 
 
-def folder(folder_id, children, parent=ROOT_FOLDER, title=None):
-    """A folders entry; children are 'f:<id>' for a folder and a plain id for a playlist."""
-    return {'id': folder_id, 'title': title or folder_id, 'parent': parent,
-            'children': [{'kind': 'folder', 'id': child[2:]} if child.startswith('f:')
-                         else {'kind': 'playlist', 'id': child} for child in children]}
-
-
 def plain(value):
     """A parsed library value with its TrackRecords made dicts again, to compare with JSON."""
     if isinstance(value, TrackRecord):
@@ -101,13 +96,13 @@ def collation_order(tracks, column, descending=False):
     def key(name, track):
         raw = track.raw
         if name == 'time':
-            return library_module._number(raw.get('durationMs'))
+            return records_module._number(raw.get('durationMs'))
         if name == 'year':
-            return library_module._number(raw.get('year'))
+            return records_module._number(raw.get('year'))
         if name == 'track':
-            return (library_module._number(raw.get('discNumber')),
-                    library_module._number(raw.get('trackNumber')))
-        return library_module.collation_key(library_module._text(raw.get(name)) or '')
+            return (records_module._number(raw.get('discNumber')),
+                    records_module._number(raw.get('trackNumber')))
+        return text_keys_module.collation_key(records_module._text(raw.get(name)) or '')
 
     positions = list(range(len(tracks)))
     for name in reversed(SongOrder.TIES[column]):
@@ -187,7 +182,7 @@ class TestDemoLibrary(unittest.TestCase):
             with self.subTest(prop=prop):
                 self.assertEqual(item.get_property(prop), raw[key])
         self.assertEqual(item.count_label,
-                         library_module.songs_text(raw['trackCount'], raw['durationMs']))
+                         words_module.songs_text(raw['trackCount'], raw['durationMs']))
         station = self.library.radio.get_item(0)
         self.assertIsNone(self.data['sections']['radio'][0]['year'])
         self.assertEqual(station.year, 0)  # JSON null in an int property
@@ -199,9 +194,9 @@ class TestDemoLibrary(unittest.TestCase):
             for item in getattr(self.library, name):
                 raw = item.raw
                 if item.kind in ('album', 'playlist'):
-                    expected = library_module.songs_text(raw['trackCount'], raw['durationMs'])
+                    expected = words_module.songs_text(raw['trackCount'], raw['durationMs'])
                 elif item.kind == 'artist':
-                    expected = library_module.albums_text(raw['albumCount'])
+                    expected = words_module.albums_text(raw['albumCount'])
                 else:
                     expected = ''  # stations and videos have no count
                 with self.subTest(item=item.id):
@@ -542,7 +537,7 @@ class TestLoading(unittest.TestCase):
         # that limit falls depends on the C stack size (Python 3.14 guards recursion by stack
         # depth, and containers often have a larger stack), so force the error rather than
         # rely on a deeply nested file failing on every machine.
-        with mock.patch.object(library_module, 'parse', side_effect=RecursionError('too deep')), \
+        with mock.patch.object(reading_module, 'parse', side_effect=RecursionError('too deep')), \
                 self.assertLogs('applemusic.library', 'WARNING'):
             load(self.cache, library)
         self.assertEqual((library.file_state, library.version, library.state),
@@ -594,8 +589,8 @@ class TestLoading(unittest.TestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await reloading
 
-        with mock.patch.object(library_module, 'FRAME_BUDGET', 0), \
-                mock.patch.object(library_module, 'yield_to_frames', pause_for_good):
+        with mock.patch.object(model_module, 'FRAME_BUDGET', 0), \
+                mock.patch.object(model_module, 'yield_to_frames', pause_for_good):
             asyncio.run(cancel_reload())
         self.assertEqual(states, ['loading', 'empty'])
         self.assertEqual(len(changed), 1)
@@ -611,7 +606,7 @@ class TestLoading(unittest.TestCase):
         # The first load's read waits in its thread until the second load has started: without
         # that, a quick thread could finish the first load before the second began.
         second_started = threading.Event()
-        read = library_module._read_library
+        read = model_module._read_library
 
         def read_after_second_starts(path, *args):
             if Path(path).parent == Path(self.cache):
@@ -630,928 +625,11 @@ class TestLoading(unittest.TestCase):
             second_started.set()
             await asyncio.gather(first, second)
 
-        with mock.patch.object(library_module, '_read_library', read_after_second_starts):
+        with mock.patch.object(model_module, '_read_library', read_after_second_starts):
             asyncio.run(two_loads())
         self.assertEqual([item.id for item in library.albums], ['l.new'])
         self.assertEqual(library.state, 'ready')
         self.assertEqual(len(changed), 1)  # the overtaken load gave up without a word
-
-
-class TestParse(unittest.TestCase):
-    """parse(): json.loads' result, decoded a list element at a time."""
-
-    DOCUMENTS = [
-        '{}',
-        '[]',
-        '"text"',
-        '12.5',
-        'null',
-        ' \n{ "a" : [ ] , "b" : { } }\n ',
-        '{"sections": {"albums": [{"id": "l.1", "groups": [{"entries": [{"id": "i.1"}]}]}, '
-        '{"id": "l.2"}], "empty": [], "n": 3}, "shelves": [[1, 2], {"k": [3]}], "x": "y"}',
-        '{"a": 1, "a": 2}',
-        '{"text": "caf\\u00e9 \\"quoted\\" [not a list] {nor this}", "list": ["]", "}"]}',
-        '{"n": [1, -2.5e3, true, false, null, NaN, Infinity], "deep": {"deeper": {"x": [[]]}}}',
-        '{\n  "sections": {\n    "albums": [\n      {\n        "id": "l.1"\n      }\n    ]\n  }\n}',
-    ]
-
-    def test_same_as_json_loads(self):
-        for text in self.DOCUMENTS:
-            with self.subTest(text=text):
-                self.assertEqual(parse(text), json.loads(text))
-
-    def test_bad_documents_raise_value_error(self):
-        for text in ['', '{', '{"a" 1}', '{"a": 1,}', '{a: 1}', '{"a": [1 2]}', '{"a": 1} x',
-                     '{"a": [1, 2}', '{"a": {"b": }}', '[1, 2', '{"a": "unterminated}']:
-            with self.subTest(text=text), self.assertRaises(ValueError):
-                parse(text)
-
-    def test_element_sees_each_list_element_with_its_key(self):
-        seen = []
-
-        def element(key, value):
-            seen.append((key, value))
-            return {'wrapped': value}
-
-        data = parse('{"sections": {"albums": [1, {"id": 2}], "radio": []}, "shelves": [3]}',
-                     element)
-        self.assertEqual(seen, [('albums', 1), ('albums', {'id': 2}), ('shelves', 3)])
-        self.assertEqual(data, {'sections': {'albums': [{'wrapped': 1}, {'wrapped': {'id': 2}}],
-                                             'radio': []},
-                                'shelves': [{'wrapped': 3}]})
-
-
-class TestReadLibrary(unittest.TestCase):
-    """What the load makes of the file beyond parsing it."""
-
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.path = Path(self.temp_dir.name, 'library.json')
-
-    def artist(self, artist_id, album_ids):
-        return {'id': artist_id, 'kind': 'artist', 'title': artist_id,
-                'groups': [{'name': album_id, 'play': {'kind': 'album', 'id': album_id},
-                            'entries': [track(f'i.{album_id}', 'Song', 0)]}
-                           for album_id in album_ids]}
-
-    def read(self, sections):
-        self.path.write_text(json.dumps({'version': 1, 'sections': sections}), encoding='utf-8')
-        return library_module._read_library(self.path)
-
-    def test_repeated_values_are_one_object(self):
-        # SHARED_KEYS: two albums' songs of one genre and year share the decoder's strings
-        # and ints (a year past 256 is an object of its own for each one decoded).
-        albums = [album(f'l.a{n}', f'A{n}', [f'i.{n}.1', f'i.{n}.2']) for n in (1, 2)]
-        for each in albums:
-            for entry in each['groups'][0]['entries']:
-                entry.update(genre='Nu-' + 'Jazz', year=2000 + 19)
-        data, _count, _state = self.read({'albums': albums})
-        entries = [entry for each in data['sections']['albums']
-                   for entry in each['groups'][0]['entries']]
-        self.assertEqual(len({id(entry.get('genre')) for entry in entries}), 1)
-        self.assertEqual(len({id(entry.get('year')) for entry in entries}), 1)
-        self.assertEqual(entries[0].get('year'), 2019)
-
-    def test_artist_tracks_dropped_only_for_albums_in_the_library(self):
-        albums = [album('l.a1', 'A1', ['i.1', 'i.2'])]
-        artists = [self.artist('l.r1', ['l.a1', 'l.gone'])]
-        for order in (('albums', 'artists'), ('artists', 'albums')):  # either order in the file
-            with self.subTest(order=order):
-                sections = {'albums': albums, 'artists': artists}
-                data, count, state = self.read({key: sections[key] for key in order})
-                self.assertEqual(state, 'ok')
-                groups = data['sections']['artists'][0]['groups']
-                self.assertEqual(groups[0]['entries'], [])
-                self.assertEqual([entry['id'] for entry in groups[1]['entries']], ['i.l.gone'])
-                self.assertEqual(len(data['sections']['albums'][0]['groups'][0]['entries']), 2)
-                self.assertEqual(count, 2)
-
-    def test_repeated_track_strings_are_one_object(self):
-        data, _count, _state = self.read({'albums': [album('l.a1', 'A1', ['i.1']),
-                                             album('l.a2', 'A2', ['i.2'])],
-                                  'playlists': [dict(album('p.1', 'P', ['i.3']), kind='playlist')],
-                                  'songs': [track('i.4', 'Loose', 0)]})
-        sections = data['sections']
-        entries = [sections['albums'][0]['groups'][0]['entries'][0],
-                   sections['albums'][1]['groups'][0]['entries'][0],
-                   sections['playlists'][0]['groups'][0]['entries'][0],
-                   sections['songs'][0]]
-        for key in ('artist', 'album', 'durationLabel', 'type'):
-            with self.subTest(key=key):
-                self.assertTrue(all(entry[key] is entries[0][key] for entry in entries))
-
-    def test_a_byte_order_mark_is_read_as_json_load_reads_it(self):
-        self.path.write_bytes(b'\xef\xbb\xbf' + json.dumps({'version': 1}).encode())
-        self.assertEqual(library_module._read_library(self.path), ({'version': 1}, 0, 'ok'))
-
-    def test_load_starts_reading_before_it_is_awaited(self):
-        write_library(self.temp_dir.name, [album('l.a1', 'A1', ['i.1'])])
-        started = threading.Event()
-        read = library_module._read_library
-
-        def noting_read(path, *args):
-            started.set()
-            return read(path, *args)
-
-        library = Library()
-        with mock.patch.object(library_module, '_read_library', noting_read), \
-                mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.temp_dir.name}):
-            loading = library.load()
-            self.assertTrue(started.wait(5))  # in the library's thread, nothing awaited yet
-            asyncio.run(loading)
-        self.assertEqual([item.id for item in library.albums], ['l.a1'])
-
-    def test_a_held_parse_waits_for_resume_or_the_limit(self):
-        write_library(self.temp_dir.name, [album(f'l.a{n}', 'A', []) for n in range(3)])
-        library = Library()
-        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.temp_dir.name}), \
-                mock.patch.object(library_module, 'HOLD_LIMIT', 5):
-            library.hold_reading()
-            reading = library._read()
-            self.assertRaises(TimeoutError, reading.result, 0.2)  # held at the first album
-            library.resume_reading()
-            data, _count, _state = reading.result(5)
-        self.assertEqual(len(data['sections']['albums']), 3)
-        with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': self.temp_dir.name}), \
-                mock.patch.object(library_module, 'HOLD_LIMIT', 0.3):
-            library.hold_reading()  # never resumed: HOLD_LIMIT in all, not an element
-            started = time.monotonic()
-            data, _count, _state = library._read().result(5)
-        self.assertLess(time.monotonic() - started, 0.6)
-        self.assertEqual(len(data['sections']['albums']), 3)
-
-
-class TestTrack(unittest.TestCase):
-    def test_properties_read_the_raw_dict(self):
-        raw = dict(track('i.1', 'Song', 4), catalogId=123, explicit=True, discNumber=None)
-        entry = Track(raw, {'kind': 'album', 'id': 'l.a'}, thumb='/album.jpg')
-        self.assertEqual((entry.id, entry.title, entry.artist, entry.album), (
-            'i.1', 'Song', 'Test Artist', 'Test Album'))
-        self.assertEqual(entry.catalog_id, '123')  # a number in a string property
-        self.assertEqual((entry.index, entry.track_number, entry.disc_number), (4, 5, 0))
-        self.assertTrue(entry.explicit)
-        self.assertEqual(entry.get_property('duration-ms'), 180000)
-        self.assertEqual(entry.thumb, '/album.jpg')  # its own is null: the album's
-        self.assertEqual(Track({}).title, '')
-        # A library.json from before version 5 has no genre or year: '' and 0.
-        self.assertEqual((Track({}).genre, Track({}).year), ('', 0))
-        self.assertEqual((Track({'genre': 'Nu-Jazz', 'year': 2021}).genre,
-                          Track({'genre': 'Nu-Jazz', 'year': 2021}).year), ('Nu-Jazz', 2021))
-        self.assertIsNone(Track({}).id)
-        with self.assertRaises(TypeError):
-            entry.set_property('title', 'Other')  # read-only: the dict is the truth
-
-    def test_kind_by_the_api_type(self):
-        for kind, types in (('song', ('songs', 'library-songs')),
-                            ('video', ('music-videos', 'library-music-videos')),
-                            ('', ('stations', 'uploaded-videos', None, 7, ['songs']))):
-            for value in types:
-                with self.subTest(type=value):
-                    self.assertEqual(Track({'id': 'i.1', 'type': value}).kind, kind)
-        self.assertEqual(Track({'id': 'i.1'}).kind, '')  # an entry without a type
-
-    def test_a_track_not_out_yet(self):
-        # A pre-release album's track not out yet, as a dict and as a TrackRecord.
-        raw = dict(track('17240498', 'Song', 0), unreleased=True)
-        self.assertTrue(Track(raw).unreleased)
-        self.assertTrue(Track(TrackRecord(raw)).unreleased)
-        self.assertFalse(Track(track('17240499', 'Song', 1)).unreleased)
-
-    def test_release_passed(self):
-        # Whether a release date has come, against an injected day (#606).
-        today = '2026-11-13'
-        for date, out in (('2026-11-12', True), ('2026-11-13', True), ('2026-11-14', False),
-                          (' 2025-01-01 ', True), ('2025', True), ('2026', False),
-                          ('2027', False), ('', False), (None, False), ('soon', False),
-                          ('2026-11', False), (20261112, False)):
-            with self.subTest(date=date):
-                self.assertIs(release_passed(date, today), out)
-        self.assertTrue(release_passed('2001-01-01'))  # against the local date
-        self.assertFalse(release_passed('2999-01-01'))
-
-    def test_a_prerelease_album_out_on_its_date(self):
-        # A pre-release album whose date has passed since the sync: out, its songs too, the
-        # Songs store's Track as well as the album's; the file's flags as they were.
-        data = album('1724049800', 'Came Out', ['1724049801', '1724049802'])
-        data.update(prerelease=True, releaseDate='2001-01-01')
-        data['groups'][0]['entries'][1]['unreleased'] = True
-        item = Item(data)
-        self.assertFalse(item.prerelease)
-        self.assertFalse(item.groups[0].entries.get_item(1).unreleased)
-        self.assertIs(item.raw['prerelease'], True)
-        entry = SongEntry(data['groups'][0]['entries'][1], (None, 0, item.play, None))
-        self.assertTrue(entry.track().unreleased)  # a loose song: no album date to go by
-        stale = SongEntry(dict(data['groups'][0]['entries'][1]), (item, 0, item.play, None))
-        self.assertFalse(stale.track().unreleased)
-        data = album('1724049810', 'To Come', ['1724049811'])
-        data.update(prerelease=True, releaseDate='2999-01-01')
-        data['groups'][0]['entries'][0]['unreleased'] = True
-        item = Item(data)
-        self.assertTrue(item.prerelease)
-        self.assertTrue(item.groups[0].entries.get_item(0).unreleased)
-
-
-class TestWords(unittest.TestCase):
-    """The model's own words: counts, shelf titles and missing names, through gettext."""
-
-    def setUp(self):
-        library_module._unknown_titles.clear()
-        self.addCleanup(library_module._unknown_titles.clear)
-
-    def translated(self):
-        """gettext and ngettext patched to mark what they return, and count their calls."""
-        calls = []
-
-        def gettext(text):
-            calls.append(text)
-            return f'<{text}>'
-
-        def ngettext(one, many, count):
-            calls.append(one)
-            return f'<{one if count == 1 else many}>'
-
-        for name, function in (('_', gettext), ('ngettext', ngettext)):
-            patcher = mock.patch.object(library_module, name, function)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        return calls
-
-    def count(self, **raw):
-        return Item(raw).count_label
-
-    def test_songs_and_their_time(self):
-        for track_count, duration, text in (
-                (12, 43 * 60000, '12 songs, 43 min'),
-                (1, 180000, '1 song, 3 min'),
-                (15, 65 * 60000, '15 songs, 1 hr 5 min'),
-                (20, 120 * 60000, '20 songs, 2 hr'),
-                (1, 20000, '1 song, 1 min'),  # any time at all is a minute
-                (3, 0, '3 songs, 0 min'),
-                (12, None, '12 songs'),  # a shelf's album: no tracks, so no time
-                (0, None, '0 songs')):
-            for kind in ('album', 'playlist'):
-                with self.subTest(kind=kind, tracks=track_count, ms=duration):
-                    self.assertEqual(self.count(kind=kind, trackCount=track_count,
-                                                durationMs=duration), text)
-
-    def test_albums_of_an_artist(self):
-        self.assertEqual(self.count(kind='artist', albumCount=1), '1 album')
-        self.assertEqual(self.count(kind='artist', albumCount=3), '3 albums')
-
-    def test_a_library_from_before_the_counts(self):
-        # Its English caption is shown as it is; the numbers win when both are there.
-        self.assertEqual(self.count(kind='album', countLabel='10 songs, 44 min'),
-                         '10 songs, 44 min')
-        self.assertEqual(self.count(kind='station', countLabel='Radio Station'), 'Radio Station')
-        self.assertEqual(self.count(kind='album', countLabel='9 songs', trackCount=10), '10 songs')
-
-    def test_else_the_groups_count(self):
-        play = {'kind': 'album', 'id': 'l.a'}
-        groups = [{'name': 'Disc 1', 'play': play,
-                   'entries': [track('i.1', 'One', 0), track('i.2', 'Two', 1)]}]
-        self.assertEqual(self.count(kind='album', groups=groups), '2 songs, 6 min')
-        self.assertEqual(self.count(kind='artist', groups=groups * 2), '2 albums')
-        self.assertEqual(self.count(kind='album', groups=[]), '')
-        self.assertEqual(self.count(kind='station'), '')
-        self.assertEqual(self.count(kind='album', trackCount=True, countLabel=None), '')
-
-    def test_through_gettext_once(self):
-        calls = self.translated()
-        item = Item({'kind': 'album', 'trackCount': 12, 'durationMs': 43 * 60000})
-        self.assertEqual(item.count_label, '<<12 songs>, <43 min>>')
-        self.assertEqual(item.get_property('count-label'), '<<12 songs>, <43 min>>')
-        self.assertEqual(len(calls), 3)  # made once, then kept
-        self.assertEqual(self.count(kind='artist', albumCount=2), '<2 albums>')
-
-    def test_a_merge_tells_a_new_count(self):
-        item = Item({'kind': 'playlist', 'id': 'p.1', 'trackCount': 2, 'durationMs': 360000})
-        self.assertEqual(item.count_label, '2 songs, 6 min')
-        seen = []
-        item.connect('notify::count-label', lambda obj, _pspec: seen.append(obj.count_label))
-        item.merge({'kind': 'playlist', 'id': 'p.1', 'trackCount': 2, 'durationMs': 360000,
-                    'title': 'Renamed'}, replace=True)
-        self.assertEqual(seen, [])
-        item.merge({'trackCount': 3, 'durationMs': 540000})
-        self.assertEqual(seen, ['3 songs, 9 min'])
-
-    def test_shelf_titles(self):
-        self.assertEqual(library_module.shelf_title('heavy-rotation', 'X'), 'Heavy Rotation')
-        self.assertEqual(library_module.shelf_title('recently-added', None), 'Recently Added')
-        self.assertEqual(library_module.shelf_title('rec-1', 'Chill Mornings'), 'Chill Mornings')
-        self.assertEqual(library_module.shelf_title('rec-2', ''), 'For You')
-        self.translated()
-        self.assertEqual(library_module.shelf_title('heavy-rotation', 'X'), '<Heavy Rotation>')
-        self.assertEqual(library_module.shelf_title('rec-2', None), '<For You>')
-        with tempfile.TemporaryDirectory() as cache:
-            write_library(cache, [album('l.a1', 'A1', [])], shelves=[
-                {'key': 'heavy-rotation', 'title': 'X', 'items': []},
-                {'key': 'rec-9', 'title': '', 'items': []}])
-            library = load(cache)
-        self.assertEqual([shelf.title for shelf in library.shelves],
-                         ['<Heavy Rotation>', '<For You>'])
-
-    def test_unknown_titles(self):
-        calls = self.translated()
-        artist = Item({'kind': 'artist', 'title': ''})
-        self.assertEqual(artist.title, '<Unknown Artist>')
-        self.assertEqual(Item({'kind': 'artist'}).title, '<Unknown Artist>')
-        self.assertEqual(calls, ['Unknown Artist'])  # looked up once
-        self.assertEqual(Item({'kind': 'album', 'title': None}).title, '<Unknown Album>')
-        self.assertEqual(Item({'kind': 'playlist', 'title': ''}).title, '')
-        self.assertEqual(Item({'kind': 'album', 'title': 'Named'}).title, 'Named')
-        artist.title = 'Set'
-        self.assertEqual((artist.title, artist.raw['title']), ('Set', 'Set'))
-
-
-class TestTrackRecord(unittest.TestCase):
-    """A track dict kept as a tuple: it reads as the dict did."""
-
-    def test_reads_as_the_dict(self):
-        entry = dict(track('i.1', 'Song', 4), catalogId='1440833098', extra=[1, 2])
-        del entry['thumb']
-        record = TrackRecord(entry)
-        for key, value in entry.items():
-            with self.subTest(key=key):
-                self.assertEqual(record.get(key), value)
-                self.assertEqual(record[key], value)
-                self.assertIn(key, record)
-        self.assertEqual(record.get('catalogId'), '1440833098')  # kept as an int, read as text
-        self.assertIsNone(record.get('thumb'))  # absent, as from the dict
-        self.assertEqual(record.get('thumb', 'x'), 'x')
-        self.assertEqual(record.get('nothing', 7), 7)
-        self.assertNotIn('thumb', record)
-        with self.assertRaises(KeyError):
-            record['thumb']  # noqa: B018
-        self.assertEqual(dict(record), entry)
-        self.assertEqual(sorted(record.keys()), sorted(entry))
-
-    def test_catalog_ids_that_are_not_plain_numbers_stay_text(self):
-        for value in ('0123', '12a', '', '١٢٣', None, 42):
-            with self.subTest(value=value):
-                self.assertEqual(TrackRecord({'catalogId': value}).get('catalogId'), value)
-
-    def test_equal_when_the_dicts_are(self):
-        one = track('i.1', 'Song', 0)
-        self.assertEqual(TrackRecord(one), TrackRecord(dict(one)))
-        self.assertNotEqual(TrackRecord(one), TrackRecord(dict(one, title='Other')))
-        self.assertNotEqual(TrackRecord(one), TrackRecord(dict(one, other=1)))
-        without = dict(one)
-        del without['thumb']
-        self.assertNotEqual(TrackRecord(one), TrackRecord(without))  # null is not absent
-
-    def test_a_track_reads_it_as_the_dict(self):
-        entry = dict(track('i.1', 'Song', 4), catalogId=123, explicit=True, type='songs',
-                     genre='Shoegaze', year=2019)
-        over_dict, over_record = Track(entry), Track(TrackRecord(entry))
-        for name in ('id', 'catalog-id', 'title', 'artist', 'album', 'track-number',
-                     'disc-number', 'duration-ms', 'duration-label', 'explicit', 'index',
-                     'kind', 'thumb', 'genre', 'year'):
-            with self.subTest(name=name):
-                self.assertEqual(over_record.get_property(name), over_dict.get_property(name))
-        self.assertEqual(over_record.search_key, over_dict.search_key)
-
-    def test_the_parse_keeps_records(self):
-        with tempfile.TemporaryDirectory() as cache:
-            write_library(cache, [album('l.a1', 'A1', ['i.1', 'i.2'])],
-                          playlists=[dict(album('p.1', 'P', ['i.3']), kind='playlist')])
-            Path(cache, 'library.json').write_text(
-                Path(cache, 'library.json').read_text(encoding='utf-8').replace(
-                    '"sections": {', '"sections": {"songs": [{"id": "i.9", "title": "L"}], '),
-                encoding='utf-8')
-            library = load(cache)
-        album_item, playlist_item = library.albums.get_item(0), library.playlists.get_item(0)
-        for item in (album_item, playlist_item):
-            self.assertTrue(all(isinstance(entry, TrackRecord)
-                                for entry in item.raw['groups'][0]['entries']))
-        self.assertIsInstance(library._loose[0], TrackRecord)
-        self.assertEqual([t.id for t in build_songs(library)], ['i.1', 'i.2', 'i.9'])
-        self.assertEqual(library.song_count(), 3)
-
-
-class TestPausedGc(unittest.TestCase):
-    def setUp(self):
-        self.addCleanup(gc.enable)
-        self.addCleanup(gc.unfreeze)
-
-    def test_paused_then_frozen_and_resumed(self):
-        gc.enable()
-        frozen = gc.get_freeze_count()
-        with paused_gc():
-            self.assertFalse(gc.isenabled())
-            with paused_gc(freeze=False):
-                self.assertFalse(gc.isenabled())
-            self.assertFalse(gc.isenabled())  # the outer one still holds
-            kept = [object() for _ in range(10)]  # noqa: F841
-        self.assertTrue(gc.isenabled())
-        self.assertGreater(gc.get_freeze_count(), frozen)
-
-    def cycle(self):
-        """A weak reference to a reference cycle that is garbage, not collected yet."""
-        class Node:
-            pass
-
-        node = Node()
-        node.self = node
-        dead = weakref.ref(node)
-        del node
-        return dead
-
-    def test_garbage_from_before_the_pause_is_not_frozen(self):
-        gc.disable()
-        dead = self.cycle()
-        with paused_gc():
-            pass
-        gc.enable()
-        gc.collect()
-        self.assertIsNone(dead())
-
-    def test_garbage_made_during_a_later_pause_is_not_frozen(self):
-        gc.enable()
-        gc.freeze()  # as after the first load
-        with paused_gc():
-            dead = self.cycle()
-        gc.collect()
-        self.assertIsNone(dead())
-
-    def test_a_load_pauses_from_its_call_to_its_end(self):
-        gc.enable()
-        with tempfile.TemporaryDirectory() as cache:
-            write_library(cache, [album('l.a1', 'A1', ['i.1'])])
-            library = Library()
-            with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
-                loading = library.load()
-                self.assertFalse(gc.isenabled())  # the parse runs without collections
-                asyncio.run(loading)
-                self.assertTrue(gc.isenabled())
-                # A load closed before it ever ran (an app never activated) lets go too.
-                never = library.load()
-                self.assertFalse(gc.isenabled())
-                never.close()
-                del never
-                self.assertTrue(gc.isenabled())
-                reloading = library.reload()
-                self.assertFalse(gc.isenabled())
-                asyncio.run(reloading)
-                self.assertTrue(gc.isenabled())
-
-    def test_no_freeze_when_not_asked_and_disabled_stays_disabled(self):
-        gc.unfreeze()
-        gc.disable()
-        with paused_gc(freeze=False):
-            self.assertFalse(gc.isenabled())
-        self.assertFalse(gc.isenabled())
-        self.assertEqual(gc.get_freeze_count(), 0)
-
-
-class TestPlaylistTree(unittest.TestCase):
-    """PlaylistTree over invented folders: the children lists decide, the rest is tidied up."""
-
-    def test_nesting(self):
-        playlists = [playlist(f'p{n}') for n in range(1, 6)]
-        tree = PlaylistTree([
-            folder('root', ['f:a', 'p5', 'f:c']),
-            folder('a', ['f:b', 'p2', 'p1']),
-            folder('b', ['p3'], parent='a'),
-            folder('c', ['p4']),
-        ], playlists)
-        self.assertEqual(shape(tree), [
-            ('folder', 'a', 0, []),
-            ('folder', 'b', 1, ['a']),
-            ('playlist', 'p3', 2, ['a', 'b']),
-            ('playlist', 'p1', 1, ['a']),
-            ('playlist', 'p2', 1, ['a']),
-            ('folder', 'c', 0, []),
-            ('playlist', 'p4', 1, ['c']),
-            ('playlist', 'p5', 0, []),
-        ])
-        self.assertEqual([child.id for child in tree.root.children], ['a', 'c', 'p5'])
-        self.assertEqual([child.id for child in tree.folder('a').children], ['b', 'p1', 'p2'])
-        self.assertIs(tree.folder('b').parent, tree.folder('a'))
-        self.assertIs(tree.flat[2].item, playlists[2])
-        self.assertEqual(tree.folder('a').item.title, 'a')
-        self.assertEqual([item.id for item in tree.folder('a').store], ['b', 'p1', 'p2'])
-
-    def test_order_as_apple_music_lists_it(self):
-        # At every level: Favourite Songs, the folders, the playlists, each group by title
-        # whatever the order of the children lists.
-        titles = {'p1': '2. Rocks', 'p2': '1.1 Lively 2', 'p3': '10. Ten', 'p4': '1. Lively',
-                  'p5': 'zebra', 'p6': 'Émile', 'p7': 'apple', 'p8': 'Egg', 'p9': 'emu'}
-        playlists = [playlist(pid, title) for pid, title in titles.items()]
-        favourites = Item({'id': 'fav', 'kind': 'playlist', 'title': 'Favourite Songs',
-                           'attributes': {'isFavourites': True}, 'groups': []})
-        playlists.append(favourites)
-        tree = PlaylistTree([
-            folder('root', ['p1', 'f:z', 'p2', 'fav', 'p3', 'f:Old', 'p4', 'f:a']),
-            folder('z', ['p5', 'f:inner', 'p6', 'p7'], title='zz'),
-            folder('inner', ['p9', 'p8'], parent='z', title='Inner'),
-            folder('Old', [], title='OLD'),
-            folder('a', [], title='4.XX'),
-        ], playlists)
-
-        def titles_of(folder_id):
-            return [child.item.title for child in tree.folder(folder_id).children]
-
-        self.assertEqual(titles_of(ROOT_FOLDER), [
-            'Favourite Songs', '4.XX', 'OLD', 'zz',
-            '1. Lively', '1.1 Lively 2', '10. Ten', '2. Rocks'])
-        self.assertEqual(titles_of('z'), ['Inner', 'apple', 'Émile', 'zebra'])
-        self.assertEqual(titles_of('inner'), ['Egg', 'emu'])
-        # The stores and the depth-first list follow the same order.
-        self.assertEqual([item.title for item in tree.root.store], titles_of(ROOT_FOLDER))
-        self.assertEqual([node.item.title for node in tree.flat if node.depth == 1],
-                         ['Inner', 'apple', 'Émile', 'zebra'])
-
-    def test_title_key(self):
-        key = library_module.title_key
-        # Case is no matter and accents only part ties; white space, then punctuation,
-        # before digits, digits before letters, a digit at a time (no number order).
-        ordered = ['', ' a', '-a', '1. Lively', '1.1 Lively 2', '10', '2', 'a', 'cafe',
-                   'café', 'É', 'eb', 'Z']
-        self.assertEqual(sorted(reversed(ordered), key=key), ordered)
-        self.assertEqual(key('CAFE')[0], key('cafe')[0])
-        self.assertEqual(key('Cafe'), key('cafe'))  # a tie: the lists' order decides
-        self.assertEqual(key(None), key(''))
-        self.assertLess(key('Straße'), key('strasse z'))  # casefolded: ß is ss
-        self.assertLess(key('٣'), key('4'))  # any script's digits are digits
-
-    def test_ties_keep_the_lists_order(self):
-        playlists = [playlist('p1', 'Same'), playlist('p2', 'same'), playlist('p3', 'SAME')]
-        tree = PlaylistTree([folder('root', ['p2', 'p3', 'p1'])], playlists)
-        self.assertEqual([node.id for node in tree.flat], ['p2', 'p3', 'p1'])
-        tree = PlaylistTree([], playlists)  # no folders: the section's order
-        self.assertEqual([node.id for node in tree.flat], ['p1', 'p2', 'p3'])
-
-    def test_sort_places_a_retitled_item_again(self):
-        playlists = [playlist(f'p{n}', title) for n, title in enumerate('bcd', 1)]
-        tree = PlaylistTree([folder('root', ['f:a', 'p1', 'p2', 'p3']),
-                             folder('a', [], title='A')], playlists)
-        store = tree.root.store
-        events = []
-        store.connect('items-changed', lambda _store, *change: events.append(change))
-        self.assertFalse(tree.sort())  # nothing changed: nothing moves
-        self.assertEqual(events, [])
-        playlists[2].title = 'a'  # d becomes a: before b, after the folder
-        self.assertTrue(tree.sort())
-        self.assertEqual([item.id for item in store], ['a', 'p3', 'p1', 'p2'])
-        self.assertEqual([node.id for node in tree.flat], ['a', 'p3', 'p1', 'p2'])
-        self.assertIs(tree.root.store, store)
-        self.assertEqual(len(events), 2)  # moved: out and in, one splice each
-
-    def test_without_folders_every_playlist_is_at_the_top(self):
-        playlists = [playlist('p2'), playlist('p1')]
-        tree = PlaylistTree([], playlists)
-        self.assertEqual(shape(tree), [('playlist', 'p1', 0, []), ('playlist', 'p2', 0, [])])
-        self.assertEqual(list(tree.root.store), [playlists[1], playlists[0]])
-        self.assertEqual(shape(PlaylistTree()), [])
-
-    def test_what_nothing_lists_goes_at_the_top(self):
-        playlists = [playlist(f'p{n}') for n in range(1, 5)]
-        root = folder('root', ['p2', 'f:gone', 'p.gone', 'f:p1'])  # p1 is not a folder
-        root['children'] += [{'kind': 'station', 'id': 'p4'}, 'p4', {'id': 'p4'}]
-        tree = PlaylistTree([root, folder('orphan', ['p3'], parent='nowhere')], playlists)
-        self.assertEqual(shape(tree), [
-            ('folder', 'orphan', 0, []),
-            ('playlist', 'p3', 1, ['orphan']),
-            ('playlist', 'p1', 0, []),
-            ('playlist', 'p2', 0, []),
-            ('playlist', 'p4', 0, []),
-        ])
-
-    def test_nothing_twice_and_no_cycles(self):
-        playlists = [playlist('p1'), playlist('p2')]
-        tree = PlaylistTree([
-            folder('root', ['f:a', 'p1', 'f:a']),
-            folder('a', ['p1', 'f:b', 'f:a', 'f:root', 'p2']),
-            folder('b', ['f:a', 'p2'], parent='a'),
-        ], playlists)
-        self.assertEqual(shape(tree), [
-            ('folder', 'a', 0, []),
-            ('folder', 'b', 1, ['a']),
-            ('playlist', 'p2', 2, ['a', 'b']),
-            ('playlist', 'p1', 1, ['a']),
-        ])
-
-    def test_without_a_root_entry_the_top_is_the_parentless_folders(self):
-        playlists = [playlist('p1'), playlist('p2')]
-        tree = PlaylistTree([
-            folder('a', ['p1'], parent=None),
-            folder('b', ['p2'], parent='a'),  # listed by nothing: at the top, after a
-        ], playlists)
-        self.assertEqual(shape(tree), [
-            ('folder', 'a', 0, []),
-            ('playlist', 'p1', 1, ['a']),
-            ('folder', 'b', 0, []),
-            ('playlist', 'p2', 1, ['b']),
-        ])
-
-    def test_loaded_with_the_library(self):
-        with tempfile.TemporaryDirectory() as cache:
-            raw = [{'id': f'p{n}', 'kind': 'playlist', 'title': f'P{n}',
-                    'play': {'kind': 'playlist', 'id': f'p{n}'}, 'groups': []} for n in (1, 2)]
-            write_library(cache, [], playlists=raw,
-                          folders=[folder('root', ['f:a']), folder('a', ['p2', 'p1'])])
-            library = load(cache)
-            first = library.playlist_tree()
-            self.assertEqual(shape(first), [('folder', 'a', 0, []), ('playlist', 'p1', 1, ['a']),
-                                            ('playlist', 'p2', 1, ['a'])])
-            self.assertIs(library.by_id('folder', 'a'), first.folder('a').item)
-            self.assertEqual([item.id for item in library.folder_items('a')], ['p1', 'p2'])
-            self.assertIs(library.folder_items('a').get_item(0), library.by_id('playlist', 'p1'))
-            # Another load makes a new tree, with new folder Items and stores; a library
-            # without folders puts everything at the top.
-            write_library(cache, [], playlists=raw)
-            load(cache, library)
-            self.assertIsNot(library.playlist_tree(), first)
-            self.assertEqual(shape(library.playlist_tree()),
-                             [('playlist', 'p1', 0, []), ('playlist', 'p2', 0, [])])
-            self.assertIsNone(library.by_id('folder', 'a'))
-            self.assertIsNone(library.folder_items('a'))
-        self.assertEqual(shape(Library().playlist_tree()), [])  # before any load
-
-    def test_a_reload_keeps_the_folder_stores(self):
-        raw = [{'id': f'p{n}', 'kind': 'playlist', 'title': f'P{n}',
-                'play': {'kind': 'playlist', 'id': f'p{n}'}, 'groups': []} for n in (1, 2, 3)]
-        library = Library()
-
-        def reload(cache, folders):
-            write_library(cache, [], playlists=raw, folders=folders)
-            with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
-                asyncio.run(library.reload())
-
-        with tempfile.TemporaryDirectory() as cache:
-            folders = [folder('root', ['f:a', 'p3']), folder('a', ['p2', 'p1'])]
-            write_library(cache, [], playlists=raw, folders=folders)
-            load(cache, library)
-            top, inner = library.folder_items(ROOT_FOLDER), library.folder_items('a')
-            folder_a = library.by_id('folder', 'a')
-            events = []
-            for store in (top, inner):
-                store.connect('items-changed',
-                              lambda store, *change: events.append((store, change)))
-            reload(cache, folders)  # the same file: nothing to tell
-            self.assertIs(library.folder_items(ROOT_FOLDER), top)
-            self.assertIs(library.folder_items('a'), inner)
-            self.assertIs(library.by_id('folder', 'a'), folder_a)
-            self.assertEqual(events, [])
-            self.assertEqual([item.id for item in inner], ['p1', 'p2'])  # by title
-            # p1 moves out of a, to the top level, by title: the same stores, in the new order.
-            folders = [folder('root', ['f:a', 'p3', 'p1']), folder('a', ['p2'])]
-            reload(cache, folders)
-            self.assertIs(library.folder_items(ROOT_FOLDER), top)
-            self.assertIs(library.folder_items('a'), inner)
-            self.assertEqual([item.id for item in top], ['a', 'p1', 'p3'])
-            self.assertEqual([item.id for item in inner], ['p2'])
-            self.assertEqual(sorted((store is top, change) for store, change in events),
-                             [(False, (0, 1, 0)), (True, (1, 0, 1))])
-            # A renamed folder keeps its Item, spliced over itself where it is listed.
-            events.clear()
-            reload(cache, [folder('root', ['f:a', 'p3', 'p1']), folder('a', ['p2'], title='A!')])
-            self.assertIs(library.by_id('folder', 'a'), folder_a)
-            self.assertEqual(folder_a.title, 'A!')
-            self.assertEqual(events, [(top, (0, 1, 1))])
-            # A renamed playlist keeps its Item and moves to its new place in the same store.
-            p3 = library.by_id('playlist', 'p3')
-            raw[2]['title'] = 'Before P1'
-            events.clear()
-            reload(cache, [folder('root', ['f:a', 'p3', 'p1']), folder('a', ['p2'], title='A!')])
-            self.assertIs(library.by_id('playlist', 'p3'), p3)
-            self.assertIs(library.folder_items(ROOT_FOLDER), top)
-            self.assertEqual([item.id for item in top], ['a', 'p3', 'p1'])
-            self.assertTrue(events)
-            self.assertTrue(all(store is top for store, _change in events))
-
-    def test_place_playlists_after_a_rename_in_place(self):
-        with tempfile.TemporaryDirectory() as cache:
-            raw = [{'id': f'p{n}', 'kind': 'playlist', 'title': f'P{n}',
-                    'play': {'kind': 'playlist', 'id': f'p{n}'}, 'groups': []} for n in (1, 2)]
-            write_library(cache, [], playlists=raw, folders=[folder('root', ['p1', 'p2'])])
-            library = load(cache)
-            top = library.folder_items(ROOT_FOLDER)
-            tree = library.playlist_tree()
-            told = []
-            library.connect('playlists-changed', lambda _library: told.append(True))
-            library.by_id('playlist', 'p2').title = 'A Rename'
-            library.place_playlists()
-            self.assertEqual(told, [True])
-            self.assertIs(library.playlist_tree(), tree)  # the same tree, placed again
-            self.assertIs(library.folder_items(ROOT_FOLDER), top)
-            self.assertEqual([item.id for item in top], ['p2', 'p1'])
-            self.assertEqual([node.id for node in tree.flat], ['p2', 'p1'])
-
-
-class TestTreeChanges(unittest.TestCase):
-    """Moves and new folders shown ahead of Apple's listing: apply_changes() over library.json's
-    folders, the tree's refusals, and Library.hold()/release() through reloads."""
-
-    FOLDERS = [folder('root', ['f:a', 'p3']), folder('a', ['f:b', 'p1']),
-               folder('b', ['p2'], parent='a')]
-
-    def tree(self, folders=None, changes=()):
-        playlists = [playlist(f'p{n}') for n in (1, 2, 3)]
-        return PlaylistTree(apply_changes(folders or self.FOLDERS, list(changes)), playlists)
-
-    def test_a_playlist_into_a_folder_and_out_to_the_top(self):
-        into = TreeChange.move('playlist', 'p3', 'b')
-        self.assertEqual(shape(self.tree(changes=[into])), [
-            ('folder', 'a', 0, []), ('folder', 'b', 1, ['a']),
-            ('playlist', 'p2', 2, ['a', 'b']), ('playlist', 'p3', 2, ['a', 'b']),
-            ('playlist', 'p1', 1, ['a'])])
-        out = TreeChange.move('playlist', 'p2', ROOT_FOLDER)
-        self.assertEqual(shape(self.tree(changes=[out]))[-2:],
-                         [('playlist', 'p2', 0, []), ('playlist', 'p3', 0, [])])
-        # The list given is left alone.
-        self.assertEqual(self.FOLDERS[2]['children'], [{'kind': 'playlist', 'id': 'p2'}])
-
-    def test_a_folder_moves_with_what_is_in_it(self):
-        moved = self.tree(changes=[TreeChange.move('folder', 'b', ROOT_FOLDER)])
-        self.assertEqual(shape(moved), [
-            ('folder', 'a', 0, []), ('playlist', 'p1', 1, ['a']),
-            ('folder', 'b', 0, []), ('playlist', 'p2', 1, ['b']),
-            ('playlist', 'p3', 0, [])])
-
-    def test_a_folder_created(self):
-        created = self.tree(changes=[TreeChange.create('c', 'New One', 'a')])
-        self.assertIn(('folder', 'c', 1, ['a']), shape(created))
-        self.assertEqual(created.folder('c').item.title, 'New One')
-        # Twice, or in a folder that is not there: nothing more.
-        self.assertEqual(shape(self.tree(changes=[TreeChange.create('c', 'X', 'a')] * 2)),
-                         shape(created))
-        self.assertEqual(shape(self.tree(changes=[TreeChange.create('c', 'X', 'gone')])),
-                         shape(self.tree()))
-
-    def test_a_moved_folder_the_file_lists_nowhere(self):
-        # Apple stops listing a folder where it was before it lists it in its new folder:
-        # the change's entries put it back, with what is in it.
-        self.assertEqual([raw['id'] for raw in folder_entries(self.FOLDERS, 'a')], ['a', 'b'])
-        self.assertEqual(folder_entries(self.FOLDERS, 'gone'), ())
-        folders = [folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['p1']), folder('c', [])]
-        move = TreeChange.move('folder', 'b', 'c')
-        self.assertEqual(shape(self.tree(folders, [move])), [  # no entries: skipped
-            ('folder', 'a', 0, []), ('playlist', 'p1', 1, ['a']), ('folder', 'c', 0, []),
-            ('playlist', 'p2', 0, []), ('playlist', 'p3', 0, [])])
-        move.entries = folder_entries(self.FOLDERS, 'b')
-        self.assertEqual(shape(self.tree(folders, [move])), [
-            ('folder', 'a', 0, []), ('playlist', 'p1', 1, ['a']), ('folder', 'c', 0, []),
-            ('folder', 'b', 1, ['c']), ('playlist', 'p2', 2, ['c', 'b']),
-            ('playlist', 'p3', 0, [])])
-        # The file's own entry wins whenever it has the folder.
-        listed = [folder('root', ['f:a', 'f:b', 'f:c', 'p2', 'p3']), folder('a', ['p1']),
-                  folder('b', []), folder('c', [])]
-        self.assertIn(('folder', 'b', 1, ['c']), shape(self.tree(listed, [move])))
-        self.assertIn(('playlist', 'p2', 0, []), shape(self.tree(listed, [move])))
-
-    def test_without_a_root_entry(self):
-        folders = [folder('a', ['p1'], parent=None)]
-        moved = self.tree(folders, [TreeChange.move('playlist', 'p1', ROOT_FOLDER)])
-        self.assertEqual(shape(moved)[:1], [('folder', 'a', 0, [])])
-        self.assertIn(('playlist', 'p1', 0, []), shape(moved))
-
-    def test_what_the_tree_refuses(self):
-        tree = self.tree()
-        self.assertTrue(tree.can_move('playlist', 'p3', 'a'))
-        self.assertTrue(tree.can_move('folder', 'b', ROOT_FOLDER))
-        self.assertFalse(tree.can_move('playlist', 'p3', ROOT_FOLDER))  # where it is
-        self.assertFalse(tree.can_move('folder', 'a', 'a'))  # into itself
-        self.assertFalse(tree.can_move('folder', 'a', 'b'))  # into a folder inside it
-        self.assertFalse(tree.can_move('folder', ROOT_FOLDER, 'a'))  # the top level
-        self.assertFalse(tree.can_move('playlist', 'p9', 'a'))  # not in the tree
-        self.assertFalse(tree.can_move('playlist', 'p3', 'gone'))
-        favourites = Item({'id': 'fav', 'kind': 'playlist', 'title': 'Favourite Songs',
-                           'attributes': {'isFavourites': True}, 'groups': []})
-        tree = PlaylistTree(self.FOLDERS, [playlist('p1'), favourites])
-        self.assertFalse(tree.can_move('playlist', 'fav', 'a'))
-        self.assertIs(tree.node('folder', 'a'), tree.folder('a'))
-        self.assertEqual(tree.node('playlist', 'p1').parent.id, 'a')
-
-    def test_settled_when_the_file_shows_it(self):
-        folders = [folder('root', ['f:a', 'p3']), folder('a', ['p1'])]
-        self.assertTrue(change_settled(folders, TreeChange.move('playlist', 'p1', 'a')))
-        self.assertTrue(change_settled(folders, TreeChange.move('playlist', 'p3', ROOT_FOLDER)))
-        self.assertTrue(change_settled(folders, TreeChange.move('playlist', 'p9', ROOT_FOLDER)))
-        self.assertFalse(change_settled(folders, TreeChange.move('playlist', 'p3', 'a')))
-        self.assertTrue(change_settled(folders, TreeChange.create('a', 'A', ROOT_FOLDER)))
-        self.assertFalse(change_settled(folders, TreeChange.create('c', 'C', ROOT_FOLDER)))
-        self.assertEqual(folder_of(folders, 'folder', 'gone'), None)
-
-    def test_hold_and_release_through_reloads(self):
-        raw = [{'id': f'p{n}', 'kind': 'playlist', 'title': f'P{n}',
-                'play': {'kind': 'playlist', 'id': f'p{n}'}, 'groups': []} for n in (1, 2, 3)]
-        library = Library()
-        with tempfile.TemporaryDirectory() as cache:
-            def reload(folders):
-                write_library(cache, [], playlists=raw, folders=folders)
-                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
-                    asyncio.run(library.reload())
-
-            write_library(cache, [], playlists=raw, folders=self.FOLDERS)
-            load(cache, library)
-            top, inner = library.folder_items(ROOT_FOLDER), library.folder_items('a')
-            folder_a = library.by_id('folder', 'a')
-            told = []
-            library.connect('playlists-changed', lambda _library: told.append(True))
-
-            # A move shows at once, in the same stores and folder Items.
-            move = TreeChange.move('playlist', 'p3', 'a')
-            self.assertTrue(library.hold(move))
-            self.assertEqual(told, [True])
-            self.assertEqual([item.id for item in top], ['a'])
-            self.assertIs(library.folder_items('a'), inner)
-            self.assertEqual([item.id for item in inner], ['b', 'p1', 'p3'])
-            self.assertIs(library.by_id('folder', 'a'), folder_a)
-            # The tree refuses: nothing held, nothing told.
-            self.assertFalse(library.hold(TreeChange.move('folder', 'a', 'b')))
-            self.assertEqual(len(told), 1)
-
-            # A sync before Apple lists it keeps it shown; one that lists it settles it.
-            reload(self.FOLDERS)
-            self.assertEqual([item.id for item in inner], ['b', 'p1', 'p3'])
-            self.assertEqual(library.pending_changes(), [move])
-            reload([folder('root', ['f:a']), folder('a', ['f:b', 'p1', 'p3']),
-                    folder('b', ['p2'], parent='a')])
-            self.assertEqual(library.pending_changes(), [])
-            self.assertEqual([item.id for item in inner], ['b', 'p1', 'p3'])
-
-            # A move and its Undo before any sync: the later replaces the earlier.
-            there = TreeChange.move('playlist', 'p2', 'a')
-            library.hold(there)
-            undone = TreeChange.move('playlist', 'p2', 'b')
-            library.hold(undone)
-            self.assertEqual(library.pending_changes(), [undone])
-            reload(self.FOLDERS)  # the file has it in b: settled, nothing held
-            self.assertEqual(library.pending_changes(), [])
-            self.assertEqual([item.id for item in library.folder_items('b')], ['p2'])
-            reload([folder('root', ['f:a']), folder('a', ['f:b', 'p1', 'p3']),
-                    folder('b', ['p2'], parent='a')])
-
-            # Released (Apple refused it): back where the file has it.
-            back = TreeChange.move('playlist', 'p3', ROOT_FOLDER)
-            library.hold(back)
-            self.assertEqual([item.id for item in top], ['a', 'p3'])
-            library.release(back)
-            self.assertEqual([item.id for item in top], ['a'])
-            self.assertEqual(library.pending_changes(), [])
-
-            # A new folder is in the tree and by_id() at once, and goes when released.
-            created = TreeChange.create('c', 'Fresh', ROOT_FOLDER)
-            self.assertTrue(library.hold(created))
-            self.assertEqual(library.by_id('folder', 'c').title, 'Fresh')
-            self.assertEqual([item.id for item in top], ['a', 'c'])
-            self.assertFalse(library.hold(TreeChange.create('c', 'Again', ROOT_FOLDER)))
-            library.release(created)
-            self.assertIsNone(library.by_id('folder', 'c'))
-
-    def test_a_folder_moved_into_a_folder_survives_a_sync_that_lists_it_nowhere(self):
-        raw = [{'id': f'p{n}', 'kind': 'playlist', 'title': f'P{n}',
-                'play': {'kind': 'playlist', 'id': f'p{n}'}, 'groups': []} for n in (1, 2, 3)]
-        start = [folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['f:b', 'p1']),
-                 folder('b', ['p2'], parent='a'), folder('c', [])]
-        library = Library()
-        with tempfile.TemporaryDirectory() as cache:
-            def reload(folders):
-                write_library(cache, [], playlists=raw, folders=folders)
-                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
-                    asyncio.run(library.reload())
-
-            write_library(cache, [], playlists=raw, folders=start)
-            load(cache, library)
-            folder_b = library.by_id('folder', 'b')
-            move = TreeChange.move('folder', 'b', 'c')
-            self.assertTrue(library.hold(move))
-            self.assertEqual([item.id for item in library.folder_items('c')], ['b'])
-            # Gone from a, not yet listed in c: still shown in c, holding p2.
-            reload([folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['p1']), folder('c', [])])
-            self.assertEqual(library.pending_changes(), [move])
-            self.assertEqual([item.id for item in library.folder_items('c')], ['b'])
-            self.assertEqual([item.id for item in library.folder_items('b')], ['p2'])
-            self.assertIs(library.by_id('folder', 'b'), folder_b)
-            self.assertEqual([item.id for item in library.folder_items(ROOT_FOLDER)],
-                             ['a', 'c', 'p3'])
-            # Listed there: settled.
-            reload([folder('root', ['f:a', 'f:c', 'p3']), folder('a', ['p1']),
-                    folder('c', ['f:b']), folder('b', ['p2'], parent='c')])
-            self.assertEqual(library.pending_changes(), [])
-            self.assertEqual([item.id for item in library.folder_items('c')], ['b'])
-
-    def test_an_expired_change_gives_way_and_a_load_forgets_them(self):
-        raw = [{'id': 'p1', 'kind': 'playlist', 'title': 'P1',
-                'play': {'kind': 'playlist', 'id': 'p1'}, 'groups': []}]
-        folders = [folder('root', ['f:a', 'p1']), folder('a', [])]
-        library = Library()
-        with tempfile.TemporaryDirectory() as cache:
-            write_library(cache, [], playlists=raw, folders=folders)
-            load(cache, library)
-            with mock.patch.object(library_module, '_now', return_value=1000.0):
-                library.hold(TreeChange.move('playlist', 'p1', 'a'))
-            with mock.patch.object(library_module, '_now', return_value=1000.0 + PENDING_HOLD):
-                with mock.patch.dict(os.environ, {'APPLE_MUSIC_CACHE': cache}):
-                    asyncio.run(library.reload())
-            self.assertEqual(library.pending_changes(), [])
-            self.assertEqual([item.id for item in library.folder_items('a')], [])
-            library.hold(TreeChange.move('playlist', 'p1', 'a'))
-            load(cache, library)
-            self.assertEqual(library.pending_changes(), [])
-            self.assertEqual([item.id for item in library.folder_items('a')], [])
 
 
 class TestHolds(unittest.TestCase):
@@ -1792,9 +870,9 @@ class TestReorder(unittest.TestCase):
             self.assertIsNone(library.held_order('p.1'))
             self.assertEqual(item.track_ids(), ['b', 'c', 'a', 'd'])
             # Expired: the file wins; a load forgets every order held.
-            with mock.patch.object(library_module, '_now', return_value=1000.0):
+            with mock.patch.object(model_module, '_now', return_value=1000.0):
                 library.reorder(item, moved(4, 0, 3))
-            with mock.patch.object(library_module, '_now', return_value=1000.0 + PENDING_HOLD):
+            with mock.patch.object(model_module, '_now', return_value=1000.0 + PENDING_HOLD):
                 reload(['b', 'c', 'a', 'd'])
             self.assertEqual(item.track_ids(), ['b', 'c', 'a', 'd'])
             library.reorder(library.by_id('playlist', 'p.1'), moved(4, 0, 3))
@@ -1823,45 +901,6 @@ class TestReorder(unittest.TestCase):
             self.assertIs(library.with_held_order(other), other)
 
 
-class TestItemRefs(unittest.TestCase):
-    """What a drag carries: library.ItemRefs of tracks and Items."""
-
-    def test_refs_of_tracks_and_items(self):
-        track = Track({'id': 'i.s1', 'catalogId': '100', 'title': 'Song', 'index': 4},
-                      play={'kind': 'playlist', 'id': 'p.1'})
-        video = Track({'id': '200', 'title': 'Clip', 'type': 'music-videos', 'index': 0})
-        song = Item({'id': '300', 'kind': 'song', 'title': 'Single', 'catalogId': '300'})
-        listed = playlist('p.2', 'List')
-        box = Item({'id': 'p.f', 'kind': 'folder', 'title': 'Box'})
-        album = Item({'id': 'l.a', 'kind': 'album', 'title': 'Album'})
-        artist = Item({'id': 'l.art', 'kind': 'artist', 'title': 'Someone'})
-        refs = ItemRefs.for_objects([track, video, song, listed, box, album, artist],
-                                    origin=('playlist', 'p.1'))
-        self.assertEqual(list(refs), [
-            Ref('song', 'i.s1', 'Song', 4), Ref('video', '200', 'Clip', 0),
-            Ref('song', '300', 'Single'), Ref('playlist', 'p.2', 'List'),
-            Ref('folder', 'p.f', 'Box'), Ref('album', 'l.a', 'Album')])
-        self.assertEqual(refs.origin, ('playlist', 'p.1'))
-        # The objects named, in the refs' order, the artist left out with its ref.
-        self.assertEqual(refs.objects, (track, video, song, listed, box, album))
-        self.assertEqual(ItemRefs([Ref('song', 'x', 'X')]).objects, ())
-        self.assertEqual([ref.id for ref in refs.tracks()], ['i.s1', '200', '300'])
-        self.assertEqual([ref.id for ref in refs.containers()], ['p.2', 'p.f'])
-        self.assertFalse(refs.only('song', 'video'))
-        self.assertEqual(len(refs), 6)
-        one = ItemRefs.for_objects([listed])
-        self.assertTrue(one.only('playlist', 'folder'))
-        self.assertIsNone(one.origin)
-        self.assertIsNone(ItemRefs.for_objects([artist, Track({'title': 'No id'})]))
-        self.assertIsNone(ItemRefs.for_objects([]))
-
-    def test_track_ref_is_what_add_to_playlist_takes(self):
-        track = Track({'id': '', 'catalogId': '100', 'title': 'Catalog Only', 'index': 1})
-        self.assertEqual(track_ref(track), Ref('song', '100', 'Catalog Only', 1))
-        self.assertIsNone(track_ref(playlist('p.1')))
-        self.assertEqual(item_ref(playlist('p.1')), Ref('playlist', 'p.1', 'p.1'))
-
-
 class TestBuildSongs(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -1876,15 +915,15 @@ class TestBuildSongs(unittest.TestCase):
         spliced = []
         library.songs.connect('items-changed', lambda _store, *change: spliced.append(change))
         pauses = []
-        yield_to_frames = library_module.yield_to_frames
+        yield_to_frames = model_module.yield_to_frames
 
         async def counting_yield():
             pauses.append(True)
             await yield_to_frames()
 
         # A zero budget pauses after every album; the splice gets a frame of its own.
-        with mock.patch.object(library_module, 'FRAME_BUDGET', 0), \
-                mock.patch.object(library_module, 'yield_to_frames', counting_yield):
+        with mock.patch.object(model_module, 'FRAME_BUDGET', 0), \
+                mock.patch.object(model_module, 'yield_to_frames', counting_yield):
             build_songs(library)
         self.assertEqual([t.id for t in library.songs], self.ids)
         self.assertEqual(len(pauses), 10 + 2)
@@ -1924,7 +963,7 @@ class TestBuildSongs(unittest.TestCase):
                 await library.load()
             await build
 
-        with mock.patch.object(library_module, 'FRAME_BUDGET', 0):
+        with mock.patch.object(model_module, 'FRAME_BUDGET', 0):
             asyncio.run(build_then_reload())
         self.assertEqual([t.id for t in library.songs], ['i.x', 'i.y'])
         self.assertTrue(library.songs_ready)
@@ -1939,7 +978,7 @@ class TestBuildSongs(unittest.TestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await build
 
-        with mock.patch.object(library_module, 'FRAME_BUDGET', 0):
+        with mock.patch.object(model_module, 'FRAME_BUDGET', 0):
             asyncio.run(cancel_build())
         self.assertFalse(library.songs_ready)
         self.assertEqual([t.id for t in build_songs(library)], self.ids)
@@ -2003,7 +1042,7 @@ class TestBuildSongs(unittest.TestCase):
         async def yield_to_frames():
             yielded.append(True)
 
-        with mock.patch.object(library_module, 'yield_to_frames', yield_to_frames):
+        with mock.patch.object(songs_module, 'yield_to_frames', yield_to_frames):
             tracks = asyncio.run(make_song_tracks(entries, budget=-1))
             self.assertEqual(tracks, [song_track(entry) for entry in entries])
             self.assertEqual(len(yielded), 20)  # a frame after each: the budget spent
@@ -2058,158 +1097,6 @@ class TestBuildSongs(unittest.TestCase):
         self.assertTrue(library.songs_ready)
 
 
-class TestApplyDiff(unittest.TestCase):
-    """apply_diff(): a store brought to a new list with the fewest splices."""
-
-    def setUp(self):
-        self.objects = [Item({'id': f'l.{n}'}) for n in range(8)]
-
-    def check(self, before, after, splices, old=False):
-        from gi.repository import Gio
-        store = Gio.ListStore(item_type=Item)
-        store.splice(0, 0, [self.objects[n] for n in before])
-        seen = []
-        store.connect('items-changed', lambda _store, *change: seen.append(change))
-        items = [self.objects[n] for n in after]
-        library_module.apply_diff(store, items, list(store) if old else None)
-        self.assertEqual([store.get_item(n) for n in range(store.get_n_items())], items)
-        if splices is not None:
-            self.assertEqual(seen, splices)
-        return seen
-
-    def test_the_same_list_changes_nothing(self):
-        self.check([0, 1, 2], [0, 1, 2], [])
-        self.check([], [], [])
-
-    def test_the_unchanged_ends_are_left_alone(self):
-        self.check([0, 1, 2, 3, 4], [0, 1, 2, 7, 4], [(3, 1, 1)])
-        self.check([0, 1, 2, 3, 4], [0, 1, 5, 2, 3, 4], [(2, 0, 1)])
-        self.check([0, 1, 2, 3, 4], [0, 3, 4], [(1, 2, 0)], old=True)
-        self.check([], [0, 1], [(0, 0, 2)])
-        self.check([0, 1], [], [(0, 2, 0)])
-
-    def test_a_middle_sharing_objects_is_diffed(self):
-        # 2 goes, 5 comes after 3: two splices, the later first (5 at its old position), and
-        # 3 untouched.
-        self.check([0, 1, 2, 3, 4], [0, 1, 3, 5, 4], [(4, 0, 1), (2, 1, 0)])
-
-    def test_runs_that_went_and_came_are_found_in_one_walk(self):
-        # Changes at both ends and in the middle, nothing moved: a splice for each.
-        self.check([0, 1, 2, 3, 4, 5], [6, 1, 2, 4, 5, 7],
-                   [(6, 0, 1), (3, 1, 0), (0, 1, 1)])
-
-    def test_moves_and_repeats_are_still_diffed(self):
-        seen = self.check([0, 1, 2, 3, 4], [0, 3, 2, 1, 4], None)  # 1 and 3 swapped
-        self.assertTrue(all(0 < position and position + removed < 5
-                            for position, removed, _added in seen))  # 0 and 4 untouched
-        self.check([0, 1, 2], [0, 1, 1, 2], None)  # the same object twice
-
-    def test_a_wholly_new_list_is_one_splice(self):
-        self.check([0, 1, 2], [3, 4, 5, 6], [(0, 3, 4)])
-
-
-class TestSongOrder(unittest.TestCase):
-    def setUp(self):
-        rows = [
-            # id, title, artist, album, disc, track, ms
-            ('i.1', 'beta', 'Zed', 'Second', 1, 2, 200000),
-            ('i.2', 'Alpha', 'zed', 'Second', 1, 1, 100000),
-            ('i.3', 'alpha', 'Ann', 'First', 2, 1, 300000),
-            ('i.4', 'Gamma', 'Ann', 'First', 1, 1, 100000),
-            ('i.5', 'delta', 'Ann', 'Third', 1, 1, 250000),
-        ]
-        self.tracks = [Track({'id': i, 'title': title, 'artist': artist, 'album': name,
-                              'discNumber': disc, 'trackNumber': number, 'durationMs': ms})
-                       for i, title, artist, name, disc, number, ms in rows]
-        self.order = SongOrder(self.tracks)
-
-    def ids(self, column, descending=False):
-        return [t.id for t in self.order.tracks(column, descending)]
-
-    def test_title_ignores_case_and_breaks_ties_by_artist(self):
-        self.assertEqual(self.ids('title'), ['i.3', 'i.2', 'i.1', 'i.5', 'i.4'])
-        self.assertEqual(self.ids('title', descending=True), ['i.4', 'i.5', 'i.1', 'i.3', 'i.2'])
-
-    def test_artist_keeps_albums_and_tracks_in_order_both_ways(self):
-        self.assertEqual(self.ids('artist'), ['i.4', 'i.3', 'i.5', 'i.2', 'i.1'])
-        self.assertEqual(self.ids('artist', descending=True), ['i.2', 'i.1', 'i.4', 'i.3', 'i.5'])
-
-    def test_album_then_artist_then_track(self):
-        self.assertEqual(self.ids('album'), ['i.4', 'i.3', 'i.2', 'i.1', 'i.5'])
-        self.assertEqual(self.ids('album', descending=True), ['i.5', 'i.2', 'i.1', 'i.4', 'i.3'])
-
-    def test_time_is_numeric(self):
-        self.assertEqual(self.ids('time'), ['i.2', 'i.4', 'i.1', 'i.5', 'i.3'])
-        self.assertEqual(self.ids('time', descending=True), ['i.3', 'i.5', 'i.1', 'i.2', 'i.4'])
-
-    def test_fold_ignores_case_and_accents(self):
-        self.assertEqual(fold('Beyoncé'), 'beyonce')
-        self.assertEqual(fold('ÉLAN Straße'), 'elan strasse')
-        self.assertEqual(fold('Ｆｕｌｌ'), 'full')  # compatibility forms too
-        self.assertEqual(fold('Plain ASCII'), 'plain ascii')
-        track = Track({'title': 'Café', 'artist': 'Zoë', 'album': 'Über'})
-        self.assertEqual(track.search_key, 'cafe\nzoe\nuber')
-
-    def test_prepare_computes_the_keys_a_few_at_a_time(self):
-        pauses = []
-        yield_to_frames = library_module.yield_to_frames
-
-        async def counting_yield():
-            pauses.append(True)
-            await yield_to_frames()
-
-        order = SongOrder(self.tracks)
-        with mock.patch.object(SongOrder, 'STEP', 2), \
-                mock.patch.object(library_module, 'FRAME_BUDGET', 0), \
-                mock.patch.object(library_module, 'yield_to_frames', counting_yield):
-            asyncio.run(order.prepare('title'))
-        self.assertEqual(set(order._keys), {'title', 'artist', 'album', 'track'})
-        # 5 tracks in steps of 2 (3 steps): the track numbers pause after each step; a text
-        # column after each step of collation and of ranks, after each sorted run of its
-        # distinct texts, and after each step of their merge; the search keys after each step.
-        distinct = {'title': 5, 'artist': 3, 'album': 3}
-        self.assertEqual(len(pauses), 3 + sum(3 + (count + 1) // 2 + count // 2 + 3
-                                              for count in distinct.values()) + 3)
-        # Every search key is made: the filter's first letter folds nothing.
-        self.assertTrue(all(t._search_key is not None for t in self.tracks))
-        pauses.clear()
-        with mock.patch.object(library_module, 'yield_to_frames', counting_yield):
-            asyncio.run(order.prepare('album'))  # its keys are there, and the search keys
-        self.assertEqual(pauses, [])
-        self.assertEqual([t.id for t in order.tracks('title')], self.ids('title'))
-
-    def test_same_objects_and_repeatable(self):
-        first = self.order.tracks('artist')
-        self.assertTrue(all(any(t is u for u in self.tracks) for t in first))
-        self.assertEqual(self.order.tracks('artist'), first)
-        self.assertEqual(SongOrder([]).tracks('title'), [])
-
-    def test_genre_and_year_break_ties_by_artist_album_and_track(self):
-        # The optional columns (song_columns.py): a genre's text ignoring case, a year as a
-        # number (none is 0, first), each then by artist, album and disc and track.
-        rows = [
-            # id, artist, album, track, genre, year
-            ('i.1', 'Bea', 'North', 2, 'Shoegaze', 2019),
-            ('i.2', 'Bea', 'North', 1, 'shoegaze', 2019),
-            ('i.3', 'Abe', 'South', 1, 'Ambient', 2021),
-            ('i.4', 'Cy', 'East', 1, None, None),
-            ('i.5', 'Abe', 'West', 1, 'Shoegaze', 2007),
-        ]
-        tracks = [Track({'id': i, 'title': i, 'artist': artist, 'album': name,
-                         'discNumber': 1, 'trackNumber': number, 'genre': genre, 'year': year})
-                  for i, artist, name, number, genre, year in rows]
-        order = SongOrder(tracks)
-        asyncio.run(order.prepare('genre'))
-
-        def ids(column, descending=False):
-            return [t.id for t in order.tracks(column, descending)]
-
-        self.assertEqual(ids('genre'), ['i.4', 'i.3', 'i.5', 'i.2', 'i.1'])
-        self.assertEqual(ids('genre', descending=True), ['i.5', 'i.2', 'i.1', 'i.3', 'i.4'])
-        self.assertEqual(ids('year'), ['i.4', 'i.5', 'i.2', 'i.1', 'i.3'])
-        self.assertEqual(ids('year', descending=True), ['i.3', 'i.2', 'i.1', 'i.5', 'i.4'])
-
-
 class TestGenres(unittest.TestCase):
     """The Genres page's Items (genre_items(), Library.genres())."""
 
@@ -2223,16 +1110,16 @@ class TestGenres(unittest.TestCase):
                   Item(self.album('l.a4', 'Four', None)),
                   Item(self.album('l.a5', 'Five', '  ')),
                   Item(self.album('l.a6', 'Six', 'Shoegaze', thumb='/t/6.jpg'))]
-        items = library_module.genre_items(albums)
+        items = model_module.genre_items(albums)
         self.assertEqual([item['title'] for item in items], ['ambient', 'Shoegaze'])
         shoegaze = items[1]
-        self.assertEqual(shoegaze['id'], library_module.GENRE_PREFIX + 'Shoegaze')
+        self.assertEqual(shoegaze['id'], model_module.GENRE_PREFIX + 'Shoegaze')
         self.assertEqual(shoegaze['kind'], 'genre')
         self.assertEqual(shoegaze['albumCount'], 3)
         self.assertEqual(shoegaze['subtitle'], '3 albums')
         self.assertEqual(shoegaze['thumb'], '/t/3.jpg')  # the first album with a cover
         self.assertEqual(items[0]['subtitle'], '1 album')
-        self.assertEqual(library_module.genre_items([]), [])
+        self.assertEqual(model_module.genre_items([]), [])
 
     def test_made_when_first_asked_and_kept_up_to_date_by_every_load(self):
         with tempfile.TemporaryDirectory() as cache_dir:
@@ -2293,77 +1180,6 @@ def held_library():
             'folders': [{'id': 'root', 'title': '', 'parent': None,
                          'children': [{'kind': 'playlist', 'id': 'p.pl2'},
                                       {'kind': 'playlist', 'id': 'p.pl1'}]}]}
-
-
-def entry_ids(item):
-    return [entry['id'] for group in item['groups'] for entry in group['entries']]
-
-
-class TestLeaveOut(unittest.TestCase):
-    """leave_out(): what a removal takes out of a parsed library.json with it."""
-
-    def test_a_song_goes_from_its_album_its_playlists_and_their_counts(self):
-        data = held_library()
-        found, removed = library_module.leave_out(data, {('song', 'i.1')})
-        sections = data['sections']
-        first = sections['albums'][0]
-        self.assertEqual(entry_ids(first), ['i.2'])
-        self.assertEqual((first['trackCount'], first['durationMs']), (1, 180000))
-        self.assertIn(('song', 'i.1'), found)
-        self.assertEqual(removed, {'i.1'})
-        # The playlist names it by its catalog id alone: that ref takes its entry.
-        self.assertEqual(entry_ids(sections['playlists'][0]), ['i.p1', 'i.3'])
-        data = held_library()
-        found, removed = library_module.leave_out(data, {('song', 'i.1'),
-                                                         ('song', '1000000001')})
-        playlist = data['sections']['playlists'][0]
-        self.assertEqual(entry_ids(playlist), ['i.3'])
-        self.assertEqual((playlist['trackCount'], playlist['durationMs']), (1, 180000))
-        self.assertIn(('song', '1000000001'), found)
-        self.assertEqual(removed, {'i.1'})
-
-    def test_an_albums_only_song_takes_the_album_and_its_artist_group(self):
-        data = held_library()
-        _found, removed = library_module.leave_out(data, {('song', 'i.3')})
-        sections = data['sections']
-        self.assertEqual([item['id'] for item in sections['albums']], ['l.a1'])
-        self.assertEqual(entry_ids(sections['playlists'][0]), ['i.p1'])
-        self.assertEqual(sections['playlists'][0]['trackCount'], 1)
-        artist = sections['artists'][0]
-        self.assertEqual([group['play']['id'] for group in artist['groups']], ['l.a1'])
-        self.assertEqual(artist['albumCount'], 1)
-        self.assertEqual([item['id'] for item in data['shelves'][0]['items']], ['i.v1'])
-        self.assertEqual(removed, {'i.3'})
-
-    def test_an_album_goes_with_its_songs(self):
-        data = held_library()
-        found, removed = library_module.leave_out(data, {('album', 'l.a1')})
-        sections = data['sections']
-        self.assertEqual([item['id'] for item in sections['albums']], ['l.a2'])
-        self.assertEqual(entry_ids(sections['playlists'][0]), ['i.3'])  # by catalog id
-        self.assertEqual(found & {('album', 'l.a1')}, {('album', 'l.a1')})
-        self.assertEqual(removed, {'i.1', 'i.2'})
-        # Both albums gone: so is the artist made of them.
-        data = held_library()
-        library_module.leave_out(data, {('album', 'l.a1'), ('album', 'l.a2')})
-        self.assertEqual(data['sections']['artists'], [])
-
-    def test_a_video_and_a_playlist(self):
-        data = held_library()
-        found, removed = library_module.leave_out(data, {('video', 'i.v1'),
-                                                         ('playlist', 'p.pl2')})
-        sections = data['sections']
-        self.assertEqual(sections['videos'], [])
-        self.assertEqual([item['id'] for item in sections['playlists']], ['p.pl1'])
-        self.assertEqual([item['id'] for item in data['shelves'][0]['items']], ['l.a2'])
-        self.assertEqual(found, {('video', 'i.v1'), ('playlist', 'p.pl2')})
-        self.assertEqual(removed, set())
-
-    def test_what_is_not_there_is_not_found(self):
-        data = held_library()
-        found, removed = library_module.leave_out(data, {('song', 'i.9'), ('album', 'l.a9')})
-        self.assertEqual((found, removed), (set(), set()))
-        self.assertEqual(plain(data), plain(held_library()))
 
 
 class TestHide(unittest.TestCase):

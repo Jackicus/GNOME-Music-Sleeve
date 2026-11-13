@@ -24,7 +24,7 @@ from tests.test_sync_app import FakeEngine, answers
 from gi.repository import Gio, GObject
 
 from applemusic import sync as app_sync
-from applemusic.backend import normalize, store
+from applemusic.backend import art_cache, store
 from applemusic.backend.errors import EngineError
 from applemusic.library import Library
 
@@ -86,7 +86,7 @@ class SyncTestCase(unittest.IsolatedAsyncioTestCase):
             self.fail(f'a sync fetched a cover: {url}')
 
         for name, fake in (('cache_thumbnail', thumbnail), ('cache_artwork', no_cover)):
-            patcher = mock.patch.object(normalize, name, fake)
+            patcher = mock.patch.object(art_cache, name, fake)
             patcher.start()
             self.addCleanup(patcher.stop)
         # When the build thread ends.

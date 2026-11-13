@@ -22,13 +22,22 @@ The pages reach the window through get_root() and these seams, not its internals
     item_actions                      the win.item-* actions and their menus (actions.py)
     leave(gone, parent)               away from the pages of playlists and folders deleted
     content_width()                   the content pane's width, before it is laid out too
+    hide_sidebar()                    the narrow layout's sidebar closed, the page uncovered
 
 The full-screen player is fullscreen.FullscreenHost's (`fullscreen_host`), over the window's
 root stack; win.fullscreen-player (F11) enters and leaves it, and _close_sheet() leaves it
 first for whatever shows a page. The sidebar itself is sidebar_view.SidebarController's,
 which shows pages through show_root(key, pop=False), reads `shown` (the key whose root page
-is at the bottom of the navigation stack) and `split_view`, and names the account's settings
-by account_key(). The window keeps the root pages (one per key, built on the first visit),
+is at the bottom of the navigation stack), closes the narrow layout's sidebar with
+hide_sidebar(), and names the account's settings by account_key().
+
+The split view is an Adw.OverlaySplitView: below the window's 640sp breakpoint it is
+collapsed, the page shown fills the window and the sidebar slides over it (sidebar_open()),
+opened by a root page's Show Sidebar button, win.toggle-sidebar (F9), Ctrl+1 or a swipe, and
+closed by choosing a destination, Escape, a click on the page, or whatever shows a page or
+moves the focus into one (hide_sidebar()). The collapse closes it and widening shows it
+again (libadwaita's own, pin-sidebar off); the page is never moved, so its lists keep their
+rows (docs/decisions.md). The window keeps the root pages (one per key, built on the first visit),
 the window's actions and their keys (keyboard.py), the account button and the banners, and
 its own state.
 """
@@ -90,7 +99,6 @@ class Window(Adw.ApplicationWindow):
     now_playing = Gtk.Template.Child()
     split_view = Gtk.Template.Child()
     sidebar = Gtk.Template.Child()
-    content_page = Gtk.Template.Child()
     navigation_view = Gtk.Template.Child()
     account_stack = Gtk.Template.Child()
     account_button = Gtk.Template.Child()
@@ -172,10 +180,12 @@ class Window(Adw.ApplicationWindow):
         # level, named in its dialog. Ctrl+L (win.go-to-current-song): the page the song
         # playing is played from, the focus on its row, while something plays. F5
         # (win.refresh): the Refresh of the page shown, while it has one (Home, New, Made for
-        # You, Radio, Charts, a category).
+        # You, Radio, Charts, a category). F9 (win.toggle-sidebar): the narrow layout's
+        # sidebar over the page, or closed.
         self._actions = {}
         for name, callback in (('back', self._on_back), ('search', self._on_search),
                                ('refresh', self._on_refresh),
+                               ('toggle-sidebar', self._on_toggle_sidebar),
                                ('focus-sidebar', self._on_focus_sidebar),
                                ('focus-content', self._on_focus_content),
                                ('focus-player', self._on_focus_player),
@@ -194,7 +204,8 @@ class Window(Adw.ApplicationWindow):
             self.add_action(action)
         self.navigation_view.connect('notify::visible-page', self._update_actions)
         self.split_view.connect('notify::collapsed', self._update_actions)
-        self.split_view.connect('notify::show-content', self._update_actions)
+        self.split_view.connect('notify::show-sidebar', self._update_actions)
+        self.split_view.connect('notify::show-sidebar', self._on_show_sidebar)
         self.bottom_sheet.connect('notify::open', self._update_actions)
         self.connect('notify::visible-dialog', self._update_actions)
         self.fullscreen_host.connect_changed(self._update_actions)
@@ -275,21 +286,79 @@ class Window(Adw.ApplicationWindow):
         self.announce(volume_text(level), Gtk.AccessibleAnnouncementPriority.MEDIUM)
 
     def _show_primary_menu(self):
-        """F10 while the primary menu's button is not shown (the collapsed layout showing a
-        page): show the sidebar, then open the menu there. True when it did."""
+        """F10 while the primary menu's button is not shown (the narrow layout, its sidebar
+        closed): open the sidebar, then the menu there. True when it did."""
         button = self.primary_menu_button
         if button.get_mapped() or self.get_visible_dialog() is not None:
             return False  # GTK's own F10 opens it
         if not self.split_view.get_collapsed():
             return False
         self._close_sheet()
-        self.split_view.set_show_content(False)
+        self.split_view.set_show_sidebar(True)
         GLib.idle_add(self._popup_primary_menu)
         return True
 
     def _popup_primary_menu(self):
         self.primary_menu_button.popup()
         return GLib.SOURCE_REMOVE
+
+    # -- the narrow layout's sidebar -------------------------------------------------------
+
+    def sidebar_open(self):
+        """Whether the sidebar covers the page: the narrow layout, with it slid over."""
+        return self.split_view.get_collapsed() and self.split_view.get_show_sidebar()
+
+    def hide_sidebar(self):
+        """Close the narrow layout's sidebar, uncovering the page (whatever shows a page, or
+        moves the focus into one, calls this). Beside the content it always shows."""
+        if self.sidebar_open():
+            self.split_view.set_show_sidebar(False)
+
+    def _on_toggle_sidebar(self, *_args):
+        """win.toggle-sidebar (F9, a root page's Show Sidebar button): the narrow layout's
+        sidebar over the page, or closed."""
+        self.split_view.set_show_sidebar(not self.split_view.get_show_sidebar())
+
+    def _on_show_sidebar(self, *_args):
+        """The focus as the narrow layout's sidebar opens: on the selected row, in view
+        (libadwaita moves it to the sidebar's first widget, and its list centres the
+        selection as it maps: reveal_selected() puts that right). As it closes libadwaita
+        gives the focus back to where it was in the page; a focus that is gone by then (a
+        page replaced meanwhile), or left in the sidebar (the window narrowed with the focus
+        there, which closes it), goes into the page shown."""
+        if self.split_view.get_show_sidebar():
+            if self.split_view.get_collapsed():
+                self._sidebar.focus()
+                self._sidebar.reveal_selected()
+        else:
+            GLib.idle_add(self._focus_after_sidebar)  # after libadwaita's own move
+
+    def _focus_after_sidebar(self):
+        focus = self.get_focus()
+        if (not self.sidebar_open() and not self.bottom_sheet.get_open()
+                and not self.fullscreen_host.shown
+                and (focus is None or not focus.get_mapped()
+                     or focus.is_ancestor(self.split_view.get_sidebar()))):
+            self._focus_content()
+        return GLib.SOURCE_REMOVE
+
+    def _add_sidebar_button(self, page):
+        """A root page's Show Sidebar button, at the start of its header bar (a page with
+        several says which: Artists' `sidebar_headers()`, its states' and its list's),
+        shown only in the narrow layout, where it opens the sidebar over the page. It runs
+        the window's action and is shown by a binding, so the page holds nothing of the
+        window's and can be dropped (ROOT_LIMIT)."""
+        own = getattr(page, 'sidebar_headers', None)
+        headers = own() if own is not None else [first_descendant(page, Adw.HeaderBar)]
+        for header in headers:
+            if header is None:
+                continue
+            button = Gtk.Button(icon_name='sidebar-show-symbolic',
+                                tooltip_text=_('Show Sidebar'),
+                                action_name='win.toggle-sidebar')
+            self.split_view.bind_property('collapsed', button, 'visible',
+                                          GObject.BindingFlags.SYNC_CREATE)
+            header.pack_start(button)
 
     # -- toasts and the sheet --------------------------------------------------------------
 
@@ -341,8 +410,11 @@ class Window(Adw.ApplicationWindow):
         playing = self.get_application().player.track is not None
         if (not playing and self.get_mapped() and self.bottom_sheet.get_reveal_bottom_bar()
                 and (self.get_focus() is None or self._focus_in_player_bar())):
-            self._focus_content()
-            if self._focus_in_player_bar():  # the collapsed layout showing the sidebar
+            if self.sidebar_open():
+                self._sidebar.focus()
+            else:
+                self._focus_content()
+            if self._focus_in_player_bar():  # nothing there took it
                 self.set_focus(None)
         self.bottom_sheet.set_reveal_bottom_bar(playing)
 
@@ -374,7 +446,10 @@ class Window(Adw.ApplicationWindow):
             return GLib.SOURCE_REMOVE  # in the bar, or moved on purpose (Ctrl+F, Go to Album)
         widget = opened_from() if opened_from is not None else None
         if widget is None or not widget.get_mapped() or not widget.grab_focus():
-            self._focus_content()
+            if self.sidebar_open():
+                self._sidebar.focus()
+            else:
+                self._focus_content()
         return GLib.SOURCE_REMOVE
 
     # -- the seams the pages use -----------------------------------------------------------
@@ -415,7 +490,7 @@ class Window(Adw.ApplicationWindow):
     def open_songs(self, search=''):
         """Show the Songs page filtered by `search` (Your Library results' See All)."""
         self.select_page('songs')
-        self.split_view.set_show_content(True)
+        self.hide_sidebar()
         page = self._roots.get('songs')
         if page is not None and hasattr(page, 'set_filter'):
             page.set_filter(search)
@@ -460,7 +535,7 @@ class Window(Adw.ApplicationWindow):
         visible = self.navigation_view.get_visible_page()
         if item.kind in PAGE_KINDS:
             self._close_sheet()
-            self.split_view.set_show_content(True)
+            self.hide_sidebar()
         if related.same_page(getattr(visible, 'item', None), item):
             return  # a double activation, or the page shown already (Go to from the sheet)
         if item.kind in ('album', 'playlist') and not item.groups:
@@ -513,7 +588,7 @@ class Window(Adw.ApplicationWindow):
         an artist of the library's too: what Go to Artist opens (actions.py), and the name in
         the library's page of the artist."""
         self._close_sheet()
-        self.split_view.set_show_content(True)
+        self.hide_sidebar()
         visible = self.navigation_view.get_visible_page()
         if related.same_page(getattr(visible, 'item', None), item):
             return  # a double activation, or the page shown already
@@ -525,7 +600,7 @@ class Window(Adw.ApplicationWindow):
         """Show what the library holds of one of its artists (a LibraryArtistPage), pushed
         over the page shown, unless it is that artist's already."""
         self._close_sheet()
-        self.split_view.set_show_content(True)
+        self.hide_sidebar()
         if getattr(self.navigation_view.get_visible_page(), 'artist', None) is artist:
             return  # a double activation
         from .pages.library_artist import LibraryArtistPage
@@ -535,10 +610,10 @@ class Window(Adw.ApplicationWindow):
     def shown_item(self):
         """The Item the page shown shows (an album's, a playlist's, an artist's), or None:
         also while the Now Playing sheet or the full-screen player covers it, or the
-        sidebar does (collapsed)."""
+        narrow layout's sidebar does."""
         if self.bottom_sheet.get_open() or self.fullscreen_host.shown:
             return None
-        if self.split_view.get_collapsed() and not self.split_view.get_show_content():
+        if self.sidebar_open():
             return None
         item = getattr(self.navigation_view.get_visible_page(), 'item', None)
         return item if isinstance(item, Item) else None
@@ -724,7 +799,6 @@ class Window(Adw.ApplicationWindow):
             entry = entries.get(key) if parse_key(key) is not None else None
             if entry is not None:
                 page.set_title(entry.title)  # a renamed playlist or folder
-        self.content_page.set_title(self._roots[self.shown].get_title())
 
     def _root(self, key):
         """The root page for a sidebar key, built on its first visit and kept in the view: a
@@ -749,6 +823,7 @@ class Window(Adw.ApplicationWindow):
             if GObject.signal_lookup('panes-changed', type(page)):
                 # Artists: Back and the banners follow which of its panes shows.
                 page.connect('panes-changed', self._on_panes_changed)
+            self._add_sidebar_button(page)
             self.navigation_view.add(page)
             self._roots[key] = page
         if parse_key(key) is not None:
@@ -841,7 +916,6 @@ class Window(Adw.ApplicationWindow):
             self.navigation_view.replace([root])
         elif pop and stack.get_n_items() > 1:
             self.navigation_view.pop_to_page(root)
-        self.content_page.set_title(root.get_title())
         self.shown = key  # written to last-page when the window closes (_save_window_state)
 
     # -- the window's actions --------------------------------------------------------------
@@ -851,7 +925,7 @@ class Window(Adw.ApplicationWindow):
         to show (keyboard.search_target(): Songs, Albums, Artists, Music Videos, a
         playlist's songs, as GNOME's apps with an in-page filter do), else in the Search
         page's entry, that page shown over anything pushed on it (the Now Playing sheet
-        closed first; the content shown first in the collapsed layout)."""
+        closed first, and the narrow layout's sidebar)."""
         self._close_sheet()
         page = self.navigation_view.get_visible_page()
         if keyboard.search_target(page) == 'filter':
@@ -863,18 +937,18 @@ class Window(Adw.ApplicationWindow):
             self._show_content_then(page.focus_entry)
 
     def _show_content_then(self, focus):
-        """Show the content in the collapsed layout, then run focus (a page's grab), from an
-        idle when the content had to be shown first (it is mapped by then)."""
-        if self.split_view.get_collapsed() and not self.split_view.get_show_content():
-            self.split_view.set_show_content(True)
+        """Close the narrow layout's sidebar, then run focus (a page's grab), from an idle
+        when the sidebar had to close first (after libadwaita has given the focus back to
+        the page)."""
+        if self.sidebar_open():
+            self.hide_sidebar()
             GLib.idle_add(lambda: focus() and False)
         else:
             focus()
 
     def _can_go_back(self):
         return (len(self.navigation_view.get_navigation_stack()) > 1
-                or self._page_can_go_back()
-                or (self.split_view.get_collapsed() and self.split_view.get_show_content()))
+                or self._page_can_go_back() or self.sidebar_open())
 
     def _page_can_go_back(self):
         """Whether the page shown has somewhere to go back to inside it (the Artists page,
@@ -886,7 +960,8 @@ class Window(Adw.ApplicationWindow):
         """The window's actions are off while a dialog is open over it (their keys go to the
         dialog, not to the pages behind it); back also while the Now Playing sheet or the
         full-screen player is open (Escape closes those) or there is nowhere to go back to,
-        and refresh while either covers the page or the page shown has no Refresh;
+        and refresh while either covers the page or the page shown has no Refresh; the
+        sidebar's toggle only in the narrow layout, while neither covers it;
         the full-screen player only while something plays (or to leave it); the Now Playing
         tabs' while their tab has something to show (TabActions)."""
         free = self.get_visible_dialog() is None
@@ -899,6 +974,9 @@ class Window(Adw.ApplicationWindow):
         self._actions['fullscreen-player'].set_enabled(
             free and (self.fullscreen_host.shown or playing))
         self._actions['go-to-current-song'].set_enabled(free and playing)
+        self._actions['toggle-sidebar'].set_enabled(
+            free and self.split_view.get_collapsed() and not self.bottom_sheet.get_open()
+            and not self.fullscreen_host.shown)
         self._actions['refresh'].set_enabled(
             free and not self.bottom_sheet.get_open() and not self.fullscreen_host.shown
             and callable(getattr(self.navigation_view.get_visible_page(), 'refresh', None)))
@@ -928,7 +1006,7 @@ class Window(Adw.ApplicationWindow):
         """The page shown scrolls to the row of the song playing and puts the focus on it,
         when it is an album's or a playlist's (DetailPage.reveal_playing)."""
         self._close_sheet()
-        self.split_view.set_show_content(True)
+        self.hide_sidebar()
         reveal = getattr(self.navigation_view.get_visible_page(), 'reveal_playing', None)
         if reveal is not None:
             reveal()
@@ -936,19 +1014,18 @@ class Window(Adw.ApplicationWindow):
     # Ctrl+1, 2, 3: the focus into the sidebar, the page, the player bar.
 
     def _on_focus_sidebar(self, *_args):
-        """win.focus-sidebar: the focus on the selected sidebar row (the sidebar shown first
-        in the collapsed layout, the sheet closed)."""
+        """win.focus-sidebar: the focus on the selected sidebar row (the narrow layout's
+        sidebar opened first, which puts it there: _on_show_sidebar; the sheet closed)."""
         self._close_sheet()
-        if self.split_view.get_collapsed() and self.split_view.get_show_content():
-            self.split_view.set_show_content(False)
-            GLib.idle_add(self._sidebar.focus)  # once the sidebar's page is shown
+        if self.split_view.get_collapsed() and not self.split_view.get_show_sidebar():
+            self.split_view.set_show_sidebar(True)
         else:
             self._sidebar.focus()
 
     def _on_focus_content(self, *_args):
         """win.focus-content: the focus on the page shown, its content first (a grid, a
-        list, an entry) rather than its header bar (the content shown first in the collapsed
-        layout, the sheet closed). Nothing moves when the focus is in the page's content
+        list, an entry) rather than its header bar (the narrow layout's sidebar closed
+        first, and the sheet). Nothing moves when the focus is in the page's content
         already; from its header bar (Back, Sort By, a filter) it moves into the content."""
         self._close_sheet()
         self._show_content_then(self._focus_content)
@@ -995,12 +1072,15 @@ class Window(Adw.ApplicationWindow):
             refresh()
 
     def _on_back(self, *_args):
-        if len(self.navigation_view.get_navigation_stack()) > 1:
+        """win.back (Alt+Left): the narrow layout's sidebar closed while it covers the page;
+        else the page pushed last popped, or the page shown going back inside itself
+        (Artists, collapsed). A destination's root has nowhere to go back to."""
+        if self.sidebar_open():
+            self.hide_sidebar()
+        elif len(self.navigation_view.get_navigation_stack()) > 1:
             self.navigation_view.pop()
         elif self._page_can_go_back():
             self.navigation_view.get_visible_page().go_back()
-        elif self.split_view.get_collapsed():
-            self.split_view.set_show_content(False)
 
     # -- the window's state ----------------------------------------------------------------
 

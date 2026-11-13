@@ -6,11 +6,12 @@
 that demo_library.py, as it is now and with no options, wrote, and 1 otherwise.
 
 demo_library.py writes DIR/.demo-stamp last, once everything else is written: a hash of the
-sources that decide what it writes (SOURCES: the script, and the backend's normalize.py and
-config.py, whose shapes and sizes it uses) and of the options it was given (only those that
-differ from its defaults). A directory without the file (an interrupted run, or one from
-before it existed), or with another hash (a source has changed since, or other options made
-it), is out of date, and the harness and demo.sh write it again (it takes a second or two).
+sources that decide what it writes (SOURCES: the script, and the backend's normalize.py, the
+modules split from it and config.py, whose shapes and sizes it uses) and of the options it
+was given (only those that differ from its defaults). A directory without the file (an
+interrupted run, or one from before it existed), or with another hash (a source has changed
+since, or other options made it), is out of date, and the harness and demo.sh write it again
+(it takes a second or two).
 Standard library only: the harness imports it before anything else of the app's.
 """
 
@@ -24,6 +25,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCES = tuple(os.path.join(ROOT, *path) for path in (
     ('scripts', 'demo_library.py'),
     ('src', 'backend', 'normalize.py'),
+    ('src', 'backend', 'art_cache.py'),
+    ('src', 'backend', 'cache_files.py'),
+    ('src', 'backend', 'banner_art.py'),
+    ('src', 'backend', 'search.py'),
+    ('src', 'backend', 'editorial.py'),
+    ('src', 'backend', 'charts.py'),
+    ('src', 'backend', 'recommendations.py'),
+    ('src', 'backend', 'item_pages.py'),
     ('src', 'backend', 'config.py'),
 ))
 

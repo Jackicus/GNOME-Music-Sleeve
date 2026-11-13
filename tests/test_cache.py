@@ -13,7 +13,7 @@ import unittest
 from tests import ROOT  # noqa: F401  (registers src/ as the applemusic package)
 
 from applemusic import cache
-from applemusic.backend import normalize
+from applemusic.backend import cache_files
 
 
 class CacheTest(unittest.TestCase):
@@ -55,20 +55,24 @@ class CacheTest(unittest.TestCase):
     def test_every_kept_answer_is_in_an_entry(self):
         # A new kind of kept answer has to be cleared (and measured) with the rest.
         root = str(self.cache)
-        for path in (normalize.landing_cache_path(root), normalize.category_cache_path(root, 'c'),
-                     normalize.browse_cache_path(root), normalize.made_for_you_cache_path(root),
-                     normalize.radio_cache_path(root), normalize.charts_cache_path(root),
-                     normalize.charts_cache_path(root, '21'), normalize.genres_cache_path(root),
-                     normalize.replay_cache_path(root), normalize.replay_cache_path(root, '2025'),
-                     normalize.recent_played_cache_path(root),
-                     normalize.artist_cache_path(root, '1'), normalize.album_cache_path(root, '2'),
-                     normalize.playlist_cache_path(root, 'pl.a1'),
-                     normalize.suggestions_cache_path(root, 'p.1'),
-                     normalize.credits_cache_path(root, '3'),
-                     normalize.room_cache_path(root, '4'),
-                     normalize.grouping_cache_path(root, '5'),
-                     normalize.multiroom_cache_path(root, '6'),
-                     normalize.demo_search_path(root)):
+        for path in (cache_files.landing_cache_path(root),
+                     cache_files.category_cache_path(root, 'c'),
+                     cache_files.browse_cache_path(root), cache_files.made_for_you_cache_path(root),
+                     cache_files.radio_cache_path(root), cache_files.charts_cache_path(root),
+                     cache_files.charts_cache_path(root, '21'),
+                     cache_files.genres_cache_path(root),
+                     cache_files.replay_cache_path(root),
+                     cache_files.replay_cache_path(root, '2025'),
+                     cache_files.recent_played_cache_path(root),
+                     cache_files.artist_cache_path(root, '1'),
+                     cache_files.album_cache_path(root, '2'),
+                     cache_files.playlist_cache_path(root, 'pl.a1'),
+                     cache_files.suggestions_cache_path(root, 'p.1'),
+                     cache_files.credits_cache_path(root, '3'),
+                     cache_files.room_cache_path(root, '4'),
+                     cache_files.grouping_cache_path(root, '5'),
+                     cache_files.multiroom_cache_path(root, '6'),
+                     cache_files.demo_search_path(root)):
             entry = os.path.relpath(path, root).split(os.sep)[0]
             self.assertIn(entry, cache.CACHE_ENTRIES, path)
 
@@ -95,7 +99,7 @@ class KeptTest(unittest.TestCase):
     def test_read_kept_ages_out(self):
         path = self.cache / 'landing.json'
         self.assertIsNone(cache.read_kept(path))
-        normalize.write_answer(str(path), {'categories': []}, str(self.cache))
+        cache_files.write_answer(str(path), {'categories': []}, str(self.cache))
         self.assertEqual(cache.read_kept(path)['categories'], [])
         kept = json.loads(path.read_text())
         kept['cached'] = '2020-01-01T00:00:00Z'
@@ -108,7 +112,7 @@ class KeptTest(unittest.TestCase):
     def test_an_old_answer_when_asked_for_is_marked_stale(self):
         path = self.cache / 'browse.json'
         self.assertIsNone(cache.read_kept(path, allow_stale=True))
-        normalize.write_answer(str(path), {'shelves': []}, str(self.cache))
+        cache_files.write_answer(str(path), {'shelves': []}, str(self.cache))
         self.assertNotIn('stale', cache.read_kept(path, allow_stale=True))  # a fresh one
         kept = json.loads(path.read_text())
         kept['cached'] = '2020-01-01T00:00:00Z'
@@ -122,7 +126,7 @@ class KeptTest(unittest.TestCase):
 
     def test_a_touched_hit_is_the_newest(self):
         path = self.cache / 'lyrics' / '1.json'
-        normalize.write_answer(str(path), {'lines': [{'text': 'x'}]}, str(self.cache))
+        cache_files.write_answer(str(path), {'lines': [{'text': 'x'}]}, str(self.cache))
         os.utime(path, (1000, 1000))
         cache.read_kept(path)
         self.assertEqual(path.stat().st_mtime, 1000)  # a plain read leaves it

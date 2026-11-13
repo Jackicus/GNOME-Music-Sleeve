@@ -25,7 +25,7 @@ from gi.repository import GLib
 from applemusic import release
 from applemusic import sync as app_sync
 from applemusic.backend import config
-from applemusic.backend import normalize as backend
+from applemusic.backend import art_cache as backend
 from applemusic.backend.errors import EngineError
 from applemusic.engine import Engine
 from applemusic.library import EDITABLE, FAVOURITES, PUBLIC, REMOVABLE, ROOT_FOLDER, Item, Library

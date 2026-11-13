@@ -47,10 +47,11 @@ gi.require_version('Adw', '1')
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk  # noqa: E402
 
-from .backend import config, normalize  # noqa: E402
+from .backend import cache_files, config  # noqa: E402
 from .backend.errors import EngineError  # noqa: E402
 from .background import BackgroundPlayback  # noqa: E402
-from .engine import Engine, quality_bitrate  # noqa: E402
+from .engine import Engine  # noqa: E402
+from .engine.playback import quality_bitrate  # noqa: E402
 from .discord import Presence  # noqa: E402
 from .errors import error_message  # noqa: E402
 from .library import Library  # noqa: E402
@@ -435,7 +436,7 @@ class Application(Adw.Application):
         if not self.demo:
             # What only grows (remote art, lyrics, day-old answers, crash leftovers), trimmed
             # once the window is up; each sync trims it too.
-            await asyncio.to_thread(normalize.prune_caches, str(config.cache_dir()))
+            await asyncio.to_thread(cache_files.prune_caches, str(config.cache_dir()))
 
     async def _restore_session(self):
         """The last session on the Player, paused (SessionKeeper.load), once the library has

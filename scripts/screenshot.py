@@ -34,8 +34,8 @@ GNOME's icons and font (the Adwaita icon theme, Adwaita Sans 11), not the
 desktop's (scripts/harness.py). Before the shot, the script waits until no
 artwork decode has been in flight for a few polls (5 s at most), so tiles show
 their covers rather than placeholders.
-In the narrow (collapsed) layout the shot shows the sidebar, or the page when
---page is given (--sidebar keeps the sidebar, scrolled to the page's row).
+In the narrow (collapsed) layout the shot shows the page (--sidebar opens the
+sidebar over it, scrolled to the page's row).
 --demo shows the invented library in build/demo (generated first if missing)
 or in $APPLE_MUSIC_CACHE when that is set, as scripts/demo.sh does. The shot
 waits for the library to finish loading.
@@ -204,7 +204,7 @@ parser.add_argument('--open', metavar='KIND:ID',
                          'Replay (replay:YEAR on a past year), room:ID, '
                          "grouping:ID or multiroom:ID for a More to Explore link's page")
 parser.add_argument('--sidebar', action='store_true',
-                    help='in the narrow layout, show the sidebar rather than the --page')
+                    help='in the narrow layout, open the sidebar over the page')
 parser.add_argument('--expand', metavar='ID[,ID…]', default='',
                     help='expand these playlist folders in the sidebar ("first": the first one)')
 parser.add_argument('--banner', choices=['sign-in', 'expired'],
@@ -603,11 +603,11 @@ def open_item(window):
 def invented_category(item_id):
     """The category Item whose page the demo library invented (categories/<id>.json), named
     as its page is; None without one."""
-    from applemusic.backend import config, normalize
+    from applemusic.backend import cache_files, config
     from applemusic.library import Item
 
     try:
-        with open(normalize.category_cache_path(str(config.cache_dir()), item_id),
+        with open(cache_files.category_cache_path(str(config.cache_dir()), item_id),
                   encoding='utf-8') as file:
             page = json.load(file)
     except (OSError, ValueError):
@@ -618,11 +618,11 @@ def invented_category(item_id):
 def invented_link(kind, item_id):
     """The Item of a More to Explore link to a page the demo library invented (rooms/,
     groupings/ or multirooms/<id>.json), titled as its page is; None without one."""
-    from applemusic.backend import config, normalize
+    from applemusic.backend import cache_files, config
     from applemusic.explore import link_item
 
-    path = {'room': normalize.room_cache_path, 'grouping': normalize.grouping_cache_path,
-            'multiroom': normalize.multiroom_cache_path}[kind]
+    path = {'room': cache_files.room_cache_path, 'grouping': cache_files.grouping_cache_path,
+            'multiroom': cache_files.multiroom_cache_path}[kind]
     try:
         with open(path(str(config.cache_dir()), item_id), encoding='utf-8') as file:
             page = json.load(file)
@@ -1037,9 +1037,8 @@ def _shoot():
         return GLib.SOURCE_REMOVE
     window = app.main_window()  # not the mini player, once that shows
     split_view = window.split_view
-    showing_sidebar = split_view.get_collapsed() and not split_view.get_show_content()
-    if (args.page or args.open) and showing_sidebar and not args.sidebar:
-        split_view.set_show_content(True)  # the page, not the sidebar
+    if args.sidebar and split_view.get_collapsed() and not split_view.get_show_sidebar():
+        split_view.set_show_sidebar(True)  # over the page
         GLib.timeout_add(600, shoot)  # after the transition
         return GLib.SOURCE_REMOVE
     if args.open and not opened:
