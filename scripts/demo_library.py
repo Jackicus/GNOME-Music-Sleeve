@@ -190,7 +190,7 @@ DEMO_LABELS = ['Lowtide Recordings', 'Paper Lantern Records', 'Driftwood Audio',
 DEMO_EDITIONS = ['{title} (Deluxe)', '{title} (Remastered)']
 # The first artist's album to come (Apple's isPrerelease): its songs, two of them out already
 # as singles (the others have no playParams in Apple's answer: `unreleased`), and its date.
-DEMO_UPCOMING = ('Lanterns Over the Reef', '2026-12-04', [
+DEMO_UPCOMING = ('Lanterns Over the Reef', '2030-12-04', [
     ('First Light on the Breakwater', False), ('Harbour Signal', True),
     ('The Drowned Orchard', False), ('Lantern Procession', True), ('Saltglass', False),
     ('Underneath the Pier Lights', False), ('Tidewater Hymn', False),

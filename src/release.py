@@ -32,7 +32,10 @@ A pre-release album (Apple's isPrerelease, the Item's `prerelease`) says when it
 where the others say their year, and its footer's first line is that date: "Coming 4
 December 2026". Its tracks not out yet (Track.unreleased: Apple gives them no playParams) are
 shown, not played: Play, Shuffle and a row play the ones out already (a pre-release single),
-by id (released_play()), so MusicKit is never asked for a track it cannot play.
+by id (released_play()), so MusicKit is never asked for a track it cannot play. Once its
+release date has come (library.release_passed(): today or before, in the local calendar) it
+is out, played and captioned as any album, without waiting for the next sync to say so: the
+Item's `prerelease` and its tracks' `unreleased` read so (#606).
 
 The footer is the release date in full, the songs and their total time, and the ℗ or © line
 (else the label): the catalog album's (Engine.album_page()'s `release`) when the page has
@@ -182,7 +185,8 @@ def updated_text(modified, now=None):
 
 def is_prerelease(item):
     """Whether `item` is an album not out yet: the Item's `prerelease` (Apple's
-    isPrerelease, as the engine's answer had it)."""
+    isPrerelease, as the engine's answer had it), which reads false once its release date
+    has come."""
     return item is not None and item.kind == 'album' and bool(item.prerelease)
 
 
