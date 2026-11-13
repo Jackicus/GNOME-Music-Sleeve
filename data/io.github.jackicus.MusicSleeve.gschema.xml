@@ -18,7 +18,7 @@
       <summary>Mini player width</summary>
     </key>
     <key name="mini-player-height" type="i">
-      <default>500</default>
+      <default>540</default>
       <summary>Mini player height</summary>
       <description>The height of the mini player without its lyrics or Up Next pane.</description>
     </key>
