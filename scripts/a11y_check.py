@@ -2705,8 +2705,10 @@ async def fullscreen_player(window):
 
 async def mini_player(window):
     """The mini player: Ctrl+Shift+M in, the window hidden, the focus on its Play; Tab
-    through its controls and never out of it; Space plays or pauses, Ctrl+Right skips; Ctrl+Shift+M
-    back to the window, the focus as it was; in again, and Ctrl+W (its close) back too."""
+    through its controls (Favourite, Shuffle, Repeat and Volume among them) and never out of
+    it; Space plays or pauses, Ctrl+Right skips, Ctrl+Up turns the volume up; Ctrl+Shift+M
+    back to the window, the focus as it was; in again, and Ctrl+W (its close) back too; and
+    at its smallest size, where the four extras are hidden, Tab goes through the rest."""
     print('-- mini player')
     host = app.mini_player
     resting = window.get_focus()
@@ -2723,7 +2725,7 @@ async def mini_player(window):
     if keyboard is not None:
         await until(mini.is_active, 3.0)
     seen, stayed = set(), True
-    for _ in range(6):
+    for _ in range(10):
         await key(mini, 'Tab', 0.05)
         focus = mini.get_focus()
         stayed = stayed and inside(focus, view)
@@ -2732,6 +2734,34 @@ async def mini_player(window):
           stayed and {view.main_window_button, view.seek_scale, view.previous_button,
                       view.play_button, view.next_button} <= seen,
           sorted(describe(widget) for widget in seen))
+    extras = (view.heart_button, view.shuffle_button, view.repeat_button, view.volume_button)
+    check('and through Favourite, Shuffle, Repeat and Volume, in their row',
+          view.extras == 'row' and all(any(focus is button or focus.is_ancestor(button)
+                                           for focus in seen if focus is not None)
+                                       for button in extras),
+          (view.extras, sorted(describe(widget) for widget in seen)))
+    levels, said = [], []
+
+    def set_volume(level):  # the demo has no engine: MusicKit's answer, at once
+        levels.append(level)
+        app.player._set_volume(level)
+        return asyncio.sleep(0)
+
+    app.player.set_volume = set_volume
+    mini.announce = lambda text, _priority: said.append(text)
+    shown = round(view.volume_adjustment.get_value(), 2)
+    view.play_button.grab_focus()
+    await key(mini, '<primary>Up' if shown < 1 else '<primary>Down', 0.3)
+    step = 0.1 if shown < 1 else -0.1
+    check('Ctrl+Up (or Down from full) on Play steps the volume, announced',
+          [round(level, 2) for level in levels] == [round(shown + step, 2)]
+          and said == [f'Volume {round((shown + step) * 100)}%']
+          and mini.get_focus() is view.play_button, (shown, levels, said))
+    view.seek_scale.grab_focus()
+    await key(mini, '<primary>Down', 0.3)
+    check("Ctrl+Down on the position slider is the slider's", len(levels) == 1, levels)
+    del app.player.set_volume
+    del mini.announce
     view.play_button.grab_focus()
     actions = []
     handlers = [(app.lookup_action(name), app.lookup_action(name).connect(
@@ -2760,6 +2790,34 @@ async def mini_player(window):
     await key(host.window or window, '<primary>w', 0.8)
     await until(lambda: not host.shown and window.get_visible())
     check('Ctrl+W closes it: back to the window', not host.shown and window.get_mapped())
+    if keyboard is not None:
+        await until(window.is_active, 3.0)
+    # At its smallest: the extras hidden, everything else still reached.
+    size = {name: app.settings.get_int(name)
+            for name in ('mini-player-width', 'mini-player-height')}
+    app.settings.set_int('mini-player-width', 280)
+    app.settings.set_int('mini-player-height', 240)
+    await key(window, '<primary><shift>m', 0.8)
+    await until(lambda: host.shown and host.window.get_focus() is not None)
+    mini = host.window
+    if mini is not None:
+        view = mini.view
+        if keyboard is not None:
+            await until(mini.is_active, 3.0)
+        seen = set()
+        for _ in range(6):
+            await key(mini, 'Tab', 0.05)
+            seen.add(mini.get_focus())
+        check('At 280 by 240 the extras are hidden, and Tab goes through the rest',
+              view.extras == 'none' and not view.heart_button.get_mapped()
+              and seen == {view.main_window_button, view.seek_scale, view.previous_button,
+                           view.play_button, view.next_button},
+              (mini.get_width(), mini.get_height(), view.extras,
+               sorted(describe(widget) for widget in seen)))
+        await key(mini, '<primary><shift>m', 0.8)
+        await until(lambda: not host.shown and window.get_visible())
+    for name, value in size.items():
+        app.settings.set_int(name, value)
     if keyboard is not None:
         await until(window.is_active, 3.0)
 

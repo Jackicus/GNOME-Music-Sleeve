@@ -502,7 +502,15 @@ class VolumeControl(Follower):
         self._scale = None  # the slider in the button's popover
         self._strings = {}
         button.connect('value-changed', self._on_changed)
-        adjustment.connect('value-changed', lambda *_: self._describe())
+        self._described = adjustment.connect('value-changed', lambda *_: self._describe())
+
+    def detach(self):
+        """Let go of the Player, and of the adjustment: the button owns it, so its handler
+        on this control would keep the button, and the window it is in, from being freed."""
+        super().detach()
+        if self._described:
+            self.adjustment.disconnect(self._described)
+            self._described = 0
 
     def attach(self, player, app):
         self._player = player
