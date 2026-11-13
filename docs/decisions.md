@@ -583,7 +583,12 @@ changes, change it here, with the date. The plan they came from is in
   remembered (`mini-player-width`, `mini-player-height`); its layout follows it
   (`mini_player.layout_for()`: the cover as large as the window allows, or small beside the
   titles in a low window). No lyrics, no Up Next, no heart or volume: what the issue asks
-  for, and nothing in it redraws while a song plays but the seek row. It does not stay on
+  for, and nothing in it redraws while a song plays but the seek row. (Reversed on
+  2026-11-13, #589, at the owner's wish: it has Favourite, Shuffle, Repeat and Volume, the
+  shared transport pieces, in a row under the transport, around it in a wide window, and
+  hidden in one both low and narrow, `layout_for()`'s `extras`; they change only on their
+  own notifications, so the seek row is still all that redraws. Lyrics and Up Next follow
+  as panes, the issue's design note.) It does not stay on
   top: GNOME on Wayland gives an app no way to ask (the window menu's Always on Top is the
   user's), so it promises nothing of the kind. Toasts go to it while it shows, as the
   window the user sees (`Application.toast()` through `get_active_window()`), and a search

@@ -208,9 +208,12 @@ list and the script together.
     song picked, in both its lists.
 18. Ctrl+Shift+M (the main menu's Mini Player, the player bar's menu) shows the mini player
     in place of the window, a window of its own named "Mini Player", with the focus on its
-    Play; Tab goes through Return to Main Window, the position slider ("1:05 of 3:40") and
-    Previous, Play and Next, and never out of it; Space on Play or on the slider plays or
-    pauses, Ctrl+Right and Ctrl+Left skip; each new song is announced ("Now playing …").
+    Play; Tab goes through Return to Main Window, the position slider ("1:05 of 3:40"),
+    Previous, Play and Next, then Favourite, Shuffle, Repeat ("Repeat All", "Repeat One" as
+    it is set) and Volume ("70%"), and never out of it; a wide window has those four around
+    the transport, and one both low and narrow hides them. Space on Play or on the slider
+    plays or pauses, Ctrl+Right and Ctrl+Left skip, Ctrl+Up and Ctrl+Down step the volume
+    (announced, "Volume 70%"), shown or not; each new song is announced ("Now playing …").
     Ctrl+Shift+M again, Return to Main Window or Ctrl+W (its close) brings the window back
     with the focus where it was. The script walks this after step 10, and `--names` looks
     at it with a song playing.
