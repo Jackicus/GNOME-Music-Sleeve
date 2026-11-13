@@ -288,18 +288,12 @@ class StubLibrary:
         return None
 
 
-class StubSplitView:
-    def get_collapsed(self):
-        return False
-
-    def set_show_content(self, _show):
-        pass
-
-
 class StubWindow:
     def __init__(self):
         self.shown = None
-        self.split_view = StubSplitView()
+
+    def hide_sidebar(self):
+        pass
 
     def account_key(self, key):
         return key
@@ -992,25 +986,17 @@ class HeaderStepTest(unittest.TestCase):
         self.assertIsNone(header_step(None, None, first, button, down=False))
 
 
-class RecordingSplitView:
-    def __init__(self):
-        self.collapsed = False
-        self.content_shown = []
-
-    def get_collapsed(self):
-        return self.collapsed
-
-    def set_show_content(self, show):
-        self.content_shown.append(show)
-
-
 class RecordingWindow(StubWindow):
-    """The window's seams, recording each show_root() as (key, pop)."""
+    """The window's seams, recording each show_root() as (key, pop) and how often the
+    narrow layout's sidebar was closed (hide_sidebar())."""
 
     def __init__(self):
         super().__init__()
-        self.split_view = RecordingSplitView()
         self.shows = []
+        self.hidden = 0
+
+    def hide_sidebar(self):
+        self.hidden += 1
 
     def show_root(self, key, pop=False):
         self.shown = key
@@ -1020,10 +1006,11 @@ class RecordingWindow(StubWindow):
 @requires_gtk
 class ActivationTest(unittest.TestCase):
     """What a click, Enter or the arrows do on the sidebar (sidebar.md): selecting shows the
-    item's page, the controller's own selections show nothing; activating the page shown
-    pops it back to its root in the wide layout; a folder opens and closes in the sidebar
-    mode only; Right and Left open and close the focused folder, and Left on a nested item
-    goes up to its folder; select() reveals an item in closed folders."""
+    item's page, the controller's own selections show nothing; activating an item closes
+    the narrow layout's sidebar, and the page shown pops back to its root; a folder opens
+    and closes in the sidebar mode only, and leaves the sidebar open there; Right and Left
+    open and close the focused folder, and Left on a nested item goes up to its folder;
+    select() reveals an item in closed folders."""
 
     def setUp(self):
         from gi.repository import Adw, Gio
@@ -1077,17 +1064,13 @@ class ActivationTest(unittest.TestCase):
         self.window.shown = HOME
         self.activate('playlist:p2')
         self.assertEqual(self.window.shows, [('playlist:p2', False)])
-        self.assertEqual(self.window.split_view.content_shown, [True])
+        self.assertEqual(self.window.hidden, 1)  # the narrow layout's sidebar, closed
 
     def test_activating_the_page_shown_pops_it_back_to_its_root(self):
         self.window.shown = 'playlist:p2'
         self.activate('playlist:p2')
         self.assertEqual(self.window.shows, [('playlist:p2', True)])
-        # Collapsed, the content is only shown again, as it was left.
-        self.window.split_view.collapsed = True
-        self.activate('playlist:p2')
-        self.assertEqual(self.window.shows, [('playlist:p2', True)])
-        self.assertEqual(self.window.split_view.content_shown, [True, True])
+        self.assertEqual(self.window.hidden, 1)
 
     def test_activating_a_folder_opens_and_closes_it_in_the_sidebar_mode(self):
         self.activate('folder:a')
@@ -1096,11 +1079,17 @@ class ActivationTest(unittest.TestCase):
         self.activate('folder:a')
         self.assertEqual(self.expanded(), [])
         self.assertFalse(self.controller.item_for('playlist:p1').get_visible())
-        # The page mode: the folder's page lists what it holds; nothing opens.
+        # Its page is shown each time, and the narrow layout's sidebar stays open over it,
+        # so that what the folder holds can be chosen.
+        self.assertEqual([key for key, _pop in self.window.shows], ['folder:a', 'folder:a'])
+        self.assertEqual(self.window.hidden, 0)
+        # The page mode (which the window never sets): the folder's page lists what it
+        # holds; nothing opens, and the sidebar closes as for any other row.
         self.widget.set_mode(self.Adw.SidebarMode.PAGE)
         self.activate('folder:a')
         self.assertEqual(self.expanded(), [])
         self.assertEqual(self.window.shows[-1][0], 'folder:a')
+        self.assertEqual(self.window.hidden, 1)
 
     def test_right_and_left_open_and_close_the_focused_folder(self):
         rows = self.controller.rows()

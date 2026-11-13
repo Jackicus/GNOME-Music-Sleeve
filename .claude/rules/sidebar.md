@@ -17,6 +17,15 @@ its order (folders first, each group by title: library.md); the controller
 drop target, and follows the library's `changed` and `playlists-changed` (a rename moves an
 entry: it is spliced out and in, and the window selects it again by key).
 
+- The window keeps it in the sidebar mode at every width (issue 593): below 640sp its
+  `Adw.OverlaySplitView` slides the same sidebar over the page (window.py's
+  `sidebar_open()`, `hide_sidebar()`; ui.md), and a mode change would build every row again
+  (61-113 ms with 300 playlists). What is said of the page mode below is `AdwSidebar`'s
+  behaviour, which the controller still follows (`notify::mode`) and its tests cover, not
+  something a user meets. An activated row closes the narrow layout's sidebar
+  (`window.hide_sidebar()`), but a folder's, which opens or closes and leaves it open. The
+  overlay unmaps the sidebar while it is closed, so each opening is a map: libadwaita
+  centres the selection again, and the window calls `reveal_selected()` after `focus()`.
 - Items are GObjects, not widgets: no children, no indentation of their own (a folder's
   contents follow it; its arrow suffix says whether they show). The controller indents a
   nested item's row by giving it `depth-1` to `depth-3` (`sidebar.depth_class()`) in
@@ -85,5 +94,4 @@ entry: it is spliced out and in, and the window selects it again by key).
   folder's state; the controller sets both on the rows itself. It builds a mode's rows
   before it notifies `mode`, so the rows are named in that handler and the new rows never
   draw flat; the idle after it only places the New button again (or names the rows, had
-  they not been there): the window's breakpoint switches the mode at each crossing of a
-  resize, and a walk over a few hundred rows is about 8 ms.
+  they not been there): a walk over a few hundred rows is about 8 ms.

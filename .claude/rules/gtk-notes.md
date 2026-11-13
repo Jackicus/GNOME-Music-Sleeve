@@ -39,8 +39,8 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
   With no search it matches everything without reading an item; a longer search refilters
   only what matched, a shorter one only what did not (every key read again on a Backspace
   that brings nothing back: `filter_bar.SearchText` stops the filter's `changed` then).
-- `Adw.NavigationSplitView` moves its content as it collapses or expands (the window's
-  640sp breakpoint): the content page is unrealized and realized again, and a
+- `Adw.NavigationSplitView` moves its content as it collapses or expands (Artists' own; the
+  window's was one until issue 593, and is an `Adw.OverlaySplitView` for this): the content page is unrealized and realized again, and a
   `Gtk.GridView`, `ListView` or `ColumnView` in it drops every row and builds them all
   again, its factory's setup and bind run for each (GTK 4.24, libadwaita 1.10; a bare
   window does it too; `Adw.OverlaySplitView` keeps them). A `Gtk.ColumnView` column shown
@@ -120,6 +120,14 @@ names another. The sidebar's are in `sidebar.md`; measurements are in docs/notes
   navigation page takes no breakpoints: put an `Adw.BreakpointBin` inside it.
 - libadwaita's `.card` sets its own `color`, so a card placeholder on a coloured background
   needs `color: inherit`; `--card-bg-color` is white in the light theme.
+- `Adw.OverlaySplitView` (libadwaita 1.10): collapsing sets `show-sidebar` FALSE and
+  uncollapsing TRUE on its own (`pin-sidebar` off), and `show-sidebar` FALSE hides the
+  sidebar uncollapsed too, so the window only ever closes it while collapsed
+  (`hide_sidebar()`) and has `enable-hide-gesture` set by the collapsing breakpoints alone.
+  The content stays mapped and realized throughout; the sidebar is unmapped while closed.
+  Opening it collapsed moves the focus to the sidebar's first focusable widget, and closing
+  gives it back to the widget that had it in the content; Escape closes it (its own
+  shortcut, with the focus inside it), and so does a click on the dimmed content.
 - `Adw.BottomSheet`: the bottom bar is laid over the content (window.blp binds the content's
   `margin-bottom` to `bottom-bar-height`, which is 0 while the sheet is open). With `can-open`
   the bar is wrapped in a focusable `Gtk.Button`, which the player bar names. The sheet gets its

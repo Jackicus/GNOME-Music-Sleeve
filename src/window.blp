@@ -17,7 +17,7 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
 
     setters {
       split_view.collapsed: true;
-      sidebar.mode: page;
+      split_view.enable-hide-gesture: true;
       player_bar.narrow: true;
     }
   }
@@ -27,7 +27,7 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
 
     setters {
       split_view.collapsed: true;
-      sidebar.mode: page;
+      split_view.enable-hide-gesture: true;
       player_bar.narrow: true;
       player_bar.compact: true;
       now_playing.compact: true;
@@ -59,7 +59,7 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
 
     setters {
       split_view.collapsed: true;
-      sidebar.mode: page;
+      split_view.enable-hide-gesture: true;
       player_bar.narrow: true;
       now_playing.short: true;
     }
@@ -70,7 +70,7 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
 
     setters {
       split_view.collapsed: true;
-      sidebar.mode: page;
+      split_view.enable-hide-gesture: true;
       player_bar.narrow: true;
       player_bar.compact: true;
       now_playing.compact: true;
@@ -112,17 +112,21 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
     content: Adw.ToastOverlay toast_overlay {
       margin-bottom: bind bottom_sheet.bottom-bar-height;
 
-    child: Adw.NavigationSplitView split_view {
+    // Below 640sp the breakpoints collapse the split view: the sidebar, which the collapse
+    // closes, then slides over the content from a destination's Show Sidebar button, F9 or
+    // a swipe (window.py), and the content stays where it is, never moved or unrealized
+    // (an Adw.NavigationSplitView moves it at each crossing, and every list in it builds its
+    // rows again: docs/decisions.md). The sidebar keeps the sidebar mode at every width.
+    child: Adw.OverlaySplitView split_view {
       min-sidebar-width: 220;
       max-sidebar-width: 280;
+      // Only the collapsed layout's sidebar is swiped away (the breakpoints): beside the
+      // content it always shows, and nothing there would bring it back.
+      enable-hide-gesture: false;
 
-      // The sidebar's header bar carries the page's title, the app's name, as GNOME's core
-      // apps title theirs.
-      sidebar: Adw.NavigationPage {
-        title: _("Music Sleeve");
-        tag: "sidebar";
-
-        child: Adw.ToolbarView {
+      // The sidebar's header bar carries the window's title, the app's name, as GNOME's
+      // core apps title theirs.
+      sidebar: Adw.ToolbarView {
           [top]
           Adw.HeaderBar {
             [end]
@@ -220,16 +224,11 @@ template $AppleMusicWindow: Adw.ApplicationWindow {
               };
             }
           }
-        };
       };
 
       // Each page in the navigation view carries its own header bar; the banners below are
       // docked under the visible page's (window.py).
-      content: Adw.NavigationPage content_page {
-        title: _("Home");
-        tag: "content";
-        child: Adw.NavigationView navigation_view {};
-      };
+      content: Adw.NavigationView navigation_view {};
     };
     };
       };

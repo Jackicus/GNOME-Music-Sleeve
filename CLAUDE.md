@@ -33,7 +33,7 @@ One thread runs GTK and asyncio: the GLib main loop is the asyncio loop
 ```
 Application (main.py)    app.settings, .library, .engine, .player, .mpris, .session, .library_sync,
 │                        .demo; app.spawn(coro), app.toast(), app.report(error), .player_command()
-├─ Window (window.py)    Stack: AdwBottomSheet > AdwToastOverlay > AdwNavigationSplitView, or
+├─ Window (window.py)    Stack: AdwBottomSheet > AdwToastOverlay > AdwOverlaySplitView, or
 │  │                     the full-screen player (fullscreen.py); keys as keyboard.py decides
 │  ├─ sidebar            AdwSidebar run by sidebar_view.SidebarController: sections.py's
 │  │                     destinations, then the Playlists (sidebar.py over playlist_tree())
