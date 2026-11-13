@@ -34,6 +34,9 @@ paths:
   refuses to start one (engine.md). tests/test_headless.py checks the export with stand-ins.
 - screenshot.py and a11y_check.py also use the stock GNOME look (Adwaita icons, Adwaita Sans 11)
   and no animations, so shots do not depend on the desktop's theme.
+- `screenshot.py --high-contrast` draws libadwaita's high-contrast style, dark or with
+  `--light`, as the desktop's High Contrast setting would: it sets `ADW_DEBUG_HIGH_CONTRAST=1`
+  before libadwaita starts (the style cannot be switched in a running app).
 - `screenshot.py` without `--demo` reads the release build's real cache (`APPLE_MUSIC_CACHE`
   names the .Devel build's): never for a shot that is committed or shared. `--now-playing
   [lyrics|localized|syllable|queue]` opens the sheet on an invented item (the lyrics of

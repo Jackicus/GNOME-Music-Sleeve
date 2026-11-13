@@ -645,6 +645,23 @@ listview.lyrics-list > row:focus-visible > .lyric-row > .lyric-line {
   opacity: 1;
 }
 
+/* In high contrast the lines not current are at libadwaita's 0.9, too close to the current
+   line's 1 to tell it by: the current line has a bar in the text colour at its inline start,
+   inside its box's padding, short of its rounded corners (a background: nothing is laid out
+   again as it moves on). */
+@media (prefers-contrast: more) {
+  .lyric-line.current {
+    background-image: image(currentColor);
+    background-repeat: no-repeat;
+    background-size: 4px calc(100% - 12px);
+    background-position: 2px center;
+  }
+
+  .lyric-line.current:dir(rtl) {
+    background-position: calc(100% - 2px) center;
+  }
+}
+
 /* A word-timed line becomes current at once, not fading in: its labels draw the words not
    yet sung at the dimmed lines' opacity themselves (widgets/lyrics.py's LyricLabel), which
    a fade of the box would dim further for a moment. It still fades out when it is done. */
