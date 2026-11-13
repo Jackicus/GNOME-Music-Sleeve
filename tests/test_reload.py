@@ -18,7 +18,7 @@ from unittest import mock
 
 from tests import ROOT  # noqa: F401  (registers src/ as applemusic)
 
-from applemusic import library as library_module
+from applemusic.library import model as model_module
 from applemusic.library import Item, Library
 
 
@@ -241,14 +241,14 @@ class TestReloadTells(ReloadCase):
             raw['genre'] = 'Jazz'
         self.write(albums)
         pauses = []
-        yield_to_frames = library_module.yield_to_frames
+        yield_to_frames = model_module.yield_to_frames
 
         async def counting_yield():
             pauses.append(True)
             await yield_to_frames()
 
-        with mock.patch.object(library_module, 'FRAME_BUDGET', 0), \
-                mock.patch.object(library_module, 'yield_to_frames', counting_yield):
+        with mock.patch.object(model_module, 'FRAME_BUDGET', 0), \
+                mock.patch.object(model_module, 'yield_to_frames', counting_yield):
             self.reload()
         self.assertGreaterEqual(len(pauses), 20)  # a pause after each merge with no budget
         self.assertEqual({item.genre for item in self.library.albums}, {'Jazz'})

@@ -228,13 +228,13 @@ class TestArtwork(unittest.TestCase):
         self.assertEqual((tall.get_width(), tall.get_height()), (12, 6))
 
     def test_a_video_thumbnail_fills_a_frame_at_a_scale_of_2(self):
-        # #383: a video's thumbnail, asked 320 px high (normalize.thumb_box), is drawn
+        # #383: a video's thumbnail, asked 320 px high (art_cache.thumb_box), is drawn
         # without enlarging in a shelf's 160 px frame at 2x, and decoded to the frame's
         # size, as the square-boxed 320 x 180 was, at 1x.
-        from applemusic.backend import config, normalize
+        from applemusic.backend import art_cache, config
 
         frame = (284, 160)  # a shelf's video tile (tile.VIDEO_SIZE), in logical pixels
-        width, height = normalize.thumb_box(config.THUMB_SIZE, wide=True)
+        width, height = art_cache.thumb_box(config.THUMB_SIZE, wide=True)
         path = os.path.join(self.temp_dir.name, 'video-wide.jpg')
         pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, width, height)
         pixbuf.fill(0x336699ff)

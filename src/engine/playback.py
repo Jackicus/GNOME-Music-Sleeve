@@ -10,7 +10,7 @@ import re
 
 from .. import cache
 from .. import lyrics as lyrics_model
-from ..backend import normalize, store
+from ..backend import cache_files, store
 from ..backend.errors import EngineError
 
 log = logging.getLogger(__name__)
@@ -330,7 +330,7 @@ class PlaybackCommands:
         """A catalog song's lyrics: {synced, lines: [{startMs, endMs, text, words?,
         background?, agent?, pronunciation?, translation?…}], languages, format}
         (lyrics_answer's shape), from <cache>/lyrics/<id>.json when they were fetched in the
-        last normalize.LYRICS_MAX_AGE in today's lyrics.FORMAT, with their translations and
+        last cache_files.LYRICS_MAX_AGE in today's lyrics.FORMAT, with their translations and
         pronunciations in `lyrics_languages` (no engine needed then; the read marks the
         file as played, for prune_caches), else through the bridge (the catalog's TTML with
         its translations and transliterations, parsed in the page) and kept there, stamped,
@@ -345,7 +345,7 @@ class PlaybackCommands:
             raise EngineError('usage', 'lyrics need a catalog song id')
         languages = dict(self.lyrics_languages)
         path = self.lyrics_path(catalog_song_id)
-        cached = await asyncio.to_thread(cache.read_kept, path, normalize.LYRICS_MAX_AGE, True)
+        cached = await asyncio.to_thread(cache.read_kept, path, cache_files.LYRICS_MAX_AGE, True)
         kept = lyrics_answer(cached) if cached is not None and cached.get('lines') else None
         if (kept is not None and kept['languages'] == languages
                 and kept['format'] == lyrics_model.FORMAT):
@@ -360,7 +360,7 @@ class PlaybackCommands:
                 raise
             return kept
         if answer['lines']:
-            await asyncio.to_thread(normalize.write_answer, str(path), answer,
+            await asyncio.to_thread(cache_files.write_answer, str(path), answer,
                                     str(self.cache_dir), generation)
         elif kept is not None:
             return kept

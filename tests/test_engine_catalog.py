@@ -13,7 +13,7 @@ from tests import ROOT, SRC  # noqa: F401  (registers src/ as the applemusic pac
 
 
 from applemusic import engine as engine_module
-from applemusic.backend import api, normalize
+from applemusic.backend import api, cache_files
 from applemusic.backend.errors import EngineError
 from tests.engine_fixture import FIXTURES, EngineFixture
 
@@ -152,7 +152,7 @@ class ArtistTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049001'))
+        path = pathlib.Path(cache_files.artist_cache_path(str(self.cache), '1724049001'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'id': '1724049001', 'shelves': [], 'demo': True,
                                     'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
@@ -160,7 +160,7 @@ class ArtistTest(EngineFixture):
         self.assertEqual(answer['id'], '1724049001')
         self.assertNotIn('stale', answer)
         # One of Apple's, kept by the app before: not the demo's to show.
-        apple = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049002'))
+        apple = pathlib.Path(cache_files.artist_cache_path(str(self.cache), '1724049002'))
         apple.write_text(json.dumps({'id': '1724049002', 'shelves': [],
                                      'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
         for coro in (demo.artist_page('1724049002'), demo.artist_page('1724049003'),
@@ -213,7 +213,7 @@ class AlbumPageTest(EngineFixture):
     async def test_an_answer_kept_with_other_views_is_asked_again(self):
         # An older app asked for `related-albums`, which Apple has no view of: what it kept
         # lacks You Might Also Like, so it is not fresh, however young.
-        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
+        path = pathlib.Path(cache_files.album_cache_path(str(self.cache), '1724049100'))
         path.parent.mkdir(parents=True)
         old = {'id': '1724049100', 'artistId': '', 'artistName': '', 'release': {},
                'shelves': [], 'cached': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
@@ -307,7 +307,7 @@ class AlbumPageTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.album_cache_path(str(self.cache), '1724049100'))
+        path = pathlib.Path(cache_files.album_cache_path(str(self.cache), '1724049100'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'id': '1724049100', 'shelves': [], 'release': {},
                                     'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
@@ -471,7 +471,8 @@ class PlaylistPageTest(EngineFixture):
         items = await self.engine.curator_playlists('1724049500')
         self.assertEqual(self.page.api_calls, [self.CURATOR, later])
         self.assertEqual(self.page.api_params[0], {'limit': api.CURATOR_PLAYLISTS_LIMIT})
-        # Every one of them: the page leaves its own playlist out (detail.playlist_completer).
+        # Every one of them: the page leaves its own playlist out
+        # (detail_catalog.playlist_completer).
         self.assertEqual([item['id'] for item in items],
                          ['pl.aW52ZW50ZWRwbA', 'pl.aW52ZW50ZWRwMg', 'pl.aW52ZW50ZWQ4'])
 
@@ -483,7 +484,7 @@ class PlaylistPageTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.playlist_cache_path(str(self.cache), 'pl.demo001'))
+        path = pathlib.Path(cache_files.playlist_cache_path(str(self.cache), 'pl.demo001'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'id': 'pl.demo001', 'curator': None, 'shelves': [],
                                     'demo': True, 'cached': '2020-01-01T00:00:00Z'}),
@@ -554,7 +555,7 @@ class CreditsTest(EngineFixture):
 
     async def test_the_demo_answers_from_its_own_cache(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.credits_cache_path(str(self.cache), '1724049201'))
+        path = pathlib.Path(cache_files.credits_cache_path(str(self.cache), '1724049201'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'categories': [], 'demo': True,
                                     'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')
@@ -673,7 +674,7 @@ class SuggestionsTest(EngineFixture):
 
     async def test_the_demo_answers_its_own(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.suggestions_cache_path(str(self.cache), 'l.pl001'))
+        path = pathlib.Path(cache_files.suggestions_cache_path(str(self.cache), 'l.pl001'))
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({'items': [], 'demo': True,
                                     'cached': '2020-01-01T00:00:00Z'}), encoding='utf-8')

@@ -14,7 +14,7 @@ from tests.page_harness import PageTestCase, find_all
 from applemusic.backend.errors import EngineError
 from applemusic.credits import heading, roles_text, sections
 
-# Engine.credits' answer for an invented song (normalize.song_credits' shape).
+# Engine.credits' answer for an invented song (item_pages.song_credits' shape).
 ANSWER = {'categories': [
     {'kind': 'performer', 'title': 'Performers', 'people': [
         {'name': 'The Invented Band', 'roles': ['Performer']},

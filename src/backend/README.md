@@ -3,8 +3,8 @@
 Everything that reaches Chrome, MusicKit or Apple's API, below the app's `Engine`
 (`src/engine/`). The standard library and asyncio only: nothing here imports gi
 (`tests/test_backend.py` checks), and importing the package imports none of its modules. The
-app reaches Chrome only through the Engine; other modules may import the pure parts (`api`,
-`config`, `errors`, `normalize`, `store`).
+app reaches Chrome only through the Engine; other modules may import the pure parts (every
+module here but `chrome`, `client` and `cdp`).
 
 ## What is here
 
@@ -16,7 +16,15 @@ app reaches Chrome only through the Engine; other modules may import the pure pa
 | `client.py` | the transports (`PipeTransport`, Chrome's DevTools pipe on its descriptors 3 and 4; `WebSocketTransport`, a DevTools port) and `CDPClient`: one asynchronous CDP connection attached to the music.apple.com page, its calls, events, and the bridge kept in the page across navigations |
 | `cdp.py` | the RFC 6455 handshake and frame codec as pure functions, for `WebSocketTransport`, and `exception_message()`, a page's JavaScript exception in one line |
 | `bridge.js` | the only code that runs in the page: `window.__appleMusicLibrary` over the page's MusicKit instance, and MusicKit's events posted through the `__amEvent` binding |
-| `normalize.py` | Apple's answers as the library's Item, Track and shelf shapes; the artwork cache (naming, fetching, pruning); library.json; the kept answers; `prune_caches()` |
+| `normalize.py` | one Apple resource as the library's Item or Track (`normalize_album()` and the other `normalize_*`, `normalize_item()`, `_shelf_item()` for a shelf's), the favourites' ids, and `group_songs_into_albums_and_artists()` for the sync |
+| `search.py` | the Search page's answers: `search_results()`, `search_suggestions()`, `search_landing()` |
+| `editorial.py` | the editorial groupings as pages of shelves and links: New (`editorial_shelves()`), a category (`category_page()`), a grouping, a multiroom, a room, the links (`editorial_link()`), Radio (`radio_shelves()`) |
+| `charts.py` | the Charts page (`charts_shelves()`, `catalog_genres()`) and Replay (`replay_page()`) |
+| `recommendations.py` | Home's shelves (`recommendation_shelves()`), Made for You, Recently Played |
+| `item_pages.py` | the rest of an item's page: an artist's (`artist_page()`), an album's and a catalog playlist's shelves, a song's `related()`, `song_credits()`, a playlist's suggested songs |
+| `banner_art.py` | Apple's wide artwork as headers and banners: `artist_banner()`, `curator_banner()`, `featured_extras()` for New's hero row |
+| `art_cache.py` | the artwork cache: sizes (`ART_SIZES`), file names, thumbnails, `download_art()`, `place_in_remote_art()` |
+| `cache_files.py` | library.json (`save_library()`), the kept answers (their paths, `write_answer()`, `read_answer()`, `patch_answer()`, freshness), and the pruners (`prune_art()`, `prune_caches()`) |
 | `store.py` | every write into the cache: `atomic_write()` / `atomic_create()`, the cache's generation (`cache_generation()`, `bump_cache_generation()`), `CacheGone` and `Cancelled` |
 | `config.py` | the cache and profile directories for each build profile, the developer's DevTools port, Chrome's session bus when the app runs on another (`host_session_bus()`), the artwork sizes, `BRIDGE_JS` |
 
@@ -77,9 +85,9 @@ calls `window.__appleMusicLibrary.<name>(...)`; the Engine's commands are thin c
 | `createFolder(attributes, parentId)` | `{id}`, the new folder's; `attributes` `{name}`, `parentId` the folder it goes in (none: the top level) |
 | `moveToFolder(type, id, folderId)` | `{ok: true}`: the playlist (`type` `library-playlists`) or folder (`library-playlist-folders`) into the folder `folderId` (`p.playlistsroot` for the top level), the web player's `requestMoveToFolder` |
 | `lyrics(catalogSongId, languages)` | `{synced, lines: [Line]}`, the TTML read with the page's XML parser (`parseTtmlLyrics`). A Line is `{startMs, endMs, text, stanza?, words?, background?, backgroundWords?, agent?, pronunciation?, pronunciationWords?, pronunciationBackground?, pronunciationBackgroundWords?, translation?, translationBackground?}`, empty fields left out: `stanza: true` on a verse's first line (each `<div>`); `text` the main vocals, `background` the `<span ttm:role="x-bg">` (parentheses and all), each with its spaces run together; with `itunes:timing="Word"` on the root, `words` and `backgroundWords` are their timed `<span>`s as `[{startMs, endMs, text}]`, each piece's text with the space after it, so the pieces join to the text (a piece without one is a syllable joined to the next); `agent` the `<p>`'s (or its `<div>`'s) `ttm:agent`, kept only when some line's is not `v1`. src/lyrics.py's docstring has the shape, and engine.lyrics_answer checks it. music.apple.com's request (checked against the API on 2026-10-19): `/v1/catalog/<sf>/songs/<id>/syllable-lyrics?extend=ttmlLocalizations&l[lyrics]=<languages.lyrics>&l[script]=<languages.script>` (`api.lyrics_languages()`: `en-GB`, `en-Latn`), whose `attributes.ttmlLocalizations` is the TTML with `<head><metadata><iTunesMetadata><transliterations><transliteration xml:lang="ja-Latn"><text for="L1">…` and `<translations><translation xml:lang="en-US"><text for="L1">…`: a line's `pronunciation` and `translation` are the `<text>` its `itunes:key` names, split and (the transliteration's) timed as the line is, and dropped when they are the line itself. Its lines are the plain `/lyrics`' (which ignores those parameters); that is asked when syllable-lyrics fails |
-| `search(term, limit, types, offset, top)` | the API's answer, shaped by `normalize.search_results()`: `GET /v1/catalog/<sf>/search` for `types` (`api.SEARCH_TYPES`, every kind the page shows, curators included; or one kind's, `api.SEARCH_KIND_TYPES`), `limit` a type (25 at most), from `offset` when there is one, and `with=topResults` with `top`. Each type's section names its next page in `next` (`/v1/catalog/<sf>/search?offset=25&…`, `api.next_offset()`), absent at the end |
-| `suggest(term, limit)`, `searchLanding()`, `category(id)` | the API's answer, shaped by `normalize.search_suggestions()`, `search_landing()`, `category_page()` |
-| `playlistSuggestions(playlistId, limit, offered, selected, previewed)` | `{results: {suggested: [songs]}}`, the songs Apple suggests adding to a library playlist, shaped by `normalize.playlist_suggestions()`: music.apple.com's own request (checked against the API on 2026-10-08), `POST /v1/me/recommendations/suggested?platform=web&omit[resource]=autos&contexts=playlist-suggested-songs&types=songs&include[songs]=artists&limit=<limit>` with `{targetContent: {id, type: 'library-playlists'}}`, through the request builder (`music()` sends no body); up to `limit` (20 by default) full catalog songs. With `offered` (catalog ids shown) or `selected` (those added) the body also carries `offered: {suggested: [{id, type: 'songs', meta: {impressed: true, previewed}}]}` (`previewed` true for the ids in `previewed`, those whose preview was played) and `selected: [{id, type: 'songs', meta: {source: 'suggested'}}]`, as the web player's Refresh sends them; Apple then answers none of the offered songs (checked 2026-10-08) |
+| `search(term, limit, types, offset, top)` | the API's answer, shaped by `search.search_results()`: `GET /v1/catalog/<sf>/search` for `types` (`api.SEARCH_TYPES`, every kind the page shows, curators included; or one kind's, `api.SEARCH_KIND_TYPES`), `limit` a type (25 at most), from `offset` when there is one, and `with=topResults` with `top`. Each type's section names its next page in `next` (`/v1/catalog/<sf>/search?offset=25&…`, `api.next_offset()`), absent at the end |
+| `suggest(term, limit)`, `searchLanding()`, `category(id)` | the API's answer, shaped by `search.search_suggestions()`, `search_landing()`, `editorial.category_page()` |
+| `playlistSuggestions(playlistId, limit, offered, selected, previewed)` | `{results: {suggested: [songs]}}`, the songs Apple suggests adding to a library playlist, shaped by `item_pages.playlist_suggestions()`: music.apple.com's own request (checked against the API on 2026-10-08), `POST /v1/me/recommendations/suggested?platform=web&omit[resource]=autos&contexts=playlist-suggested-songs&types=songs&include[songs]=artists&limit=<limit>` with `{targetContent: {id, type: 'library-playlists'}}`, through the request builder (`music()` sends no body); up to `limit` (20 by default) full catalog songs. With `offered` (catalog ids shown) or `selected` (those added) the body also carries `offered: {suggested: [{id, type: 'songs', meta: {impressed: true, previewed}}]}` (`previewed` true for the ids in `previewed`, those whose preview was played) and `selected: [{id, type: 'songs', meta: {source: 'suggested'}}]`, as the web player's Refresh sends them; Apple then answers none of the offered songs (checked 2026-10-08) |
 | `preview(id, url)` | `{ok: true, id}` once Apple's 30-second clip of a song (`url`, https: the song's `previews[0].url`, kept as `previewUrl`) plays, or `{error, code}` (`NO_PREVIEW` for no https address, else the media error's name, such as `NotAllowedError`). MusicKit is paused first and its queue left alone: the clip plays in an `Audio` element of the page's own, at MusicKit's volume (`volume()` sets both), one at a time. `play()` and every `control()` stop it, and so does MusicKit playing again (`previewDidChange` follows each start and end) |
 | `stopPreview()` | `{stopped}`: whether a preview was playing |
 | `subscribe()`, `unsubscribe()` | MusicKit's listeners on or off, once per instance: `{subscribed: true, events: [names], attached}` (`attached` false when this bridge's listeners were on already), and `{subscribed: false}` |
@@ -303,7 +311,7 @@ it with the bridge's `favourite('artists', id, on)` (`Engine.favourite_artist()`
 in `api.ARTIST_PARAMS`: no request more), or alone through `apiFresh` with
 `api.FAVOURITE_PARAMS` (`Engine.is_favourite_artist()`, which an artist's menu asks as it
 opens). The engine remembers what it wrote and read this session over a page kept for a day,
-and a write patches the kept page (`normalize.patch_answer()`, its `cached` stamp kept).
+and a write patches the kept page (`cache_files.patch_answer()`, its `cached` stamp kept).
 Checked against a real account on 2026-10-20 (MusicKit `playback/AppleMusic-2642.7.0-external`,
 the `gb` storefront), one artist favourited and unfavourited, put back:
 
@@ -334,7 +342,7 @@ each a shelf by `attributes.editorialElementKind` (checked live on 2026-10-20):
 | 391 | More to Explore: `name` and `links`, `[{label, url, target?}]` |
 | 322 | untitled `links`, every one a genre's grouping |
 
-`normalize._grouping_shelves()` makes a shelf of every titled element with something in its
+`editorial._grouping_shelves()` makes a shelf of every titled element with something in its
 `contents` or its children's (326, 327, 385's curators, 488), and of the first untitled one
 made of children (316) the featured shelf; `radio_shelves()` tells 316 and 488 apart
 (`RADIO_HERO_KIND`, `RADIO_LIVE_KIND`). New's (`editorial_shelves()`, through
@@ -345,28 +353,28 @@ used yet.
 
 ### New's banners and More to Explore (#370)
 
-New's answer (`Engine.browse()`, `normalize.editorial_shelves()`) is `{shelves, links}`:
+New's answer (`Engine.browse()`, `editorial.editorial_shelves()`) is `{shelves, links}`:
 
 - the featured shelf's items carry, from the hero row's child that holds each:
   `badge`, the child's `designBadge` ("NEW ALBUM", in the account's language); `banner`, a
-  wide artwork as `normalize.wide_artwork()` makes one (`{url, crop, width, height,
+  wide artwork as `banner_art.wide_artwork()` makes one (`{url, crop, width, height,
   color}`, the template cut `sr`, its source's shape): the child's own `editorialArtwork`
   (a 320's), else its content's (a 317's), the first of `subscriptionHero` and
   `superHeroWide` (`BANNER_ARTWORK_KEYS`). A template with an effect code
   (`…_cropped.png/{w}x{h}SH.FPESS04.jpg?l=en-GB`, 3 banners in 15 live, all Essentials
   playlists: Apple's composite of the artist's picture on a colour beside the word) is
-  kept as it is, query and all, its `crop` the effect code (`normalize.template_effect()`):
+  kept as it is, query and all, its `crop` the effect code (`banner_art.template_effect()`):
   an `sr` cut of its source crops the picture, where the composite is made for the
   4320x1080 shape. And `tagline`, the content's
   `plainEditorialNotes` `tagline`, else `short` (else the child's). The shelf is `form:
   'banners'` when one item has a banner (the page's wide cards), else a plain featured
   shelf (hero cards). Radio's hero gets none of it;
 - `links`, each row `{key, title, links}` (391's `name` its title, 322's untitled), each
-  link `normalize.editorial_link()`'s `{title, kind, id, url[, genre]}`, each once:
+  link `editorial.editorial_link()`'s `{title, kind, id, url[, genre]}`, each once:
 
 | URL | `kind` | What the app opens |
 |---|---|---|
-| `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>`, `https://music.apple.com/<sf>/room/<id>` | `room` | `Engine.room(id)`: `GET /v1/editorial/<sf>/rooms/<id>` (`api.ROOM_ENDPOINT`), `rooms` with `title`, `sorts`, `contents` (up to 100): `normalize.editorial_room()`'s `{id, title, items}`, a grid |
+| `https://itunes.apple.com/<sf>/collection/<slug>/id<n>?fcId=<id>&mt=14`, `…/viewRoom?fcId=<id>`, `https://music.apple.com/<sf>/room/<id>` | `room` | `Engine.room(id)`: `GET /v1/editorial/<sf>/rooms/<id>` (`api.ROOM_ENDPOINT`), `rooms` with `title`, `sorts`, `contents` (up to 100): `editorial.editorial_room()`'s `{id, title, items}`, a grid |
 | `…/viewGrouping?cc=<sf>&id=<id>` | `grouping` | `Engine.grouping(id)`: `GET /v1/editorial/<sf>/groupings/<id>` with `api.GROUPING_PARAMS` (`platform=web`, without which it is a 400, "A single platform must be supplied"; `extend=editorialArtwork`), the same shape as New: `editorial_grouping()`'s `{id, title, shelves, links}` |
 | `…/viewMultiRoom?cc=<sf>&fcId=<id>` | `multiroom` | `Engine.multiroom(id)`: `GET /v1/editorial/<sf>/multirooms/<id>` with `api.MULTIROOM_PARAMS` (`extend=editorialArtwork,uber,lockupStyle`): `multirooms` with `title`, `uber` (`masterArt`, `name`, `description`, colours) and `children` (404 a header, 345 shelves with `contents` and `room`): `editorial_multiroom()`'s `{id, title, shelves, links}` |
 | `…/viewTop?genreId=<n>`, `https://music.apple.com/<sf>/charts` | `charts` | the Charts page, on the genre `genre` names (an `api.is_genre_id()` id) when the link has one other than Music's (`api.ROOT_GENRE`, 34, the genre without a parent: New's "Charts" link names it, and its charts are every genre's, All Genres) |
@@ -385,7 +393,7 @@ the three pages is kept a day (`rooms/`, `groupings/`, `multirooms/`, by id). Th
 `extend=editorialArtwork`, `include[stations]=events,radio-show`), the web player's request
 for its Radio page less `extend[station-events]=editorialVideo`, checked live on 2026-10-20.
 The answer is the editorial grouping New's is (see "The editorial groupings" above for its
-element kinds), shaped by `normalize.radio_shelves()` through New's own
+element kinds), shaped by `editorial.radio_shelves()` through New's own
 `_grouping_shelves()`:
 
 - the live stations (kind 488, a `title`, children 489 each holding one station in
@@ -397,7 +405,7 @@ element kinds), shaped by `normalize.radio_shelves()` through New's own
   `artwork`): the shelf item gets `events`, `[{title, start, end}]` by start time, the
   times UTC stamps; the page picks the one on air as it is shown (`src/radio.py`). The answer's
   `expires` is when the first live station's last programme known ends (at least five
-  minutes on): from then it is not fresh (`normalize.answer_expired()`), whatever its age;
+  minutes on): from then it is not fresh (`cache_files.answer_expired()`), whatever its age;
 - an episode of a show is `stations`, `kind: 'streaming'`, `isLive: false`, with `airTime`,
   `durationInMillis` and its show in `relationships.radio-show`: subtitled with the show's
   name; genre stations are `kind: 'editorial'`. All play as `{kind: 'radioStation', id:
@@ -415,12 +423,12 @@ element kinds), shaped by `normalize.radio_shelves()` through New's own
 following `next`; a later page that fails answers the pages read (that answer not kept),
 the first must answer. The
 resources (albums, playlists, stations, the library's or the catalog's, newest first) are
-shaped by `normalize.recently_played()` into `{items: [Item]}`, each once, as a shelf's
+shaped by `recommendations.recently_played()` into `{items: [Item]}`, each once, as a shelf's
 items (no track lists; artwork as a search hit's), and kept in `recent-played.json`. Home
 shows the kept answer at once and asks again with `refresh` once it is a minute old
 (src/home.py). Not yet checked live: which resource types the account's answer holds, and
 how far `offset` goes. Apple's recommendations (`/v1/me/recommendations`) may carry a
-`reason` (`{stringForDisplay}`, documented): `normalize.recommendation_reason()` keeps it
+`reason` (`{stringForDisplay}`, documented): `recommendations.recommendation_reason()` keeps it
 as the shelf's `subtitle` unless it only says the title again.
 
 ### An artist's banner
@@ -441,7 +449,7 @@ Other keys seen: `originalFlowcaseBrick`, `storeFlowcase`, `subscriptionHero`,
 Checked against a real account on 2026-10-20 (24 catalog artists, the `gb` storefront).
 
 The app adds `editorialArtwork,hero` to its own `extend` (`api.ARTIST_PARAMS`), and
-`normalize.artist_banner()` makes the answer's `banner`, `{url, crop, width, height,
+`banner_art.artist_banner()` makes the answer's `banner`, `{url, crop, width, height,
 color}` (the template with its crop, `{w}x{h}` left to fill; the source's size; Apple's
 `bgColor`), by the web player's rule, or None. `remote.fetch_banner()` asks it at the
 header's width in device pixels, in steps of 480, no wider than the source: a `vf` cut at
@@ -462,7 +470,7 @@ Link alone (`actions.curator_menu()`), and its tile opens its page:
 
 - `bridge.category(id)` asks `GET
   /v1/catalog/<sf>/apple-curators/<id>?include=grouping,playlists&include[editorial-elements]=children,contents,room&extend=editorialArtwork&platform=web`,
-  music.apple.com's request. `normalize.category_page()` makes `relationships.grouping`'s
+  music.apple.com's request. `editorial.category_page()` makes `relationships.grouping`'s
   326 shelves (a show's: its episodes, as `stations`, and albums and playlists) into
   shelves, then `relationships.playlists`, less those already shown, into one keyed
   `playlists` (untitled: the app names it);
@@ -471,13 +479,13 @@ Link alone (`actions.curator_menu()`), and its tile opens its page:
   (`CURATOR_VIEWS`). Their `view/more-to-hear` holds the episodes (`stations`, `streaming`,
   not live), which play as stations;
 - search answers curators only when asked for (`types=apple-curators`, and `curators` for
-  third parties): `api.SEARCH_TYPES` asks for both. `normalize.search_results()` shelves
+  third parties): `api.SEARCH_TYPES` asks for both. `search.search_results()` shelves
   Apple's of kind Show as `radio-shows` and the rest as `curators`, each marked
   `curatorKind`; a third party's has no page the app can read (`category()` asks
   `apple-curators`), so it is a link to music.apple.com's (`curator_link()`);
 - a catalog playlist's curator (its `curator` relationship, `include=curator`) is the link
   under its title: an Apple curator's category page, a third party's page in the browser
-  (`normalize.playlist_curator()`; its shape under library.json below).
+  (`item_pages.playlist_curator()`; its shape under library.json below).
 
 ### The Charts page
 
@@ -495,12 +503,12 @@ Top 100 and City Charts are no genre's; an id that is not `api.is_genre_id()`, d
 `usage`), kept as `charts/<id>.json`. The genres the page offers are `Engine.genres()`:
 `GET /v1/catalog/<sf>/genres` (`api.GENRES_ENDPOINT`, no parameters), Apple's documented
 `genres` resources `{id, attributes: {name, parentId, parentName}}`, shaped by
-`normalize.catalog_genres()` as `{genres: [{id, title}]}` in Apple's order, the genre the
+`charts.catalog_genres()` as `{genres: [{id, title}]}` in Apple's order, the genre the
 others belong to (Music, without a parent and every other's parent: what the charts are
 without a genre) left out, kept as `genres.json` for a day. Not checked live yet: the
 `genre` parameter with `types` of four kinds, and whether the list is the top level alone
 or the subgenres too.
-`normalize.charts_shelves()` makes a shelf of each chart with something in it, in the
+`charts.charts_shelves()` makes a shelf of each chart with something in it, in the
 page's order (`CHART_ORDER`: songs, albums, playlists, `dailyGlobalTopCharts`,
 `cityCharts`, music videos, then any other key), keyed `charts-<key>`, with `chart` (the
 key) and Apple's `name` as its title ('' without one: the app names it,
@@ -534,7 +542,7 @@ do not hold):
   `{id, type: 'songs', href}` alone, its catalog id. A 400 or a 404 is taken as no summary
   (no listening history for the year), anything else is the command's;
 - the top songs, `GET /v1/catalog/<storefront>/songs?ids=…` (`api.REPLAY_SONGS_ENDPOINT`,
-  `api.replay_songs_params()`): the summary's song ids (`normalize.replay_song_ids()`, in
+  `api.replay_songs_params()`): the summary's song ids (`charts.replay_song_ids()`, in
   rank order, each once, catalog ids only), up to a hundred in one read, which Apple answers
   in an order of its own. A 404 is none of them (no Top Songs), anything else is the
   command's; without songs to ask for it is not asked;
@@ -545,16 +553,16 @@ do not hold):
   year's Replay playlist, inline with its attributes (nothing in `included`). Its failing
   (but for `engine-down`) is no years, and that answer is shown but not kept.
 
-`normalize.replay_page()` makes `{year, years, shelves}` of them: `year` the summary's (its
+`charts.replay_page()` makes `{year, years, shelves}` of them: `year` the summary's (its
 `attributes.year`, else its id's, else the year asked), `years` every year the listing has,
-newest first, as strings (`normalize.replay_years()`); a shelf of each view with something
-in it, in `normalize.REPLAY_VIEWS`' order, keyed `replay-<chart>` (`songs`, `artists`,
+newest first, as strings (`charts.replay_years()`); a shelf of each view with something
+in it, in `charts.REPLAY_VIEWS`' order, keyed `replay-<chart>` (`songs`, `artists`,
 `albums`), with `chart`, `ranked` and Apple's view title ('' without one: the app names it,
 `remote.CHART_TITLES`), its items the resources the period summaries hold, a song the
 catalog read's (one it did not answer left out), Top Songs `form: 'songs'`, a song with its
 `album`, as a chart's; then the years' playlists, newest first (`replay-playlists`,
 untitled). The latest year's is kept as `replay.json`, a past year's as
-`replay/<year>.json`, a day each, with `normalize.REPLAY_SHAPE` as their `basis`: one kept in
+`replay/<year>.json`, a day each, with `charts.REPLAY_SHAPE` as their `basis`: one kept in
 an older shape (without it, as before the period summaries were read) is asked again. Not
 read: the play counts and minutes listened, the highlights and the milestones the web
 player shows.
@@ -589,7 +597,7 @@ player asks `include=albums,artists,credits,lyrics,music-videos`), about 250 to 
 `title` Apple's heading for it in the account's language; a `credit-artists` entry is
 `{id, type, attributes: {name, roleNames: [..], artwork?}}`, its id (`<n>-ami:identity:<hex>`)
 not an artist's catalog id, so a credit links to no artist page. `Engine.credits()` keeps
-`normalize.song_credits()`'s `{categories: [{kind, title, people: [{name, roles}]}]}` in
+`item_pages.song_credits()`'s `{categories: [{kind, title, people: [{name, roles}]}]}` in
 `credits/<id>.json` for a day; Apple's 404 is no categories. A library song is asked by its
 catalog id, and one without (an upload) has no View Credits.
 
@@ -637,7 +645,7 @@ Radio page does not use.
 
 A show's page (the category page, "Curators and radio shows" above) carries its banner in
 the curator's `editorialArtwork`: `bannerUber`, else `subscriptionCover`, else
-`subscriptionHero`. `normalize.curator_banner()` takes the first of these
+`subscriptionHero`. `banner_art.curator_banner()` takes the first of these
 (`CURATOR_BANNER_KEYS`) that has an https template and a size, as `wide_artwork()` makes it
 (`{url, crop, width, height, color}`, cut `sr`, `CURATOR_BANNER_CROP`: the source's shape),
 whatever the curator's `kind` (a genre or an editor carrying one gets it too), and
@@ -675,7 +683,7 @@ The client dispatches each bridge event as `am:<name>`; the Engine re-emits it a
 ## library.json
 
 `<cache>/library.json`, written by `src/sync.py` (and `scripts/demo_library.py`), read by
-`src/library.py`. Version 5: a Track carries its `genre` and `year`; version 4: the shape
+`src/library/`. Version 5: a Track carries its `genre` and `year`; version 4: the shape
 of 3, written by a full sync (a short pass keeps the version of the file it kept from, and
 1.0.0's could stamp 3 on a file without 3's keys);
 version 3: Items carry `added` and the file `favourites`; version 2: an album's track
@@ -780,7 +788,7 @@ documented date; no song carried `dateAdded` (0 of 100); the extended read took 
 (1.33 s plain, 1.21 s extended, for 100 songs). Music videos were not tried (that library
 had none): the app offers their Date Added only when the data has it.
 
-An artist's page (`Engine.artist_page()`, `normalize.artist_page()`) is
+An artist's page (`Engine.artist_page()`, `item_pages.artist_page()`) is
 `{id, artist, banner: {url, crop, width, height, color} | null, latest: {key, title, item} |
 null, topSongs: {key, title, items, more} | null, shelves: [{key, title, items, more}],
 favourite: bool | null}`:
@@ -795,10 +803,10 @@ its page, its subtitle its length, and it has nothing to play. `favourite` is th
 `inFavorites` (`normalize.in_favourites()`; null when Apple does not say): the star
 ("Favourites of artists" above).
 
-What an album's page shows under its tracks (`Engine.album_page()`, `normalize.album_page()`)
+What an album's page shows under its tracks (`Engine.album_page()`, `item_pages.album_page()`)
 is `{id, artistId, artistName, release: {releaseDate?, copyright?, recordLabel?},
 shelves: [{key, title, items, more}]}`: `id` the catalog album's, `release` what its footer
-says (`normalize.album_release()`: each key only where Apple has it), and the shelves in
+says (`item_pages.album_release()`: each key only where Apple has it), and the shelves in
 music.apple.com's order: `other-versions`, `related-videos`, `more-by-artist`, `appears-on`
 and `you-might-also-like`, all but More By the album's own views (`api.ALBUM_VIEWS`, one read
 with the album: `views=other-versions,related-videos,appears-on,you-might-also-like`, each
@@ -815,13 +823,13 @@ album (`api.SONG_ALBUMS_PARAMS`); the answer is kept under the id it was asked b
 views asked as its `basis`, so one kept with other views is asked again.
 
 What a catalog playlist's page shows under its tracks (`Engine.playlist_page()`,
-`normalize.playlist_page()`; #371) is `{id, curator, shelves: [{key, title, items, more}]}`
+`item_pages.playlist_page()`; #371) is `{id, curator, shelves: [{key, title, items, more}]}`
 from two reads: `GET /v1/catalog/<sf>/playlists/<id>` with `api.PLAYLIST_PARAMS`
 (`include=curator`, `views=featured-artists,more-by-curator,you-might-also-like`), then,
 for a playlist of an Apple curator's, a page of `api.CURATOR_PLAYLISTS_LIMIT` (10) of the
 curator's playlists, `GET /v1/catalog/<sf>/apple-curators/<id>/playlists` (its failure leaves
 More By out of an answer not kept), kept a day in `playlists/<id>.json` with the views as its `basis`.
-`curator` is the playlist's `curator` relationship (`normalize.playlist_curator()`): an
+`curator` is the playlist's `curator` relationship (`item_pages.playlist_curator()`): an
 `apple-curators` is its category tile, titled with its whole name (its page the category
 page, "Curators and radio shows" above; with its id alone, named by the playlist's
 `curatorName`), a third party's `curators` or a shared playlist's listener's
@@ -849,7 +857,7 @@ Apple leaves `you-might-also-like` out of a playlist's answer (no 400), so the
 `api.PLAYLIST_PLAIN_PARAMS` retry has never run; `views=contributors` answers an empty view.
 
 A playlist's suggested songs (`Engine.playlist_suggestions()`,
-`normalize.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are
+`item_pages.playlist_suggestions()`) are `{items: [Item]}`: song Items as the top songs are
 (with their `album`), in Apple's order, each once. Apple may suggest a song the playlist
 holds; the playlist page leaves those out. The first answer (16 songs: the most a page
 shows, twelve, and four spare) is kept for a day; a Refresh's replaces it; `more=True`
@@ -872,16 +880,16 @@ generation, so a write after Clear Cache or sign-out lands nowhere.
 
 | Path | Written by | Read by | Kept |
 |---|---|---|---|
-| `library.json` | the sync | `library.py` | until the next sync |
+| `library.json` | the sync | `library/` | until the next sync |
 | `art/`, `thumb/`, `art/.sizes` | the sync (thumbnails), the pages (covers) | the artwork loader | pruned against library.json after every sync |
 | `remote-art/` | `src/remote.py`, `Engine.item()` | the pages, MPRIS | trimmed to 32 MB, oldest first |
 | `lyrics/<id>.json` | `Engine.lyrics()` | the same | fetched again after 30 days, or when its `languages` (the translations' and pronunciations', `api.lyrics_languages()`) are not the ones asked for now, or its `format` is older than `lyrics.FORMAT` (2: the words, the background vocals and the singers), though still read while the engine cannot answer; the 2,000 played last |
-| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `replay.json`, `replay/`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Replay only in its shape, `normalize.REPLAY_SHAPE`; Radio's only until its `expires`); not one an older version kept in another shape (`shape`, `normalize.ANSWER_SHAPE`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`normalize.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
+| `landing.json`, `categories/`, `browse.json`, `rooms/`, `groupings/`, `multirooms/`, `made-for-you.json`, `radio.json`, `charts.json`, `replay.json`, `replay/`, `recent-played.json`, `artists/`, `albums/`, `playlists/`, `suggestions/`, `credits/` | `Engine._kept_answer()` | the same, `cache.read_kept()` | a day (a playlist's suggestions only while it holds the same songs, their `basis`; an album's or a playlist's page only for the views it asked; Replay only in its shape, `charts.REPLAY_SHAPE`; Radio's only until its `expires`); not one an older version kept in another shape (`shape`, `cache_files.ANSWER_SHAPE`); an older one only when Apple cannot be asked (`stale: True`), pruned 30 days after it was written (`cache_files.ANSWER_KEEP_AGE`); in demo mode, only what the demo library invented (marked `demo`), at any age |
 
 | `recent-searches.json` | `src/recent_searches.py` (what was opened from Search) | the same, the Search page's Recently Searched | the `LIMIT` (10) opened last, until Search's Clear |
 | `session.json` | `src/session.py` (the last session: the queue, the item and its position) | the same, at launch | until a newer session replaces it, or MusicKit refuses it (`session-dropped` deletes it) |
 
-`normalize.prune_caches()` runs after the library's first load and after every sync; it also
+`cache_files.prune_caches()` runs after the library's first load and after every sync; it also
 removes what older versions kept (`items/`) and temporary files over an hour old. Clear
 Cache (`src/cache.py`'s `CACHE_ENTRIES`) also removes `items/` and `library.lock`, an older
 version's leftovers.
@@ -900,6 +908,6 @@ Read by `config.py` on every call:
 ## Provenance
 
 Forked on 2026-09-27 from the backend of the owner's GNOME Shell extension, Apple Music
-Library, at its commit 906bfa9 (`cdp.py`, `bridge.js`, `sync.py`, now `normalize.py`, and this
-README). This app has rewritten most of it since and maintains it for itself; the history is
-`git log -- src/backend`.
+Library, at its commit 906bfa9 (`cdp.py`, `bridge.js`, `sync.py`, later `normalize.py` and now
+split from it, and this README). This app has rewritten most of it since and maintains it for
+itself; the history is `git log -- src/backend`.

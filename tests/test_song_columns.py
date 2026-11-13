@@ -57,7 +57,7 @@ class MenuTest(unittest.TestCase):
     @requires_gtk  # the page modules' templates
     def test_mnemonics_differ_from_the_sort_menus(self):
         # They share the Songs page's Sort and Filter menu and a playlist's Sort By.
-        from applemusic.pages.detail import PLAYLIST_SORTS
+        from applemusic.pages.detail_sort_filter import PLAYLIST_SORTS
         from applemusic.pages.grid import sort_labels
 
         def mnemonic(label):

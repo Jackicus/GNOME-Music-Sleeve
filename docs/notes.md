@@ -6,9 +6,9 @@ written down (September 2026: GTK 4.22, libadwaita 1.9, PyGObject 3.56, Python 3
 
 The measurements behind the list and model code live in the module docstrings, next to the
 code they justify: `pages/songs.py` (GTK's sorters and filters over Python objects, row
-rebuilding), `pages/grid.py` (expression sorters against a custom sorter), `library.py`
-(`raw_property`'s and `TrackRecord`'s memory, `SongOrder`'s keys, `apply_diff`, `paused_gc`,
-`yield_to_frames`), and `widgets/artwork.py` (texture sizes, the cache budget). The
+rebuilding), `pages/grid.py` (expression sorters against a custom sorter), the library package
+(`library/objects.py`: `raw_property`'s memory; `records.py`: `TrackRecord`'s; `songs.py`:
+`SongOrder`'s keys; `diff.py`: `apply_diff`; `pacing.py`: `paused_gc`, `yield_to_frames`), and `widgets/artwork.py` (texture sizes, the cache budget). The
 performance pass that produced most of them is written up in `docs/history/build-plan.md`, in
 its "Performance pass" section.
 

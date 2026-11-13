@@ -123,7 +123,7 @@ UI awaits.
     # than a day, answered when Apple cannot be asked, carries `stale: True` too. The
     # suggestions are kept with `basis`, what the playlist held, and asked again once it holds
     # something else; Radio's until its live programmes run out (`expires`), whatever its age.
-    # Each is stamped `shape` too (normalize.ANSWER_SHAPE): one an older version kept in
+    # Each is stamped `shape` too (cache_files.ANSWER_SHAPE): one an older version kept in
     # another shape is asked again, whatever its age.
     await engine.artist_view(id, 'full-albums')   # [Item…]: one of an artist's views whole
     await engine.album_view(id, 'other-versions') # [Item…]: one of an album's views whole

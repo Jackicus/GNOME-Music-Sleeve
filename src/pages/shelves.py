@@ -26,7 +26,7 @@ from gi.repository import Adw, Gtk, Pango
 
 from .. import explore
 from ..backend.errors import EngineError
-from ..backend.normalize import ANSWER_MAX_AGE, answer_expired
+from ..backend.cache_files import ANSWER_MAX_AGE, answer_expired
 from ..remote import fetch_shelf_art, remote_shelves
 from ..widgets.banner import TEXT_TOP, shown_banner
 from ..widgets.banner import ArtistBanner  # noqa: F401  registers $AppleMusicArtistBanner
@@ -41,8 +41,8 @@ log = logging.getLogger(__name__)
 
 def expired(answer, now=None):
     """Whether an answer the page shows was fetched longer than a day ago (its `cached`
-    stamp, normalize.ANSWER_MAX_AGE), or its `expires` has passed (Radio's live programmes:
-    normalize.answer_expired): the page asks again as it is shown. An answer without a
+    stamp, cache_files.ANSWER_MAX_AGE), or its `expires` has passed (Radio's live programmes:
+    cache_files.answer_expired): the page asks again as it is shown. An answer without a
     stamp never expires."""
     if answer_expired(answer, now):
         return True
@@ -86,7 +86,7 @@ class ShelvesPage(Adw.NavigationPage):
     `explore(links)` makes them Sections (explore.sections by default; New's has Top Charts
     among them).
 
-    An answer with a `banner` (a curator's, a radio show's: normalize.category_page) puts
+    An answer with a `banner` (a curator's, a radio show's: editorial.category_page) puts
     the title, and the `host` under it, in white at the foot of that wide image
     (widgets.banner.ArtistBanner), edge to edge, as the artist page does; without one the
     title (and host) stand on the page.
@@ -231,7 +231,7 @@ class ShelvesPage(Adw.NavigationPage):
 
     def _show_header(self, answer):
         """The header's two looks: the title (and a radio show's host, the answer's `host`)
-        in white at the foot of the answer's banner (a curator's: normalize.curator_banner),
+        in white at the foot of the answer's banner (a curator's: banner_art.curator_banner),
         edge to edge, when it has one; else the title on the page, as every shelves page
         has it."""
         banner = shown_banner(answer.get('banner'))

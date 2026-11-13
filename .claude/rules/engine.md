@@ -11,6 +11,11 @@ paths:
   - "tests/test_chrome.py"
   - "tests/test_cdp.py"
   - "tests/test_backend.py"
+  - "tests/test_art_cache.py"
+  - "tests/test_cache_files.py"
+  - "tests/test_banner_art.py"
+  - "tests/test_item_pages.py"
+  - "tests/test_search.py"
   - "tests/test_am_cli.py"
   - "tests/fake_chrome_relay.py"
   - "tests/test_bridge.py"
@@ -28,7 +33,11 @@ paths:
   the commands; `src/backend/README.md` has the bridge's calls, the events and the library.json
   shapes. Keep the three in step when you add a command.
 - The backend is a fork this app owns, in the app's style like the rest of the code.
-  `normalize.py` turns Apple's answers into the library's shapes; `api.py` is what the app
+  `normalize.py` turns Apple's resources into the library's Item and Track shapes, beside it
+  `search.py`, `editorial.py`, `charts.py`, `recommendations.py` and `item_pages.py` shape the
+  pages' answers, `banner_art.py` their wide artwork, `art_cache.py` names and fetches the
+  artwork files and `cache_files.py` keeps library.json and the kept answers and prunes the
+  cache; `api.py` is what the app
   knows of the API apart from any connection (library ids, endpoints, resource types, Apple's
   `{errors}` answers as an EngineError, through `api_error()` only); `cdp.py` is the
   WebSocket codec, for the developer attach, and `exception_message()`, which words a page's
@@ -115,7 +124,7 @@ paths:
   `inFavorites` through the bridge's `apiFresh` (the request builder: past `music()`'s cache),
   and `artist_page()` carries it as `favourite` (`extend=inFavorites` in its own read), what
   this session wrote or read over a kept answer's; a write patches the kept page
-  (`normalize.patch_answer`, the stamp kept). Each emits `rated('artist', id, 1 or 0)`.
+  (`cache_files.patch_answer`, the stamp kept). Each emits `rated('artist', id, 1 or 0)`.
 - Paths (`backend/config.py`): `Application.__init__` calls `config.set_build_profile()`. The
   release build uses `$XDG_DATA_HOME/apple-music/chrome` and `$XDG_CACHE_HOME/apple-music`; the
   .Devel build `chrome-devel` and `apple-music-devel`. `APPLE_MUSIC_PROFILE` and
@@ -125,8 +134,8 @@ paths:
   sign-in of its own (`Application.account_key()`).
 - The cache: src/cache.py knows what it holds (`CACHE_ENTRIES`), measures and clears it (the
   entries and `*.tmp` leftovers, never an unrelated file) and reads the kept answers.
-  `normalize.prune_caches()` trims what only grows (remote-art/ to 32 MB, the 2,000 lyrics
-  played last, kept answers written over 30 days ago, `normalize.ANSWER_KEEP_AGE`, since a
+  `cache_files.prune_caches()` trims what only grows (remote-art/ to 32 MB, the 2,000 lyrics
+  played last, kept answers written over 30 days ago, `cache_files.ANSWER_KEEP_AGE`, since a
   stale one is the offline answer, crash leftovers), once the library has loaded at
   startup and at the end of every sync. The day-long answers (the landing, a category, New,
   the rooms, groupings and multirooms New's links open, Made for You, Radio, Charts (a
@@ -143,10 +152,10 @@ paths:
   asked again at the next visit and an older complete answer stays. An answer asked about something that changes (`basis`: the suggestions' fingerprint
   of the songs the playlist holds, `suggestions.basis()`; an album's or a playlist's page, the
   views it asked for, `api.ALBUM_PARAMS`, `api.PLAYLIST_PARAMS`; Replay, the shape it is kept in,
-  `normalize.REPLAY_SHAPE`, bumped when its reading of Apple's answer changes) is kept with it and is not fresh
+  `charts.REPLAY_SHAPE`, bumped when its reading of Apple's answer changes) is kept with it and is not fresh
   for another, whatever its age; nor is one whose `expires` has passed (Radio's, once a live
-  station's programmes run out: `normalize.answer_expired()`), nor one an older version kept
-  in another `shape` (`normalize.answer_current()`: bump `normalize.ANSWER_SHAPE` when a
+  station's programmes run out: `cache_files.answer_expired()`), nor one an older version kept
+  in another `shape` (`cache_files.answer_current()`: bump `cache_files.ANSWER_SHAPE` when a
   shaper's answer carries something new). Lyrics are kept answers too, stamped, fetched again after 30 days or when kept in other `languages` than `Engine.lyrics_languages` (the translations' and pronunciations') or in an older `format` than `lyrics.FORMAT` (bump it when the lines carry something new). `item()`'s artwork
   goes to remote-art/ (`place_in_remote_art`): art/ and thumb/ are the library's, pruned
   against library.json after every sync.
@@ -163,7 +172,7 @@ paths:
   when it starts and passes `generation=` to every write. Clearing the cache or signing out
   calls `store.bump_cache_generation()` first; from then on that job's writes land nowhere and
   make no directory, and a job that must stop (a sync's artwork, save_library) raises
-  `store.CacheGone`. That is a `store.Cancelled` (`normalize.Cancelled`), which
+  `store.CacheGone`. That is a `store.Cancelled` (`art_cache.Cancelled`), which
   `download_art` also raises when its `cancelled()` says so: a cancelled download never
   returns counts that pass for a finished one, and the sync writes nothing after it.
 - Chrome's argv (`chrome.chrome_args()`): `--disable-features=HardwareMediaKeyHandling` keeps

@@ -12,7 +12,7 @@ from tests import ROOT, SRC  # noqa: F401  (registers src/ as the applemusic pac
 
 
 from applemusic import engine as engine_module
-from applemusic.backend import normalize
+from applemusic.backend import cache_files
 from applemusic.backend import client as client_module
 from applemusic.backend.errors import EngineError
 from applemusic.engine import playback as playback_module
@@ -345,7 +345,7 @@ class PlaybackTest(EngineFixture):
         await self.up_for_lyrics()
         path = self.cache / 'lyrics' / '1000000006.json'
         older = {'synced': False, 'lines': [{'startMs': 0, 'endMs': 0, 'text': 'Kept'}]}
-        normalize.write_answer(str(path), older, str(self.cache))  # before pronunciations
+        cache_files.write_answer(str(path), older, str(self.cache))  # before pronunciations
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': [
             {'startMs': 0, 'endMs': 0, 'text': '\u6f6e', 'pronunciation': 'Shio',
              'translation': 'Tide'}]}
@@ -415,7 +415,7 @@ class PlaybackTest(EngineFixture):
         older = {'synced': True, 'languages': self.LANGUAGES, 'lines': [
             {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights (lights)'}]}
         path = self.cache / 'lyrics' / '1000000012.json'
-        normalize.write_answer(str(path), older, str(self.cache))  # before the words
+        cache_files.write_answer(str(path), older, str(self.cache))  # before the words
         self.assertEqual(playback_module.lyrics_answer(older)['format'], 1)
         self.page.bridge_answers['lyrics'] = {'synced': True, 'lines': [
             {'startMs': 1000, 'endMs': 3000, 'text': 'Harbour lights',
@@ -430,7 +430,7 @@ class PlaybackTest(EngineFixture):
         # An older file is still the answer while the engine cannot give a new one, and
         # when Apple answers none.
         path = self.cache / 'lyrics' / '1000000013.json'
-        normalize.write_answer(str(path), older, str(self.cache))
+        cache_files.write_answer(str(path), older, str(self.cache))
         self.page.bridge_answers['lyrics'] = {'synced': False, 'lines': []}
         kept = await self.engine.lyrics('1000000013')
         self.assertEqual((kept['format'], kept['lines'][0]['text']),
@@ -455,8 +455,8 @@ class PlaybackTest(EngineFixture):
             {'startMs': 2000, 'endMs': 3000, 'text': 'Again'}])
         # A file an older version kept with the entities in it reads decoded.
         path = self.cache / 'lyrics' / '1000000005.json'
-        normalize.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES,
-                                           'format': 2, 'lines': [
+        cache_files.write_answer(str(path), {'synced': False, 'languages': self.LANGUAGES,
+                                             'format': 2, 'lines': [
             {'startMs': 0, 'endMs': 0, 'text': 'Salt &amp; &quot;air&quot;',
              'pronunciation': 'Shio &amp; kaze'}]}, str(self.cache))
         line = (await self.engine.lyrics('1000000005'))['lines'][0]

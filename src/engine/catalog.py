@@ -9,7 +9,7 @@ import asyncio
 import logging
 
 from .. import cache
-from ..backend import api, normalize, store
+from ..backend import api, art_cache, cache_files, item_pages, normalize, search, store
 from ..backend.api import is_library_id
 from ..backend.errors import EngineError
 from .reads import READ_TIMEOUT, SEARCH_TIMEOUT, _raise_api_errors, _Unkept
@@ -30,7 +30,7 @@ GROUP_RELATIONSHIPS = {'album': 'tracks', 'playlist': 'tracks', 'artist': 'album
 
 def _shape_item(raw, cache_dir, generation):
     """In a thread: the API's resource as an Item with groups, its artwork fetched into
-    <cache>/remote-art/ (normalize.place_in_remote_art; for the cache of `generation`:
+    <cache>/remote-art/ (art_cache.place_in_remote_art; for the cache of `generation`:
     store.py)."""
     art_urls = {}
     item = normalize.normalize_item(raw, cache_dir, include_groups=True, art_urls=art_urls)
@@ -38,8 +38,8 @@ def _shape_item(raw, cache_dir, generation):
 
 
 def _fetch_item_art(item, art_urls, cache_dir, generation):
-    placed = normalize.place_in_remote_art(item, art_urls, cache_dir)
-    normalize.download_item_art(item, cache_dir, placed, generation=generation)
+    placed = art_cache.place_in_remote_art(item, art_urls, cache_dir)
+    art_cache.download_item_art(item, cache_dir, placed, generation=generation)
     return item
 
 
@@ -166,8 +166,9 @@ class CatalogCommands:
     # -- search and browsing -------------------------------------------------------------
     # The Search page's search, suggestions, landing and categories, the New page (browse)
     # and Made for You. Every one needs a signed-in engine, but a kept answer (the landing, a
-    # category, browse and made-for-you are kept for normalize.ANSWER_MAX_AGE) is answered
-    # without one. The shaping (backend.normalize) runs in a thread: it stats the artwork cache.
+    # category, browse and made-for-you are kept for cache_files.ANSWER_MAX_AGE) is answered
+    # without one. The shaping (backend.search and the others) runs in a thread: it stats the
+    # artwork cache.
 
     async def search(self, term, limit=SEARCH_LIMIT, kind=None, offset=0):
         """A search of the catalog (the Search page's Apple Music mode): {shelves: [{key,
@@ -197,14 +198,14 @@ class CatalogCommands:
             raw = await client.bridge('search', term, int(limit), api.SEARCH_KIND_TYPES[kind],
                                       offset, False, timeout=SEARCH_TIMEOUT)
         _raise_api_errors(raw, 'search')
-        return await asyncio.to_thread(normalize.search_results, raw, str(self.cache_dir),
+        return await asyncio.to_thread(search.search_results, raw, str(self.cache_dir),
                                        kind)
 
     async def _demo_catalog(self):
-        """The demo's invented catalog (normalize.demo_search_path(), marked `demo`), or
+        """The demo's invented catalog (cache_files.demo_search_path(), marked `demo`), or
         EngineError('engine-down') without one, as for any other command in the demo."""
         catalog = await asyncio.to_thread(
-            cache.read_kept, normalize.demo_search_path(str(self.cache_dir)), allow_stale=True)
+            cache.read_kept, cache_files.demo_search_path(str(self.cache_dir)), allow_stale=True)
         if catalog is None or catalog.get('demo') is not True:
             raise EngineError('engine-down', 'the engine is not running')
         return catalog
@@ -223,11 +224,11 @@ class CatalogCommands:
         client = await self._require_signed_in('search')
         raw = await client.bridge('suggest', term, int(limit), timeout=SEARCH_TIMEOUT)
         _raise_api_errors(raw, 'suggestions')
-        return await asyncio.to_thread(normalize.search_suggestions, raw, str(self.cache_dir))
+        return await asyncio.to_thread(search.search_suggestions, raw, str(self.cache_dir))
 
     async def artist_page(self, artist_id, refresh=False):
         """A catalog artist's page: {id, artist, banner, latest, topSongs, shelves}
-        (normalize.artist_page), every section of it in one read (api.ARTIST_ENDPOINT with
+        (item_pages.artist_page), every section of it in one read (api.ARTIST_ENDPOINT with
         all of api.ARTIST_VIEWS), the shelves in music.apple.com's order and titled as Apple
         titles them. From <cache>/artists/<id>.json for a day, else fetched and kept."""
         artist_id = str(artist_id or '')
@@ -240,8 +241,8 @@ class CatalogCommands:
                 client, api.ARTIST_ENDPOINT.format(storefront=storefront, id=artist_id),
                 api.ARTIST_PARAMS, timeout=READ_TIMEOUT)
         answer = await self._kept_answer(
-            normalize.artist_cache_path(str(self.cache_dir), artist_id), refresh, fetch,
-            normalize.artist_page)
+            cache_files.artist_cache_path(str(self.cache_dir), artist_id), refresh, fetch,
+            item_pages.artist_page)
         # The favourite as this session last wrote or read it, over a kept answer's.
         known = self._favourite_artists.get(artist_id)
         if known is not None:
@@ -260,7 +261,7 @@ class CatalogCommands:
         storefront = await self._current_storefront()
         path = api.ARTIST_VIEW_ENDPOINT.format(storefront=storefront, id=artist_id, view=view)
         resources = await self._whole_view(client, path)
-        return await asyncio.to_thread(normalize.artist_view_items, view, resources,
+        return await asyncio.to_thread(item_pages.artist_view_items, view, resources,
                                        str(self.cache_dir))
 
     async def _whole_view(self, client, path, limit=None):
@@ -284,7 +285,7 @@ class CatalogCommands:
 
     async def album_page(self, album_id, song_id=None, refresh=False):
         """The rest of an album's page, under its tracks: {id, artistId, artistName, release,
-        shelves} (normalize.album_page): the footer's release date, copyright and label, and
+        shelves} (item_pages.album_page): the footer's release date, copyright and label, and
         the shelves in music.apple.com's order (Other Versions, Music Videos, More By, Featured
         On, You Might Also Like), titled as Apple titles them (More By untitled: the page
         names it). Two reads: the catalog album with its views (api.ALBUM_ENDPOINT), then a
@@ -330,8 +331,8 @@ class CatalogCommands:
                     return _Unkept({'album': album, 'moreBy': None})
             return {'album': album, 'moreBy': more_by}
         return await self._kept_answer(
-            normalize.album_cache_path(str(self.cache_dir), album_id), refresh, fetch,
-            normalize.album_page, basis=api.ALBUM_PARAMS['views'])
+            cache_files.album_cache_path(str(self.cache_dir), album_id), refresh, fetch,
+            item_pages.album_page, basis=api.ALBUM_PARAMS['views'])
 
     async def album_view(self, album_id, view):
         """One of a catalog album's views (api.ALBUM_VIEWS) whole, for its See All: its
@@ -343,12 +344,12 @@ class CatalogCommands:
         storefront = await self._current_storefront()
         path = api.ALBUM_VIEW_ENDPOINT.format(storefront=storefront, id=album_id, view=view)
         resources = await self._whole_view(client, path)
-        return await asyncio.to_thread(normalize.album_view_items, view, resources,
+        return await asyncio.to_thread(item_pages.album_view_items, view, resources,
                                        str(self.cache_dir))
 
     async def playlist_page(self, playlist_id, refresh=False):
         """The rest of a catalog playlist's page, under its tracks: {id, curator, shelves}
-        (normalize.playlist_page): the curator its title names, for the link to their page,
+        (item_pages.playlist_page): the curator its title names, for the link to their page,
         and the shelves in music.apple.com's order (Featured Artists, More By the curator,
         You Might Also Like), titled as Apple titles them. Two reads: the catalog playlist
         with its curator and views (api.PLAYLIST_PARAMS), asked again with the documented
@@ -391,8 +392,8 @@ class CatalogCommands:
                     return _Unkept({'playlist': playlist, 'curatorPlaylists': None})
             return {'playlist': playlist, 'curatorPlaylists': curator_playlists}
         return await self._kept_answer(
-            normalize.playlist_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
-            normalize.playlist_page, basis=api.PLAYLIST_PARAMS['views'])
+            cache_files.playlist_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
+            item_pages.playlist_page, basis=api.PLAYLIST_PARAMS['views'])
 
     async def playlist_view(self, playlist_id, view):
         """One of a catalog playlist's views (api.PLAYLIST_READABLE_VIEWS) whole, for its See
@@ -407,7 +408,7 @@ class CatalogCommands:
         path = api.PLAYLIST_VIEW_ENDPOINT.format(storefront=storefront, id=playlist_id,
                                                  view=view)
         resources = await self._whole_view(client, path)
-        return await asyncio.to_thread(normalize.playlist_view_items, resources, playlist_id,
+        return await asyncio.to_thread(item_pages.playlist_view_items, resources, playlist_id,
                                        str(self.cache_dir))
 
     async def curator_playlists(self, curator_id):
@@ -422,14 +423,14 @@ class CatalogCommands:
         storefront = await self._current_storefront()
         path = api.CURATOR_PLAYLISTS_ENDPOINT.format(storefront=storefront, id=curator_id)
         resources = await self._whole_view(client, path, api.CURATOR_PLAYLISTS_LIMIT)
-        return await asyncio.to_thread(normalize.playlist_view_items, resources, '',
+        return await asyncio.to_thread(item_pages.playlist_view_items, resources, '',
                                        str(self.cache_dir))
 
     async def playlist_suggestions(self, playlist_id, refresh=False, limit=SUGGESTIONS_LIMIT,
                                    offered=(), selected=(), more=False, basis=None,
                                    previewed=()):
         """The songs Apple suggests adding to a library playlist, as music.apple.com shows
-        them under it: {items} (normalize.playlist_suggestions), at most `limit` song Items
+        them under it: {items} (item_pages.playlist_suggestions), at most `limit` song Items
         in Apple's order, which may include songs the playlist holds already. One read (the
         bridge's playlistSuggestions()), from <cache>/suggestions/<id>.json for a day, else
         fetched and kept; `refresh` asks Apple for new ones, which are kept instead. `basis`
@@ -457,15 +458,15 @@ class CatalogCommands:
             if self.demo:
                 raise EngineError('engine-down', 'the engine is not running')
             raw = await fetch(await self._require_signed_in('browse'))
-            return await asyncio.to_thread(normalize.playlist_suggestions, raw,
+            return await asyncio.to_thread(item_pages.playlist_suggestions, raw,
                                            str(self.cache_dir))
         return await self._kept_answer(
-            normalize.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
-            normalize.playlist_suggestions, basis=basis)
+            cache_files.suggestions_cache_path(str(self.cache_dir), playlist_id), refresh, fetch,
+            item_pages.playlist_suggestions, basis=basis)
 
     async def credits(self, song_id, refresh=False):
         """A catalog song's credits, as View Credits shows them: {categories: [{kind, title,
-        people: [{name, roles}]}]} (normalize.song_credits), the performers, the composition
+        people: [{name, roles}]}]} (item_pages.song_credits), the performers, the composition
         and lyrics, the production and engineering, in Apple's order and titled as Apple
         titles them. One read (api.SONG_CREDITS_ENDPOINT); Apple's 404, a song it has no
         credits for, is no categories. From <cache>/credits/<id>.json for a day, else fetched
@@ -487,8 +488,8 @@ class CatalogCommands:
                 log.info('no credits for song %s', song_id)
                 return {'data': []}
         return await self._kept_answer(
-            normalize.credits_cache_path(str(self.cache_dir), song_id), refresh, fetch,
-            normalize.song_credits)
+            cache_files.credits_cache_path(str(self.cache_dir), song_id), refresh, fetch,
+            item_pages.song_credits)
 
     async def catalog_artist(self, name, song_ids):
         """The id of the catalog artist a library artist stands for, or None. The library
@@ -534,7 +535,7 @@ class CatalogCommands:
     async def related(self, kind, item_id):
         """Where Go to Album and Go to Artist go for a catalog song, music video or album
         (`kind` 'song', 'video' or 'album') the library cannot place: {album, artists}
-        (normalize.related), its album (None for an album) and its artists as Items without
+        (item_pages.related), its album (None for an album) and its artists as Items without
         groups, from one read of it with its relationships (api.RELATED_ENDPOINTS).
         Remembered for the session. A library id is EngineError('usage')."""
         item_id = str(item_id or '')
@@ -550,6 +551,6 @@ class CatalogCommands:
         answer = await self._api(client, endpoint.format(storefront=storefront, id=item_id),
                                  api.RELATED_PARAMS[kind], timeout=READ_TIMEOUT)
         # Off the loop: a hit's artwork is looked for on disk, as a search's are.
-        found = await asyncio.to_thread(normalize.related, answer, str(self.cache_dir))
+        found = await asyncio.to_thread(item_pages.related, answer, str(self.cache_dir))
         self._related[key] = found
         return found

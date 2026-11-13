@@ -10,7 +10,7 @@ import logging
 import os
 
 from .. import cache
-from ..backend import api, normalize, store
+from ..backend import api, cache_files, store
 from ..backend.errors import EngineError
 
 log = logging.getLogger(__name__)
@@ -62,8 +62,8 @@ def _shape_and_keep(shaper, raw, path, cache_dir, generation, basis=None):
     if not keep:
         log.info('not keeping the answer for %s: one of its reads failed',
                  os.path.basename(path))
-        return normalize.stamp_answer(answer)
-    return normalize.write_answer(path, answer, cache_dir, generation)
+        return cache_files.stamp_answer(answer)
+    return cache_files.write_answer(path, answer, cache_dir, generation)
 
 
 async def _read_pages(read, path, params, page, limit, progress, concurrency):
@@ -187,7 +187,7 @@ class ApiReads:
 
     async def _kept_answer(self, path, refresh, fetch, shaper, basis=None):
         """A day-long answer, kept at `path`: from the file while it is younger than
-        normalize.ANSWER_MAX_AGE (no engine needed) unless `refresh`, else `await
+        cache_files.ANSWER_MAX_AGE (no engine needed) unless `refresh`, else `await
         fetch(client)`'s raw answer, shaped by `shaper(raw, cache_dir)` in a thread and kept
         there, stamped `cached`. When Apple cannot be asked (the engine down or signed out,
         the page or the network failing) or its answer cannot be shaped (EngineError('api'),
@@ -196,8 +196,8 @@ class ApiReads:
         answer was asked about, as a string), the answer is kept with it, and one kept with
         another is not fresh, whatever its age: Apple is asked again (and the old one is
         still answered, stale, when Apple cannot be asked). Nor is one whose `expires` has
-        passed (normalize.answer_expired: Radio's live programmes), or one an older version
-        kept in another shape (normalize.answer_current, ANSWER_SHAPE). Demo mode has none of
+        passed (cache_files.answer_expired: Radio's live programmes), or one an older version
+        kept in another shape (cache_files.answer_current, ANSWER_SHAPE). Demo mode has none of
         Apple's answers: only an invented one the demo library wrote there (marked `demo`), at
         any age, else 'engine-down'."""
         if self.demo:
@@ -210,7 +210,7 @@ class ApiReads:
         if not refresh:
             kept = await asyncio.to_thread(cache.read_kept, path)
             if (kept is not None and (basis is None or kept.get('basis') == basis)
-                    and normalize.answer_current(kept) and not normalize.answer_expired(kept)):
+                    and cache_files.answer_current(kept) and not cache_files.answer_expired(kept)):
                 return kept
         try:
             client = await self._require_signed_in('browse')
@@ -225,9 +225,9 @@ class ApiReads:
                 raise
             if basis is not None and stale.get('basis') != basis:
                 stale['stale'] = True  # young, but for what the playlist held before
-            if normalize.answer_expired(stale):
+            if cache_files.answer_expired(stale):
                 stale['stale'] = True  # young, but its programmes are over
-            if not normalize.answer_current(stale):
+            if not cache_files.answer_current(stale):
                 stale['stale'] = True  # young, but kept by a version that shaped it otherwise
             log.info('answering a kept answer no longer fresh: %s', error)
             return stale

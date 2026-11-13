@@ -24,7 +24,7 @@ from tests import ROOT, SRC  # noqa: F401  (registers src/ as the applemusic pac
 
 from gi.repository import Gio, GLib
 
-from applemusic.backend import chrome, normalize
+from applemusic.backend import art_cache, cache_files, chrome
 from applemusic.backend import client as client_module
 from applemusic.backend.errors import EngineError
 from applemusic.engine import Engine
@@ -667,7 +667,7 @@ class LifecycleTest(EngineFixture):
                 json.load(f))
         await self.engine.start()
         fetched = []
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation:
                                fetched.append(cache_dir) or item):
             item = await self.engine.item('album', '1724040700')
@@ -705,7 +705,7 @@ class LifecycleTest(EngineFixture):
                  'attributes': {'name': 'Unreachable'}}]}}}]}
         self.page.api_answers['/v1/catalog/us/albums/1724040700?include=tracks'] = album
         await self.engine.start()
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation: item):
             item = await self.engine.item('artist', '42')
         self.assertEqual(self.page.api_calls, [
@@ -734,7 +734,7 @@ class LifecycleTest(EngineFixture):
         self.page.api_answers[f'{base}/albums?offset=4'] = {'data': stubs(5)}
         await self.engine.start()
         with mock.patch.object(catalog_module, 'ALBUM_BATCH', 2), \
-                mock.patch.object(normalize, 'download_item_art',
+                mock.patch.object(art_cache, 'download_item_art',
                                   lambda item, cache_dir, art_urls, generation: item):
             item = await self.engine.item('artist', '42')
         self.assertEqual([group['name'] for group in item['groups']],
@@ -761,7 +761,7 @@ class LifecycleTest(EngineFixture):
                                          'next': f'{path}/tracks?offset=100'}}}]}
         self.page.api_answers[f'{path}/tracks?offset=100'] = {'data': tracks(100, 150)}
         await self.engine.start()
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation: item):
             item = await self.engine.item('playlist', 'pl.u-1')
         entries = [entry for group in item['groups'] for entry in group['entries']]
@@ -777,7 +777,7 @@ class LifecycleTest(EngineFixture):
             'id': 'ra.1', 'type': 'stations', 'attributes': {'name': 'Harbour Radio'}}]}
         await self.engine.start()
         reads = self.page.status_reads
-        with mock.patch.object(normalize, 'download_item_art',
+        with mock.patch.object(art_cache, 'download_item_art',
                                lambda item, cache_dir, art_urls, generation: item):
             await self.engine.item('station', 'ra.1')
             await self.engine.item('station', 'ra.1')
@@ -1205,8 +1205,8 @@ class DemoEngineTest(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         # A kept answer is not served either: a demo has none of Apple's.
-        normalize.write_answer(normalize.landing_cache_path(tmp.name), {'categories': []},
-                               tmp.name)
+        cache_files.write_answer(cache_files.landing_cache_path(tmp.name), {'categories': []},
+                                 tmp.name)
         engine = Engine(profile_dir='/nowhere/chrome', demo=True)
         await engine.start()
         await engine.start(visible=True)

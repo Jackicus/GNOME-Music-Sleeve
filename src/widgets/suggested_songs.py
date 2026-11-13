@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2026 Jack Tully
 
-"""AppleMusicSuggestedSongs: a playlist's Suggested Songs (pages/detail.py), its title, a line
-under it and a Refresh button over a grid of the songs, as music.apple.com shows them under
-a playlist; AppleMusicSuggestionGrid, that grid; AppleMusicSuggestionRow, one song in it.
+"""AppleMusicSuggestedSongs: a playlist's Suggested Songs (pages/detail_suggestions.py), its
+title, a line under it and a Refresh button over a grid of the songs, as music.apple.com shows
+them under a playlist; AppleMusicSuggestionGrid, that grid; AppleMusicSuggestionRow, one song in it.
 
 The grid shows every song it is given (six or twelve: suggestions.py), in as many columns as
 fit the width and divide their number (suggestions.columns_for()), so its rows are full and

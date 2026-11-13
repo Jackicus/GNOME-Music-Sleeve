@@ -26,7 +26,7 @@ TEXT_TOP = 72
 
 
 def shown_banner(banner):
-    """The banner dict an answer carries (normalize.artist_banner's, curator_banner's) when
+    """The banner dict an answer carries (banner_art.artist_banner's, curator_banner's) when
     there is something to show, a URL to fetch or a file on disk (`art`, the demo's), else
     None: the page keeps its plain header."""
     if isinstance(banner, dict) and (banner.get('url') or banner.get('art')):
@@ -50,7 +50,7 @@ def drawn_edge(width, height, aspect):
 
 
 class ArtistBanner(Gtk.Widget):
-    """An artist's or a curator's banner (normalize.artist_banner's or curator_banner's dict,
+    """An artist's or a curator's banner (banner_art.artist_banner's or curator_banner's dict,
     set_banner()) filling the width it is given, as tall as banner_height() says, the image
     cut to cover it (centred). Until the
     image is there, Apple's colour for it (or the card colour, style.css's `.artist-banner`)

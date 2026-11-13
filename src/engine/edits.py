@@ -8,7 +8,7 @@ check them."""
 import asyncio
 import logging
 
-from ..backend import api, normalize, store
+from ..backend import api, cache_files, normalize, store
 from ..backend.api import is_library_id, resource_type
 from ..backend.errors import EngineError
 from .reads import READ_TIMEOUT, _raise_api_errors
@@ -115,7 +115,7 @@ class AccountEdits:
         """Make the catalog artist one of the account's favourites (POST
         /v1/me/favorites?ids[artists]=<id>, the bridge's favourite()). It does not add them
         to the library. `rated('artist', id, 1)` follows, and the artist's kept page says so
-        (normalize.patch_answer). In demo mode only this session remembers it."""
+        (cache_files.patch_answer). In demo mode only this session remembers it."""
         await self._favourite_artist(artist_id, True)
 
     async def unfavourite_artist(self, artist_id):
@@ -129,7 +129,8 @@ class AccountEdits:
             client = await self._require_signed_in('favourite artists')
             await client.bridge('favourite', 'artists', artist_id, favourite)
             await asyncio.to_thread(
-                normalize.patch_answer, normalize.artist_cache_path(str(self.cache_dir), artist_id),
+                cache_files.patch_answer,
+                cache_files.artist_cache_path(str(self.cache_dir), artist_id),
                 {'favourite': favourite}, str(self.cache_dir), generation)
         self._favourite_artists[artist_id] = favourite
         self.emit('rated', 'artist', artist_id, 1 if favourite else 0)

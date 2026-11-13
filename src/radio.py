@@ -6,14 +6,14 @@ programme each live station has on air, and the library's own stations as Recent
 No GTK here.
 
 Engine.radio's answer gives a live station its programmes (`events`, [{title, start, end}],
-UTC stamps: normalize.radio_shelves); the answer is kept, so which is on air is worked out as
+UTC stamps: editorial.radio_shelves); the answer is kept, so which is on air is worked out as
 the page is shown (show_on_air(), at each arrange()), and the Item's subtitle follows it.
 """
 
 from datetime import UTC, datetime
 from gettext import gettext as _
 
-from .backend.normalize import STAMP_FORMAT
+from .backend.cache_files import STAMP_FORMAT
 
 # The key of the Recently Played shelf: none of Apple's (theirs are `radio-<element id>`).
 RECENT_KEY = 'recently-played-stations'

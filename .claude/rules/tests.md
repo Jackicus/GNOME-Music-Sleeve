@@ -50,7 +50,7 @@ paths:
   finds it through `pages.app()` and it outlives the module that set it — so a widget test that
   builds a page makes its own with `page_harness.stand_in_app()`.
 - Tests never start Chrome, touch the real profile or cache, or reach the network (a server
-  the test runs itself on 127.0.0.1, as test_normalize's artwork fetch does, is fine): a test
+  the test runs itself on 127.0.0.1, as test_art_cache's artwork fetch does, is fine): a test
   that reads or writes a cache still points `APPLE_MUSIC_CACHE` (and `APPLE_MUSIC_PROFILE`) at
   a temporary directory of its own, so tests do not share `TEST_HOME`'s. The engine's tests
   (tests/engine_fixture.py) run on gi.events' `GLibEventLoop` (`loop_factory`), as the app

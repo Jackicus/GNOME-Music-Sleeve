@@ -8,7 +8,7 @@
     roles_text(['Vocals', 'Guitar'])    # 'Vocals, Guitar'
 
 Engine.credits answers {categories: [{kind, title, people: [{name, roles}]}]} in Apple's order
-(normalize.song_credits). Apple titles each category in the account's language, so its title
+(item_pages.song_credits). Apple titles each category in the account's language, so its title
 is the heading; one without a title is named by its kind here (the backend writes no words),
 and a kind Apple adds later by a word of the app's own. A category with nobody in it is left
 out, so no sections means Apple has no credits for the song.

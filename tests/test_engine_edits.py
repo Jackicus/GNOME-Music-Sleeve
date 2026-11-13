@@ -13,7 +13,7 @@ from tests import ROOT, SRC  # noqa: F401  (registers src/ as the applemusic pac
 
 
 from applemusic import engine as engine_module
-from applemusic.backend import api, normalize
+from applemusic.backend import api, cache_files
 from applemusic.backend.errors import EngineError
 from applemusic.engine import edits as edits_module
 from tests.engine_fixture import FIXTURES, EngineFixture
@@ -111,7 +111,7 @@ class FavouriteArtistTest(EngineFixture):
 
     async def test_the_demo_remembers_it_for_the_session(self):
         demo = engine_module.Engine(demo=True)
-        path = pathlib.Path(normalize.artist_cache_path(str(self.cache), '1724049001'))
+        path = pathlib.Path(cache_files.artist_cache_path(str(self.cache), '1724049001'))
         path.parent.mkdir(parents=True)
         page = {'id': '1724049001', 'shelves': [], 'favourite': False, 'demo': True,
                 'cached': '2020-01-01T00:00:00Z'}

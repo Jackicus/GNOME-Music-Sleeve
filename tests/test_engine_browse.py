@@ -17,7 +17,7 @@ from tests import ROOT, SRC  # noqa: F401  (registers src/ as the applemusic pac
 
 
 from applemusic import engine as engine_module
-from applemusic.backend import api, normalize, store
+from applemusic.backend import api, cache_files, charts, store
 from applemusic.backend.errors import EngineError
 from applemusic.engine import reads as reads_module
 from tests.engine_fixture import FIXTURES, EngineFixture
@@ -104,7 +104,7 @@ class SearchTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'engine-down')
         songs = [{'id': f'17240{n:05d}', 'kind': 'song', 'title': f'Tide Song {n}',
                   'subtitle': 'Invented Artist'} for n in range(30)]
-        path = pathlib.Path(normalize.demo_search_path(str(self.cache)))
+        path = pathlib.Path(cache_files.demo_search_path(str(self.cache)))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({'demo': True, 'cached': '2020-01-01T00:00:00Z',
                                     'shelves': [
@@ -241,9 +241,9 @@ class SearchTest(EngineFixture):
         answer = await self.engine.browse()
         self.assertEqual(self.page.api_calls, [path])
         self.assertTrue(answer['shelves'][0]['featured'])
-        self.assertEqual(answer['shape'], normalize.ANSWER_SHAPE)
+        self.assertEqual(answer['shape'], cache_files.ANSWER_SHAPE)
         kept = json.loads((self.cache / 'browse.json').read_text(encoding='utf-8'))
-        self.assertEqual(kept['shape'], normalize.ANSWER_SHAPE)
+        self.assertEqual(kept['shape'], cache_files.ANSWER_SHAPE)
         await self.engine.browse()
         self.assertEqual(self.page.api_calls, [path])  # this shape's: kept a day
 
@@ -325,8 +325,8 @@ class SearchTest(EngineFixture):
         self.assertEqual(raised.exception.code, 'api')
         self.assertFalse((self.cache / 'charts.json').exists())
         # An older answer kept there is the answer then, as no longer fresh.
-        normalize.write_answer(str(self.cache / 'charts.json'), {'shelves': []},
-                               str(self.cache))
+        cache_files.write_answer(str(self.cache / 'charts.json'), {'shelves': []},
+                                 str(self.cache))
         self.expire(self.cache / 'charts.json')
         with self.assertLogs('applemusic.engine', 'WARNING'):
             answer = await self.engine.charts()
@@ -445,7 +445,7 @@ class SearchTest(EngineFixture):
             'recently_played': (self.engine.recently_played, self.cache / 'recent-played.json'),
         }
         for name, (_command, path) in commands.items():
-            normalize.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))
+            cache_files.write_answer(str(path), {'shelves': [], 'name': name}, str(self.cache))
             self.expire(path)
         # Down: each answers its old answer, marked stale, stamped when it was fetched.
         for name, (command, _path) in commands.items():
@@ -482,14 +482,14 @@ class SearchTest(EngineFixture):
         # with the engine down still has it to answer, stale; one past the keep age goes.
         two_days = time.time() - 2 * 24 * 3600
         path = self.cache / 'radio.json'
-        normalize.write_answer(str(path), {'shelves': [], 'name': 'radio'}, str(self.cache))
+        cache_files.write_answer(str(path), {'shelves': [], 'name': 'radio'}, str(self.cache))
         self.expire(path)
         os.utime(path, (two_days, two_days))
         old = self.cache / 'charts.json'
-        normalize.write_answer(str(old), {'shelves': []}, str(self.cache))
-        long_ago = time.time() - normalize.ANSWER_KEEP_AGE - 60
+        cache_files.write_answer(str(old), {'shelves': []}, str(self.cache))
+        long_ago = time.time() - cache_files.ANSWER_KEEP_AGE - 60
         os.utime(old, (long_ago, long_ago))
-        gone = normalize.prune_caches(str(self.cache))
+        gone = cache_files.prune_caches(str(self.cache))
         self.assertEqual(gone['answers'], 1)
         self.assertFalse(old.exists())
         answer = await self.engine.radio()
@@ -499,7 +499,7 @@ class SearchTest(EngineFixture):
         await self.up()
         self.page.bridge_answers['searchLanding'] = {'data': []}
         path = self.cache / 'landing.json'
-        normalize.write_answer(str(path), {'categories': [{'id': 'old'}]}, str(self.cache))
+        cache_files.write_answer(str(path), {'categories': [{'id': 'old'}]}, str(self.cache))
         self.expire(path)
         answer = await self.engine.landing()
         self.assertEqual(self.page.bridge_calls, [('searchLanding',)])
@@ -638,7 +638,7 @@ class SearchTest(EngineFixture):
                          ['replay-songs', 'replay-albums', 'replay-playlists'])
         self.assertEqual([item['title'] for item in answer['shelves'][0]['items']],
                          ['Invented Song 900000302', 'Invented Song 900000301'])  # its rank
-        self.assertEqual(answer['basis'], normalize.REPLAY_SHAPE)
+        self.assertEqual(answer['basis'], charts.REPLAY_SHAPE)
         self.assertTrue((self.cache / 'replay.json').is_file())
         await self.engine.stop()
         self.assertEqual((await self.engine.replay())['year'], '2026')  # kept
@@ -663,15 +663,15 @@ class SearchTest(EngineFixture):
     async def test_a_replay_kept_in_an_older_shape_is_asked_again(self):
         await self.up()
         self.replay_answers()
-        path = normalize.replay_cache_path(str(self.cache))
-        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
-                               str(self.cache))
+        path = cache_files.replay_cache_path(str(self.cache))
+        cache_files.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
+                                 str(self.cache))
         answer = await self.engine.replay()
         self.assertEqual(self.page.api_calls[0], api.REPLAY_ENDPOINT)
         self.assertEqual(answer['shelves'][0]['key'], 'replay-songs')
         # Apple out of reach, the older one is still the answer, as no longer fresh.
-        normalize.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
-                               str(self.cache))
+        cache_files.write_answer(path, {'year': '2026', 'years': ['2026'], 'shelves': []},
+                                 str(self.cache))
         await self.engine.stop()
         answer = await self.engine.replay()
         self.assertIs(answer.get('stale'), True)
@@ -743,8 +743,8 @@ class KeptAfterWipeTest(unittest.TestCase):
                                                str(cache / 'browse.json'), str(cache),
                                                generation)
         self.assertEqual(answer['shelves'], [])
-        normalize.write_answer(str(cache / 'lyrics' / '1.json'), {'lines': []}, str(cache),
-                               generation)
+        cache_files.write_answer(str(cache / 'lyrics' / '1.json'), {'lines': []}, str(cache),
+                                 generation)
         self.assertEqual(list(cache.iterdir()), [])
 
 
