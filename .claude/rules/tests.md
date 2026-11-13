@@ -8,7 +8,8 @@ paths:
 - Stdlib `unittest`, one module per source module (`tests/test_<module>.py`), each ending with
   the `if __name__ == '__main__': unittest.main()` guard. Run all with
   `python3 -m unittest discover -s tests` from the repo root, or one with
-  `python3 -m unittest tests.test_player`; `meson test -C build --suite unit` runs the same.
+  `python3 -m unittest tests.test_player`; `meson test -C build --suite unit` runs the same. check.sh and Meson's `unit` test run it
+  under `python3 -X faulthandler`, so a segfault prints the Python frames of its test.
 - Every test module imports `tests` before `applemusic` (`from tests import ROOT`;
   test_isolation checks): discovery imports test modules as top-level modules, and importing
   `tests` is what keeps the process off the developer's files, registers `src/` as the
