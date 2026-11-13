@@ -6,8 +6,8 @@ do when something goes wrong, what it sends where, and where it keeps your data.
 
 ## Signing in
 
-1. Start Music Sleeve. On a first run, the sidebar ends with a **Sign In** button.
-2. Click **Sign In**. A Chrome window opens on music.apple.com. Sign in there with your Apple
+1. Start Music Sleeve. On a first run, the sidebar ends with a **Sign In…** button.
+2. Click **Sign In…**. A Chrome window opens on music.apple.com. Sign in there with your Apple
    Account, as you would in a browser: the app never sees the password.
 3. Once Apple reports you as signed in, the window closes and Chrome carries on hidden. The
    app then syncs your library, and a banner shows its progress.
@@ -88,11 +88,14 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   you typed.
 - In a narrow window the page fills the window and the sidebar is tucked away: the
   **Show Sidebar** button at the start of the header bar, <kbd>F9</kbd> or a swipe from the
-  window's edge slides it over the page. Choosing a destination closes it again, and so do
-  <kbd>Esc</kbd>, <kbd>F9</kbd> and a click on the page behind it; a folder's row opens the
+  window's edge slides it over the page (as does <kbd>Ctrl</kbd>+<kbd>1</kbd>, which puts
+  the focus in it). Choosing a destination closes it again, and so do <kbd>Esc</kbd>, <kbd>F9</kbd>,
+  <kbd>Alt</kbd>+<kbd>←</kbd> and a click on the page behind it; a folder's row opens the
   folder and leaves the sidebar open, so you can choose what is in it. On an album's or an
   artist's page the header bar has **Back** instead: <kbd>F9</kbd> and the swipe still
-  open the sidebar there.
+  open the sidebar there. Since the sidebar is closed while you drag from a page, nothing
+  can be dropped on it in a narrow window: use **Add to Playlist** and **Move to Folder** in
+  the menus instead.
 - On Albums, Artists, Songs, Music Videos and a playlist's page (Favourite Songs too),
   just start typing to filter what the page lists (or press <kbd>Ctrl</kbd>+<kbd>F</kbd>,
   or click the search button in the header bar): it keeps what has the text in its title,
@@ -339,10 +342,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   order. Up Next does not change when you reorder the playlist that is playing: the next time
   you play it, it plays in the new order. In the demo library a move shows but is not kept.
 - **Sort By**, the button beside the filter in a playlist's header bar, shows its songs by
-  title, artist, album or time, either way round, or back in **Playlist Order**. It changes
-  only what the page shows: the playlist keeps its order, plays in it from Play, and is
-  duplicated in it. While another order shows, songs cannot be moved. The page keeps the
-  order you chose while it stays open; a playlist opened again shows its own order.
+  title, artist, album, genre, year or time, either way round, or back in **Playlist
+  Order**. It changes only what the page shows: the playlist keeps its order, plays in it
+  from Play, and is duplicated in it. While another order shows, songs cannot be moved.
+  The page keeps the order you chose while it stays open; a playlist opened again shows
+  its own order.
 - **Add Songs…** in the menu of one of your playlists (and the button of an empty one) opens
   a dialog to pick songs for it: **Your Library** lists all your songs, narrowed as you type,
   and **Apple Music** searches the catalogue for what you type. Click a song, or press
@@ -427,6 +431,11 @@ do when something goes wrong, what it sends where, and where it keeps your data.
   <kbd>Ctrl</kbd>+<kbd>↓</kbd> turn the volume up and down while something plays (not while
   you type, or on the sidebar or a slider, where those keys are theirs).
 - <kbd>Ctrl</kbd>+<kbd>?</kbd> lists every keyboard shortcut.
+- Music Sleeve is written in British English. With the system's language set to American
+  English (Settings › System › Region & Language), it spells as American English does
+  ("Favorite", "Catalog") and writes dates month first ("December 4, 2026"). Names
+  that come from Apple Music are shown as Apple gives them. No other language has a
+  translation yet; [CONTRIBUTING.md](../CONTRIBUTING.md) says how to add one.
 - Because the sound comes from Chrome, the system's per-app volume controls list it as Chrome.
 
 ## Known limitations
@@ -507,12 +516,18 @@ Other limits:
   the session bus, so the app did not start Chrome: without that key, Chrome would delete
   the sign-in. Make sure the keyring is running and unlocked, then click **Start**.
 - **"Your Apple Music sign-in has expired."** Apple ended the session: click **Sign In** on
-  that banner, or **Sign In Again** in the account menu at the bottom of the sidebar.
+  that banner, or **Sign In Again…** in the account menu at the bottom of the sidebar.
 - **Discord shows nothing.** Check that the setting is on and that the Discord desktop app is
   running (Discord installed as a Flatpak or a Snap is found too), and that Discord's own
   Settings › Activity Privacy › Share your detected activities with others is on. Discord
   learns of a track when it starts or changes, so after starting Discord, give it until the
   next track.
+- **"Too many devices are using this Apple Music account."** Apple refused to play because
+  of the account's limit on devices playing on it, or linked to it: stop the music on
+  another device, then play again.
+- **"Apple Music could not be reached; check the internet connection."** The song stopped,
+  or did not start, because Apple's servers could not be reached. Play it again once the
+  connection is back.
 - **Something else.** Run `music-sleeve --debug` from a terminal and look at what it logs (no
   password or tokens are logged). Preferences › Engine shows whether the engine is running;
   turning off **Run Browser Hidden** shows Chrome's window at the next start.
@@ -551,7 +566,7 @@ Other limits:
 development build uses `~/.local/share/apple-music/chrome-devel/` and
 `~/.cache/apple-music-devel/` instead, and settings of its own for the account.
 
-- **Sign Out** (in the account menu at the bottom of the sidebar) signs out of Apple Music,
+- **Sign Out…** (in the account menu at the bottom of the sidebar) signs out of Apple Music,
   asking Apple to end the session too, stops Chrome and deletes both the Chrome profile and
   the cache. Nothing of the account stays on screen either: the next account signed in
   starts with its own Recently Played, favourites and Recently Searched.

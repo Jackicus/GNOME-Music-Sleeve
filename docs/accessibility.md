@@ -34,8 +34,9 @@ list and the script together.
    (Back, a filter's button, Sort By) and from the sidebar too. Arrows
    move between tiles and rows, Tab leaves a grid, shelf or list after one item, Enter opens a
    tile or plays a row, Menu or Shift+F10 opens the focused item's context menu and Escape
-   closes it. On Albums, Return on Sort and Filter opens it, Down reaches Favourites Only,
-   and Return shows the favourite albums alone.
+   closes it. On Albums, Return on Sort and Filter opens it, every item with a mnemonic of
+   its own, and Down reaches Favourites Only; F, its mnemonic, shows the favourite albums
+   alone.
 3. On an album or playlist: Play, Tab to Shuffle and to More Options (the item's menu), Tab to
    the first track (Shift+Tab goes back to More Options), Down, and Enter plays from that
    track. Menu on a track lists View Credits, whose mnemonic (C) opens the song's credits in
