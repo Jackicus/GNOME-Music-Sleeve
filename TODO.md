@@ -1,6 +1,6 @@
 # TODO
 
-What is left to do, as of 2026-11-13; the smaller fixes are in the
+What is left to do, as of 2026-11-13 and v1.3.0; the smaller fixes are in the
 [open issues](https://github.com/Jackicus/GNOME-Music-Sleeve/issues). What each release brought
 is in its [GitHub release](https://github.com/Jackicus/GNOME-Music-Sleeve/releases) and in git; how
 a release is made is in `docs/release.md`, and why the app is built the way it is in
@@ -20,9 +20,6 @@ a release is made is in `docs/release.md`, and why the app is built the way it i
       sandboxed app runs its demo and the host's Chrome up to `drm()` (docs/release.md), but
       playback, MPRIS with something playing, notifications and Discord's presence need a
       sign-in in its own profile, which has not been done; nor has a Flatpak Discord.
-- [ ] Left by the review of everything since v1.0.1 (2026-11-11):
-      [#573](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/573), a playlist song's
-      Delete swallowed while the last removal's sync runs.
 - [ ] The second parity audit's findings (2026-11-13, summary in
       [#637](https://github.com/Jackicus/GNOME-Music-Sleeve/issues/637)): the
       [After v1.2.0](https://github.com/Jackicus/GNOME-Music-Sleeve/milestone/8) milestone,
