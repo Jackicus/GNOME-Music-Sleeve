@@ -132,7 +132,10 @@ paths:
   down or signed out, Apple failing, its answer one the shaper cannot read, which
   `_shape_and_keep` logs and raises as `EngineError('api')`, but not on a refresh) the older
   file marked `stale: True` (`cache.read_kept(allow_stale=True)`); every answer carries its
-  `cached` stamp. An answer asked about something that changes (`basis`: the suggestions' fingerprint
+  `cached` stamp. A fetch whose secondary read failed and was taken as none (Replay's
+  years, an album's or a playlist's More By, Recently Played past its first page) returns
+  its raw answer as an `_Unkept`: shaped, stamped and answered, but not kept, so Apple is
+  asked again at the next visit and an older complete answer stays. An answer asked about something that changes (`basis`: the suggestions' fingerprint
   of the songs the playlist holds, `suggestions.basis()`; an album's or a playlist's page, the
   views it asked for, `api.ALBUM_PARAMS`, `api.PLAYLIST_PARAMS`; Replay, the shape it is kept in,
   `normalize.REPLAY_SHAPE`, bumped when its reading of Apple's answer changes) is kept with it and is not fresh
