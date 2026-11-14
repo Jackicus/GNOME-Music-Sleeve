@@ -225,6 +225,87 @@ class ShelfTest(PageTestCase):
         self.assertEqual(page_target(400, 0, 2000, 800, -1, rtl=True), 1200)
         self.assertEqual(page_target(0, 0, 2000, 800, 1, rtl=False), 800)
 
+    def test_a_page_starts_on_a_column(self):
+        # Columns 192 px apart, 180 wide, the first 21 px in (the row's padding). A page is
+        # 800 px: four columns whole and a fifth cut. Forwards, the cut one comes to the
+        # start, 21 px in as the first is; back, the page before is shown again.
+        from applemusic.widgets.shelf import column_target, page_target
+
+        columns = (21, 180, 192)
+        self.assertEqual(column_target(0, 800, 1, *columns), 768)
+        self.assertEqual(column_target(768, 800, -1, *columns), 0)
+        self.assertEqual(column_target(768, 800, 1, *columns), 1536)
+        # From midway (a wheel left it there): back to a column, forwards past the cut one.
+        self.assertEqual(column_target(1000, 800, -1, *columns), 384)
+        self.assertEqual(column_target(1000, 800, 1, *columns), 1728)
+        self.assertEqual(column_target(100, 800, -1, *columns), 0)
+        # A column wider than the page still moves on, each way.
+        self.assertEqual(column_target(0, 800, 1, 0, 900, 912), 912)
+        self.assertEqual(column_target(912, 800, -1, 0, 900, 912), 0)
+        # Nothing more to bring in: the row's end; and within the row either way.
+        self.assertEqual(page_target(1536, 0, 2325, 800, 1, False, columns), 1525)
+        self.assertEqual(page_target(0, 0, 2325, 800, -1, False, columns), 0)
+        # Right to left the columns are measured from the upper end, the row's start.
+        self.assertEqual(page_target(1525, 0, 2325, 800, 1, True, columns), 1525 - 768)
+
+    async def test_paging_brings_the_cut_tile_to_the_start_of_the_row(self):
+        # A width that is no whole number of tiles: each page starts on a tile, as the
+        # row does, never on half of one (issue 712), and back is where it was.
+        shelf = await self.shown(model('align', 40), width=500)
+        self.assertTrue(await self.until_frames(
+            shelf.list_view, lambda: shelf._growing is None))
+        adjustment = shelf.scrolled_window.get_hadjustment()
+        page = adjustment.get_page_size()
+        inset, _width, stride = shelf._columns()
+        self.assertNotEqual(page % stride, 0)  # a width away would land mid-tile
+        shelf.next_button.emit('clicked')  # animations are off: at once
+        self.assertTrue(await self.until(lambda: adjustment.get_value() > 0))
+        value = adjustment.get_value()
+        self.assertEqual(value % stride, 0)
+        self.assertLess(value, page)  # the tile cut at the edge is shown whole now
+        # The focus goes to that tile, and the row stays: with animations off the glide
+        # ends before the row is laid out again, and the item widgets' places are the old
+        # ones (the first tile's, which the focus took, scrolling the row back).
+        def focused_at_start():
+            focus = shelf.list_view.get_focus_child()
+            if focus is None or adjustment.get_value() != value:
+                return False
+            found, bounds = focus.compute_bounds(shelf.scrolled_window)
+            return found and abs(bounds.get_x() - inset) <= 1
+
+        self.assertTrue(await self.until_frames(shelf.list_view, focused_at_start))
+        await self.until_frames(shelf.list_view, lambda: False, frames=3)  # and stays
+        self.assertTrue(focused_at_start())
+        shelf.next_button.emit('clicked')
+        self.assertTrue(await self.until(lambda: adjustment.get_value() > value))
+        self.assertEqual(adjustment.get_value() % stride, 0)
+        shelf.previous_button.emit('clicked')
+        self.assertTrue(await self.until(lambda: adjustment.get_value() == value))
+
+    async def test_a_grid_of_songs_pages_by_its_columns(self):
+        from gi.repository import Adw
+
+        from applemusic.library import Item, ShelfModel
+        from applemusic.widgets.song_shelf import SongShelf
+
+        songs = [Item({'id': f'191{n}', 'kind': 'song', 'title': f'Invented Song {n}',
+                       'subtitle': 'Invented Artist',
+                       'play': {'kind': 'song', 'id': f'191{n}'}}) for n in range(30)]
+        shelf = SongShelf()
+        shelf.bind_shelf(ShelfModel('songs', 'Top Songs', songs))
+        self.window.root_box.append(Adw.Clamp(maximum_size=500, tightening_threshold=500,
+                                              child=shelf))
+        adjustment = shelf.scrolled_window.get_hadjustment()
+        self.assertTrue(await self.until_frames(
+            shelf.grid_view, lambda: shelf._growing is None
+            and adjustment.get_upper() > adjustment.get_page_size() > 0
+            and shelf._columns() is not None))
+        _inset, _width, stride = shelf._columns()
+        self.assertNotEqual(adjustment.get_page_size() % stride, 0)
+        shelf.next_button.emit('clicked')
+        self.assertTrue(await self.until(lambda: adjustment.get_value() > 0))
+        self.assertEqual(adjustment.get_value() % stride, 0)
+
     async def test_a_right_to_left_shelf_starts_at_its_start(self):
         from gi.repository import Gtk
 

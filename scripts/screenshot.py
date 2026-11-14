@@ -22,7 +22,8 @@
                           [--find TERM] [--pick N]
                           [--more-options] [--main-menu] [--new-menu]
                           [--sidebar-menu KEY [--submenu NAME]]
-                          [--drop-target KEY] [--drop-line N] [--scroll PX] [--select N]
+                          [--drop-target KEY] [--drop-line N] [--scroll PX] [--page-shelves N]
+                          [--select N]
                           [--sort KEY[:descending]] [--frame]
 
 Builds nothing itself: run meson install -C build (or scripts/demo.sh) first. Run it
@@ -171,6 +172,9 @@ bar's Select and clicks on them would: the check boxes, the count and the action
 --scroll PX scrolls the page shown down by PX pixels before the shot (its first
 scrolled window that scrolls vertically): the rest of a page taller than the
 virtual monitor, which a --size cannot show.
+--page-shelves N clicks the next arrow of every shelf the page shows N times, as N clicks
+on each would page it: where a page of a row starts. The page follows the focus each click
+gives a row; a --scroll comes after, to show the shelf wanted.
 --focus gives the keyboard focus to the page's first tile or row (its grid cell or list row,
 as Tab would), with the focus ring shown: a music video's play symbol shows with it.
 --rtl lays the window out right to left, as a right-to-left language would
@@ -294,6 +298,8 @@ parser.add_argument('--drop-line', metavar='N', type=int,
                          "--now-playing queue Up Next's entry N (-1: below the last)")
 parser.add_argument('--scroll', metavar='PX', type=int, default=0,
                     help='scroll the page shown down by PX pixels before the shot')
+parser.add_argument('--page-shelves', metavar='N', type=int, default=0,
+                    help='click the next arrow of every shelf shown N times')
 parser.add_argument('--select', metavar='N', type=int,
                     help="the page's track list in its selection mode, its first N selected")
 parser.add_argument('--sort', metavar='KEY[:descending]',
@@ -409,6 +415,7 @@ found = False  # --find typed and --pick picked, in the Add Songs dialog
 menu_opened = False
 banner_shown = False
 scrolled = False
+shelves_paged = 0  # --page-shelves' clicks so far
 focused = False
 drop_line_scrolled = False
 failed = False  # a step raised: the app quits and the script exits 1
@@ -1002,6 +1009,24 @@ def scroll_page(window):
     adjustment.set_value(min(args.scroll, adjustment.get_upper() - adjustment.get_page_size()))
 
 
+def page_shelves(window):
+    """Click the next arrow of every shelf the visible page shows (once a step, so each
+    click finds its row laid out where the last one took it, as a click would)."""
+    from applemusic.widgets.shelf import PagedRow
+
+    def visit(widget):
+        if not widget.get_mapped():
+            return
+        if isinstance(widget, PagedRow):
+            widget.next_button.emit('clicked')
+        child = widget.get_first_child()
+        while child is not None:
+            visit(child)
+            child = child.get_next_sibling()
+
+    visit(window.navigation_view.get_visible_page())
+
+
 def artwork_settled():
     """Whether the artwork has arrived: ARTWORK_QUIET polls in a row with no decode in
     flight, or ARTWORK_POLLS polls in all."""
@@ -1033,7 +1058,7 @@ def _shoot():
     global opened, sheet_opened, mini_shown, searched, menu_opened, banner_shown, preferences
     global dialog
     global seen_all, filtered, selected, sorted_, found
-    global scrolled, focused, drop_line_scrolled
+    global scrolled, focused, drop_line_scrolled, shelves_paged
     if app.library.props.state == 'loading':
         GLib.timeout_add(100, shoot)  # pages show what loaded, not "Loading…"
         return GLib.SOURCE_REMOVE
@@ -1170,6 +1195,12 @@ def _shoot():
         selected = True
         select_songs(window)
         GLib.timeout_add(800, shoot)  # the check boxes and the bar laid out
+        return GLib.SOURCE_REMOVE
+    if shelves_paged < args.page_shelves:
+        shelves_paged += 1
+        page_shelves(window)
+        # Glided and laid out before the next click; the last one's artwork decoded.
+        GLib.timeout_add(1200 if shelves_paged == args.page_shelves else 600, shoot)
         return GLib.SOURCE_REMOVE
     if args.scroll and not scrolled:
         scrolled = True

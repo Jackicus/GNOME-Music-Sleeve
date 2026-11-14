@@ -5,6 +5,7 @@
 tile, numbered; ShelfColumn: a page's shelves, one under another; PagedRow: the paging arrows
 and See All, which song_shelf.py's grid of songs shares."""
 
+import math
 from gettext import gettext as _
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
@@ -14,7 +15,8 @@ from .banner_tile import BannerTile
 from .hero_tile import HeroTile
 from .labels import banner_description, bind_label, unbind_label
 from .tile import Tile, shape_for
-from .util import connect_weak, each_frame, grown, next_frame, rows_kept, weak_method
+from .util import (connect_weak, each_frame, focus_position, grown, next_frame, rows_kept,
+                   weak_method)
 
 # The tiles a shelf's row shows at most: See All opens the whole shelf. A horizontal
 # Gtk.ListView makes a tile for every item up to about 200, whatever is on screen (100 items
@@ -45,11 +47,45 @@ def paging(value, lower, upper, page, rtl):
     return (more_right, more_left) if rtl else (more_left, more_right)
 
 
-def page_target(value, lower, upper, page, step, rtl):
+def page_target(value, lower, upper, page, step, rtl, columns=None):
     """The adjustment's value a page `step` (-1 towards the row's start, 1 towards its end)
-    away from `value`, within the row."""
-    delta = -step * page if rtl else step * page
-    return min(max(value + delta, lower), upper - page)
+    away from `value`, within the row: on a column (column_target()) given the row's
+    `columns`, else a width away. Columns are measured from the row's start in its reading
+    direction (right to left, from the upper end), as is what column_target() is given."""
+    along = upper - page - value if rtl else value - lower
+    if columns:
+        along = column_target(along, page, step, *columns)
+    else:
+        along += step * page
+    along = min(max(along, 0), upper - lower - page)
+    return upper - page - along if rtl else lower + along
+
+
+def column_target(value, page, step, inset, width, stride):
+    """Where a page of the row starts after a page `step` from `value`, so that it starts on
+    a column as the row does: the row's columns start `inset` in, `width` wide, one every
+    `stride`, so a page that starts on one starts at a multiple of `stride`. Forwards, the
+    first column not wholly shown comes to the start; backwards, the column before the
+    first wholly shown one ends the page, which starts on the earliest column that leaves it
+    whole. A column wider than the page still moves on."""
+    if step > 0:
+        cut = math.floor((value + page + 1 - width - inset) / stride) + 1
+        target = cut * stride
+        if target <= value + 1:
+            target = (math.floor((value + 1) / stride) + 1) * stride
+        return target
+    first = math.ceil((value - 1 - inset) / stride)
+    end = inset + (first - 1) * stride + width
+    target = max(math.ceil((end - page - 1) / stride), 0) * stride
+    if target >= value - 1:
+        target = max(math.ceil((value - 1) / stride) - 1, 0) * stride
+    return target
+
+
+def first_whole(value, inset, stride):
+    """The first column wholly shown from `value` along the row (column_target()'s terms):
+    the first whose start is in view."""
+    return max(math.ceil((value - 1 - inset) / stride), 0)
 
 
 class PagedRow:
@@ -58,7 +94,8 @@ class PagedRow:
     row's view as `_row`: See All while the row does not show everything (`_truncated()`,
     or wider than the window); the arrows while it overflows, at any width (the row shows
     no scrollbar: they are what shows that it scrolls), each sensitive while there is more
-    that way; a click on one scrolls a width and focuses the first item wholly shown. All
+    that way; a click on one scrolls about a width, to the start of a column (the first
+    one not wholly shown, page_target()), and focuses the first item wholly shown. All
     of it follows the row's horizontal adjustment, which the scrolled window keeps whatever
     its scrollbar policy. Right to left the row starts at the right (row_start()), so the
     previous arrow, at the right then, pages to the right (paging(), page_target()).
@@ -68,6 +105,7 @@ class PagedRow:
     shows or not), which stop_growing() stops."""
 
     _animation = None
+    _focus_column = None  # the column a page brings to the start, its first item focused
     _slice = None  # the row's items: its first ones, then more a frame (give_items())
     _growing = None  # [the tick callback's id, the items a frame, the most, drawn] meanwhile
 
@@ -143,14 +181,52 @@ class PagedRow:
     def _on_adjustment_changed(self, _adjustment, _pspec):
         self._update_controls()
 
-    def _on_page_clicked(self, _button, direction):
-        """Scroll the row one width that way, then focus the first item wholly shown."""
+    def _columns(self):
+        """The row's columns as page_target() takes them, (inset, width, stride) measured
+        from the row's start in its reading direction, or None while fewer than two are
+        laid out. The view lays out only the items in view (it keeps the others' widgets
+        unallocated), so the columns are measured there; a grid's songs one under another
+        are one column."""
         adjustment = self.scrolled_window.get_hadjustment()
-        page = adjustment.get_page_size()
-        target = page_target(adjustment.get_value(), adjustment.get_lower(),
-                             adjustment.get_upper(), page, direction, self._rtl())
+        value, lower, upper = (adjustment.get_value(), adjustment.get_lower(),
+                               adjustment.get_upper())
+        rtl = self._rtl()
+        columns = {}
+        child = self._row.get_first_child()
+        while child is not None:
+            found, bounds = child.compute_bounds(self.scrolled_window)
+            if (child.get_visible() and child.get_child_visible() and found
+                    and bounds.get_width() > 0):
+                left = bounds.get_x() + value
+                right = left + bounds.get_width()
+                start, end = (upper - right, upper - left) if rtl else (left - lower,
+                                                                        right - lower)
+                columns[round(start)] = end - start
+            child = child.get_next_sibling()
+        starts = sorted(columns)
+        stride = min((after - before for before, after in zip(starts, starts[1:],
+                                                                strict=False)), default=0)
+        if stride < 1:
+            return None
+        return starts[0] % stride, columns[starts[0]], stride
+
+    def _on_page_clicked(self, _button, direction):
+        """Scroll the row a page that way, to the start of a column (page_target()), then
+        focus the first item wholly shown. A click while the row glides goes on from where
+        the glide was going."""
+        columns = self._columns()  # as laid out now, before a glide's skip moves the row
         if self._animation is not None:
             self._animation.skip()
+        adjustment = self.scrolled_window.get_hadjustment()
+        lower, upper = adjustment.get_lower(), adjustment.get_upper()
+        page = adjustment.get_page_size()
+        rtl = self._rtl()
+        target = page_target(adjustment.get_value(), lower, upper, page, direction, rtl,
+                             columns)
+        self._focus_column = None
+        if columns is not None:
+            along = upper - page - target if rtl else target - lower
+            self._focus_column = first_whole(along, columns[0], columns[2])
         # Not Adw.TimedAnimation.new(): its new reference is annotated (transfer none),
         # so PyGObject takes one more and the animation is never freed.
         animation = Adw.TimedAnimation(
@@ -162,7 +238,18 @@ class PagedRow:
         animation.play()
 
     def _on_paged(self, _animation):
+        """Focus the first item wholly shown: by its place, the column page_target() brought
+        to the start, since the row may not be laid out at the target yet (with animations
+        off the glide is done before the next layout, and its item widgets are where they
+        were)."""
         self._animation = None
+        model = self._row.get_model()
+        if self._focus_column is not None and model is not None and model.get_n_items():
+            per_column = (self._row.get_max_columns() if isinstance(self._row, Gtk.GridView)
+                          else 1)
+            focus_position(self._row, min(self._focus_column * per_column,
+                                          model.get_n_items() - 1))
+            return
         width = self.scrolled_window.get_width()
         rtl = self._rtl()
         child = self._row.get_first_child()
@@ -170,7 +257,7 @@ class PagedRow:
             found, bounds = child.compute_bounds(self.scrolled_window)
             whole = (bounds.get_x() + bounds.get_width() <= width + 1 if rtl
                      else bounds.get_x() >= -1)
-            if child.get_visible() and found and whole:
+            if child.get_visible() and child.get_child_visible() and found and whole:
                 child.grab_focus()
                 return
             child = child.get_next_sibling()

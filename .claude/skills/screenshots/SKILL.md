@@ -43,7 +43,9 @@ What to shoot: $ARGUMENTS
      window (an artist's: `--open artist:first --scroll 900`; an album's footer and shelves:
      `--open album:first --scroll 650`, and `1400` for the last of them; a playlist's Suggested Songs:
      `--page playlist:l.pl002 --scroll 1600`; a catalog playlist's shelves:
-     `--open playlist:pl.demo001 --scroll 700`); `--focus` focuses the page's first tile or
+     `--open playlist:pl.demo001 --scroll 700`); `--page-shelves N` clicks every shelf's
+     next arrow N times, then `--scroll` shows the one wanted (an artist's Top Songs paged:
+     `--open artist-page:1724041001 --size 600x700 --page-shelves 1 --scroll 380`); `--focus` focuses the page's first tile or
      row with its focus ring (a music video's play symbol); `--setting KEY=VALUE` sets a setting first
      (`--setting more-suggestions=true` shows twelve suggestions);
    - the main menu: `--main-menu` (with `--sidebar` at a narrow `--size`); the sidebar's
